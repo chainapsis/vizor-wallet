@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/security/password_policy.dart';
@@ -123,7 +124,7 @@ class _SettingsViewingKeyScreenState
   ViewingKeyType? _selectedType;
 
   String? get _passwordPolicyMessage =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPassword(context.l10n, _passwordController.text);
 
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);
@@ -154,7 +155,7 @@ class _SettingsViewingKeyScreenState
 
     setState(() {
       _clearSensitiveState(
-        passwordError: 'Selected account changed. Enter your password again.',
+        passwordError: context.l10n.settingsAccountChangedPassword,
       );
     });
   }
@@ -206,8 +207,8 @@ class _SettingsViewingKeyScreenState
       final accountState = ref.read(accountProvider).value;
       final targetAccount = _targetAccount(accountState);
       if (targetAccount == null) {
-        throw const _ViewingKeyUnavailableException(
-          'The selected account is no longer available.',
+        throw _ViewingKeyUnavailableException(
+          context.l10n.settingsAccountUnavailable,
         );
       }
       final targetAccountUuid = targetAccount.uuid;
@@ -218,7 +219,7 @@ class _SettingsViewingKeyScreenState
       if (!isValid) {
         if (!mounted) return;
         setState(() {
-          _passwordError = 'Incorrect password. Please try again.';
+          _passwordError = context.l10n.passwordIncorrect;
           _isSubmitting = false;
         });
         return;
@@ -228,8 +229,7 @@ class _SettingsViewingKeyScreenState
         if (!mounted) return;
         setState(() {
           _clearSensitiveState(
-            passwordError:
-                'Selected account changed. Enter your password again.',
+            passwordError: context.l10n.settingsAccountChangedPassword,
           );
         });
         return;
@@ -241,8 +241,7 @@ class _SettingsViewingKeyScreenState
       if (_targetAccountChanged(targetAccountUuid)) {
         setState(() {
           _clearSensitiveState(
-            passwordError:
-                'Selected account changed. Enter your password again.',
+            passwordError: context.l10n.settingsAccountChangedPassword,
           );
         });
         return;
@@ -264,7 +263,7 @@ class _SettingsViewingKeyScreenState
       log('SettingsViewingKeyScreen._submitPassword: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _revealError = 'Confirm access again to try loading this key.';
+        _revealError = context.l10n.settingsViewingKeyConfirmAgain;
         _stage = _SettingsViewingKeyStage.reveal;
         _isSubmitting = false;
       });
@@ -274,6 +273,7 @@ class _SettingsViewingKeyScreenState
   Future<rust_wallet.AccountViewingKeys> _loadViewingKeys(
     String targetAccountUuid,
   ) async {
+    final l10n = context.l10n;
     try {
       final loader = widget.viewingKeysLoader;
       if (loader != null) return await loader(targetAccountUuid);
@@ -288,7 +288,7 @@ class _SettingsViewingKeyScreenState
     } catch (e, st) {
       log('SettingsViewingKeyScreen._loadViewingKeys: ERROR: $e\n$st');
       throw _ViewingKeyUnavailableException(
-        'Confirm access again to try loading this key.',
+        l10n.settingsViewingKeyConfirmAgain,
       );
     }
   }
@@ -337,7 +337,7 @@ class _SettingsViewingKeyScreenState
             child: switch (_stage) {
               _SettingsViewingKeyStage.password => Center(
                 child: ConfirmAccessCard(
-                  subtitle: 'To view the viewing key.',
+                  subtitle: context.l10n.settingsViewingKeyPasswordSubtitle,
                   controller: _passwordController,
                   errorText: _passwordError ?? _passwordPolicyMessage,
                   isSubmitting: _isSubmitting,
@@ -388,7 +388,10 @@ class _SettingsViewingKeyPane extends StatelessWidget {
         backLinkMinWidth: 60,
         leading: onBackToChoice == null
             ? null
-            : AppBackLink(label: 'Viewing key', onTap: onBackToChoice!),
+            : AppBackLink(
+                label: context.l10n.settingsViewingKeyTitle,
+                onTap: onBackToChoice!,
+              ),
         onBeforeNavigate: onBeforeNavigateBack,
       ),
       padding: EdgeInsets.fromLTRB(

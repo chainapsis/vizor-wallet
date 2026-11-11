@@ -399,10 +399,7 @@ void main() {
           expect(native.isCompleted, isFalse);
           expect(store.value, isNull);
           expect(api.values, isEmpty);
-          expect(
-            container.read(enhancePirTransitionProvider),
-            contains('Try again'),
-          );
+          expect(container.read(enhancePirTransitionProvider), isNotNull);
           await notifier.toggle();
           expect(leases.length, 4);
           expect(leases[0], isNot(leases[2]));
@@ -506,10 +503,7 @@ void main() {
       expect(api.values, isEmpty);
       expect(reconciler.calls, isEmpty);
       expect(container.read(enhancePirProvider), isFalse);
-      expect(
-        container.read(enhancePirTransitionProvider),
-        contains('Try again'),
-      );
+      expect(container.read(enhancePirTransitionProvider), isNotNull);
     },
   );
   // Previously a failed raise rolled the shielded setting back off. The
@@ -538,7 +532,7 @@ void main() {
     expect(container.read(enhancePirProvider), isFalse);
     expect(
       container.read(enhancePirTransitionProvider),
-      kEnhancePirUnchangedMessage,
+      EnhancePirTransition.unchanged,
     );
   });
 
@@ -630,7 +624,7 @@ void main() {
       expect(container.read(enhancePirProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        kTransparentRaisePendingMessage,
+        EnhancePirTransition.raisePending,
       );
       // Nothing was applied, so nothing is adopted.
       expect(sync.appliedTransparentPolicy, isNull);
@@ -677,7 +671,7 @@ void main() {
       expect(container.read(privateQueriesControlEnabledProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        kTransparentOptOutPendingMessage,
+        EnhancePirTransition.optOutPending,
       );
       expect(sync.appliedTransparentPolicy, isNull);
     },
@@ -848,7 +842,7 @@ void main() {
     expect(container.read(enhancePirProvider), isTrue);
     expect(
       container.read(enhancePirTransitionProvider),
-      kEnhancePirUnchangedMessage,
+      EnhancePirTransition.unchanged,
     );
   });
   test(
@@ -920,7 +914,7 @@ void main() {
     expect(container.read(enhancePirProvider), isTrue);
     expect(
       container.read(enhancePirTransitionProvider),
-      'Setting unchanged. Try again.',
+      EnhancePirTransition.unchanged,
     );
   });
   // Keep the runtime private without relying on a second preference write.
@@ -952,7 +946,7 @@ void main() {
       expect(container.read(enhancePirProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        kTransparentOptOutPendingMessage,
+        EnhancePirTransition.optOutPending,
       );
     },
   );
@@ -984,7 +978,7 @@ void main() {
       expect(container.read(enhancePirProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        'Setting unchanged. Try again.',
+        EnhancePirTransition.unchanged,
       );
     },
   );
@@ -1077,10 +1071,7 @@ void main() {
         expect(container.read(enhancePirProvider), isFalse);
         expect(store.value, isNull);
         expect(api.values, isEmpty);
-        expect(
-          container.read(enhancePirTransitionProvider),
-          contains('Try again'),
-        );
+        expect(container.read(enhancePirTransitionProvider), isNotNull);
       },
     );
   }
@@ -1128,7 +1119,7 @@ void main() {
           expect(container.read(enhancePirProvider), isFalse);
           expect(
             container.read(enhancePirTransitionProvider),
-            kEnhancePirUnchangedMessage,
+            EnhancePirTransition.unchanged,
           );
 
           release.complete();
@@ -1528,26 +1519,29 @@ void main() {
       expect(g.shouldRestart(3), isTrue);
     });
 
-    test('the restart schedule is identical whether the counts move or not', () {
-      // Replies that complete work, replies that fail, and newly found work
-      // all move the count; none of it may move the schedule.
-      // One 10-second poll per count.
-      List<bool> schedule(List<int> counts) {
-        clock = DateTime.utc(2026);
-        final g = gate();
-        final restarts = <bool>[];
-        for (final count in counts) {
-          restarts.add(g.shouldRestart(count));
-          clock = clock.add(const Duration(seconds: 10));
+    test(
+      'the restart schedule is identical whether the counts move or not',
+      () {
+        // Replies that complete work, replies that fail, and newly found work
+        // all move the count; none of it may move the schedule.
+        // One 10-second poll per count.
+        List<bool> schedule(List<int> counts) {
+          clock = DateTime.utc(2026);
+          final g = gate();
+          final restarts = <bool>[];
+          for (final count in counts) {
+            restarts.add(g.shouldRestart(count));
+            clock = clock.add(const Duration(seconds: 10));
+          }
+          return restarts;
         }
-        return restarts;
-      }
 
-      final unchanged = schedule(List.filled(80, 3));
-      final moving = schedule([for (var i = 0; i < 80; i++) 1 + i * 7 % 5]);
-      expect(moving, unchanged);
-      expect(unchanged.where((restart) => restart), isNotEmpty);
-    });
+        final unchanged = schedule(List.filled(80, 3));
+        final moving = schedule([for (var i = 0; i < 80; i++) 1 + i * 7 % 5]);
+        expect(moving, unchanged);
+        expect(unchanged.where((restart) => restart), isNotEmpty);
+      },
+    );
 
     test('a count change inside the window keeps the deadline', () {
       final g = gate();

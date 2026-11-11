@@ -28,6 +28,7 @@ pub(crate) mod tree_states;
 pub mod voting;
 pub(crate) mod wallet_summary_cache;
 
+// Confirmations before the wallet spends its own change.
 const TRUSTED_CONFIRMATIONS: u32 = 3;
 // Vizor's product policy accepts externally received funds sooner than the
 // ZIP 315 default of 10 confirmations.
@@ -38,9 +39,16 @@ const ALLOW_ZERO_CONFIRMATION_SHIELDING: bool = true;
 // invalidate the claim.
 const PAYMENT_LINK_CLAIM_CONFIRMATIONS: u32 = 2;
 
+/// The SDK's trusted depth for funds that need `confirmations`. It anchors
+/// that many blocks below the tip, so one fewer puts the anchor on the block
+/// that completes them; a note above the anchor cannot be spent.
+fn anchored_at(confirmations: u32) -> NonZeroU32 {
+    NonZeroU32::new(confirmations - 1).expect("anchored confirmations exceed one")
+}
+
 fn confirmations_policy() -> ConfirmationsPolicy {
     ConfirmationsPolicy::new(
-        NonZeroU32::new(TRUSTED_CONFIRMATIONS).expect("trusted confirmations are nonzero"),
+        anchored_at(TRUSTED_CONFIRMATIONS),
         NonZeroU32::new(UNTRUSTED_CONFIRMATIONS).expect("untrusted confirmations are nonzero"),
         ALLOW_ZERO_CONFIRMATION_SHIELDING,
     )
@@ -48,8 +56,7 @@ fn confirmations_policy() -> ConfirmationsPolicy {
 }
 
 fn payment_link_claim_confirmations_policy() -> ConfirmationsPolicy {
-    let confirmations =
-        NonZeroU32::new(PAYMENT_LINK_CLAIM_CONFIRMATIONS).expect("claim confirmations are nonzero");
+    let confirmations = anchored_at(PAYMENT_LINK_CLAIM_CONFIRMATIONS);
     ConfirmationsPolicy::new(confirmations, confirmations, false)
         .expect("claim confirmations are symmetric")
 }
@@ -65,8 +72,15 @@ mod tests {
     fn confirmation_policy_uses_six_confirmations_for_external_funds() {
         let policy = confirmations_policy();
 
-        assert_eq!(u32::from(policy.trusted()), TRUSTED_CONFIRMATIONS);
         assert_eq!(u32::from(policy.untrusted()), UNTRUSTED_CONFIRMATIONS);
+    }
+
+    #[test]
+    fn change_is_anchored_on_its_third_confirmation() {
+        // The SDK anchors `trusted` blocks below the tip. Change mined at 100
+        // has its third confirmation at tip 102.
+        let tip = 100 + TRUSTED_CONFIRMATIONS - 1;
+        assert_eq!(tip - u32::from(confirmations_policy().trusted()), 100);
     }
 
     #[test]
@@ -89,7 +103,7 @@ mod tests {
     }
 
     #[test]
-    fn gift_card_claims_spend_external_funds_after_two_confirmations() {
+    fn gift_card_claim_policy_leaves_the_two_block_wait_to_the_anchor() {
         let policy = payment_link_claim_confirmations_policy();
         let confirmations_remaining = |target_height| {
             policy.confirmations_until_spendable(
@@ -103,15 +117,19 @@ mod tests {
             )
         };
 
+        assert_eq!(policy.trusted(), policy.untrusted());
         assert_eq!(
             u32::from(policy.trusted()),
-            PAYMENT_LINK_CLAIM_CONFIRMATIONS
+            PAYMENT_LINK_CLAIM_CONFIRMATIONS - 1
         );
+        // The policy alone is met in the funding block; the anchor one block
+        // below the tip is what holds the claim until the next block.
+        assert_eq!(confirmations_remaining(100), 1);
+        assert_eq!(confirmations_remaining(101), 0);
         assert_eq!(
-            u32::from(policy.untrusted()),
-            PAYMENT_LINK_CLAIM_CONFIRMATIONS
+            sync_engine::gift_card_claim::max_claim_anchor_height(101),
+            Some(100),
+            "the funding block is first anchorable one block later"
         );
-        assert_eq!(confirmations_remaining(101), 1);
-        assert_eq!(confirmations_remaining(102), 0);
     }
 }

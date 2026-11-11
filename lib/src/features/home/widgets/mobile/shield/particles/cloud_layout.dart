@@ -1,3 +1,4 @@
+// l10n-ignore-file: particle layout data, not copy
 // Generated from Figma node 8771:68927 ("Group 1", frame 8771:67055).
 // One character per dot on the 8.6pt halftone grid. Size classes, smallest to
 // largest: '.' 1.146pt @100%, ':' 2.292pt @75%, 'o' 3.438pt @50%, 'O' 4.584pt @25%.

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/zcash/wallet_error_code.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
 
@@ -11,6 +12,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/feedback/app_haptics.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -44,15 +46,15 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
         context,
       ).at(OnboardingFlow.keystone, OnboardingStage.deviceIntro).value,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Connect Keystone',
-      subtitle: 'Prepare your Keystone wallet',
+      title: context.l10n.onboardingConnectKeystone,
+      subtitle: context.l10n.commonPrepareYourKeystoneWallet,
       bottomArea: AppButton(
         key: const ValueKey('mobile_keystone_intro_continue'),
         expand: true,
         onPressed: () =>
             context.pushOnboarding(KeystoneOnboardingStep.scanQrCode.routePath),
         trailing: const AppIcon(AppIcons.chevronForward),
-        child: const Text('Continue'),
+        child: Text(context.l10n.commonContinue),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -64,7 +66,8 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
               children: [
                 _SectionHeading(
                   iconName: AppIcons.importWallet,
-                  title: '1. Check Keystone firmware',
+                  title:
+                      '1. ${context.l10n.keystoneFirmwareTitle}', // l10n-ignore: step number
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 const _FirmwareBodyWithLink(),
@@ -79,14 +82,15 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
               children: [
                 _SectionHeading(
                   iconName: AppIcons.qr,
-                  title: '2. Prepare to connect',
+                  title:
+                      '2. ${context.l10n.keystonePrepareToConnectTitle}', // l10n-ignore: step number
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                const _StepGroupHeading('On your Keystone'),
+                _StepGroupHeading(context.l10n.keystoneOnYourKeystone),
                 const SizedBox(height: AppSpacing.xxs),
-                for (final (i, step) in const [
-                  'Tap ••• (top right), then Connect software wallet.',
-                  'Select Vizor (or ZODL)',
+                for (final (i, step) in [
+                  context.l10n.keystoneStepOpenSoftwareWallet,
+                  context.l10n.keystoneStepSelectVizor,
                 ].indexed)
                   _NumberedStep(
                     index: i + 1,
@@ -94,11 +98,11 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
                     isFirstInGroup: i == 0,
                   ),
                 const SizedBox(height: AppSpacing.sm),
-                const _StepGroupHeading('On Vizor'),
+                _StepGroupHeading(context.l10n.keystoneOnVizor),
                 const SizedBox(height: AppSpacing.xxs),
-                const _NumberedStep(
+                _NumberedStep(
                   index: 3,
-                  text: 'Scan the dynamic QR code on your Keystone.',
+                  text: context.l10n.keystoneStepScanDynamicQr,
                   isFirstInGroup: true,
                 ),
               ],
@@ -144,12 +148,9 @@ class _FirmwareBodyWithLink extends StatelessWidget {
     return Text.rich(
       TextSpan(
         style: bodyStyle,
-        children: const [
-          TextSpan(
-            text:
-                'Make sure your Keystone is on the latest Cypherpunk firmware. ',
-          ),
-          WidgetSpan(
+        children: [
+          TextSpan(text: context.l10n.keystoneFirmwareBody),
+          const WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: _FirmwareInlineLink(),
           ),
@@ -167,7 +168,7 @@ class _FirmwareInlineLink extends StatelessWidget {
     return Semantics(
       button: true,
       link: true,
-      label: 'Download Keystone firmware',
+      label: context.l10n.keystoneFirmwareDownloadSemantics,
       child: AppButton(
         variant: AppButtonVariant.ghost,
         size: AppButtonSize.small,
@@ -176,7 +177,7 @@ class _FirmwareInlineLink extends StatelessWidget {
         iconGap: AppSpacing.xxs,
         leading: const AppIcon(AppIcons.link),
         onPressed: () => unawaited(launchAboutUrl(_keystoneFirmwareUrl)),
-        child: const Text('link'),
+        child: Text(context.l10n.keystoneFirmwareLinkLabel),
       ),
     );
   }
@@ -286,7 +287,7 @@ class _MobileKeystoneScanScreenState
       if (accounts.isEmpty) {
         setState(() {
           _decoding = false;
-          _error = 'No Zcash accounts were found on this Keystone QR.';
+          _error = context.l10n.keystoneScanNoAccounts;
           _scanProgress = 0;
           _scanSessionResetToken++;
         });
@@ -315,8 +316,7 @@ class _MobileKeystoneScanScreenState
         _decoding = false;
         _scanProgress = 0;
         _scanSessionResetToken++;
-        _error =
-            'This QR code could not be decoded as a Keystone Zcash account.';
+        _error = context.l10n.keystoneScanDecodeFailed;
       });
     }
   }
@@ -332,18 +332,18 @@ class _MobileKeystoneScanScreenState
 
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the Zcash account QR on Keystone, then scan again.'
-        : 'Keep the QR code steady and fully visible.';
+    final message = isUnexpectedUrTypeError(error)
+        ? context.l10n.keystoneScanOpenAccountQr
+        : context.l10n.commonKeepQrSteady;
     if (_error == message) return;
     setState(() => _error = message);
   }
 
   String? get _scanCaptionOverride {
-    if (_decoding) return 'Reading accounts...';
+    if (_decoding) return context.l10n.keystoneScanReadingAccounts;
     if (_error != null) return _error;
     if (_scanProgress > 0 && _scanProgress < 100) {
-      return 'Scanning... $_scanProgress%';
+      return context.l10n.keystoneScanProgress(_scanProgress);
     }
     return null;
   }
@@ -357,12 +357,10 @@ class _MobileKeystoneScanScreenState
       key: const ValueKey('mobile_keystone_scan_card'),
       controller: widget.scannerController,
       cameraHeight: cameraHeight,
-      caption: kMobileKeystoneScanCaption,
-      permissionTitle: 'Scan QR Code',
+      caption: context.l10n.keystoneScanCaption,
+      permissionTitle: context.l10n.commonScanQrCode,
       error: _scanCaptionOverride,
-      unavailableDescription:
-          'Keystone import uses camera QR scanning only. Connect a '
-          'camera and try again.',
+      unavailableDescription: context.l10n.keystoneScanCameraRequired,
       onClose: () => Navigator.of(context).maybePop(),
       permissionBuilder:
           (context, status, unavailableDescription, onRetry, onClose) =>
@@ -397,8 +395,8 @@ class _MobileKeystoneScanScreenState
             context,
           ).at(OnboardingFlow.keystone, OnboardingStage.deviceScan).value,
           onBack: () => Navigator.of(context).maybePop(),
-          title: 'Scan QR Code',
-          subtitle: 'Prepare your Keystone wallet',
+          title: context.l10n.commonScanQrCode,
+          subtitle: context.l10n.commonPrepareYourKeystoneWallet,
           scrollable: false,
           child: const SizedBox.shrink(),
         ),
@@ -451,8 +449,8 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
         context,
       ).at(OnboardingFlow.keystone, OnboardingStage.accountSelection).value,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Select account',
-      subtitle: 'Prepare your Keystone wallet',
+      title: context.l10n.commonSelectAccount,
+      subtitle: context.l10n.commonPrepareYourKeystoneWallet,
       bottomArea: AppButton(
         key: const ValueKey('mobile_keystone_select_continue'),
         expand: true,
@@ -461,7 +459,7 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
             : () => context.pushOnboarding(
                 KeystoneOnboardingStep.walletBirthdayHeight.routePath,
               ),
-        child: const Text('Select account'),
+        child: Text(context.l10n.commonSelectAccount),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -471,8 +469,7 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              '${accounts.length} account${accounts.length == 1 ? '' : 's'} '
-              'found',
+              context.l10n.keystoneAccountsFound(accounts.length),
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
@@ -482,7 +479,7 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
           for (final account in accounts) ...[
             _AccountCard(
               name: account.name.trim().isEmpty
-                  ? 'Account ${account.index + 1}'
+                  ? 'Account ${account.index + 1}' // l10n-ignore: mirrors persisted fallback name
                   : account.name,
               detail: _truncate(account.ufvk),
               selected: account == selected,

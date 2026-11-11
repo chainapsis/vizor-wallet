@@ -1,0 +1,51 @@
+{
+  "fonttools_version": "4.60.2",
+  "fonts": [
+    {
+      "locale": "ko",
+      "arb": "lib/l10n/source/app_ko.arb",
+      "family": "Vizor Korean UI",
+      "upstream": "Pretendard Variable v1.3.9",
+      "url": "https://raw.githubusercontent.com/orioncactus/pretendard/v1.3.9/packages/pretendard/dist/public/variable/PretendardVariable.ttf",
+      "sha256": "3090ccde0442bb347aa7685d9ba8b17436a60682df6e8f92a9a670de14056e22",
+      "include_unicode_ranges": [
+        [
+          "AC00",
+          "D7A3"
+        ],
+        [
+          "1100",
+          "11FF"
+        ],
+        [
+          "3130",
+          "318F"
+        ],
+        [
+          "A960",
+          "A97F"
+        ],
+        [
+          "D7B0",
+          "D7FF"
+        ],
+        [
+          "FFA0",
+          "FFDC"
+        ]
+      ],
+      "output": "assets/fonts/VizorKoreanUI-VF.ttf"
+    },
+    {
+      "locale": "zh",
+      "arb": "lib/l10n/app_zh.arb",
+      "family": "Vizor Chinese UI",
+      "upstream": "Noto Sans SC, google/fonts fbe81817505e8aeadc53cc7a38a2b76fb57c333e",
+      "url": "https://raw.githubusercontent.com/google/fonts/fbe81817505e8aeadc53cc7a38a2b76fb57c333e/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+      "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+      "include_character_file": "tool/l10n/character_sets/tgh_2013.txt",
+      "include_character_file_sha256": "da7798fa86952966fda4633d93e121a875348e5c44dab8b051f7501934988665",
+      "output": "assets/fonts/VizorChineseUI-VF.ttf"
+    }
+  ]
+}

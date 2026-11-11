@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
@@ -15,8 +16,13 @@ import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
+
+// SDK text is only logged; the screen shows the session summary.
+final _eligibilityErrorText = testL10n.votingErrorSessionFailed;
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -247,7 +253,7 @@ void main() {
     ),
     (
       buildMobileVotingEligibilityErrorUseCase,
-      'Unable to check voting eligibility.',
+      _eligibilityErrorText,
       'Voting power unavailable',
     ),
   ]) {
@@ -395,25 +401,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('ineligible modal preserves the actual no-funds reason and block', (
-    tester,
-  ) async {
-    await _pumpMobileFixture(
-      tester,
-      (_) => const VotingIneligibleDialog(
-        message:
-            'This account is not eligible for this voting round. It had no eligible '
-            'shielded funds at snapshot block 123,456. Switch to an eligible account to vote.',
-      ),
-    );
-    final text = tester.widget<Text>(find.textContaining('It had no eligible'));
-    expect(
-      text.textSpan!.toPlainText(),
-      contains('snapshot block 123,456\n\nSwitch'),
-    );
-    expect(text.textSpan!.toPlainText(), isNot(contains('0.125')));
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'ineligible modal preserves the actual no-funds reason and block',
+    (tester) async {
+      await _pumpMobileFixture(
+        tester,
+        (_) => const VotingIneligibleDialog(
+          message: VotingEligibilityFailure(
+            VotingEligibilityFailureKind.noSpendableNotes,
+            snapshotHeight: 123456,
+          ),
+        ),
+      );
+      final text = tester.widget<Text>(
+        find.textContaining('It had no eligible'),
+      );
+      expect(
+        text.textSpan!.toPlainText(),
+        contains('snapshot block 123,456\n\nSwitch'),
+      );
+      expect(text.textSpan!.toPlainText(), isNot(contains('0.125')));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('short viewport and enlarged text keep modal actions reachable', (
     tester,
@@ -519,7 +529,9 @@ void main() {
             votingPowerPreparing: false,
             votingEligibilityConfirmed: false,
             answersEditable: false,
-            votingEligibilityMessage: 'Unable to check voting eligibility.',
+            votingEligibilityMessage: const VotingLiteralMessage(
+              'Unable to check voting eligibility.',
+            ),
             votingEligibilityErrorMessage: null,
             onVotingEligibilityRetry: () => retries++,
             proposals: const [
@@ -540,7 +552,7 @@ void main() {
         find.byKey(const ValueKey('voting_detail_ineligible_badge')),
         findsNothing,
       );
-      expect(find.text('Unable to check voting eligibility.'), findsOneWidget);
+      expect(find.text(_eligibilityErrorText), findsOneWidget);
       expect(find.text('Ends Aug 24, 2026'), findsOneWidget);
       expect(find.byType(VotingForumLinkButton), findsOneWidget);
       await tester.tap(find.text('Yes'));
@@ -570,7 +582,9 @@ void main() {
             votingPowerPreparing: false,
             votingEligibilityConfirmed: false,
             answersEditable: false,
-            votingEligibilityMessage: 'Voting power unavailable.',
+            votingEligibilityMessage: const VotingNotice(
+              VotingNoticeKind.votingPowerUnavailable,
+            ),
             votingEligibilityErrorMessage: null,
             onVotingEligibilityRetry: () => retries++,
             proposals: const [
@@ -1229,6 +1243,76 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('privacy mode masks voting power on mobile poll surfaces', (
+    tester,
+  ) async {
+    Widget active({required bool privacyModeEnabled}) => MobileVotingScaffold(
+      title: 'Coinholder voting',
+      child: VotingActivePollContent(
+        showDesktopToolbar: false,
+        roundId: 'private',
+        title: 'Private round',
+        snapshotHeight: 100,
+        description: '',
+        forumUri: null,
+        endDate: null,
+        votingPowerZatoshi: BigInt.from(37_500_000),
+        votingPowerPreparing: false,
+        privacyModeEnabled: privacyModeEnabled,
+        votingEligibilityConfirmed: true,
+        answersEditable: true,
+        votingEligibilityMessage: null,
+        votingEligibilityErrorMessage: null,
+        onVotingEligibilityRetry: () {},
+        proposals: const [
+          VotingProposalView(
+            id: 1,
+            title: 'Question',
+            description: '',
+            options: [VotingOptionView(index: 0, label: 'Yes')],
+          ),
+        ],
+        draft: const VotingDraftState(),
+        onChoice: (_, _) {},
+      ),
+    );
+    Widget voted({required bool privacyModeEnabled}) => MobileVotingScaffold(
+      title: 'Voted',
+      child: VotingVotedPollContent(
+        showDesktopToolbar: false,
+        roundTitle: 'Private round',
+        snapshotHeight: 1,
+        description: '',
+        forumUri: null,
+        votingPowerZatoshi: BigInt.from(37_500_000),
+        votingPowerPreparing: false,
+        privacyModeEnabled: privacyModeEnabled,
+        votedAt: null,
+        proposals: const [],
+        choicesByProposalId: const {},
+      ),
+    );
+    void expectNoDoubledDenomination() {
+      expect(find.textContaining('ZEC ZEC', findRichText: true), findsNothing);
+      expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+    }
+
+    await _pumpMobileFixture(tester, (_) => active(privacyModeEnabled: false));
+    expect(find.text('Voting power 0.375 ZEC'), findsOneWidget);
+    await _pumpMobileFixture(tester, (_) => active(privacyModeEnabled: true));
+    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.textContaining('0.375'), findsNothing);
+    expectNoDoubledDenomination();
+
+    await _pumpMobileFixture(tester, (_) => voted(privacyModeEnabled: false));
+    expect(find.text('0.375 ZEC'), findsOneWidget);
+    await _pumpMobileFixture(tester, (_) => voted(privacyModeEnabled: true));
+    expect(find.text('Voting power'), findsOneWidget);
+    expect(find.text('****** ZEC'), findsOneWidget);
+    expect(find.textContaining('0.375'), findsNothing);
+    expectNoDoubledDenomination();
+  });
 }
 
 Future<void> _pumpMobileFixture(
@@ -1244,6 +1328,7 @@ Future<void> _pumpMobileFixture(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       theme: ThemeData(brightness: brightness),
       builder: (context, child) => AppTheme(
         data: brightness == Brightness.dark

@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _validDeletePassword = 'Correct123!';
 const _invalidDeletePassword = 'Wrong123!';
@@ -43,9 +44,7 @@ void main() {
       _bootstrap.initialAccountState,
       switchError: const WalletMutationBusyException(),
     );
-    await tester.pumpWidget(
-      _accountsHarness(accountNotifier: () => notifier),
-    );
+    await tester.pumpWidget(_accountsHarness(accountNotifier: () => notifier));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Shielded Savings'));
     await tester.pumpAndSettle();
@@ -1746,6 +1745,7 @@ Widget _accountsHarness({
         receiveAddressServiceProvider.overrideWith(receiveAddressService),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,
@@ -1812,6 +1812,7 @@ Widget _sidebarHarness() {
       syncProvider.overrideWith(_FakeSyncNotifier.new),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

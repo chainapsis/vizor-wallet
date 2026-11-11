@@ -20,6 +20,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
 import 'payment_link_dashed_border_painter.dart';
+import '../../../core/l10n/l10n.dart';
 
 class PaymentLinkPasteButton extends StatelessWidget {
   const PaymentLinkPasteButton({
@@ -228,7 +229,11 @@ class PaymentLinkWizardStepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = ['Create', 'Add Message', 'Review'];
+    final labels = [
+      context.l10n.paymentLinkStepCreate,
+      context.l10n.paymentLinkStepAddMessage,
+      context.l10n.paymentLinkStepReview,
+    ];
     return SizedBox(
       width: 365,
       height: 24,
@@ -494,7 +499,7 @@ class _PaymentLinkLoadingCardState extends State<PaymentLinkLoadingCard>
     );
 
     return Semantics(
-      label: 'Loading gift card',
+      label: context.l10n.paymentLinkLoadingGiftCard,
       container: true,
       child: RepaintBoundary(
         child: ClipRRect(

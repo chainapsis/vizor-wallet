@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/activity/activity_feed_sections.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
+import '../../support/test_l10n.dart';
 
 ActivityEntry entry(int i, DateTime time) => ActivityEntry(
   timestamp: time,
@@ -21,6 +22,7 @@ void main() {
   test('equal-time prefix is stable across page appends', () {
     for (final count in [20, 40, 60, 100]) {
       final sections = buildActivityFeedSections(
+        testL10n,
         List.generate(count, (i) => entry(i, DateTime.utc(2026))),
         limit: 20,
       );
@@ -34,6 +36,7 @@ void main() {
 
   test('page limit applies after timestamp ordering and date grouping', () {
     final sections = buildActivityFeedSections(
+      testL10n,
       List.generate(
         40,
         (i) => entry(i, DateTime.utc(2026, 1, 1).add(Duration(days: i))),

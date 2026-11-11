@@ -12,7 +12,7 @@ import '../rust/api/wallet.dart' as rust_wallet;
 import 'rpc_endpoint_provider.dart';
 
 const kIronwoodMigrationPasswordChangeBlockedMessage =
-    'Cannot change wallet password while Ironwood migration is in progress.';
+    'Cannot change wallet password while Ironwood migration is in progress.'; // l10n-ignore: exception text, never shown
 
 class IronwoodMigrationPasswordChangeBlockedException implements Exception {
   const IronwoodMigrationPasswordChangeBlockedException([this.message]);
@@ -167,9 +167,9 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
       if (_isPasswordSetupPrepared) {
         throw StateError('Password setup is already pending.');
       }
-      final error = validateRequiredWalletPassword(password);
-      if (error != null) {
-        throw ArgumentError(error);
+      final issue = requiredWalletPasswordPolicyIssue(password);
+      if (issue != null) {
+        throw PasswordPolicyViolation(issue);
       }
       // Bootstrap must also recover interrupted ordinary creation/import before
       // an account exists. This marker precedes every first-wallet credential.
@@ -345,11 +345,11 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
         throw StateError('Wallet must be unlocked to change the password.');
       }
       if (currentPassword == newPassword) {
-        throw ArgumentError(kWalletPasswordMustDifferMessage);
+        throw PasswordPolicyViolation(PasswordPolicyIssue.mustDiffer);
       }
-      final newPasswordError = validateRequiredWalletPassword(newPassword);
-      if (newPasswordError != null) {
-        throw ArgumentError(newPasswordError);
+      final newPasswordIssue = requiredWalletPasswordPolicyIssue(newPassword);
+      if (newPasswordIssue != null) {
+        throw PasswordPolicyViolation(newPasswordIssue);
       }
       await ref.read(passwordChangePreflightProvider)();
       _checkAuthenticationRequest(

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/custom_endpoint_settings_panel.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_latency_provider.dart';
 
 Widget _app(RpcEndpointConfig preference, {RpcEndpointConfig? effective}) =>
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: Scaffold(
         body: CurrentEndpointText(

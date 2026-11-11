@@ -1,4 +1,6 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
+import '../../../../core/navigation/mobile_destinations.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -193,16 +195,7 @@ class _MobileSwapReviewScreenState
           : SwapActivityReturnTarget.swap;
       switch (result) {
         case SwapStartedActivity(:final intentId):
-          if (widget.payMode) {
-            context.go('/pay/submitted/${Uri.encodeComponent(intentId)}');
-            return;
-          }
-          context.go(
-            swapActivityDetailUri(
-              intentId: intentId,
-              returnTarget: returnTarget,
-            ).toString(),
-          );
+          _openStartedIntent(intentId);
         case SwapStartedHardwareSigning(:final intentId):
           final pendingIntent = ref
               .read(swapStateProvider)
@@ -212,16 +205,20 @@ class _MobileSwapReviewScreenState
                 .read(accountProvider.notifier)
                 .hardwareSignerKindForAccount(pendingIntent.accountUuid ?? '');
             if (signerKind == HardwareSignerKind.ledger) {
-              await context.push<void>(
-                '/swap/ledger-sign',
-                extra: MobileSwapLedgerSignArgs.fromReview(
-                  intent: pendingIntent,
-                  returnTarget: returnTarget,
-                ),
-              );
+              final signingResult = await context
+                  .push<MobileSwapLedgerSignSuccess>(
+                    '/swap/ledger-sign',
+                    extra: MobileSwapLedgerSignArgs.fromReview(
+                      intent: pendingIntent,
+                      returnTarget: returnTarget,
+                    ),
+                  );
+              if (mounted && signingResult != null && _isCurrentReview) {
+                _openStartedIntent(intentId);
+              }
               return;
             }
-            final signingRoute = context.push<void>(
+            final signingRoute = context.push<MobileSwapKeystoneSignResult>(
               '/swap/keystone-sign',
               extra: MobileSwapKeystoneSignArgs.fromReview(
                 intent: pendingIntent,
@@ -229,12 +226,12 @@ class _MobileSwapReviewScreenState
               ),
             );
             _scheduleKeystoneSigningReviewInactive();
-            await signingRoute;
+            final signingResult = await signingRoute;
             if (!mounted) return;
-            final path = GoRouter.of(
-              context,
-            ).routerDelegate.currentConfiguration.uri.path;
-            if (path == (widget.payMode ? '/pay/review' : '/swap/review')) {
+            if (!_isCurrentReview) return;
+            if (signingResult is MobileSwapKeystoneSignSuccess) {
+              _openStartedIntent(intentId);
+            } else {
               ref
                   .read(swapStateProvider.notifier)
                   .clearPendingHardwareSigningIntent(intentId);
@@ -244,7 +241,7 @@ class _MobileSwapReviewScreenState
             }
             return;
           }
-          context.go(
+          context.pushReplacement(
             swapActivityDetailUri(
               intentId: intentId,
               returnTarget: returnTarget,
@@ -253,6 +250,24 @@ class _MobileSwapReviewScreenState
           );
       }
     }());
+  }
+
+  bool get _isCurrentReview =>
+      mobileVisiblePath(GoRouter.of(context)) ==
+      (widget.payMode ? '/pay/review' : '/swap/review');
+
+  void _openStartedIntent(String intentId) {
+    // Replace the completed review, leaving its composer below the receipt.
+    // Signing routes return here after saving the broadcast result so they
+    // cannot leave a completed review between the receipt and the composer.
+    context.pushReplacement(
+      widget.payMode
+          ? '/pay/submitted/${Uri.encodeComponent(intentId)}'
+          : swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.swap,
+            ).toString(),
+    );
   }
 
   void _scheduleKeystoneSigningReviewInactive() {
@@ -317,8 +332,8 @@ class _MobileSwapReviewScreenState
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
-              ? "You don't have enough ZEC for this payment. Try a smaller amount."
-              : "You don't have enough ZEC for this swap. Try a smaller amount."
+              ? context.l10n.commonPayInsufficientZec
+              : context.l10n.swapReviewInsufficientZecSwap
         : null;
     _ensureExpiryTicker(widget.payMode ? quote : null);
     final paymentQuoteExpired =
@@ -360,7 +375,9 @@ class _MobileSwapReviewScreenState
         child: Column(
           children: [
             MobileTopNav.back(
-              title: widget.payMode ? 'Review Payment' : 'Review quote',
+              title: widget.payMode
+                  ? context.l10n.commonReviewPayment
+                  : context.l10n.commonReviewQuote,
               onBack: _startIntentInFlight ? null : _returnToSwap,
             ),
             Expanded(
@@ -385,11 +402,13 @@ class _MobileSwapReviewScreenState
                             expired: paymentQuoteExpired,
                           ),
                           for (final message in [
-                            swapState.reviewAmountDifferenceWarning,
-                            swapState.statusError,
+                            swapState.reviewAmountDifferenceWarning(
+                              context.l10n,
+                            ),
+                            swapState.statusError?.text(context.l10n),
                             startBlockedReason,
                             if (inactiveReview)
-                              'This quote is no longer active.',
+                              context.l10n.swapReviewQuoteInactive,
                           ])
                             if (message != null) ...[
                               const SizedBox(height: AppSpacing.s),
@@ -413,11 +432,13 @@ class _MobileSwapReviewScreenState
                         expired: widget.payMode
                             ? paymentQuoteExpired
                             : swapState.quoteExpired,
-                        amountWarning: swapState.reviewAmountDifferenceWarning,
-                        startError: swapState.statusError,
+                        amountWarning: swapState.reviewAmountDifferenceWarning(
+                          context.l10n,
+                        ),
+                        startError: swapState.statusError?.text(context.l10n),
                         startBlockedReason: startBlockedReason,
                         inactiveMessage: inactiveReview
-                            ? 'This quote is no longer active.'
+                            ? context.l10n.swapReviewQuoteInactive
                             : null,
                         payFiatTextOverride: swapReviewFiatTextForAsset(
                           swapState,

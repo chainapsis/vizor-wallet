@@ -7,11 +7,14 @@ import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
-import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/viewing_key_content.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' show AccountViewingKeys;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 const _account = AccountInfo(uuid: 'target', name: 'Savings account', order: 0);
 final _full = 'uview1${'q' * 491}previewonly';
@@ -35,6 +38,7 @@ Future<void> _pump(
   var selectedType = type;
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => AppTheme(
         data: AppThemeData.dark,
         child: MediaQuery(
@@ -140,9 +144,12 @@ void main() {
     await _pump(tester, type: null);
     expect(find.byType(RequestQrSurface), findsNothing);
     expect(find.byKey(_copy), findsNothing);
-    expect(find.text(viewingKeyChoiceSharingWarning), findsOneWidget);
+    expect(
+      find.text(_en.settingsViewingKeyChoiceSharingWarning),
+      findsOneWidget,
+    );
     await _select(tester, true);
-    expect(find.text(viewingKeyChoiceSharingWarning), findsNothing);
+    expect(find.text(_en.settingsViewingKeyChoiceSharingWarning), findsNothing);
     expect(find.text('Incoming key'), findsOneWidget);
     expect(find.byKey(const ValueKey('viewing_key_choose_full')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('test_back')));
@@ -337,7 +344,9 @@ void main() {
   ) async {
     final handle = tester.ensureSemantics();
     await _pump(tester);
-    final warning = find.bySemanticsLabel(RegExp(viewingKeyWarningTitle));
+    final warning = find.bySemanticsLabel(
+      RegExp(_en.settingsViewingKeyWarningTitle),
+    );
     expect(warning, findsWidgets);
     expect(
       find.text('Share only with people or services you trust.'),
@@ -349,7 +358,10 @@ void main() {
       find.text('Share only with people or services you trust.'),
       findsNothing,
     );
-    expect(find.text(incomingViewingKeyWarningTitle), findsOneWidget);
+    expect(
+      find.text(_en.settingsViewingKeyIncomingWarningTitle),
+      findsOneWidget,
+    );
     expect(
       find.bySemanticsLabel(
         RegExp('Reveals past and future incoming payments'),

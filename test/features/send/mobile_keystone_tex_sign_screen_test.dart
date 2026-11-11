@@ -4,6 +4,7 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_keystone_sign_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   test('mobile TEX advances 1 of 2 to 2 of 2 and returns both rounds', () {
@@ -19,9 +20,9 @@ void main() {
     );
     final rounds = MobileKeystoneSigningRounds(args: args);
 
-    expect(rounds.title, 'Confirm transaction 1 of 2');
+    expect(rounds.title(testL10n), 'Confirm transaction 1 of 2');
     expect(rounds.add([1], [3]), isFalse);
-    expect(rounds.title, 'Confirm transaction 2 of 2');
+    expect(rounds.title(testL10n), 'Confirm transaction 2 of 2');
     expect(rounds.add([2], [4]), isTrue);
 
     final result = rounds.result();
@@ -49,7 +50,7 @@ void main() {
       ),
     );
 
-    expect(rounds.title, 'Confirm transaction');
+    expect(rounds.title(testL10n), 'Confirm transaction');
     expect(rounds.add([1], [2]), isTrue);
     expect(rounds.result().pcztWithProofs, [
       [1],

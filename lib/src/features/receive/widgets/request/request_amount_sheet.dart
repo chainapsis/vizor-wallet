@@ -17,6 +17,7 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart' show TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -77,10 +78,10 @@ class RequestAmountSheetCompose extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final amountError = request.amountError?.trim();
+    final amountError = request.amountError?.text(context.l10n);
 
     return MobileModalScaffold(
-      title: kRequestFlowTitle,
+      title: requestFlowTitle(context.l10n),
       onClose: onClose ?? _noop,
       bottomPadding: AppSpacing.base,
       constrainBody: true,
@@ -146,8 +147,8 @@ class RequestAmountSheetCompose extends StatelessWidget {
             expand: true,
             constrainContent: true,
             onPressed: request.isReady ? (onCreateRequest ?? _noop) : null,
-            child: const Text(
-              'Create request',
+            child: Text(
+              context.l10n.receiveRequestCreate,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -192,7 +193,7 @@ class RequestAmountSheetResult extends StatelessWidget {
     final onShare = onShareRequest;
 
     return MobileModalScaffold(
-      title: kRequestFlowTitle,
+      title: requestFlowTitle(context.l10n),
       onClose: onClose ?? _noop,
       leading: _BackChevron(onTap: onBack),
       bottomPadding: AppSpacing.base,
@@ -218,7 +219,7 @@ class RequestAmountSheetResult extends StatelessWidget {
           RequestQrExportButton(
             key: const ValueKey('request_share_button'),
             uri: uri,
-            label: 'Share request',
+            label: context.l10n.receiveRequestShare,
             icon: AppIcons.share,
             onBytes: onShare,
             onError: onShareError,
@@ -226,7 +227,7 @@ class RequestAmountSheetResult extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           Semantics(
             button: true,
-            label: 'Copy link',
+            label: context.l10n.commonCopyLink,
             excludeSemantics: true,
             child: AppButton(
               key: const ValueKey('request_copy_link_button'),
@@ -234,8 +235,8 @@ class RequestAmountSheetResult extends StatelessWidget {
               expand: true,
               constrainContent: true,
               onPressed: request.isReady ? (onCopyLink ?? _noop) : null,
-              child: const Text(
-                'Copy link',
+              child: Text(
+                context.l10n.commonCopyLink,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -266,7 +267,7 @@ class _SerifAmountDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final hasError = request.amountError?.trim().isNotEmpty ?? false;
+    final hasError = request.amountError != null;
     final text = request.fieldText.trim();
     final amountStyle = AppTypography.displayLarge.copyWith(
       color: hasError
@@ -321,7 +322,7 @@ class _SerifAmountDisplay extends StatelessWidget {
         ),
         if (!request.amountInputIsUsd) ...[
           const SizedBox(width: AppSpacing.xs),
-          Text('ZEC', style: unitStyle),
+          Text('ZEC', style: unitStyle), // l10n-ignore: currency code
         ],
       ],
     );
@@ -408,7 +409,9 @@ class _AmountUnitToggle extends StatelessWidget {
       child: Semantics(
         button: true,
         enabled: enabled,
-        label: enterUsdMode ? 'Enter amount in USD' : 'Enter amount in ZEC',
+        label: enterUsdMode
+            ? context.l10n.commonEnterAmountInUsd
+            : context.l10n.receiveRequestEnterZec,
         child: GestureDetector(
           key: const ValueKey('request_amount_mode_toggle'),
           behavior: HitTestBehavior.opaque,
@@ -488,7 +491,7 @@ class RequestMessageRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  kRequestAddMessageLabel,
+                  context.l10n.commonAddAMessage,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
@@ -523,7 +526,7 @@ class RequestMessageRow extends StatelessWidget {
     if (onTap == null) return row;
     return Semantics(
       button: true,
-      label: kRequestAddMessageLabel,
+      label: context.l10n.commonAddAMessage,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
@@ -543,7 +546,7 @@ class _BackChevron extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: 'Back',
+      label: context.l10n.commonBack,
       child: GestureDetector(
         key: const ValueKey('request_sheet_back'),
         behavior: HitTestBehavior.opaque,

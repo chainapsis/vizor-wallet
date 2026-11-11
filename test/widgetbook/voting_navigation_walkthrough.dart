@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/legacy_material_theme.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _mobile = kAppFormFactor == AppFormFactor.mobile;
 
@@ -26,6 +27,7 @@ void votingWalkthroughTests() {
         addTearDown(tester.view.resetDevicePixelRatio);
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             debugShowCheckedModeBanner: false,
             theme: buildLegacyDarkTheme(),
             builder: (context, child) =>

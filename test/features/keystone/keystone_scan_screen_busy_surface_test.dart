@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen
 import 'package:zcash_wallet/src/features/voting/screens/keystone_voting_scan_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/payment_uri_busy_surface_expectations.dart';
@@ -61,7 +62,10 @@ Widget Function(Widget) _host(ProviderContainer container) =>
       container: container,
       child: AppTheme(
         data: AppThemeData.dark,
-        child: MaterialApp(home: Scaffold(body: child)),
+        child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
+          home: Scaffold(body: child),
+        ),
       ),
     );
 

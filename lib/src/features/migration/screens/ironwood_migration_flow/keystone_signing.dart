@@ -285,7 +285,7 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 255),
             child: Text(
-              'Having issues with scanning the QR code?',
+              context.l10n.migrationKeystoneScanIssuesTitle,
               textAlign: TextAlign.center,
               style: AppTypography.bodyLarge.copyWith(
                 color: colors.text.accent,
@@ -296,8 +296,7 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.base),
         Text(
-          'There may be a newer version of Keystone Cypherpunk firmware '
-          'available. Check if you have the latest version.',
+          context.l10n.migrationKeystoneScanIssuesBody,
           textAlign: TextAlign.center,
           style: AppTypography.bodyMediumStrong.copyWith(
             color: colors.text.accent,
@@ -308,7 +307,7 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
           expand: true,
           height: 50,
           onPressed: onConfirm,
-          child: const Text('Ok, I will check'),
+          child: Text(context.l10n.migrationKeystoneScanIssuesConfirm),
         ),
       ],
     );
@@ -323,11 +322,12 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     _KeystonePrivateSignStep.batch => 'batch',
   };
 
-  String get toolbarLabel => switch (this) {
-    _KeystonePrivateSignStep.immediate => 'Migration Options',
-    _KeystonePrivateSignStep.combined => 'Review migration',
-    _KeystonePrivateSignStep.denominations => 'Review migration',
-    _KeystonePrivateSignStep.batch => 'Migration status',
+  String toolbarLabel(AppLocalizations l10n) => switch (this) {
+    _KeystonePrivateSignStep.immediate => l10n.migrationBackOptions,
+    _KeystonePrivateSignStep.combined => l10n.migrationKeystoneToolbarReview,
+    _KeystonePrivateSignStep.denominations =>
+      l10n.migrationKeystoneToolbarReview,
+    _KeystonePrivateSignStep.batch => l10n.migrationKeystoneToolbarStatus,
   };
 
   String get previousRoute => switch (this) {
@@ -337,30 +337,27 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     _KeystonePrivateSignStep.batch => '/migration/private/status',
   };
 
-  String get previousButtonLabel => switch (this) {
-    _KeystonePrivateSignStep.immediate => 'Back to review',
-    _KeystonePrivateSignStep.combined => 'Back to review',
-    _KeystonePrivateSignStep.denominations => 'Back to review',
-    _KeystonePrivateSignStep.batch => 'Back to status',
-  };
-
-  String get qrTitle => switch (this) {
-    _KeystonePrivateSignStep.immediate => 'Confirm Migration with Keystone',
-    _KeystonePrivateSignStep.combined => 'Sign migration',
-    _KeystonePrivateSignStep.denominations => 'Sign private split',
-    _KeystonePrivateSignStep.batch => 'Sign Ironwood batch',
-  };
-
-  String get qrBody => switch (this) {
-    _KeystonePrivateSignStep.immediate =>
-      'Scan the QR code with your Keystone wallet to confirm migration.',
-    _KeystonePrivateSignStep.combined =>
-      'Scan this request with Keystone to sign the preparation transactions '
-          'and migration batches together.',
+  String previousButtonLabel(AppLocalizations l10n) => switch (this) {
+    _KeystonePrivateSignStep.immediate => l10n.migrationKeystoneBackToReview,
+    _KeystonePrivateSignStep.combined => l10n.migrationKeystoneBackToReview,
     _KeystonePrivateSignStep.denominations =>
-      'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.',
-    _KeystonePrivateSignStep.batch =>
-      'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.',
+      l10n.migrationKeystoneBackToReview,
+    _KeystonePrivateSignStep.batch => l10n.migrationKeystoneBackToStatus,
+  };
+
+  String qrTitle(AppLocalizations l10n) => switch (this) {
+    _KeystonePrivateSignStep.immediate => l10n.migrationKeystoneConfirmTitle,
+    _KeystonePrivateSignStep.combined => l10n.migrationKeystoneSignMigration,
+    _KeystonePrivateSignStep.denominations =>
+      l10n.migrationKeystoneSignPrivateSplit,
+    _KeystonePrivateSignStep.batch => l10n.migrationKeystoneSignBatch,
+  };
+
+  String qrBody(AppLocalizations l10n) => switch (this) {
+    _KeystonePrivateSignStep.immediate => l10n.migrationKeystoneQrBodyImmediate,
+    _KeystonePrivateSignStep.combined => l10n.migrationKeystoneQrBodyCombined,
+    _KeystonePrivateSignStep.denominations => l10n.migrationKeystoneQrBodyRound,
+    _KeystonePrivateSignStep.batch => l10n.migrationKeystoneQrBodyRound,
   };
 
   Future<rust_sync.KeystoneMigrationSigningRequest> prepare(
@@ -677,7 +674,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       if (!mounted) return;
       setState(() {
         _stage = _KeystoneDenominationSignStage.failed;
-        _error = ironwoodMigrationKeystoneSigningErrorMessage(e);
+        _error = ironwoodMigrationKeystoneSigningErrorMessage(context.l10n, e);
       });
     }
   }
@@ -697,9 +694,13 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     return _signingBatchRequests[_signingRoundIndex];
   }
 
-  String? get _signingRoundLabel => _signingRounds.length <= 1
+  String? _signingRoundLabel(AppLocalizations l10n) =>
+      _signingRounds.length <= 1
       ? null
-      : 'Round ${_signingRoundIndex + 1} of ${_signingRounds.length}';
+      : l10n.migrationKeystoneRound(
+          (_signingRoundIndex + 1).toString(),
+          _signingRounds.length.toString(),
+        );
 
   /// How many transactions the QR currently on screen signs.
   ///
@@ -707,18 +708,20 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   /// compact and resolved request sizing and consumed by the QR encoder, so
   /// the current round's length is the real message count for this QR and the
   /// flattened total is the request's message count.
-  String? get _signingMessageCountLabel {
+  String? _signingMessageCountLabel(AppLocalizations l10n) {
     final round = _currentSigningRound;
     if (round == null || round.isEmpty) return null;
     final total = _request?.messages.length ?? round.length;
     if (round.length >= total) {
-      return 'Signs ${_transactionCountText(total)}';
+      return l10n.migrationKeystoneSignsAll(
+        l10n.migrationKeystoneTransactions(total),
+      );
     }
-    return 'Signs ${round.length} of ${_transactionCountText(total)}';
+    return l10n.migrationKeystoneSignsSome(
+      round.length.toString(),
+      l10n.migrationKeystoneTransactions(total),
+    );
   }
-
-  String _transactionCountText(int count) =>
-      count == 1 ? '1 transaction' : '$count transactions';
 
   bool get _requiresSigningPlanConfirmation =>
       !widget.mobileLayout && widget.step == _KeystonePrivateSignStep.combined;
@@ -776,7 +779,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         setState(() {
           _stage = _KeystoneDenominationSignStage.scanning;
           _decoding = false;
-          _error = ironwoodMigrationKeystoneProofFailureMessage(proofStatus);
+          _error = ironwoodMigrationKeystoneProofFailureMessage(
+            context.l10n,
+            proofStatus,
+          );
         });
         return;
       }
@@ -798,7 +804,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           _stage = _KeystoneDenominationSignStage.waitingForProofs;
           _pendingSignedMessages = signedMessages;
           _decoding = false;
-          _error = ironwoodMigrationKeystoneProofWaitingMessage(proofStatus);
+          _error = ironwoodMigrationKeystoneProofWaitingMessage(
+            context.l10n,
+            proofStatus,
+          );
         });
         return;
       }
@@ -813,7 +822,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       setState(() {
         _stage = _KeystoneDenominationSignStage.scanning;
         _decoding = false;
-        _error = ironwoodMigrationKeystoneSigningErrorMessage(e);
+        _error = ironwoodMigrationKeystoneSigningErrorMessage(context.l10n, e);
       });
     }
   }
@@ -850,7 +859,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         _proofStatus = status;
         if (status.isFailed) {
           _pendingSignedMessages = null;
-          _error = ironwoodMigrationKeystoneProofFailureMessage(status);
+          _error = ironwoodMigrationKeystoneProofFailureMessage(
+            context.l10n,
+            status,
+          );
           if (_stage == _KeystoneDenominationSignStage.waitingForProofs) {
             _stage = (_request?.messages.isEmpty ?? true)
                 ? _KeystoneDenominationSignStage.failed
@@ -859,7 +871,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         } else if (_stage == _KeystoneDenominationSignStage.waitingForProofs) {
           _error = status.isReady
               ? null
-              : ironwoodMigrationKeystoneProofWaitingMessage(status);
+              : ironwoodMigrationKeystoneProofWaitingMessage(
+                  context.l10n,
+                  status,
+                );
         }
       });
 
@@ -882,7 +897,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         return;
       }
       setState(() {
-        _error = ironwoodMigrationKeystoneSigningErrorMessage(e);
+        _error = ironwoodMigrationKeystoneSigningErrorMessage(context.l10n, e);
       });
     }
   }
@@ -948,7 +963,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         setState(() {
           _stage = _KeystoneDenominationSignStage.waitingForProofs;
           _decoding = false;
-          _error = ironwoodMigrationKeystoneProofWaitingMessage(_proofStatus);
+          _error = ironwoodMigrationKeystoneProofWaitingMessage(
+            context.l10n,
+            _proofStatus,
+          );
         });
         return;
       }
@@ -962,8 +980,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           _decoding = false;
           // Rust drops a request held for the upgrade; say why.
           _error =
-              networkUpgradeHoldMessage(e) ??
-              'This Keystone signing request can no longer be used. Prepare it again.';
+              networkUpgradeHoldMessage(context.l10n, e) ??
+              context.l10n.migrationKeystoneRequestUnusable;
         });
         return;
       }
@@ -974,7 +992,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             : _KeystoneDenominationSignStage.scanning;
         _pendingSignedMessages = null;
         _decoding = false;
-        _error = ironwoodMigrationKeystoneSigningErrorMessage(e);
+        _error = ironwoodMigrationKeystoneSigningErrorMessage(context.l10n, e);
       });
     }
   }
@@ -1160,7 +1178,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       }
       setState(() {
         _cancelling = false;
-        _error = 'Could not cancel the signing request. Try again.';
+        _error = context.l10n.migrationKeystoneCancelFailed;
       });
       showAppToast(
         context,
@@ -1191,7 +1209,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         // If the caller cannot finish navigation after cleanup, this screen
         // remains recoverable instead of displaying an unusable request QR.
         _stage = _KeystoneDenominationSignStage.failed;
-        _error = 'This signing request was cancelled. Prepare it again.';
+        _error = context.l10n.migrationKeystoneRequestCancelled;
       }
     });
     final previousRoute = switch ((widget.mobileLayout, widget.step)) {
@@ -1216,7 +1234,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   void _handleDecodeError(Object error) {
     if (!mounted || _cancelling || _decoding) return;
-    final message = ironwoodMigrationKeystoneScanErrorMessage(error);
+    final message = ironwoodMigrationKeystoneScanErrorMessage(
+      context.l10n,
+      error,
+    );
     if (_error == message) return;
     setState(() {
       _error = message;
@@ -1228,17 +1249,20 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     _proofPollTimer = null;
   }
 
-  String? get _proofStatusText {
+  String? _proofStatusText(AppLocalizations l10n) {
     final status = _proofStatus;
     if (status == null) return null;
     if (status.isFailed) {
-      return ironwoodMigrationKeystoneProofFailureMessage(status);
+      return ironwoodMigrationKeystoneProofFailureMessage(l10n, status);
     }
     if (status.isReady) return null;
     if (status.totalCount > 0) {
-      return 'Preparing local proofs ${status.readyCount}/${status.totalCount}';
+      return l10n.migrationKeystoneProofsProgress(
+        status.readyCount.toString(),
+        status.totalCount.toString(),
+      );
     }
-    return 'Preparing local proofs';
+    return l10n.migrationKeystoneProofsPreparing;
   }
 
   @override
@@ -1262,8 +1286,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     return _IronwoodMigrationFrame(
       toolbar: _keystoneDenominationToolbar(
         label: _stage == _KeystoneDenominationSignStage.scanning
-            ? 'Request QR'
-            : widget.step.toolbarLabel,
+            ? context.l10n.migrationKeystoneRequestQr
+            : widget.step.toolbarLabel(context.l10n),
         onBack: _handleBack,
       ),
       disableSidebarActions: true,
@@ -1313,7 +1337,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
     return _IronwoodMigrationFrame(
       toolbar: _keystoneDenominationToolbar(
-        label: 'Ironwood Migration',
+        label: context.l10n.migrationFlowTitle,
         onBack: () => unawaited(_returnToReview()),
       ),
       disableSidebarActions: true,
@@ -1328,16 +1352,16 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 phase: modalPhase,
                 urParts: _urParts,
                 error: _error,
-                title: 'Confirm Migration with Keystone',
-                subtitle: 'Scan with your Keystone',
+                title: context.l10n.migrationKeystoneConfirmTitle,
+                subtitle: context.l10n.commonScanWithYourKeystone,
                 instruction: failed
                     ? null
-                    : 'After you scanned, click Get signature.',
+                    : context.l10n.commonKeystoneAfterScan,
                 primaryLabel: failed
-                    ? 'Try again'
+                    ? context.l10n.commonTryAgain
                     : ready
-                    ? 'Get signature'
-                    : 'Preparing',
+                    ? context.l10n.commonGetSignature
+                    : context.l10n.commonPreparing,
                 onPrimary: failed
                     ? () => unawaited(_retryRequest())
                     : ready && _urParts.isNotEmpty
@@ -1349,7 +1373,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                         });
                       }
                     : null,
-                secondaryLabel: 'Cancel',
+                secondaryLabel: context.l10n.commonCancel,
                 onSecondary: () => unawaited(_returnToReview()),
               ),
             ),
@@ -1404,7 +1428,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 child: Column(
                   children: [
                     MobileTopNav.back(
-                      title: 'Keystone migration',
+                      title: context.l10n.migrationKeystoneMobileTitle,
                       onBack: () => unawaited(_returnToReview()),
                     ),
                     Expanded(child: _buildMobileFailureContent(context)),
@@ -1426,8 +1450,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     return MobileIronwoodKeystoneSigningView(
       state: MobileIronwoodKeystoneSigningViewState.ready,
       round: round,
-      signingRoundLabel: _signingRoundLabel,
-      signingMessageCountLabel: _signingMessageCountLabel,
+      signingRoundLabel: _signingRoundLabel(context.l10n),
+      signingMessageCountLabel: _signingMessageCountLabel(context.l10n),
       qrCode: KeystonePcztQrStage(
         key: const ValueKey('mobile_ironwood_keystone_qr'),
         phase: KeystonePcztQrStagePhase.ready,
@@ -1496,10 +1520,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           onDecodeError: _handleDecodeError,
           onComplete: (result) => unawaited(_handleScanComplete(result)),
           decodingLabel: waitingForProofs
-              ? 'Preparing local proofs...'
-              : 'Reading signature...',
-          unavailableMessage:
-              'Allow camera access to scan the signed Keystone QR.',
+              ? context.l10n.migrationKeystoneProofsPreparingEllipsis
+              : context.l10n.commonReadingSignature,
+          unavailableMessage: context.l10n.migrationKeystoneCameraAccess,
           cardWidth: constraints.maxWidth,
           cameraHeight: constraints.maxHeight,
           fullBleedMobile: true,
@@ -1513,11 +1536,11 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       scannerMessage:
           _error ??
           (completing
-              ? 'Applying the Keystone signature.'
+              ? context.l10n.migrationKeystoneApplyingSignature
               : waitingForProofs
-              ? 'Signature captured. Waiting for local proofs.'
-              : 'Scan the new signed QR shown on Keystone.'),
-      signingRoundLabel: _signingRoundLabel,
+              ? context.l10n.migrationKeystoneWaitingForProofsShort
+              : context.l10n.migrationKeystoneScanNewQr),
+      signingRoundLabel: _signingRoundLabel(context.l10n),
       scanProgress: completing || waitingForProofs || _scanProgress <= 0
           ? null
           : _scanProgress / 100,
@@ -1571,7 +1594,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           shadowColor: Colors.transparent,
           insetPadding: EdgeInsets.zero,
           child: Semantics(
-            label: 'Enlarged Keystone request QR',
+            label: context.l10n.migrationKeystoneEnlargedQr,
             child: KeystonePcztQrStage(
               key: const ValueKey('keystone_migration_enlarged_qr'),
               phase: KeystonePcztQrStagePhase.ready,
@@ -1595,7 +1618,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           const AppIcon(AppIcons.warning, size: 32),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'Keystone signing unavailable',
+            context.l10n.migrationKeystoneUnavailableTitle,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -1603,7 +1626,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            _error ?? 'Try again after sync finishes.',
+            _error ?? context.l10n.migrationKeystoneTryAfterSync,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -1614,14 +1637,14 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             expand: true,
             onPressed: () => unawaited(_prepareRequest()),
             leading: const AppIcon(AppIcons.renew, size: 20),
-            child: const Text('Try again'),
+            child: Text(context.l10n.commonTryAgain),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
             expand: true,
             variant: AppButtonVariant.ghost,
             onPressed: () => unawaited(_returnToReview()),
-            child: Text(widget.step.previousButtonLabel),
+            child: Text(widget.step.previousButtonLabel(context.l10n)),
           ),
         ],
       ),
@@ -1632,15 +1655,15 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     final colors = context.colors;
     final signingRoundCount = _signingRounds.length;
     final transactionCount = _request?.messages.length ?? 0;
-    final proofStatusText = _proofStatusText;
+    final proofStatusText = _proofStatusText(context.l10n);
     final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
     final qrPayloadsReady = _urParts.isNotEmpty;
-    final roundLabel = signingRoundCount == 1
-        ? '1 QR signing round'
-        : '$signingRoundCount QR signing rounds';
-    final transactionLabel = transactionCount == 1
-        ? '1 transaction total'
-        : '$transactionCount transactions total';
+    final roundLabel = context.l10n.migrationKeystoneRoundCount(
+      signingRoundCount,
+    );
+    final transactionLabel = context.l10n.migrationKeystoneTransactionTotal(
+      transactionCount,
+    );
 
     return Padding(
       key: const ValueKey('keystone_migration_signing_plan_confirmation'),
@@ -1662,7 +1685,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
-            'Keystone signing plan',
+            context.l10n.migrationKeystonePlanTitle,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -1707,8 +1730,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           SizedBox(
             width: 360,
             child: Text(
-              'Each round uses one animated request QR and one signed '
-              'response QR.',
+              context.l10n.migrationKeystonePlanBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
@@ -1729,6 +1751,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 ),
               ),
             ),
+            if (proofFailed)
+              ...untranslatedDetailsButton(_proofStatus?.message),
           ],
           const SizedBox(height: AppSpacing.lg),
           AppButton(
@@ -1740,7 +1764,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 ? const AppIcon(AppIcons.chevronForward, size: 20)
                 : null,
             child: Text(
-              qrPayloadsReady ? 'Begin signing' : 'Preparing QR codes...',
+              qrPayloadsReady
+                  ? context.l10n.migrationKeystoneBeginSigning
+                  : context.l10n.migrationKeystonePreparingQr,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -1749,7 +1775,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             variant: AppButtonVariant.ghost,
             height: 44,
             minWidth: 230,
-            child: Text(widget.step.previousButtonLabel),
+            child: Text(widget.step.previousButtonLabel(context.l10n)),
           ),
         ],
       ),
@@ -1758,8 +1784,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   Widget _buildQrContent(BuildContext context) {
     final colors = context.colors;
-    final signingRoundLabel = _signingRoundLabel;
-    final proofStatusText = _proofStatusText;
+    final signingRoundLabel = _signingRoundLabel(context.l10n);
+    final proofStatusText = _proofStatusText(context.l10n);
     final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.xl),
@@ -1778,8 +1804,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ],
           Text(
             widget.step == _KeystonePrivateSignStep.immediate
-                ? widget.step.qrTitle
-                : 'Scan request with Keystone',
+                ? widget.step.qrTitle(context.l10n)
+                : context.l10n.migrationKeystoneScanRequest,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -1789,7 +1815,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           SizedBox(
             width: 360,
             child: Text(
-              widget.step.qrBody,
+              widget.step.qrBody(context.l10n),
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
@@ -1798,7 +1824,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
           const SizedBox(height: AppSpacing.lg),
           Semantics(
-            label: 'Enlarge Keystone request QR',
+            label: context.l10n.migrationKeystoneEnlargeQr,
             button: true,
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
@@ -1820,7 +1846,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
-            'Click QR to enlarge',
+            context.l10n.migrationKeystoneClickToEnlarge,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -1840,6 +1866,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 ),
               ),
             ),
+            if (proofFailed)
+              ...untranslatedDetailsButton(_proofStatus?.message),
           ],
           const SizedBox(height: AppSpacing.lg),
           AppButton(
@@ -1855,7 +1883,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             height: 44,
             minWidth: 230,
             trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-            child: const Text('Scan Keystone signature'),
+            child: Text(context.l10n.migrationKeystoneScanSignature),
           ),
           const SizedBox(height: AppSpacing.sm),
           AppButton(
@@ -1863,7 +1891,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             variant: AppButtonVariant.ghost,
             height: 44,
             minWidth: 230,
-            child: Text(widget.step.previousButtonLabel),
+            child: Text(widget.step.previousButtonLabel(context.l10n)),
           ),
         ],
       ),
@@ -1872,7 +1900,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   Widget _buildScannerContent(BuildContext context) {
     final colors = context.colors;
-    final signingRoundLabel = _signingRoundLabel;
+    final signingRoundLabel = _signingRoundLabel(context.l10n);
     final completing = _stage == _KeystoneDenominationSignStage.completing;
     final waitingForProofs =
         _stage == _KeystoneDenominationSignStage.waitingForProofs;
@@ -1897,8 +1925,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ],
           Text(
             widget.step == _KeystonePrivateSignStep.immediate
-                ? 'Scan QR Code'
-                : 'Scan Keystone signature',
+                ? context.l10n.commonScanQrCode
+                : context.l10n.migrationKeystoneScanSignature,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -1911,12 +1939,12 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               widget.step == _KeystonePrivateSignStep.immediate &&
                       !completing &&
                       !waitingForProofs
-                  ? 'Prepare your Keystone wallet'
+                  ? context.l10n.commonPrepareYourKeystoneWallet
                   : completing
-                  ? 'Applying the Keystone signature to your migration plan.'
+                  ? context.l10n.migrationKeystoneApplyingToPlan
                   : waitingForProofs
-                  ? 'Signature captured. Vizor will continue when local proofs are ready.'
-                  : 'Scan the new signed QR shown on Keystone.',
+                  ? context.l10n.migrationKeystoneWaitingForProofsLong
+                  : context.l10n.migrationKeystoneScanNewQr,
               textAlign: TextAlign.center,
               style:
                   (widget.step == _KeystonePrivateSignStep.immediate
@@ -1931,7 +1959,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           else
             KeystoneQrScannerCard(
               expectedUrType: _keystoneMigrationSignBatchResultUrType,
-              decoding: _decoding,
+              // The signature was read; the card must not start a new scan.
+              decoding: _decoding || waitingForProofs,
               error: _error,
               onProgress: (_) {
                 if (_pendingSignedMessages != null) return;
@@ -1942,10 +1971,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               },
               onDecodeError: _handleDecodeError,
               onComplete: (result) => unawaited(_handleScanComplete(result)),
-              decodingLabel: 'Reading signature...',
-              unavailableMessage:
-                  'Keystone migration signing uses camera QR scanning only. '
-                  'Connect a camera and try again.',
+              decodingLabel: context.l10n.commonReadingSignature,
+              unavailableMessage: context.l10n.migrationKeystoneCameraOnly,
             ),
         ],
       ),
@@ -1961,7 +1988,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Keystone signing unavailable',
+              context.l10n.migrationKeystoneUnavailableTitle,
               textAlign: TextAlign.center,
               style: AppTypography.headlineLarge.copyWith(
                 color: colors.text.accent,
@@ -1971,7 +1998,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             SizedBox(
               width: 360,
               child: Text(
-                _error ?? 'Try again after sync finishes.',
+                _error ?? context.l10n.migrationKeystoneTryAfterSync,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
@@ -1983,14 +2010,14 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               onPressed: () => unawaited(_prepareRequest()),
               minWidth: 230,
               leading: const AppIcon(AppIcons.renew, size: 20),
-              child: const Text('Try again'),
+              child: Text(context.l10n.commonTryAgain),
             ),
             const SizedBox(height: AppSpacing.sm),
             AppButton(
               onPressed: () => unawaited(_returnToReview()),
               variant: AppButtonVariant.ghost,
               minWidth: 230,
-              child: Text(widget.step.previousButtonLabel),
+              child: Text(widget.step.previousButtonLabel(context.l10n)),
             ),
           ],
         ),
@@ -2044,14 +2071,14 @@ class _ImmediateKeystoneScannerPreviewCard extends StatelessWidget {
               AppIcon(AppIcons.camera, size: 18, color: colors.icon.regular),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Camera',
+                context.l10n.commonCamera,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
               ),
               const Spacer(),
               Text(
-                'Face Time HD Camera (Default)',
+                'Face Time HD Camera (Default)', // l10n-ignore: sample device name
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -2224,36 +2251,43 @@ bool ironwoodMigrationKeystoneProofShouldWait(
 
 @visibleForTesting
 String ironwoodMigrationKeystoneProofWaitingMessage(
+  AppLocalizations l10n,
   rust_sync.KeystoneMigrationProofStatus? status,
 ) {
   if (status != null && status.totalCount > 0) {
-    return 'Signature captured. Vizor is still preparing local proofs '
-        '(${status.readyCount}/${status.totalCount}). Keep this screen open.';
+    return l10n.migrationKeystoneProofWaitingProgress(
+      status.readyCount.toString(),
+      status.totalCount.toString(),
+    );
   }
-  return 'Signature captured. Vizor is still preparing local proofs. '
-      'Keep this screen open.';
+  return l10n.migrationKeystoneProofWaiting;
 }
 
 @visibleForTesting
 String ironwoodMigrationKeystoneProofFailureMessage(
+  AppLocalizations l10n,
   rust_sync.KeystoneMigrationProofStatus? status,
 ) {
-  final message = status?.message?.trim();
-  if (message != null && message.isNotEmpty) return message;
-  return 'Vizor could not prepare local proofs. Go back and prepare this request again.';
+  // Rust's reason is untranslated, so only the log keeps it.
+  logUntranslatedText(status?.message ?? '');
+  return l10n.migrationKeystoneProofFailed;
 }
 
 @visibleForTesting
-String ironwoodMigrationKeystoneScanErrorMessage(Object error) {
+String ironwoodMigrationKeystoneScanErrorMessage(
+  AppLocalizations l10n,
+  Object error,
+) {
   final message = error.toString();
-  if (message.contains('Unexpected UR type') &&
+  // The received UR type sits in the message; it is protocol data, not copy.
+  if (isUnexpectedUrTypeError(error) &&
       message.contains(_keystoneMigrationLegacySignResultUrType)) {
-    return _keystoneMigrationFirmwareUpdateError;
+    return l10n.migrationKeystoneFirmwareUpdate;
   }
-  if (message.contains('Unexpected UR type')) {
-    return 'Open the signed migration QR on Keystone, then scan again.';
+  if (isUnexpectedUrTypeError(error)) {
+    return l10n.migrationKeystoneOpenSignedQr;
   }
-  return 'Keep the QR code steady and fully visible.';
+  return l10n.commonKeepQrSteady;
 }
 
 bool _keystoneMigrationProofStillPendingError(Object error) {
@@ -2271,32 +2305,34 @@ bool _keystoneMigrationRequestMissingError(Object error) {
 }
 
 @visibleForTesting
-String ironwoodMigrationKeystoneSigningErrorMessage(Object error) {
-  final upgradeHold = networkUpgradeHoldMessage(error);
+String ironwoodMigrationKeystoneSigningErrorMessage(
+  AppLocalizations l10n,
+  Object error,
+) {
+  final upgradeHold = networkUpgradeHoldMessage(l10n, error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('batch result request id') &&
       lower.contains('does not match')) {
-    return 'This signed QR is from another round. Go back, scan the current '
-        'request with Keystone, then scan its new signed QR.';
+    return l10n.migrationKeystoneWrongRound;
   }
   if (lower.contains('not a keystone')) {
-    return 'Use a Keystone account to sign this migration.';
+    return l10n.migrationKeystoneNotKeystone;
   }
   if (lower.contains('sync')) {
-    return 'Wait for sync to finish, then try again.';
+    return l10n.migrationErrorWaitForSync;
   }
   if (lower.contains('password') ||
       lower.contains('secret storage') ||
       lower.contains('unlocked session')) {
-    return 'Unlock Vizor before signing migration.';
+    return l10n.migrationKeystoneUnlockFirst;
   }
   if (lower.contains('request') && lower.contains('not found')) {
-    return 'This Keystone signing request expired. Prepare it again.';
+    return l10n.migrationKeystoneRequestExpired;
   }
   if (lower.contains('signature') || lower.contains('qr')) {
-    return 'Keystone signature could not be applied.';
+    return l10n.commonKeystoneSignatureCouldNotBeApplied;
   }
-  return 'Keystone signing could not be prepared. Try again.';
+  return l10n.migrationKeystonePrepareFailed;
 }

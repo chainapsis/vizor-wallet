@@ -83,10 +83,11 @@ String _migrationDisplayZec(BigInt zatoshi) {
 }
 
 String _migrationArrivalLabel(
+  AppLocalizations l10n,
   rust_sync.OrchardMigrationPrivatePlan plan,
   BlockTimeEstimate blockTimes,
 ) {
-  return migrationPlanCompletionTimingLabel(plan, blockTimes: blockTimes);
+  return migrationPlanCompletionTimingLabel(l10n, plan, blockTimes: blockTimes);
 }
 
 Future<void> _openIronwoodReleaseNotes() async {

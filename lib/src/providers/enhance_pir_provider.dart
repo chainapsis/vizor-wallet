@@ -6,6 +6,7 @@ import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/network_config.dart';
 import '../core/config/swap_feature_config.dart';
+import '../core/l10n/l10n.dart';
 import '../core/storage/enhance_pir_preference_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
@@ -169,22 +170,34 @@ final privateQueriesTurnOffDisclosesProvider = Provider<bool>((ref) {
   return hasAccounts && ref.watch(enhancePirProvider);
 });
 
-/// Transition feedback while the setting changes.
-const kEnhancePirChangingMessage = 'Changing setting…';
+/// Feedback while Private queries changes, or after it could not.
+enum EnhancePirTransition {
+  /// The setting is changing.
+  changing,
 
-/// Feedback when the setting could not change at all.
-const kEnhancePirUnchangedMessage = 'Setting unchanged. Try again.';
+  /// The setting could not change at all.
+  unchanged,
 
-/// Feedback when private queries are on but the wallet's transparent policy
-/// could not be raised yet. The startup and sync raise paths retry it.
-const kTransparentRaisePendingMessage =
-    'Private queries are on. Private transparent recovery could not start '
-    'yet and will be retried.';
+  /// Private queries are on but the wallet's transparent policy could not be
+  /// raised yet. The startup and sync raise paths retry it.
+  raisePending,
 
-/// Feedback when turning off failed. Both query paths remain private and
-/// the same toggle can retry the turn-off.
-const kTransparentOptOutPendingMessage =
-    'Private queries are still on. Try turning them off again.';
+  /// Turning off failed. Both query paths remain private and the same toggle
+  /// can retry the turn-off.
+  optOutPending,
+
+  /// A NEAR swap privacy choice for an unreadable setting applies but couldn't
+  /// be saved.
+  unsavedForSession;
+
+  String message(AppLocalizations l10n) => switch (this) {
+    EnhancePirTransition.changing => l10n.enhancePirChanging,
+    EnhancePirTransition.unchanged => l10n.enhancePirUnchanged,
+    EnhancePirTransition.raisePending => l10n.enhancePirRaisePending,
+    EnhancePirTransition.optOutPending => l10n.enhancePirOptOutPending,
+    EnhancePirTransition.unsavedForSession => l10n.nearSwapPrivacyUnsaved,
+  };
+}
 
 /// Private queries are an **install-scoped** preference: they are chosen
 /// once and apply to every wallet that lives on this device, including a
@@ -212,14 +225,17 @@ class EnhancePirNotifier extends Notifier<bool> {
     await _transition(() => effectiveEnabled ? _enable() : _disable());
   }
 
-  Future<void> _transition(Future<String?> Function() change) async {
+  Future<void> _transition(
+    Future<EnhancePirTransition?> Function() change,
+  ) async {
     final transition = ref.read(enhancePirTransitionProvider.notifier);
-    if (ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage) {
+    if (ref.read(enhancePirTransitionProvider) ==
+        EnhancePirTransition.changing) {
       return;
     }
-    transition.update(kEnhancePirChangingMessage);
+    transition.update(EnhancePirTransition.changing);
     try {
-      String? outcome;
+      EnhancePirTransition? outcome;
       await ref
           .read(linuxKeyringCoordinatorProvider)
           .runMutation(
@@ -232,7 +248,7 @@ class EnhancePirNotifier extends Notifier<bool> {
       transition.update(outcome);
     } catch (error) {
       log('Private queries setting unchanged: $error');
-      transition.update(kEnhancePirUnchangedMessage);
+      transition.update(EnhancePirTransition.unchanged);
     }
   }
 
@@ -242,7 +258,7 @@ class EnhancePirNotifier extends Notifier<bool> {
   // where the user put it and is retried, never rolled back.
 
   /// Returns the feedback to show, or `null` when everything applied.
-  Future<String?> _enable() async {
+  Future<EnhancePirTransition?> _enable() async {
     final store = ref.read(enhancePirPreferenceStoreProvider);
     final reconcile = ref.read(transparentPolicyReconcilerProvider);
     await ref.read(enhancePirBackgroundSinkProvider)(true);
@@ -273,13 +289,13 @@ class EnhancePirNotifier extends Notifier<bool> {
       // Shielded private queries stay on. The startup and sync raise paths
       // retry the transparent raise; nothing public was enabled.
       log('Could not raise the transparent policy yet: $error');
-      return kTransparentRaisePendingMessage;
+      return EnhancePirTransition.raisePending;
     }
     return null;
   }
 
   /// Returns the feedback to show, or `null` when everything applied.
-  Future<String?> _disable() async {
+  Future<EnhancePirTransition?> _disable() async {
     final store = ref.read(enhancePirPreferenceStoreProvider);
     final optOut = ref.read(transparentOptOutStoreProvider);
     final reconcile = ref.read(transparentPolicyReconcilerProvider);
@@ -313,7 +329,7 @@ class EnhancePirNotifier extends Notifier<bool> {
       } catch (error) {
         log('Could not retain private background recovery: $error');
       }
-      return kTransparentOptOutPendingMessage;
+      return EnhancePirTransition.optOutPending;
     }
     rust_sync.setEnhancePirEnabled(enabled: false);
     state = false;
@@ -374,20 +390,20 @@ final enhancePirProvider = NotifierProvider<EnhancePirNotifier, bool>(
   EnhancePirNotifier.new,
 );
 
-class EnhancePirTransitionNotifier extends Notifier<String?> {
+class EnhancePirTransitionNotifier extends Notifier<EnhancePirTransition?> {
   @override
-  String? build() => null;
-  void update(String? message) => state = message;
+  EnhancePirTransition? build() => null;
+  void update(EnhancePirTransition? transition) => state = transition;
 }
 
 final enhancePirTransitionProvider =
-    NotifierProvider<EnhancePirTransitionNotifier, String?>(
+    NotifierProvider<EnhancePirTransitionNotifier, EnhancePirTransition?>(
       EnhancePirTransitionNotifier.new,
     );
 
 /// Feedback for the NEAR swap privacy toggle, shown under its own row.
 final nearSwapPrivacyTransitionProvider =
-    NotifierProvider<EnhancePirTransitionNotifier, String?>(
+    NotifierProvider<EnhancePirTransitionNotifier, EnhancePirTransition?>(
       EnhancePirTransitionNotifier.new,
     );
 
@@ -420,11 +436,11 @@ class NearSwapPrivacyNotifier extends Notifier<bool?> {
     if (enabled == state ||
         (enabled && !ref.read(enhancePirAvailableProvider)) ||
         ref.read(nearSwapPrivacyTransitionProvider) ==
-            kEnhancePirChangingMessage) {
+            EnhancePirTransition.changing) {
       return;
     }
-    feedback.update(kEnhancePirChangingMessage);
-    String? unsaved;
+    feedback.update(EnhancePirTransition.changing);
+    EnhancePirTransition? unsaved;
     try {
       await ref
           .read(nearSwapPrivacyPreferenceStoreProvider)
@@ -432,8 +448,10 @@ class NearSwapPrivacyNotifier extends Notifier<bool?> {
     } catch (error) {
       log('NEAR swap privacy not saved: $error');
       if (!ref.mounted) return;
-      if (state != null) return feedback.update(kEnhancePirUnchangedMessage);
-      unsaved = kNearSwapPrivacyUnsavedMessage;
+      if (state != null) {
+        return feedback.update(EnhancePirTransition.unchanged);
+      }
+      unsaved = EnhancePirTransition.unsavedForSession;
     }
     rust_sync.setNearSwapPrivacyEnabled(enabled: enabled);
     if (!ref.mounted) return;
@@ -445,11 +463,6 @@ class NearSwapPrivacyNotifier extends Notifier<bool?> {
   /// Flips the setting. An unreadable one counts as off, so this turns it on.
   Future<void> toggle() => set(!(state ?? false));
 }
-
-/// Feedback when a choice for an unreadable NEAR swap privacy setting applies
-/// but couldn't be saved.
-const kNearSwapPrivacyUnsavedMessage =
-    "Couldn't save this choice. It applies until you close Vizor.";
 
 final nearSwapPrivacyProvider =
     NotifierProvider<NearSwapPrivacyNotifier, bool?>(

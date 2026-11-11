@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme_host.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   test('light theme puts both bars on light window with dark icons', () {
@@ -48,6 +49,7 @@ void main() {
     tester,
   ) async {
     Widget app({required bool welcome}) => MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, _) => AppThemeHost(
         themeMode: ThemeMode.light,
         child: welcome

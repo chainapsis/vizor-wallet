@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/l10n/l10n.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/block_spacing_provider.dart';
 import '../../providers/pending_activity_evidence_provider.dart';
@@ -13,8 +14,22 @@ import 'activity_history_pager.dart';
 import 'transaction_completeness.dart';
 import '../swap/models/swap_chain_txid.dart';
 
+/// What a pending row says when it has no estimate. The widget maps it to
+/// text so the label follows the app language.
+enum ActivityPendingFallback {
+  waitingForConnection,
+  checkingStatus;
+
+  String text(AppLocalizations l10n) => switch (this) {
+    waitingForConnection => l10n.activityRowWaitingForConnection,
+    checkingStatus => l10n.commonCheckingStatus,
+  };
+}
+
 /// Stale observations and local recovery do not imply a lost connection.
-final activityPendingFallbackLabelProvider = Provider<String>((ref) {
+final activityPendingFallbackLabelProvider = Provider<ActivityPendingFallback>((
+  ref,
+) {
   final connectionFailed = ref.watch(
     pendingActivityEvidenceProvider.select((s) => s.connectionFailed),
   );
@@ -22,8 +37,8 @@ final activityPendingFallbackLabelProvider = Provider<String>((ref) {
   return connectionFailed ||
           failure == SyncFailureKind.network ||
           failure == SyncFailureKind.torUnavailable
-      ? 'Waiting for connection'
-      : 'Checking status';
+      ? ActivityPendingFallback.waitingForConnection
+      : ActivityPendingFallback.checkingStatus;
 });
 
 /// Identity of the successful sync snapshot against which history was read.
@@ -38,7 +53,7 @@ String activityHistoryStatusSignature(
 ) => transactions
     .map(
       (tx) =>
-          '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:'
+          '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:' // l10n-ignore: signature
           '${tx.displayAmount}:${tx.fundingParentTxid}:'
           '${tx.fundingParentMinedHeight}:${tx.fundingParentExpired}:'
           '${transactionCompletenessSignature(tx)}',
@@ -129,7 +144,7 @@ final activityEtaClaimHistoryProvider =
 
 /// Shared by all four feeds. Keys use canonical local txids; a funding key
 /// carries the conservative TEX range and a Gift Card stable ID its group ETA.
-final activityEtaLabelsProvider = Provider<Map<String, String>>((ref) {
+final activityEtaLabelsProvider = Provider<Map<String, ActivityEta>>((ref) {
   final evidence = ref.watch(pendingActivityEvidenceProvider);
   final sync = ref.watch(syncProvider).value;
   final account = ref.watch(accountProvider).value?.activeAccountUuid;
@@ -151,17 +166,17 @@ final activityEtaLabelsProvider = Provider<Map<String, String>>((ref) {
   final blocksPerReferenceBlock = ref
       .watch(blockSpacingProvider)
       .blocksPerReferenceBlock(sync.scannedHeight + 1);
-  final labels = <String, String>{};
+  final labels = <String, ActivityEta>{};
   for (final entry in evidence.observedAt.entries) {
     final id = entry.key.$2;
     if (entry.key.$1 != account || excluded.contains(id)) continue;
-    final ordinary = evidence.labelFor(
+    final ordinary = evidence.etaFor(
       account,
       id,
       sync.scannedHeight,
       blocksPerReferenceBlock: blocksPerReferenceBlock,
     );
-    final funding = evidence.labelFor(
+    final funding = evidence.etaFor(
       account,
       id,
       sync.scannedHeight,
@@ -184,7 +199,7 @@ final activityEtaLabelsProvider = Provider<Map<String, String>>((ref) {
         .where((id) => id.isNotEmpty)
         .toSet();
     if (ids.length <= 1 || !hasVerifiedClaimHistory) continue;
-    final label = giftCardClaimEtaLabel(
+    final label = giftCardClaimEta(
       ids: ids,
       transactions: transactions,
       scannedHeight: sync.scannedHeight,
@@ -195,9 +210,9 @@ final activityEtaLabelsProvider = Provider<Map<String, String>>((ref) {
   return labels;
 });
 
-String? activityEtaLabelFor({
+ActivityEta? activityEtaFor({
   required rust_sync.TransactionInfo transaction,
-  required Map<String, String> labels,
+  required Map<String, ActivityEta> labels,
   GiftCardActivityMetadata? giftCard,
 }) {
   if (giftCard != null && giftCard.claimTxids.length > 1) {
@@ -218,13 +233,13 @@ String? activityEtaLabelFor({
 
 /// A pending claim's representative row may already be mined. Estimate the
 /// entire business operation from all legs; missing or expired legs withhold it.
-String? giftCardClaimEtaLabel({
+ActivityEta? giftCardClaimEta({
   required Set<String> ids,
   required Iterable<rust_sync.TransactionInfo> transactions,
   required int scannedHeight,
-  required Map<String, String> labels,
+  required Map<String, ActivityEta> labels,
 }) {
-  final remaining = <String>[];
+  final remaining = <ActivityEta>[];
   for (final rawId in ids) {
     final id = activityTxidKey(rawId);
     final tx = transactions
@@ -245,7 +260,7 @@ String? giftCardClaimEtaLabel({
     remaining.add(label);
   }
   if (remaining.isEmpty) return null;
-  return remaining.contains(kActivityTakingLongerLabel)
-      ? kActivityTakingLongerLabel
+  return remaining.contains(ActivityEta.takingLonger)
+      ? ActivityEta.takingLonger
       : remaining.first;
 }

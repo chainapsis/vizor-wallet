@@ -96,7 +96,7 @@
   </tr>
   <tr>
     <td>PCZT broadcast &rarr; persist 순서</td>
-    <td><code>extract_and_broadcast_pczt</code> 는 반드시 broadcast 뒤에 store. 역순이면 lightwalletd 가 거절할 때 DB 에 소비된 노트로 남아 복구 불가. 자세히는 <a href="keystone.html#keystone-invariants">§9.6 (1)</a>.</td>
+    <td><code>store_and_broadcast_pczts_with_keystone_signatures_for_proposal</code> 는 반드시 broadcast 뒤에 store. 역순이면 lightwalletd 가 거절할 때 DB 에 소비된 노트로 남아 복구 불가. 자세히는 <a href="keystone.html#keystone-invariants">§9.6 (1)</a>.</td>
   </tr>
   <tr>
     <td>PCZT storage fallback chain</td>
@@ -104,7 +104,7 @@
   </tr>
   <tr>
     <td>Sapling params 쌍 계약</td>
-    <td><code>add_proofs_to_pczt</code> 와 <code>extract_and_broadcast_pczt</code> 는 <strong>같은 Sapling params 쌍</strong> 을 받아야 한다 — 한쪽은 proving key (<code>LocalTxProver</code>), 한쪽은 verifying key (<code>LocalTxProver::verifying_keys()</code>). 한쪽만 넘기면 Sapling-only recipient 송금이 <code>SaplingRequired</code> 로 실패. <code>send_screen.dart</code> 의 <code>proposal.needsSaplingParams ? spendPath : null</code> 을 두 FFI 호출에 나란히 전달한다. 자세히는 <a href="keystone.html#keystone-invariants">§9.6 (3)</a>.</td>
+    <td><code>add_proofs_to_pczt</code> 와 <code>store_and_broadcast_pczts_with_keystone_signatures_for_proposal</code> 는 <strong>같은 Sapling params 쌍</strong> 을 받아야 한다 — 한쪽은 proving key (<code>LocalTxProver</code>), 한쪽은 verifying key (<code>LocalTxProver::verifying_keys()</code>). 한쪽만 넘기면 Sapling-only recipient 송금이 <code>SaplingRequired</code> 로 실패. <code>send_screen.dart</code> 의 <code>proposal.needsSaplingParams ? spendPath : null</code> 을 두 FFI 호출에 나란히 전달한다. 자세히는 <a href="keystone.html#keystone-invariants">§9.6 (3)</a>.</td>
   </tr>
   <tr>
     <td>PROPOSAL_STORE 라이프사이클</td>

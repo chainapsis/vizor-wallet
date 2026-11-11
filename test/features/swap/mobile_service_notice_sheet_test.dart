@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/near_intents_service_notice_host.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'support/service_status_fixture.dart';
 
@@ -28,6 +29,7 @@ Widget _app(GlobalKey<NavigatorState> navigator) => ProviderScope(
     ),
   ],
   child: MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     navigatorKey: navigator,
     navigatorObservers: [RouteOwnedNavigationObserver()],
     builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),

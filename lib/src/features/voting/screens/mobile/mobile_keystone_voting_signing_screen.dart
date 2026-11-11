@@ -3,11 +3,13 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
+import '../../voting_error_messages.dart';
 import '../voting_status_screen.dart';
 
 class MobileKeystoneVotingSigningScreen extends StatelessWidget {
@@ -31,10 +33,8 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
     final contextLabel = batchCount <= 0
         ? null
         : totalCount > batchCount
-        ? '$batchCount of $totalCount remaining bundles'
-        : batchCount == 1
-        ? '1 voting bundle'
-        : '$batchCount voting bundles';
+        ? context.l10n.votingRemainingBundles(batchCount, totalCount)
+        : context.l10n.votingBundleCount(batchCount);
     final flowKey = ValueKey<String>(
       'mobile_voting_keystone_${presentation.bundleIndex}_'
       '${presentation.urParts.first.hashCode}',
@@ -45,25 +45,23 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
     return ExternalActionGuardHold(
       child: MobileKeystonePcztSigningFlow(
         key: flowKey,
-        title: 'Sign vote with Keystone',
-        failedTitle: 'Voting signature failed',
-        description:
-            'Scan the voting request with Keystone, approve it, then scan the signed result with this device.',
+        title: context.l10n.votingMobileKeystoneTitle,
+        failedTitle: context.l10n.votingMobileKeystoneFailedTitle,
+        description: context.l10n.votingMobileKeystoneDescription,
         keyPrefix: 'mobile_voting_keystone',
         logTag: 'MobileKeystoneVoting',
-        readingSignatureLabel: 'Reading voting signature...',
-        finalizingSignatureLabel: 'Checking voting signature...',
-        scanCaption: 'Scan the signed voting QR shown on Keystone',
+        readingSignatureLabel: context.l10n.votingMobileKeystoneReading,
+        finalizingSignatureLabel: context.l10n.votingMobileKeystoneChecking,
+        scanCaption: context.l10n.votingMobileKeystoneScanCaption,
         expectedSignedUrType: 'zcash-batch-sig-result',
-        unexpectedUrMessage:
-            'Open the signed voting QR on Keystone, then scan again.',
+        unexpectedUrMessage: context.l10n.votingKeystoneUnexpectedUr,
         recoverSignedCallbackErrorInScanner: true,
         signingContextLabel: contextLabel,
         requestDetails: presentation.batchMemos.isEmpty
             ? null
             : _MobileVotingMemoPager(memos: presentation.batchMemos),
         requestAuxiliaryActionLabel: presentation.canSkipRemainingBundles
-            ? 'Skip unsigned bundles'
+            ? context.l10n.votingMobileKeystoneSkipUnsigned
             : null,
         onRequestAuxiliaryAction: presentation.canSkipRemainingBundles
             ? presentation.onSkipRemainingBundles
@@ -79,7 +77,8 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
         onSigned: (_, _, _, responseCbor) =>
             presentation.onSigned(responseCbor),
         friendlyError: (error) =>
-            presentation.scanError ?? _friendlyVotingScanError(error),
+            presentation.scanError ??
+            friendlyVotingErrorMessage(context.l10n, error),
         scannerBuilder: scannerBuilder,
         forceScannerActiveForTesting: forceScannerActiveForTesting,
         startInScannerForTesting: startInScannerForTesting,
@@ -87,13 +86,6 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
       ),
     );
   }
-}
-
-String _friendlyVotingScanError(Object error) {
-  final message = error.toString();
-  return message
-      .replaceFirst(RegExp(r'^(Bad state|StateError):\s*'), '')
-      .trim();
 }
 
 /// Lines of the memo shown before its final line. The leading text is the same
@@ -154,7 +146,7 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
           child: Row(
             children: [
               _MemoPagerAction(
-                semanticLabel: 'Previous voting bundle',
+                semanticLabel: context.l10n.votingMobileKeystonePreviousBundle,
                 icon: AppIcons.chevronBackward,
                 onTap: index > 0
                     ? () => setState(() => _index = index - 1)
@@ -165,7 +157,10 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Bundle ${memo.bundleIndex + 1} of ${memo.bundleCount}',
+                      context.l10n.votingBundleOf(
+                        memo.bundleIndex + 1,
+                        memo.bundleCount,
+                      ),
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.secondary,
                         fontWeight: FontWeight.w600,
@@ -203,7 +198,7 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
                 ),
               ),
               _MemoPagerAction(
-                semanticLabel: 'Next voting bundle',
+                semanticLabel: context.l10n.votingMobileKeystoneNextBundle,
                 icon: AppIcons.chevronForward,
                 onTap: index + 1 < memos.length
                     ? () => setState(() => _index = index + 1)

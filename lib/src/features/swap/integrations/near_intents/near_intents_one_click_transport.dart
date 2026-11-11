@@ -1,3 +1,4 @@
+// l10n-ignore-file: protocol values and exception text
 part of 'near_intents_one_click_swap_adapter.dart';
 
 class OneClickApiException implements Exception {

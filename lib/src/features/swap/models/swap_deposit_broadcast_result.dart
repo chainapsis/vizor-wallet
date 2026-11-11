@@ -1,3 +1,5 @@
+import '../../../rust/api/sync.dart' show BroadcastNotice;
+
 class SwapDepositBroadcastStatus {
   const SwapDepositBroadcastStatus._();
 
@@ -13,11 +15,18 @@ class SwapDepositBroadcastResult {
     required this.txHash,
     required this.status,
     this.message,
+    this.notices = const [],
   });
 
   final String txHash;
   final String status;
+
+  /// Rust's English result text.
   final String? message;
+
+  /// [message] as sentences for the display language, when Rust wrote it
+  /// from them.
+  final List<BroadcastNotice> notices;
 
   bool get isCertain => status == SwapDepositBroadcastStatus.broadcasted;
 }

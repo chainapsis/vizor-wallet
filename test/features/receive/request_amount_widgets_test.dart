@@ -17,7 +17,9 @@ import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_sheet.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../support/leading_decimal_input.dart';
+import '../../support/test_l10n.dart';
 
 const _shielded =
     'u1tvg2412a23kshieldedaddress000000000000000000000000k64123hhq6d';
@@ -48,14 +50,14 @@ const _priceUnavailable = ZecRequestView(address: _shielded, amountZec: '0.5');
 const _withError = ZecRequestView(
   address: _shielded,
   amountDisplayText: '0.123456789',
-  amountError: kRequestAmountDecimalsError,
+  amountError: RequestAmountError.decimals,
 );
 
 /// Text the ZIP-321 builder cannot read as a number at all.
 const _withFormatError = ZecRequestView(
   address: _shielded,
   amountDisplayText: '0,5',
-  amountError: kRequestAmountFormatError,
+  amountError: RequestAmountError.format,
 );
 
 /// A real software account's UA length (178) with the longest memo ZIP-321
@@ -111,7 +113,7 @@ void main() {
       await _pump(tester, const RequestAmountCard(request: _empty));
 
       expect(tester.takeException(), isNull);
-      expect(find.text(kRequestFlowTitle), findsOneWidget);
+      expect(find.text(requestFlowTitle(testL10n)), findsOneWidget);
       // The artefact belongs to step two: nothing here is a request yet.
       expect(find.byType(RequestQrSurface), findsNothing);
       // No error while the field is simply still empty.
@@ -175,10 +177,10 @@ void main() {
       // The request memo rides in the shareable link, so the send composer's
       // "Encrypted" promise must not be repeated here.
       expect(
-        kRequestMessageHelpText,
+        testL10n.receiveRequestMessageHelp,
         'Shielded addresses only — anyone with this link can read it.',
       );
-      expect(find.text(kRequestMessageHelpText), findsOneWidget);
+      expect(find.text(testL10n.receiveRequestMessageHelp), findsOneWidget);
       expect(find.textContaining('Encrypted'), findsNothing);
     });
 
@@ -209,7 +211,7 @@ void main() {
         findsOneWidget,
       );
       expect(_text(tester, 'request_message_counter'), endsWith('/512'));
-      expect(find.text(kRequestAddMessageLabel), findsNothing);
+      expect(find.text(testL10n.commonAddAMessage), findsNothing);
     });
 
     testWidgets('a transparent request offers no message at all', (
@@ -237,7 +239,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(
         _text(tester, 'request_amount_error_text'),
-        kRequestAmountDecimalsError,
+        testL10n.receiveRequestAmountDecimalsError,
       );
       expect(_button(tester, 'request_next_button').onPressed, isNull);
       expect(find.byType(RequestSummaryRow), findsNothing);
@@ -250,7 +252,7 @@ void main() {
 
       expect(
         _text(tester, 'request_amount_error_text'),
-        kRequestAmountFormatError,
+        testL10n.receiveRequestAmountFormatError,
       );
       expect(_button(tester, 'request_next_button').onPressed, isNull);
     });
@@ -385,7 +387,7 @@ void main() {
       );
 
       expect(tester.takeException(), isNull);
-      expect(find.text(kRequestFlowTitle), findsOneWidget);
+      expect(find.text(requestFlowTitle(testL10n)), findsOneWidget);
       expect(find.byType(RequestQrSurface), findsOneWidget);
       expect(find.text('0.5 ZEC'), findsOneWidget);
       expect(find.text('Shielded'), findsOneWidget);
@@ -542,7 +544,7 @@ void main() {
       );
 
       expect(tester.takeException(), isNull);
-      expect(find.text(kRequestFlowTitle), findsOneWidget);
+      expect(find.text(requestFlowTitle(testL10n)), findsOneWidget);
       expect(find.text('Create request'), findsOneWidget);
       expect(_button(tester, 'request_create_button').onPressed, isNull);
       // No Max: a request is not a spend.
@@ -588,7 +590,7 @@ void main() {
       // two causes need opposite fixes.
       expect(
         _text(tester, 'request_amount_error_text'),
-        kRequestAmountDecimalsError,
+        testL10n.receiveRequestAmountDecimalsError,
       );
       expect(_button(tester, 'request_create_button').onPressed, isNull);
     });
@@ -888,74 +890,70 @@ void main() {
   });
 
   group('RequestQrExportButton', () {
-    testWidgets(
-      'the button stays busy until the hand-off completes',
-      (tester) async {
-        // The desktop save dialog and the mobile share sheet both outlive the
-        // PNG render; a second press while one is open would start a second
-        // export.
-        final handoff = Completer<void>();
-        var delivered = 0;
-        await _pump(
-          tester,
-          RequestQrExportButton(
-            key: const ValueKey('export_button'),
-            uri: 'zcash:u1exportbusy',
-            label: 'Save QR image',
-            onBytes: (_) {
-              delivered++;
-              return handoff.future;
-            },
-          ),
-        );
+    testWidgets('the button stays busy until the hand-off completes', (
+      tester,
+    ) async {
+      // The desktop save dialog and the mobile share sheet both outlive the
+      // PNG render; a second press while one is open would start a second
+      // export.
+      final handoff = Completer<void>();
+      var delivered = 0;
+      await _pump(
+        tester,
+        RequestQrExportButton(
+          key: const ValueKey('export_button'),
+          uri: 'zcash:u1exportbusy',
+          label: 'Save QR image',
+          onBytes: (_) {
+            delivered++;
+            return handoff.future;
+          },
+        ),
+      );
 
-        await tester.tap(find.byKey(const ValueKey('export_button')));
-        await tester.pump();
-        await _settleEncode(tester);
+      await tester.tap(find.byKey(const ValueKey('export_button')));
+      await tester.pump();
+      await _settleEncode(tester);
 
-        expect(delivered, 1);
-        expect(_exportButton(tester, 'export_button').onPressed, isNull);
+      expect(delivered, 1);
+      expect(_exportButton(tester, 'export_button').onPressed, isNull);
 
-        handoff.complete();
-        await tester.pump();
+      handoff.complete();
+      await tester.pump();
 
-        expect(_exportButton(tester, 'export_button').onPressed, isNotNull);
-      },
-      timeout: _encodeTimeout,
-    );
+      expect(_exportButton(tester, 'export_button').onPressed, isNotNull);
+    }, timeout: _encodeTimeout);
 
-    testWidgets(
-      'an encode that fails calls onError and frees the button',
-      (tester) async {
-        final delivered = <Uint8List>[];
-        var errors = 0;
-        await _pump(
-          tester,
-          RequestQrExportButton(
-            key: const ValueKey('export_button'),
-            // Past the byte capacity of every symbol version, so the encoder
-            // refuses it. Before this the press was a silent no-op: the future
-            // is unawaited, so the throw escaped as a zone error and the user
-            // saw the spinner blink and nothing else.
-            uri: 'zcash:${'u' * 4000}',
-            label: 'Save QR image',
-            onBytes: delivered.add,
-            onError: () => errors++,
-          ),
-        );
+    testWidgets('an encode that fails calls onError and frees the button', (
+      tester,
+    ) async {
+      final delivered = <Uint8List>[];
+      var errors = 0;
+      await _pump(
+        tester,
+        RequestQrExportButton(
+          key: const ValueKey('export_button'),
+          // Past the byte capacity of every symbol version, so the encoder
+          // refuses it. Before this the press was a silent no-op: the future
+          // is unawaited, so the throw escaped as a zone error and the user
+          // saw the spinner blink and nothing else.
+          uri: 'zcash:${'u' * 4000}',
+          label: 'Save QR image',
+          onBytes: delivered.add,
+          onError: () => errors++,
+        ),
+      );
 
-        await tester.tap(find.byKey(const ValueKey('export_button')));
-        await tester.pump();
-        await _settleEncode(tester);
+      await tester.tap(find.byKey(const ValueKey('export_button')));
+      await tester.pump();
+      await _settleEncode(tester);
 
-        expect(delivered, isEmpty);
-        expect(errors, 1);
-        expect(tester.takeException(), isNull);
-        // Still pressable: the failure is reported, not terminal.
-        expect(_exportButton(tester, 'export_button').onPressed, isNotNull);
-      },
-      timeout: _encodeTimeout,
-    );
+      expect(delivered, isEmpty);
+      expect(errors, 1);
+      expect(tester.takeException(), isNull);
+      // Still pressable: the failure is reported, not terminal.
+      expect(_exportButton(tester, 'export_button').onPressed, isNotNull);
+    }, timeout: _encodeTimeout);
   });
 }
 
@@ -1010,6 +1008,7 @@ Future<void> _pump(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.dark,
         child: Center(

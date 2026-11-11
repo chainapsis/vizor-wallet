@@ -113,8 +113,8 @@ class SwapHistoryCheckNotifier extends Notifier<SwapHistoryCheck> {
   @override
   SwapHistoryCheck build() {
     ref.listen(enhancePirTransitionProvider, (previous, next) {
-      if (previous == kEnhancePirChangingMessage &&
-          next != kEnhancePirChangingMessage) {
+      if (previous == EnhancePirTransition.changing &&
+          next != EnhancePirTransition.changing) {
         unawaited(_reconcile());
       }
     });
@@ -259,7 +259,7 @@ class SwapHistoryCheckNotifier extends Notifier<SwapHistoryCheck> {
       await Future<void>.delayed(api.pollInterval);
       if (!ref.mounted || generation != _generation) return;
       if (ref.read(enhancePirTransitionProvider) !=
-          kEnhancePirChangingMessage) {
+          EnhancePirTransition.changing) {
         rust_swap.SwapRecoveryStatus? status;
         try {
           status = await api.status();

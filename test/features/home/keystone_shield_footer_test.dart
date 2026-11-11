@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/keystone_sh
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/keystone_shield_morph.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/particles/particle_field.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 void main() {
@@ -22,6 +23,7 @@ void main() {
         var calls = 0;
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: ValueListenableBuilder(
               valueListenable: phase,
               builder: (_, value, _) => MobileShieldScene(
@@ -95,6 +97,7 @@ void main() {
           var next = 0, back = 0;
           await tester.pumpWidget(
             MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.dark,
                 child: MediaQuery(
@@ -167,6 +170,7 @@ void main() {
           var nextCalls = 0, showCalls = 0, cancelCalls = 0;
           await tester.pumpWidget(
             MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.dark,
                 child: MediaQuery(

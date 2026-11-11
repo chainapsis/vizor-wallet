@@ -73,7 +73,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
         relayTtlSeconds: upload.relayTtlSeconds,
       );
       if (lifetime <= Duration.zero) {
-        throw StateError('The mobile link expired before it could be shown.');
+        throw const WalletLinkFailure(WalletLinkErrorKind.expiredBeforeShown);
       }
       final expiresAt = DateTime.now().add(lifetime);
       _remotePackageId = upload.packageId;
@@ -93,7 +93,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       log('WalletLinkController.start: ERROR: $error\n$stackTrace');
       state = WalletLinkState(
         phase: WalletLinkPhase.error,
-        errorMessage: _friendlyError(error),
+        errorKind: _errorKind(error),
       );
     }
   }
@@ -185,7 +185,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     final accountState = await ref.read(accountProvider.future);
     secretGuard.check();
     if (accountState.accounts.isEmpty) {
-      throw StateError('No wallet accounts are available to link.');
+      throw const WalletLinkFailure(WalletLinkErrorKind.noAccounts);
     }
 
     final dbPath = await getWalletDbPath();
@@ -217,18 +217,18 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       secretGuard.check();
       final mnemonic = softwareSecret?.mnemonic;
       if (!account.isHardware && (mnemonic == null || mnemonic.isEmpty)) {
-        throw StateError('Unlock this wallet before linking mobile.');
+        throw const WalletLinkFailure(WalletLinkErrorKind.locked);
       }
       if (!account.isHardware && zip32AccountIndex == null) {
-        throw StateError(
-          'Wallet account derivation metadata is not available.',
-        );
+        throw const WalletLinkFailure(WalletLinkErrorKind.derivationMissing);
       }
       if (account.isHardware &&
           (zip32AccountIndex == null ||
               hardwareUfvk == null ||
               seedFingerprint == null)) {
-        throw StateError('Hardware wallet metadata is not available.');
+        throw const WalletLinkFailure(
+          WalletLinkErrorKind.hardwareMetadataMissing,
+        );
       }
       accounts.add({
         'uuid': account.uuid,
@@ -321,6 +321,8 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       _remotePackageId = null;
       _activeKeyBytes = null;
       _lastStatusPollErrorLogKey = null;
+      // The phone has the package; nothing needs the server copy any more.
+      unawaited(_revokePackage(packageId));
       state = WalletLinkState(
         phase: WalletLinkPhase.linked,
         accountCount: importSummary?.importedAccountCount ?? state.accountCount,
@@ -363,7 +365,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
 
   Future<void> _revokePackage(String packageId) async {
     try {
-      await ref.read(walletLinkApiClientProvider).revokePackage(packageId);
+      await _client.revokePackage(packageId);
     } catch (error, stackTrace) {
       log('WalletLinkController.revokePackage: ERROR: $error\n$stackTrace');
       // Explicit cleanup is best-effort. Backend TTL remains the fallback
@@ -376,8 +378,13 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _epoch++;
     _statusPollEpoch = null;
     _lastStatusPollErrorLogKey = null;
+    final packageId = _remotePackageId;
     _remotePackageId = null;
     _activeKeyBytes = null;
+    // Leaving the screen withdraws a QR that is still showing.
+    if (packageId != null) {
+      unawaited(_revokePackage(packageId));
+    }
   }
 
   Uint8List _randomBytes(int length) {
@@ -391,7 +398,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-' // l10n-ignore: UUID formatting
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
         '${hex.substring(20)}';
   }
@@ -435,14 +442,14 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     }
   }
 
-  static String _friendlyError(Object error) {
-    if (error is StateError) return error.message;
+  static WalletLinkErrorKind _errorKind(Object error) {
+    if (error is WalletLinkFailure) return error.kind;
     if (error is WalletLinkApiException ||
         error is IOException ||
         error is TimeoutException) {
-      return 'Could not reach the linking server. Try again.';
+      return WalletLinkErrorKind.serverUnreachable;
     }
-    return 'Could not prepare the mobile link. Try again.';
+    return WalletLinkErrorKind.prepareFailed;
   }
 
   WalletLinkApiClient get _client {

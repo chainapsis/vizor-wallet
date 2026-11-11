@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_hardware_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
@@ -32,6 +33,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -967,6 +969,174 @@ void main() {
     },
   );
 
+  for (final payMode in [false, true]) {
+    testWidgets(
+      'pushed review receives saved Keystone result and replaces the flow '
+      '(pay=$payMode)',
+      (tester) async {
+        tester.view.physicalSize = const Size(430, 932);
+        ValueChanged<ScanResult>? completeScan;
+        late _ReviewSuccessSwapNotifier swapNotifier;
+        final composerPath = payMode ? '/pay' : '/swap';
+        final router = GoRouter(
+          initialLocation: composerPath,
+          routes: [
+            GoRoute(
+              path: composerPath,
+              builder: (_, _) => const Text('Composer'),
+            ),
+            GoRoute(
+              path: '$composerPath/review',
+              builder: (_, _) => MobileSwapReviewScreen(payMode: payMode),
+            ),
+            GoRoute(
+              path: '/swap/keystone-sign',
+              builder: (_, state) => MobileSwapKeystoneSignScreen(
+                args: state.extra! as MobileSwapKeystoneSignArgs,
+                scannerBuilder: (_, onComplete, _, _) {
+                  completeScan = onComplete;
+                  return const SizedBox();
+                },
+                forceScannerActiveForTesting: true,
+                signedPcztDecoder: (_) async => Uint8List.fromList([10, 11]),
+              ),
+            ),
+            GoRoute(
+              path: payMode
+                  ? '/pay/submitted/:intentId'
+                  : '/activity/swap/:intentId',
+              builder: (_, _) => const Text('Saved receipt'),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(
+          _app(
+            router,
+            swapNotifier: () {
+              swapNotifier = _ReviewSuccessSwapNotifier(_hardwareIntent);
+              return swapNotifier;
+            },
+            hardwareSigningService: _FakeSwapHardwareSigningService(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        unawaited(router.push<void>('$composerPath/review'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(
+            ValueKey(
+              payMode
+                  ? 'mobile_pay_review_confirm_button'
+                  : 'swap_start_button',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(MobileSwapKeystoneSignScreen), findsOneWidget);
+        await tester.tap(find.text('Next step'));
+        await tester.pump();
+        completeScan!(
+          const ScanResult(urType: 'zcash-batch-sig-result', data: [1, 2, 3]),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          swapNotifier.recordedBroadcast?.txHash,
+          'hardware-broadcast-txid',
+        );
+        expect(swapNotifier.recordCount, 1);
+        expect(swapNotifier.pendingCleared, isTrue);
+        expect(find.text('Saved receipt'), findsOneWidget);
+        expect(
+          find.byType(MobileSwapReviewScreen, skipOffstage: false),
+          findsNothing,
+        );
+        expect(
+          find.byType(MobileSwapKeystoneSignScreen, skipOffstage: false),
+          findsNothing,
+        );
+        expect(router.canPop(), isTrue);
+        router.pop();
+        await tester.pumpAndSettle();
+        expect(find.text('Composer'), findsOneWidget);
+        expect(router.canPop(), isFalse);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final payMode in [false, true]) {
+    testWidgets('review replaces itself after Ledger returns its saved result '
+        '(pay=$payMode)', (tester) async {
+      tester.view.physicalSize = const Size(430, 932);
+      final composerPath = payMode ? '/pay' : '/swap';
+      final router = GoRouter(
+        initialLocation: composerPath,
+        routes: [
+          GoRoute(
+            path: composerPath,
+            builder: (_, _) => const Text('Composer'),
+          ),
+          GoRoute(
+            path: '$composerPath/review',
+            builder: (_, _) => MobileSwapReviewScreen(payMode: payMode),
+          ),
+          GoRoute(
+            path: '/swap/ledger-sign',
+            builder: (context, _) => TextButton(
+              onPressed: () => context.pop(
+                const MobileSwapLedgerSignSuccess(
+                  SwapHardwareBroadcastResult(
+                    txHash: 'saved-txid',
+                    status: 'broadcasted',
+                  ),
+                ),
+              ),
+              child: const Text('Return saved result'),
+            ),
+          ),
+          GoRoute(
+            path: payMode
+                ? '/pay/submitted/:intentId'
+                : '/activity/swap/:intentId',
+            builder: (_, _) => const Text('Saved receipt'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        _app(
+          router,
+          bootstrap: _ledgerBootstrap,
+          swapNotifier: () => _ReviewStartSwapNotifier(_hardwareIntent),
+        ),
+      );
+      await tester.pumpAndSettle();
+      unawaited(router.push<void>('$composerPath/review'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          ValueKey(
+            payMode ? 'mobile_pay_review_confirm_button' : 'swap_start_button',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Return saved result'));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved receipt'), findsOneWidget);
+      expect(
+        find.byType(MobileSwapReviewScreen, skipOffstage: false),
+        findsNothing,
+      );
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Composer'), findsOneWidget);
+      expect(router.canPop(), isFalse);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('mobile Keystone broadcast failure shows toast without submit', (
     tester,
   ) async {
@@ -1060,6 +1230,7 @@ Widget _app(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
@@ -1178,16 +1349,18 @@ class _PendingSigningSwapNotifier extends SwapNotifier {
   }
 }
 
-class _ReviewSuccessSwapNotifier extends _PendingSigningSwapNotifier {
+class _ReviewSuccessSwapNotifier extends _ReviewStartSwapNotifier {
   _ReviewSuccessSwapNotifier(super.intent);
 
   SwapDepositBroadcastResult? recordedBroadcast;
+  int recordCount = 0;
 
   @override
   Future<void> recordHardwareDepositBroadcast({
     required SwapIntent intent,
     required SwapDepositBroadcastResult broadcast,
   }) async {
+    recordCount++;
     recordedBroadcast = broadcast;
     clearPendingHardwareSigningIntent(intent.id);
   }
@@ -1384,6 +1557,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
     String? outputParamsPath,
   }) async {
     return const rust_sync.ExtractAndBroadcastPcztResult(
+      notices: [],
       txid: 'hardware-broadcast-txid',
       status: SwapDepositBroadcastStatus.broadcasted,
       message: null,

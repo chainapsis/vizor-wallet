@@ -5,13 +5,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_scroll_fade.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import '../../../support/localized_test_scope.dart';
 
 Future<void> _pump(WidgetTester tester, {required int rows}) {
   return tester.pumpWidget(
     AppTheme(
       data: AppThemeData.light,
-      child: Directionality(
-        textDirection: TextDirection.ltr,
+      child: LocalizedTestScope(
         child: Center(
           child: SizedBox(
             height: 300,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -11,28 +12,36 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import 'swap_history_check_control.dart';
 
-/// NEAR swap privacy subtitle while it is on.
-const kNearSwapPrivacyOnCopy = 'Swaps use one-time Zcash addresses.';
+/// Which subtitle the NEAR swap privacy option shows.
+enum NearSwapPrivacyDescription {
+  /// The setting is on.
+  on,
 
-/// NEAR swap privacy subtitle while it is off and could be turned on. Swaps
-/// then use a fresh address of the wallet, as hardware accounts always do.
-const kNearSwapPrivacyOffCopy = 'Swaps use regular Zcash addresses.';
+  /// The setting is off and could be turned on. Swaps then use a fresh address
+  /// of the wallet, as hardware accounts always do.
+  off,
 
-/// NEAR swap privacy subtitle while its saved choice couldn't be read.
-const kNearSwapPrivacyUnknownCopy =
-    "Vizor couldn't read your saved choice. Set it again to swap.";
+  /// The saved choice couldn't be read.
+  unknown,
 
-/// NEAR swap privacy subtitle while a hardware wallet account is active, since
-/// only software accounts get one-time swap addresses.
-const kNearSwapPrivacyHardwareCopy =
-    'Not available for hardware wallet accounts. Their swaps use regular '
-    'Zcash addresses.';
+  /// A hardware wallet account is active, and only software accounts get
+  /// one-time swap addresses.
+  hardware;
+
+  /// The subtitle in the display language.
+  String text(AppLocalizations l10n) => switch (this) {
+    NearSwapPrivacyDescription.on => l10n.settingsNearSwapPrivacyOn,
+    NearSwapPrivacyDescription.off => l10n.settingsNearSwapPrivacyOff,
+    NearSwapPrivacyDescription.unknown => l10n.settingsNearSwapPrivacyUnknown,
+    NearSwapPrivacyDescription.hardware => l10n.settingsNearSwapPrivacyHardware,
+  };
+}
 
 /// What Settings shows for NEAR swap privacy on desktop and mobile.
 typedef NearSwapPrivacySetting = ({
   bool enabled,
-  String description,
-  String? transition,
+  NearSwapPrivacyDescription description,
+  EnhancePirTransition? transition,
 });
 
 /// The NEAR swap privacy option's state, or null when Settings doesn't offer
@@ -45,49 +54,24 @@ final nearSwapPrivacySettingProvider = Provider<NearSwapPrivacySetting?>((ref) {
   return (
     enabled: enabled ?? false,
     description: enabled == null
-        ? kNearSwapPrivacyUnknownCopy
+        ? NearSwapPrivacyDescription.unknown
         : hardwareAccount
-        ? kNearSwapPrivacyHardwareCopy
+        ? NearSwapPrivacyDescription.hardware
         : enabled
-        ? kNearSwapPrivacyOnCopy
-        : kNearSwapPrivacyOffCopy,
+        ? NearSwapPrivacyDescription.on
+        : NearSwapPrivacyDescription.off,
     transition: ref.watch(nearSwapPrivacyTransitionProvider),
   );
 });
 
-/// Title of the NEAR swap privacy explanation.
-const kNearSwapPrivacyInfoTitle = "What's this?";
-
 /// Paragraphs of the NEAR swap privacy explanation.
-const kNearSwapPrivacyInfoParagraphs = [
-  'When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for '
-      'the payout and another for any refund. With NEAR swap privacy on, these '
-      'are one-time addresses made just for swaps, so any future quantum '
-      "adversary can't tie them to your wallet.",
-  'A payout address from a quote that expired unpaid can be used again for a '
-      'later quote. Rarely, two devices with the same wallet that quote at the '
-      'same moment get the same address. NEAR can see that those quotes share '
-      'an address, but still not which wallet it belongs to.',
-  'Addresses you enter yourself, like an Ethereum address you reuse for '
-      'several swaps, are still shared with NEAR and can link those swaps. '
-      "Hardware wallet accounts don't use one-time addresses.",
-  'Your recovery phrase still recovers everything. After a restore, your '
-      'wallet finds these payments privately on its own.',
-  'Turning this off only gives new swaps regular addresses. Payouts and '
-      'refunds to one-time addresses you already used still show up.',
+List<String> nearSwapPrivacyInfoParagraphs(AppLocalizations l10n) => [
+  l10n.settingsNearSwapPrivacyInfoOneTime,
+  l10n.settingsNearSwapPrivacyInfoReuse,
+  l10n.settingsNearSwapPrivacyInfoOwnAddresses,
+  l10n.settingsNearSwapPrivacyInfoRestore,
+  l10n.settingsNearSwapPrivacyInfoTurnOff,
 ];
-
-/// Heading of the troubleshooting section that ends the explanation while
-/// the swap history check is offered.
-const kNearSwapPrivacyTroubleshootingTitle = 'Troubleshooting';
-
-/// What the swap history check does, above its button.
-const kNearSwapPrivacyTroubleshootingCopy =
-    'Vizor finds swap payments and refunds automatically. If one is missing '
-    'after a swap finished, this check looks at every private swap address '
-    'and refund key this wallet has used. It starts from the beginning of '
-    'Ironwood history and runs over Private queries. It can take a few '
-    'minutes.';
 
 /// Shows the NEAR swap privacy explanation for this binary's form factor: a
 /// sheet on mobile, a dialog on desktop.
@@ -122,7 +106,7 @@ class NearSwapPrivacyInfoDialog extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                kNearSwapPrivacyInfoTitle,
+                context.l10n.commonWhatsThis,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.accent,
                 ),
@@ -139,7 +123,7 @@ class NearSwapPrivacyInfoDialog extends StatelessWidget {
                 expand: true,
                 variant: AppButtonVariant.secondary,
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
+                child: Text(context.l10n.commonClose),
               ),
             ],
           ),
@@ -158,7 +142,7 @@ class NearSwapPrivacyInfoSheet extends StatelessWidget {
     final colors = context.colors;
     return MobileModalScaffold(
       key: const ValueKey('near_swap_privacy_info_sheet'),
-      title: kNearSwapPrivacyInfoTitle,
+      title: context.l10n.commonWhatsThis,
       onClose: () => Navigator.of(context).pop(),
       leading: AppIcon(AppIcons.eye, size: 20, color: colors.icon.accent),
       constrainBody: true,
@@ -167,7 +151,7 @@ class NearSwapPrivacyInfoSheet extends StatelessWidget {
   }
 }
 
-/// [kNearSwapPrivacyInfoParagraphs] in [color], then the troubleshooting
+/// [nearSwapPrivacyInfoParagraphs] in [color], then the troubleshooting
 /// section with the swap history check while Settings offers NEAR swap
 /// privacy and the wallet has a software account, whatever the setting says.
 class _Body extends ConsumerWidget {
@@ -190,8 +174,9 @@ class _Body extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final (index, paragraph)
-            in kNearSwapPrivacyInfoParagraphs.indexed) ...[
+        for (final (index, paragraph) in nearSwapPrivacyInfoParagraphs(
+          context.l10n,
+        ).indexed) ...[
           if (index > 0) const SizedBox(height: AppSpacing.sm),
           Text(
             paragraph,
@@ -206,14 +191,14 @@ class _Body extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                kNearSwapPrivacyTroubleshootingTitle,
+                context.l10n.settingsNearSwapPrivacyTroubleshootingTitle,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                kNearSwapPrivacyTroubleshootingCopy,
+                context.l10n.settingsNearSwapPrivacyTroubleshootingBody,
                 style: AppTypography.bodyMedium.copyWith(color: color),
               ),
               const SizedBox(height: AppSpacing.sm),

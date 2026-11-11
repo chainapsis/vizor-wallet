@@ -669,9 +669,9 @@ void main() {
             ),
         throwsA(
           isA<PaymentLinkBatchPreSubmissionFailure>().having(
-            (failure) => failure.message,
-            'message',
-            kNetworkUpgradeHoldMessage,
+            (failure) => failure.hold,
+            'hold',
+            NetworkUpgradeHold.hold,
           ),
         ),
       );

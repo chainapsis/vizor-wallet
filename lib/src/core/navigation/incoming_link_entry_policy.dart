@@ -1,3 +1,4 @@
+import '../l10n/l10n.dart';
 import 'app_route_predicates.dart';
 
 enum IncomingLinkKind { home, giftCard, paymentRequest }
@@ -5,21 +6,29 @@ enum IncomingLinkKind { home, giftCard, paymentRequest }
 enum IncomingLinkEntryAction { open, wait, ignore }
 
 class IncomingLinkEntryDecision {
-  const IncomingLinkEntryDecision(this.action, {this.message});
+  const IncomingLinkEntryDecision(this.action, {this.notice});
 
   final IncomingLinkEntryAction action;
-  final String? message;
+  final IncomingLinkNotice? notice;
 }
 
-const kIncomingHomeBusyMessage =
-    'Finish or cancel your task, then reopen the link.';
-const kIncomingHomeSetupMessage = 'Finish account setup, then reopen the link.';
-const kIncomingGiftBusyMessage =
-    'Finish or cancel your current task to open this gift card.';
-const kIncomingGiftSetupMessage =
-    'Finish account setup to open this gift card.';
-const kIncomingPaymentBusyMessage =
-    'Finish or cancel your current task to open this payment request.';
+/// Why an unsolicited link was held back. Decisions carry the code; the toast
+/// resolves it with the locale of the moment it is shown.
+enum IncomingLinkNotice {
+  homeBusy,
+  homeSetup,
+  giftBusy,
+  giftSetup,
+  paymentBusy;
+
+  String text(AppLocalizations l10n) => switch (this) {
+    homeBusy => l10n.incomingLinkHomeBusy,
+    homeSetup => l10n.incomingLinkHomeSetup,
+    giftBusy => l10n.incomingLinkGiftBusy,
+    giftSetup => l10n.incomingLinkGiftSetup,
+    paymentBusy => l10n.incomingLinkPaymentBusy,
+  };
+}
 
 /// Navigation would discard input or an operation owned by these routes.
 /// A payment card is an overlay, so it may still open over an ordinary form.
@@ -66,9 +75,9 @@ IncomingLinkEntryDecision decideIncomingLinkEntry({
       kind == IncomingLinkKind.home
           ? IncomingLinkEntryAction.ignore
           : IncomingLinkEntryAction.wait,
-      message: kind == IncomingLinkKind.home
-          ? kIncomingHomeSetupMessage
-          : kIncomingGiftSetupMessage,
+      notice: kind == IncomingLinkKind.home
+          ? IncomingLinkNotice.homeSetup
+          : IncomingLinkNotice.giftSetup,
     );
   }
   final busy =
@@ -84,10 +93,10 @@ IncomingLinkEntryDecision decideIncomingLinkEntry({
       kind == IncomingLinkKind.home
           ? IncomingLinkEntryAction.ignore
           : IncomingLinkEntryAction.wait,
-      message: switch (kind) {
-        IncomingLinkKind.home => kIncomingHomeBusyMessage,
-        IncomingLinkKind.giftCard => kIncomingGiftBusyMessage,
-        IncomingLinkKind.paymentRequest => kIncomingPaymentBusyMessage,
+      notice: switch (kind) {
+        IncomingLinkKind.home => IncomingLinkNotice.homeBusy,
+        IncomingLinkKind.giftCard => IncomingLinkNotice.giftBusy,
+        IncomingLinkKind.paymentRequest => IncomingLinkNotice.paymentBusy,
       },
     );
   }

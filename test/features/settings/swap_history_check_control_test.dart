@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/swap_history_check_control.dart';
@@ -51,6 +52,7 @@ Widget _control(
     if (api != null) swapHistoryApiProvider.overrideWithValue(api),
   ],
   child: MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (context, child) => AppTheme(data: theme, child: child!),
     home: const Scaffold(
       body: Center(

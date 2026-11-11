@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -70,7 +71,7 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
                         top: AppSpacing.sm,
                         right: AppSpacing.sm,
                         child: Semantics(
-                          label: 'Close',
+                          label: context.l10n.commonClose,
                           button: true,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
@@ -120,11 +121,7 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
                     child: Align(
                       alignment: Alignment.topCenter,
                       child: Text(
-                        'Zcash’s latest shielded pool, bringing '
-                        'cutting-edge cryptography and formal '
-                        'verification.\n\n'
-                        'Your shielded balance needs a one-time '
-                        'migration to Ironwood.',
+                        context.l10n.migrationMobileAnnouncementBody,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: colors.text.accent,
@@ -146,7 +143,9 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
                     height: 50,
                     onPressed: onStartMigration,
                     trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                    child: const Text('Upgrade to Ironwood'),
+                    child: Text(
+                      context.l10n.migrationMobileAnnouncementUpgrade,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 13),
@@ -161,7 +160,9 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
                     height: 50,
                     variant: AppButtonVariant.ghost,
                     onPressed: onOpenReleaseNotes,
-                    child: const Text('Official announcement'),
+                    child: Text(
+                      context.l10n.migrationMobileAnnouncementOfficial,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 31),

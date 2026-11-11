@@ -90,7 +90,7 @@ void main() {
       container.read(paymentLinkIntakeProvider).pendingLink?.knownAddress,
       isNull,
     );
-    expect(container.read(paymentLinkIntakeProvider).errorMessage, isNull);
+    expect(container.read(paymentLinkIntakeProvider).error, isNull);
   });
 
   test('ignores unrelated links so ZIP-321 can share the channel', () {
@@ -127,8 +127,7 @@ void main() {
     expect(result, PaymentLinkIntakeResult.rejected);
     final state = container.read(paymentLinkIntakeProvider);
     expect(state.pendingLink?.knownAddress, isNull);
-    expect(state.errorMessage, isNotNull);
-    expect(state.errorMessage, isNot(contains('not-base64')));
+    expect(state.error, isNotNull);
   });
 
   test('takePending removes the link from memory', () {
@@ -237,7 +236,7 @@ void main() {
     );
     final state = container.read(paymentLinkIntakeProvider);
     expect(state.pendingLinks, hasLength(kPaymentLinkIntakeQueueCapacity));
-    expect(state.errorMessage, 'Too many payment links are waiting to open.');
+    expect(state.error, PaymentLinkIntakeError.queueFull);
   });
 }
 

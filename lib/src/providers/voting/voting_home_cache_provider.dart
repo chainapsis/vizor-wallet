@@ -223,7 +223,7 @@ class VotingHomeCacheNotifier extends Notifier<int> {
     _lists.addAll(lists);
     _facts.addAll(facts);
     votingHomeTrace(
-      'cache.load.done lists=${lists.length} facts=${facts.length} '
+      'cache.load.done lists=${lists.length} facts=${facts.length} ' // l10n-ignore: log text
       'participation=${facts.values.where((f) => f.participation != null).length}',
     );
   }
@@ -304,7 +304,7 @@ class VotingHomeCacheNotifier extends Notifier<int> {
   ) => _update(() {
     final old = fact(key);
     votingHomeTrace(
-      'participation.record snapshot=$snapshotHeight '
+      'participation.record snapshot=$snapshotHeight ' // l10n-ignore: log text
       'unavailable=${result.unavailable}',
     );
     final sameSnapshot =
@@ -400,7 +400,7 @@ class VotingHomeCacheNotifier extends Notifier<int> {
         continue;
       }
       votingHomeTrace(
-        'cache.invalidate trigger=$trigger scanned=$scannedHeight '
+        'cache.invalidate trigger=$trigger scanned=$scannedHeight ' // l10n-ignore: log text
         'snapshot=${fact.snapshotHeight} participation=${fact.participation != null} '
         'progress=${fact.progress.name}',
       );
@@ -479,7 +479,9 @@ class VotingHomeCacheNotifier extends Notifier<int> {
   }) {
     final rounds = list(listKey);
     if (rounds == null) {
-      votingHomeTrace('visibility=false reason=no-list');
+      votingHomeTrace(
+        'visibility=false reason=no-list', // l10n-ignore: log text
+      );
       return false;
     }
     return rounds.rounds.any((round) {
@@ -500,7 +502,7 @@ class VotingHomeCacheNotifier extends Notifier<int> {
         ),
       );
       votingHomeTrace(
-        'visibility.candidate decision=${local.decision.name} '
+        'visibility.candidate decision=${local.decision.name} ' // l10n-ignore: log text
         'recheck=${local.needsRecheck}',
       );
       return local.decision == VotingHomeDecision.show;

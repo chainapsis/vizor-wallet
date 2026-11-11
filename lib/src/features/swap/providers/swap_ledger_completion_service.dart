@@ -95,6 +95,7 @@ class SwapLedgerCompletionService {
         txHash: result.txid,
         status: result.status,
         message: result.message,
+        notices: result.notices,
       ),
     );
     if (result.requiresAck) await operations.acknowledge(result.operationId);

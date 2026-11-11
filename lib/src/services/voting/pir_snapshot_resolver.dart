@@ -66,7 +66,7 @@ class PirSnapshotNoMatchingEndpoint implements Exception {
 
   @override
   String toString() =>
-      'PirSnapshotNoMatchingEndpoint(expectedSnapshotHeight: '
+      'PirSnapshotNoMatchingEndpoint(expectedSnapshotHeight: ' // l10n-ignore: diagnostic text
       '$expectedSnapshotHeight, diagnostics: $diagnostics)';
 }
 

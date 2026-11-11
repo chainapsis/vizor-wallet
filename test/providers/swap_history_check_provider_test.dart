@@ -700,7 +700,7 @@ void main() {
     addTearDown(container.dispose);
     // A setting change holds the wallet, so the startup read is refused.
     final transition = container.read(enhancePirTransitionProvider.notifier);
-    transition.update(kEnhancePirChangingMessage);
+    transition.update(EnhancePirTransition.changing);
     container.read(swapHistoryCheckProvider);
     await pumpEventQueue();
     expect(container.read(swapHistoryCheckProvider), SwapHistoryCheck.idle);

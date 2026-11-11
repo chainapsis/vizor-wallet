@@ -190,7 +190,7 @@ void main() {
     final change = c.read(nearSwapPrivacyProvider.notifier).set(true);
     expect(
       c.read(nearSwapPrivacyTransitionProvider),
-      kEnhancePirChangingMessage,
+      EnhancePirTransition.changing,
     );
     expect(c.read(enhancePirTransitionProvider), isNull);
     store.gate!.complete();
@@ -204,7 +204,7 @@ void main() {
     await c.read(nearSwapPrivacyProvider.notifier).set(true);
     expect(
       c.read(nearSwapPrivacyTransitionProvider),
-      kEnhancePirUnchangedMessage,
+      EnhancePirTransition.unchanged,
     );
     expect(c.read(enhancePirTransitionProvider), isNull);
   });
@@ -248,7 +248,7 @@ void main() {
       expect(c.read(nearSwapPrivacyProvider), choice);
       expect(
         c.read(nearSwapPrivacyTransitionProvider),
-        kNearSwapPrivacyUnsavedMessage,
+        EnhancePirTransition.unsavedForSession,
       );
       expect(api.events, ['swap:$choice']);
       expect(sync.swapRecoveryRequests, choice ? 1 : 0);

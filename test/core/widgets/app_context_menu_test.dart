@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_context_menu.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import '../../support/localized_test_scope.dart';
 
 void main() {
   testWidgets('AppContextMenu uses semantic menu surface tokens', (
@@ -338,10 +339,7 @@ class _ThemedHarness extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppTheme(
       data: theme,
-      child: Directionality(
-        textDirection: TextDirection.ltr,
-        child: Center(child: child),
-      ),
+      child: LocalizedTestScope(child: Center(child: child)),
     );
   }
 }
@@ -369,8 +367,7 @@ class _MenuPositionHarness extends StatelessWidget {
     final link = LayerLink();
     return AppTheme(
       data: AppThemeData.light,
-      child: Directionality(
-        textDirection: TextDirection.ltr,
+      child: LocalizedTestScope(
         child: MediaQuery(
           data: MediaQueryData(size: screenSize),
           child: SizedBox.fromSize(

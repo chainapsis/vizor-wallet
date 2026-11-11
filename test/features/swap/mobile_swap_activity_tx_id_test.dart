@@ -4,11 +4,13 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   // Mirror the shared provider lookup contract in the mobile token lane.
   test('mobile adds a NEAR Intents explorer link to the tx id detail row', () {
     final presentation = swapActivityStatusPresentationForIntent(
+      testL10n,
       _state(),
       _intent(
         status: SwapIntentStatus.processing,

@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -26,6 +27,7 @@ import 'mobile_import_birthday_unknown_height_sheet.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../../core/formatting/date_format.dart';
 
 enum _BirthdayEntryMode { date, blockHeight }
 
@@ -82,7 +84,7 @@ class _MobileImportBirthdayScreenState
 
   ImportBirthdayMetadata? _metadata;
   _MobileImportSubmitPhase _submitPhase = _MobileImportSubmitPhase.idle;
-  String? _error;
+  OnboardingSubmitError? _error;
 
   bool get _isSubmitting =>
       _submitPhase != _MobileImportSubmitPhase.idle &&
@@ -115,7 +117,8 @@ class _MobileImportBirthdayScreenState
       final metadata = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .runWithEndpointFallback(
-            operation: 'import birthday metadata',
+            operation:
+                'import birthday metadata', // l10n-ignore: operation label
             action: (endpoint) {
               if (!mounted) {
                 throw StateError('Birthday metadata load cancelled.');
@@ -258,7 +261,8 @@ class _MobileImportBirthdayScreenState
             runWithEndpoint: (action) => ref
                 .read(rpcEndpointFailoverProvider.notifier)
                 .runWithEndpointFallback(
-                  operation: 'import birthday estimate',
+                  operation:
+                      'import birthday estimate', // l10n-ignore: operation label
                   action: action,
                 ),
           );
@@ -269,9 +273,9 @@ class _MobileImportBirthdayScreenState
           if (!mounted) return;
           setState(() {
             _submitPhase = _MobileImportSubmitPhase.idle;
-            _error =
-                "Couldn't estimate a height for that date. Enter a block "
-                'height instead.';
+            _error = OnboardingSubmitError.localized(
+              (l10n) => l10n.onboardingBirthdayMobileEstimateFailed,
+            );
           });
         }
     }
@@ -315,7 +319,9 @@ class _MobileImportBirthdayScreenState
         if (!mounted) return;
         setState(() {
           _submitPhase = _MobileImportSubmitPhase.idle;
-          _error = onboardingSubmitErrorMessage(e);
+          _error = OnboardingSubmitError.text(
+            onboardingSubmitErrorMessage(context.l10n, e),
+          );
         });
       }
       return;
@@ -347,7 +353,9 @@ class _MobileImportBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _MobileImportSubmitPhase.idle;
-        _error = onboardingSubmitErrorMessage(e);
+        _error = OnboardingSubmitError.text(
+          onboardingSubmitErrorMessage(context.l10n, e),
+        );
       });
       return;
     }
@@ -404,17 +412,19 @@ class _MobileImportBirthdayScreenState
 
   String? get _statusMessage => switch (_submitPhase) {
     _MobileImportSubmitPhase.idle => null,
-    _MobileImportSubmitPhase.estimating => 'Estimating height...',
-    _MobileImportSubmitPhase.discoveringAccounts => 'Checking accounts...',
-    _MobileImportSubmitPhase.stoppingSync => 'Pausing sync...',
-    _MobileImportSubmitPhase.importing => 'Importing wallet...',
+    _MobileImportSubmitPhase.estimating =>
+      context.l10n.onboardingBirthdayStatusEstimating,
+    _MobileImportSubmitPhase.discoveringAccounts =>
+      context.l10n.onboardingCheckingAccounts,
+    _MobileImportSubmitPhase.stoppingSync =>
+      context.l10n.onboardingBirthdayStatusPausingSync,
+    _MobileImportSubmitPhase.importing =>
+      context.l10n.onboardingBirthdayStatusImporting,
   };
 
   String _formattedDate(DateTime date) => Platform.isIOS
-      ? '${date.month.toString().padLeft(2, '0')}/${date.year}'
-      : '${date.month.toString().padLeft(2, '0')}/'
-            '${date.day.toString().padLeft(2, '0')}/'
-            '${date.year}';
+      ? formatNumericMonthYear(date, context.l10n.localeName)
+      : formatNumericDate(date, context.l10n.localeName);
 
   @override
   Widget build(BuildContext context) {
@@ -423,9 +433,9 @@ class _MobileImportBirthdayScreenState
     final needsDate = isDateMode && _selectedDate == null;
     final primaryLabel = needsDate
         ? Platform.isIOS
-              ? 'Select month'
-              : 'Select date'
-        : 'Next';
+              ? context.l10n.onboardingBirthdaySelectMonth
+              : context.l10n.onboardingBirthdaySelectDate
+        : context.l10n.onboardingNext;
     final primaryTrailing = needsDate
         ? AppIcons.calendar
         : AppIcons.chevronForward;
@@ -437,9 +447,9 @@ class _MobileImportBirthdayScreenState
             context,
           ).at(OnboardingFlow.importWallet, OnboardingStage.birthday).value,
       onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
-      title: 'Around when did you create your wallet?',
+      title: context.l10n.onboardingBirthdayTitle,
       // Two 25 px lines like the Figma subtitle block.
-      subtitle: 'An estimate is enough — sync starts\nfrom there.',
+      subtitle: context.l10n.onboardingBirthdaySubtitleMobile,
       // Keep the primary flow action last in the bottom stack. The
       // earliest-height fallback remains secondary and still requires
       // confirmation before scanning from zero.
@@ -453,8 +463,8 @@ class _MobileImportBirthdayScreenState
             expand: true,
             constrainContent: true,
             onPressed: _busy ? null : () => unawaited(_skipBirthday()),
-            child: const Text(
-              'I don’t remember',
+            child: Text(
+              context.l10n.onboardingBirthdayDontRemember,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -484,7 +494,9 @@ class _MobileImportBirthdayScreenState
                 _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_date'),
                   iconName: AppIcons.calendar,
-                  label: Platform.isIOS ? 'Enter the month' : 'Enter the date',
+                  label: Platform.isIOS
+                      ? context.l10n.onboardingBirthdayEnterMonth
+                      : context.l10n.onboardingBirthdayEnterDate,
                   selected: isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.date),
                 ),
@@ -492,7 +504,7 @@ class _MobileImportBirthdayScreenState
                 _ModeTab(
                   key: const ValueKey('mobile_import_birthday_mode_height'),
                   iconName: AppIcons.block,
-                  label: 'Enter the block height',
+                  label: context.l10n.onboardingBirthdayEnterBlockHeight,
                   selected: !isDateMode,
                   onTap: () => _setMode(_BirthdayEntryMode.blockHeight),
                 ),
@@ -521,7 +533,7 @@ class _MobileImportBirthdayScreenState
                             if (_heightController.text.isEmpty)
                               IgnorePointer(
                                 child: Text(
-                                  'Block height',
+                                  context.l10n.onboardingBlockHeight,
                                   maxLines: 1,
                                   style: AppTypography.headlineSmall.copyWith(
                                     color: colors.text.muted,
@@ -562,7 +574,7 @@ class _MobileImportBirthdayScreenState
           const SizedBox(height: AppSpacing.s),
           if (_error != null)
             Text(
-              _error!,
+              _error!.resolve(context.l10n),
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.destructive,
@@ -594,8 +606,13 @@ class _MobileImportBirthdayScreenState
           else if (!isDateMode)
             Text(
               _metadata == null
-                  ? 'At least $_minHeight.'
-                  : 'Between $_minHeight and ${_metadata!.tipHeight}.',
+                  ? context.l10n.onboardingBirthdayHeightAtLeast(
+                      _minHeight.toString(),
+                    )
+                  : context.l10n.onboardingBirthdayHeightBetween(
+                      _minHeight.toString(),
+                      _metadata!.tipHeight.toString(),
+                    ),
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(color: colors.text.muted),
             ),
@@ -725,7 +742,9 @@ class _DateFieldButton extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: Platform.isIOS ? 'Pick a month' : 'Pick a date',
+      label: Platform.isIOS
+          ? context.l10n.onboardingBirthdayPickMonth
+          : context.l10n.onboardingBirthdayPickDate,
       child: GestureDetector(
         key: const ValueKey('mobile_import_birthday_date'),
         behavior: HitTestBehavior.opaque,
@@ -735,7 +754,10 @@ class _DateFieldButton extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  formatted ?? (Platform.isIOS ? 'mm/yyyy' : 'mm/dd/yyyy'),
+                  formatted ??
+                      (Platform.isIOS
+                          ? context.l10n.onboardingBirthdayMonthHint
+                          : context.l10n.onboardingBirthdayDateHint),
                   key: const ValueKey('mobile_import_birthday_date_text'),
                   maxLines: 1,
                   style: AppTypography.headlineSmall.copyWith(

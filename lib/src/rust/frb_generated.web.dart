@@ -470,6 +470,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BroadcastNotice dco_decode_broadcast_notice(dynamic raw);
+
+  @protected
   ChainConfirmationSourceView dco_decode_chain_confirmation_source_view(
     dynamic raw,
   );
@@ -720,6 +723,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw);
+
+  @protected
+  List<BroadcastNotice> dco_decode_list_broadcast_notice(dynamic raw);
 
   @protected
   List<CompletedVoteChoiceView> dco_decode_list_completed_vote_choice_view(
@@ -2071,6 +2077,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BroadcastNotice sse_decode_broadcast_notice(SseDeserializer deserializer);
+
+  @protected
   ChainConfirmationSourceView sse_decode_chain_confirmation_source_view(
     SseDeserializer deserializer,
   );
@@ -2399,6 +2408,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BlockMetaInfo> sse_decode_list_block_meta_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<BroadcastNotice> sse_decode_list_broadcast_notice(
     SseDeserializer deserializer,
   );
 
@@ -4080,6 +4094,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_broadcast_notice(
+    BroadcastNotice self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_chain_confirmation_source_view(
     ChainConfirmationSourceView self,
     SseSerializer serializer,
@@ -4490,6 +4510,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_block_meta_info(
     List<BlockMetaInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_broadcast_notice(
+    List<BroadcastNotice> self,
     SseSerializer serializer,
   );
 
