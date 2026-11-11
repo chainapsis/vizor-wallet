@@ -73,6 +73,10 @@ class SwapNotifier extends Notifier<SwapState> {
   // matches, saving the screen list would replace swaps that were never loaded.
   int? _intentsLoadedScope;
   Future<void>? _intentsRestore;
+  // Saves made before the load finished. A load that read storage before one
+  // of them holds a list without it, so it reads again.
+  var _unloadedSaveCount = 0;
+  Future<void> _unloadedSaves = Future<void>.value();
   var _payEntryGeneration = 0;
   var _hasResolvedSupportedAssets = false;
   Set<String> _deprecatedAssetIdentityKeys = const {};
@@ -1908,9 +1912,14 @@ class SwapNotifier extends Notifier<SwapState> {
     }
     final accountScopeGeneration = _accountScopeGeneration;
     try {
-      final persisted = await ref
-          .read(swapActivityTrackerProvider)
-          .loadIntents(accountUuid: scopedAccountUuid);
+      final tracker = ref.read(swapActivityTrackerProvider);
+      List<SwapIntent> persisted;
+      int savesSeen;
+      do {
+        savesSeen = _unloadedSaveCount;
+        persisted = await tracker.loadIntents(accountUuid: scopedAccountUuid);
+        await _unloadedSaves;
+      } while (savesSeen != _unloadedSaveCount);
       if (accountScopeGeneration != _accountScopeGeneration ||
           !_isAccountActive(scopedAccountUuid)) {
         return;
@@ -2083,9 +2092,18 @@ class SwapNotifier extends Notifier<SwapState> {
     }
     // The screen does not hold this account's saved swaps yet, so its swaps
     // are added to the saved ones instead of replacing them.
+    _unloadedSaveCount++;
+    final save = _unloadedSaves.then(
+      (_) => _addOnScreenIntentsToSaved(activeAccountUuid),
+    );
+    _unloadedSaves = save.catchError((Object _) {});
+    await save;
+  }
+
+  Future<void> _addOnScreenIntentsToSaved(String accountUuid) async {
     final tracker = ref.read(swapActivityTrackerProvider);
     final scopedAccountUuid = SwapActivityTracker.normalizeAccountUuid(
-      activeAccountUuid,
+      accountUuid,
     );
     final onScreen = [
       for (final intent in state.intents)

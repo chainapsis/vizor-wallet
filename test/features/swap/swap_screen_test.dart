@@ -9,7 +9,9 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_status.dart';
 import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
+
 import 'support/service_status_fixture.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -77,6 +79,7 @@ import 'support/swap_activity_fixture_intents.dart';
 import '../../support/localized_test_scope.dart';
 import '../../support/test_l10n.dart';
 import '../../support/leading_decimal_input.dart';
+
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -10889,7 +10892,75 @@ void main() {
           .depositTxHash,
       'recorded-deposit-txid',
     );
+
+    // The held restore read the saved swaps before the deposit was recorded.
+    sessionStore.completeLoad('account-1');
+    await tester.pumpAndSettle();
+    String? txHash(List<SwapIntent> intents) => intents
+        .firstWhere((intent) => intent.id == 'account-one-swap')
+        .depositTxHash;
+    expect(
+      txHash(container.read(swapStateProvider).intents),
+      'recorded-deposit-txid',
+    );
+    expect(
+      txHash(sessionStore.intentsFor('account-1')),
+      'recorded-deposit-txid',
+    );
   });
+
+  testWidgets(
+    'a restore that read before a recorded deposit does not undo it',
+    (tester) async {
+      final sessionStore = _HeldRestoreSwapPersistenceStore(
+        initialIntents: [
+          ...savedSwapPerAccount(),
+          _persistedIntent(
+            id: 'account-one-other-swap',
+            txHash: 'account-one-other-txid',
+            accountUuid: 'account-1',
+          ),
+        ],
+      );
+      // Status checks stay pending, so no refresh re-reads the saved swaps.
+      final container = await pumpTwoAccountSwap(
+        tester,
+        sessionStore,
+        swapProvider: _PendingExternalDepositSwapProvider(
+          statusGate: Completer<void>(),
+        ),
+      );
+      final accounts = container.read(accountProvider.notifier);
+      final notifier = container.read(swapStateProvider.notifier);
+      final recorded = container
+          .read(swapStateProvider)
+          .intents
+          .firstWhere((intent) => intent.id == 'account-one-swap');
+      await accounts.switchAccount('account-2');
+      await tester.pumpAndSettle();
+      sessionStore.heldAccounts.add('account-1');
+      await accounts.switchAccount('account-1');
+      await tester.pumpAndSettle();
+      await notifier.recordHardwareDepositBroadcast(
+        intent: recorded,
+        broadcast: const SwapDepositBroadcastResult(
+          txHash: 'recorded-deposit-txid',
+          status: SwapDepositBroadcastStatus.broadcasted,
+        ),
+      );
+
+      // The restore's read is older than the recorded deposit. A save of the
+      // list it loads must not drop the deposit.
+      sessionStore.completeLoad('account-1');
+      await tester.pump();
+      await notifier.removeIntent('account-one-other-swap');
+      await tester.pumpAndSettle();
+
+      final saved = sessionStore.intentsFor('account-1');
+      expect(ids(saved), ['account-one-swap']);
+      expect(saved.single.depositTxHash, 'recorded-deposit-txid');
+    },
+  );
 
   testWidgets('a failed swap load does not erase saved swaps', (tester) async {
     final sessionStore = _FailingLoadSwapPersistenceStore(
