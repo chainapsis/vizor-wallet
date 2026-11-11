@@ -114,17 +114,6 @@ impl BroadcastNotice {
         }
     }
 
-    pub(crate) fn broadcast_storage_failed(
-        txid: impl Into<String>,
-        detail: impl Into<String>,
-    ) -> Self {
-        Self::for_txid(kind::BROADCAST_STORAGE_FAILED, txid, detail)
-    }
-
-    pub(crate) fn response_unavailable(txid: impl Into<String>, detail: impl Into<String>) -> Self {
-        Self::for_txid(kind::RESPONSE_UNAVAILABLE, txid, detail)
-    }
-
     pub(crate) fn database_unavailable(detail: impl Into<String>) -> Self {
         Self::with_detail(kind::DATABASE_UNAVAILABLE, detail)
     }
@@ -158,14 +147,6 @@ impl BroadcastNotice {
 
     pub(crate) fn retention_failed(detail: impl Into<String>) -> Self {
         Self::with_detail(kind::RETENTION_FAILED, detail)
-    }
-
-    pub(crate) fn retrying_locally() -> Self {
-        Self::new(kind::RETRYING_LOCALLY)
-    }
-
-    pub(crate) fn tracking_failed(detail: impl Into<String>) -> Self {
-        Self::with_detail(kind::TRACKING_FAILED, detail)
     }
 
     /// The English sentence. Every Dart ARB key for a kind has this text as
