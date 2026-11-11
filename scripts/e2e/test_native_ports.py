@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock, patch
 
@@ -102,6 +103,19 @@ class NativePortsTests(unittest.TestCase):
                 PORTS.lease_fixed_ports("a1b2c3d4e5", {"rpc": free, "lwd": taken}, lock_root=self.locks)
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", free))
+
+    def test_a_listener_that_goes_away_within_the_wait_does_not_fail(self):
+        (port,) = self.free_ports(1)
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", port))
+        listener.listen(1)
+        timer = threading.Timer(0.6, listener.close)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        self.addCleanup(listener.close)
+        lease = PORTS.lease_fixed_ports("a1b2c3d4e5", {"rpc": port}, lock_root=self.locks,
+            wait_seconds=10.0)
+        lease.close()
 
     def test_a_wildcard_listener_fails_like_a_loopback_one(self):
         # Docker publishes ports on the wildcard addresses, which a reusable

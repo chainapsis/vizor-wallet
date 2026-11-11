@@ -10,6 +10,7 @@ import re
 import socket
 import stat
 import tempfile
+import time
 
 
 _RUN_ID_RE = re.compile(r"[a-f0-9]{10}\Z")
@@ -141,9 +142,25 @@ def _accepts_connections(port: int) -> bool:
     return False
 
 
-def _reserve_fixed_port(lock_root: Path, run_id: str, port: int) -> tuple[socket.socket, int]:
+def _reserve_fixed_port(lock_root: Path, run_id: str, port: int,
+                        wait_seconds: float = 0.0) -> tuple[socket.socket, int]:
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            return _reserve_fixed_port_now(lock_root, run_id, port)
+        except _PortInUse as error:
+            if time.monotonic() >= deadline:
+                raise NativePortError(f"port {port} is in use; stop whatever listens on it") from error
+        time.sleep(0.5)
+
+
+class _PortInUse(Exception):
+    pass
+
+
+def _reserve_fixed_port_now(lock_root: Path, run_id: str, port: int) -> tuple[socket.socket, int]:
     if _accepts_connections(port):
-        raise NativePortError(f"port {port} is in use; stop whatever listens on it")
+        raise _PortInUse
     reserved = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         # A previous case's connections may still be in TIME_WAIT; a live
@@ -152,7 +169,7 @@ def _reserve_fixed_port(lock_root: Path, run_id: str, port: int) -> tuple[socket
         try:
             reserved.bind(("127.0.0.1", port))
         except OSError as error:
-            raise NativePortError(f"port {port} is in use; stop whatever listens on it") from error
+            raise _PortInUse from error
         reserved.listen(1)
         descriptor = _lock_port(lock_root, run_id, port)
     except BaseException:
@@ -220,8 +237,12 @@ def lease_fixed_ports(
     ports: dict[str, int],
     *,
     lock_root: Path | None = None,
+    wait_seconds: float = 0.0,
 ) -> NativePortLease:
-    """Reserve exact loopback ports, failing fast when one is already taken."""
+    """Reserve exact loopback ports.
+
+    A port with a listener fails once `wait_seconds` pass without it going away.
+    """
     if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
         raise NativePortError("run_id must contain exactly ten lowercase hexadecimal characters")
     if (not isinstance(ports, dict) or not 1 <= len(ports) <= 16
@@ -233,7 +254,7 @@ def lease_fixed_ports(
     lease = NativePortLease(0, {}, [], [])
     try:
         for name, port in ports.items():
-            reserved, descriptor = _reserve_fixed_port(safe_lock_root, run_id, port)
+            reserved, descriptor = _reserve_fixed_port(safe_lock_root, run_id, port, wait_seconds)
             lease.ports[name] = port
             lease.sockets.append(reserved)
             lease.lock_descriptors.append(descriptor)

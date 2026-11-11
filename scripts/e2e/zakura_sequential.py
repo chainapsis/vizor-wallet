@@ -173,7 +173,8 @@ class SequentialCase:
             self.lease = lease_native_ports(0, run_id)
         else:
             _require_unbound(flutter_cases.UNAVAILABLE_PORT)
-            self.lease = lease_fixed_ports(run_id, dict(ports))
+            # The previous case's services can take a moment to let go of the ports.
+            self.lease = lease_fixed_ports(run_id, dict(ports), wait_seconds=20.0)
         try:
             # Screenshot and voting ports stay leased for their services, outside the chain's.
             workspace = prepare_native_case_workspace(run_root, platform=platform,
