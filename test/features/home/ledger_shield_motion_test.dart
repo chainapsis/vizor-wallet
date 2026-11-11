@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -13,6 +14,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sh
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Future<void> _artFrames(WidgetTester tester) async {
   for (var i = 0; i < 20; i++) {
@@ -33,11 +35,12 @@ ParticleField _field(WidgetTester tester) => tester
 Widget _content(LedgerSigningStage stage, VoidCallback close) =>
     LedgerInlinePresentation(
       child: MobileLedgerSigningContent(
-        title: stage.title,
-        message: stage.message,
-        status: stage.status,
+        title: stage.title(testL10n),
+        message: stage.message(testL10n),
+        status: stage.status(testL10n),
         active: true,
         failed: false,
+        showFailureStatus: false,
         stage: stage,
         readiness: LedgerAppReadinessPhase.ready,
         saving: false,
@@ -60,6 +63,7 @@ void main() {
       var closed = 0;
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: Center(
@@ -128,6 +132,7 @@ void main() {
           }
           await tester.pumpWidget(
             MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.dark,
                 child: MediaQuery(
@@ -187,6 +192,7 @@ void main() {
       addTearDown(phase.dispose);
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: ListenableBuilder(
             listenable: Listenable.merge([known, phase]),
             builder: (_, _) => MobileShieldScene(
@@ -229,6 +235,7 @@ void main() {
       addTearDown(result.dispose);
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: ValueListenableBuilder(
             valueListenable: result,
             builder: (_, value, _) => MobileShieldScene(
@@ -295,6 +302,7 @@ void main() {
       try {
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: MediaQuery(
@@ -360,6 +368,7 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: ValueListenableBuilder(
             valueListenable: visible,
             builder: (_, value, _) => MobileShieldScene(

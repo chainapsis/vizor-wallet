@@ -2249,7 +2249,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         final message =
             current?.failure?.rawMessage ??
             current?.error ??
-            'Wallet sync ended before completion.';
+            'Wallet sync ended before completion.'; // l10n-ignore: log text and internal error
         throw StateError(message);
       }
 
@@ -2267,7 +2267,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         .switchToFallbackFor(
           error,
           endpoint: endpoint,
-          operation: 'foreground sync',
+          operation:
+              'foreground sync', // l10n-ignore: log text and internal error
         );
     if (gen != _syncGen || _requiresUnlock) return;
     if (switched) {
@@ -2382,10 +2383,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final stopped = await _waitForRustTasksToStop(
         timeoutMs: 5000,
         onSyncTimeout:
-            'SyncNotifier: startSyncAnyway timed out waiting for cancelled '
+            'SyncNotifier: startSyncAnyway timed out waiting for cancelled ' // l10n-ignore: log text and internal error
             'Rust sync to stop after 5s; keeping polling active for retry',
         onMempoolTimeout:
-            'SyncNotifier: startSyncAnyway timed out waiting for mempool '
+            'SyncNotifier: startSyncAnyway timed out waiting for mempool ' // l10n-ignore: log text and internal error
             'observer to stop after 5s; keeping polling active for retry',
       );
       if (!stopped) {
@@ -2668,10 +2669,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         final stopped = await _waitForRustTasksToStop(
           timeoutMs: 120000,
           onSyncTimeout:
-              'SyncNotifier: timed out waiting for Rust sync to stop before '
+              'SyncNotifier: timed out waiting for Rust sync to stop before ' // l10n-ignore: log text and internal error
               'wallet mutation',
           onMempoolTimeout:
-              'SyncNotifier: timed out waiting for mempool observer to stop '
+              'SyncNotifier: timed out waiting for mempool observer to stop ' // l10n-ignore: log text and internal error
               'before wallet mutation',
         );
         if (!stopped) {
@@ -2770,9 +2771,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     await _waitForRustTasksToStop(
       timeoutMs: 5000,
       onSyncTimeout:
-          'SyncNotifier: timed out waiting for Rust sync to stop during sign-out',
+          'SyncNotifier: timed out waiting for Rust sync to stop during sign-out', // l10n-ignore: log text and internal error
       onMempoolTimeout:
-          'SyncNotifier: timed out waiting for mempool observer to stop during '
+          'SyncNotifier: timed out waiting for mempool observer to stop during ' // l10n-ignore: log text and internal error
           'sign-out',
     );
   }
@@ -2844,15 +2845,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final stopped = await _waitForRustTasksToStop(
       timeoutMs: 5000,
       onSyncTimeout: failIfNotQuiescent
-          ? 'SyncNotifier: restartSync timed out waiting for Rust sync loop to '
+          ? 'SyncNotifier: restartSync timed out waiting for Rust sync loop to ' // l10n-ignore: log text and internal error
                 'stop after 5s; transport change blocked'
-          : 'SyncNotifier: restartSync timed out waiting for Rust sync loop to '
+          : 'SyncNotifier: restartSync timed out waiting for Rust sync loop to ' // l10n-ignore: log text and internal error
                 'stop after 5s; starting anyway (the startSync guard will log '
                 'if the old run is still around)',
       onMempoolTimeout: failIfNotQuiescent
-          ? 'SyncNotifier: restartSync timed out waiting for mempool observer '
+          ? 'SyncNotifier: restartSync timed out waiting for mempool observer ' // l10n-ignore: log text and internal error
                 'to stop after 5s; transport change blocked'
-          : 'SyncNotifier: restartSync timed out waiting for mempool observer '
+          : 'SyncNotifier: restartSync timed out waiting for mempool observer ' // l10n-ignore: log text and internal error
                 'to stop after 5s; the new observer start will skip and the '
                 'new session runs without streaming',
     );

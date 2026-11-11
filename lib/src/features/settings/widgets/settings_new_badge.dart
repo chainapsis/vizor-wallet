@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// The small "New" pill rendered next to a settings row label. Shared by the
@@ -23,7 +24,7 @@ class SettingsNewBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        'New',
+        context.l10n.settingsNewBadge,
         style: AppTypography.labelLarge.copyWith(color: brandColor),
       ),
     );

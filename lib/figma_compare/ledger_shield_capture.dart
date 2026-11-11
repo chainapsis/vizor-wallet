@@ -7,6 +7,7 @@ import '../src/features/ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
 import '../src/features/ledger/widgets/mobile/mobile_ledger_signing_content.dart';
 import '../src/features/ledger/services/ledger_signing_progress.dart';
 import '../src/features/ledger/services/ledger_app_readiness_service.dart';
+import '../src/core/l10n/l10n.dart';
 import '../src/providers/account_models.dart';
 
 enum _Stage {
@@ -66,6 +67,7 @@ class _LedgerShieldMotionPreviewState extends State<LedgerShieldMotionPreview> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final hardware =
         _stage == _Stage.preparing ||
         _stage == _Stage.sending ||
@@ -90,24 +92,25 @@ class _LedgerShieldMotionPreviewState extends State<LedgerShieldMotionPreview> {
           ? MobileShieldPhase.hardware
           : MobileShieldPhase.working,
       title: _stage == _Stage.review
-          ? 'Transparent Balance'
+          ? l10n.homeShieldBalanceTitle
           : done
-          ? 'Shielded successfully'
+          ? l10n.commonShieldedSuccessfully
           : hardware
-          ? 'Shield with Ledger'
-          : 'Shielding your balance…',
+          ? l10n.homeLedgerShieldTitle
+          : l10n.homeShieldingBalance,
       focusChild: hardware
           ? LedgerInlinePresentation(
               child: MobileLedgerSigningContent(
                 title: stage == LedgerSigningStage.reviewing
                     ? 'Confirm on your Ledger'
-                    : stage.title,
-                message: stage.message,
+                    : stage.title(l10n),
+                message: stage.message(l10n),
                 status: stage == LedgerSigningStage.reviewing
                     ? 'Waiting for your approval'
-                    : stage.status,
+                    : stage.status(l10n),
                 active: true,
                 failed: false,
+                showFailureStatus: false,
                 stage: stage,
                 readiness: LedgerAppReadinessPhase.ready,
                 saving: _stage == _Stage.saving,

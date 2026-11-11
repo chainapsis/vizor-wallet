@@ -13,6 +13,7 @@ import '../../widgets/app_profile_picture.dart';
 import '../../widgets/mobile/mobile_account_avatar.dart';
 import 'mobile_top_nav.dart';
 import 'mobile_sync_status.dart';
+import '../../l10n/l10n.dart';
 
 /// [MobileTopNav.account] bound to live state: the active account's
 /// name and profile picture from [accountProvider], and the sync status
@@ -33,6 +34,7 @@ class MobileTopNavAccount extends ConsumerWidget {
     final account = ref.watch(accountProvider).value?.activeAccount;
     final sync = ref.watch(syncProvider).value ?? SyncState();
     final status = SyncStatusLabel.from(
+      context.l10n,
       sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
       networkPrivacy: ref.watch(networkPrivacyProvider),

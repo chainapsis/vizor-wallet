@@ -1,3 +1,5 @@
+import 'l10n/l10n.dart';
+
 const kDefaultProfilePictureId = 'pfp-01';
 const _kProfilePictureAssetRoot = 'assets/profile_pictures';
 final _legacyKnightVariantPattern = RegExp(r'^knight-(\d{2})$');
@@ -14,15 +16,14 @@ const _legacyProfilePictureIdMap = {
 };
 
 class ProfilePictureOption {
-  const ProfilePictureOption({
-    required this.id,
-    required this.label,
-    required this.assetPath,
-  });
+  const ProfilePictureOption({required this.id, required this.assetPath});
 
   final String id;
-  final String label;
   final String assetPath;
+
+  /// The character's name. The id (`pfp-01`) is what gets saved.
+  String label(AppLocalizations l10n) =>
+      l10n.profilePictureName('p${id.substring('pfp-'.length)}');
 }
 
 const _kProfilePictureSuffixes = [
@@ -43,29 +44,10 @@ const _kProfilePictureSuffixes = [
   '15',
 ];
 
-const _kProfilePictureLabelsBySuffix = {
-  '01': 'Knight',
-  '02': 'Viking',
-  '03': 'Samurai',
-  '04': 'Monarch',
-  '05': 'Iron helm',
-  '06': 'Ronin',
-  '07': 'Skull knight',
-  '08': 'Seer',
-  '09': 'Berserker',
-  '10': 'Rogue',
-  '11': 'Mage',
-  '12': 'Masked cat',
-  '13': 'Warden',
-  '14': 'Bronze helm',
-  '15': 'Fish knight',
-};
-
 final kProfilePictureOptions = <ProfilePictureOption>[
   for (final suffix in _kProfilePictureSuffixes)
     ProfilePictureOption(
       id: 'pfp-$suffix',
-      label: _kProfilePictureLabelsBySuffix[suffix]!,
       assetPath: '$_kProfilePictureAssetRoot/profile_picture_$suffix.png',
     ),
 ];

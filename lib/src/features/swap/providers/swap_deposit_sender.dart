@@ -211,6 +211,7 @@ class RustSwapDepositSender implements SwapDepositSender {
         txHash: txid,
         status: result.status,
         message: result.message,
+        notices: result.notices,
       );
     } catch (e) {
       log('SwapDepositSender: failed flow=$sendFlowId error=$e');

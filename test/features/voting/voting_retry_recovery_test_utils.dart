@@ -7,12 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../support/test_l10n.dart';
 import 'round_plan_test_utils.dart';
 
 const _roundId =
@@ -20,6 +23,8 @@ const _roundId =
 const _key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
 const _message =
     'an unclassified submission reservation survived process interruption';
+// The SDK text is only logged; the screen shows the session summary.
+final _shownMessage = testL10n.votingErrorSessionFailed;
 
 /// Exercises the real Retry path while wallet readiness remains pending.
 Future<void> expectVotingRetryClearsError(
@@ -61,6 +66,7 @@ Future<void> expectVotingRetryClearsError(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -68,14 +74,14 @@ Future<void> expectVotingRetryClearsError(
     ),
   );
   await tester.pumpAndSettle();
-  expect(find.text(_message), findsOneWidget);
+  expect(find.text(_shownMessage), findsOneWidget);
 
   await tester.tap(find.text('Retry'));
   // Observe the first frame while the next attempt is blocked on readiness.
   await tester.pump();
   expect(session.readinessRequested, isTrue);
   expect(find.text('Voting failed.'), findsNothing);
-  expect(find.text(_message), findsNothing);
+  expect(find.text(_shownMessage), findsNothing);
   expect(find.text('Retry'), findsNothing);
   expect(
     container.read(votingSubmissionJobProvider(_key)).status,
@@ -96,7 +102,7 @@ class _InterruptedSubmissionJob extends VotingSubmissionJobNotifier {
   VotingSubmissionJobState build() => const VotingSubmissionJobState(
     key: _key,
     status: VotingSubmissionJobStatus.error,
-    errorMessage: _message,
+    errorMessage: VotingLiteralMessage(_message),
   );
 }
 
@@ -124,7 +130,7 @@ class _RetryRecoveryVotingSessionNotifier
     roundId: _roundId,
     accountUuid: _key.accountUuid,
     phase: VotingSessionPhase.error,
-    error: const VotingSessionError(message: _message),
+    error: const VotingSessionError(message: VotingLiteralMessage(_message)),
     roundPlan: apiRoundPlan(
       roundId: _roundId,
       primaryAction: rust_wire.RoundPlanActionKind.vote,

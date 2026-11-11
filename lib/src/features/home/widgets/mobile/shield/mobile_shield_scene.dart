@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import '../../../../../core/formatting/zec_amount.dart';
+import '../../../../../core/l10n/l10n.dart';
 import '../../../../../core/privacy/privacy_mask.dart';
 import '../../../../../core/theme/app_theme.dart';
 import '../../../../../core/widgets/app_button.dart';
@@ -378,8 +379,8 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
     }
 
     return math.max(
-      measure('Transparent Balance'),
-      measure('Shielded successfully'),
+      measure(context.l10n.homeShieldBalanceTitle),
+      measure(context.l10n.commonShieldedSuccessfully),
     );
   }
 
@@ -573,7 +574,7 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
                     liveRegion: true,
                     child: Text(
                       widget.phase == MobileShieldPhase.succeeded
-                          ? 'Shielding your balance…'
+                          ? context.l10n.homeShieldingBalance
                           : widget.title,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMedium.copyWith(
@@ -607,7 +608,7 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
                     enabledBackgroundColor: const Color(0xFFFFFFFF),
                     enabledLabelColor: const Color(0xFF141818),
                     child: Text(
-                      'Complete',
+                      context.l10n.homeShieldComplete,
                       style: AppTypography.bodyMedium.copyWith(
                         color: const Color(0xFF141818),
                       ),
@@ -640,7 +641,7 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
 
   Widget _cancel() => Semantics(
     button: true,
-    label: 'Cancel',
+    label: context.l10n.commonCancel,
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.canLeave ? widget.onClose : null,
@@ -649,7 +650,7 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
         height: 48,
         child: Center(
           child: Text(
-            'Cancel',
+            context.l10n.commonCancel,
             style: AppTypography.bodyMedium.copyWith(
               color: const Color(0x99FFFFFF),
             ),
@@ -734,7 +735,9 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
                                     ),
                                   ),
                                   child: Semantics(
-                                    label: 'Keystone transaction QR',
+                                    label: context
+                                        .l10n
+                                        .homeShieldKeystoneQrSemantics,
                                   ),
                                 ),
                               ),
@@ -776,7 +779,8 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
                       Text(
                         widget.phase == MobileShieldPhase.succeeded &&
                                 (_keystone?.active ?? false)
-                            ? _keystoneFocusTitle ?? 'Shielding your balance…'
+                            ? _keystoneFocusTitle ??
+                                  context.l10n.homeShieldingBalance
                             : widget.title,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
@@ -889,7 +893,8 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
         left: layout.centerX - art.size.width * layout.artScale / 2,
         top: layout.amountTop + dy,
         child: Semantics(
-          label: '${result ? _result : widget.amount} ZEC',
+          label:
+              '${result ? _result : widget.amount} ZEC', // l10n-ignore: amount format
           child: ExcludeSemantics(
             child: Transform.scale(
               alignment: Alignment.topLeft,
@@ -969,7 +974,10 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
             ),
           if (!auxiliary && (_review || t < ShieldTimeline.fall.end)) ...[
             icon('overlay_transparent', header * 0.6),
-            title(_review ? widget.title : 'Transparent Balance', header),
+            title(
+              _review ? widget.title : context.l10n.homeShieldBalanceTitle,
+              header,
+            ),
             balance(before, result: false),
           ],
           if (!auxiliary && a != null && a >= ShieldTimeline.textIn.start) ...[

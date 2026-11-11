@@ -10,8 +10,6 @@ part 'near_intents_one_click_json.dart';
 part 'near_intents_one_click_models.dart';
 part 'near_intents_one_click_transport.dart';
 
-const _notReportedText = 'Not reported';
-
 class NearIntentsOneClickSwapAdapter
     implements SwapProvider, SwapPricingProvider {
   NearIntentsOneClickSwapAdapter({
@@ -41,7 +39,7 @@ class NearIntentsOneClickSwapAdapter
   List<_OneClickToken>? _tokenCache;
 
   @override
-  String get providerLabel => 'NEAR Intents';
+  String get providerLabel => 'NEAR Intents'; // l10n-ignore: brand name
 
   @override
   Future<List<SwapAsset>> listSupportedExternalAssets() async {
@@ -101,7 +99,7 @@ class NearIntentsOneClickSwapAdapter
       'recipient': requestedRecipient,
       'recipientType': 'DESTINATION_CHAIN',
       'deadline': _deadlineIso(request.deadline ?? quoteDeadline),
-      'depositMode': 'SIMPLE',
+      'depositMode': 'SIMPLE', // l10n-ignore: protocol value
       'quoteWaitingTimeMs': quoteWaitingTimeMs,
       if (referral != null && referral!.isNotEmpty) 'referral': referral,
     };
@@ -203,7 +201,7 @@ class NearIntentsOneClickSwapAdapter
           'nearSenderAccount': nearSenderAccount,
       },
     );
-    _expectSuccess(response, 'deposit submit');
+    _expectSuccess(response, 'deposit submit'); // l10n-ignore: log label
     return _snapshotFromStatusResponse(
       _OneClickStatusResponse.fromJson(response.jsonObject),
       tokens,
@@ -222,7 +220,7 @@ class NearIntentsOneClickSwapAdapter
       _endpoint('/v0/tokens'),
       headers: _headers(),
     );
-    _expectSuccess(response, 'token list');
+    _expectSuccess(response, 'token list'); // l10n-ignore: log label
     final tokens = [
       for (final item in response.jsonList)
         if (item is Map<String, dynamic>) _OneClickToken.fromJson(item),
@@ -301,7 +299,7 @@ class NearIntentsOneClickSwapAdapter
       sellAmountText: sellAmountText,
       receiveEstimateText: receiveEstimateText,
       status: status,
-      nextAction: _nextAction(status, quote),
+      nextAction: _nextAction(status).name,
       depositInstruction: quote.depositInstruction,
       sellAmountBaseUnits: quote.sellAmountBaseUnits,
       swapFeeText: quote.feeLabel,
@@ -356,10 +354,6 @@ class NearIntentsOneClickSwapAdapter
       userDeadline ?? quote.timeWhenInactive,
     );
     final depositDeadline = _parseIsoDateTime(userDeadline);
-    final quoteExpiryLabel = _expiryLabel(
-      userDeadline ?? quote.timeWhenInactive,
-    );
-    final depositExpiryLabel = _expiryLabel(userDeadline);
 
     return SwapQuote(
       direction: direction,
@@ -371,7 +365,7 @@ class NearIntentsOneClickSwapAdapter
       receiveAmount: receiveAmount,
       minimumReceiveAmount: minimumReceive.amount,
       providerLabel: providerLabel,
-      feeLabel: 'Included in shown rate',
+      feeLabel: kSwapIncludedInRateToken,
       totalFeesText: _appFeesText(
         appFeeBps: response.quoteRequest.appFeeBpsOrNull,
         amountInFormatted: quote.amountInFormatted,
@@ -379,13 +373,10 @@ class NearIntentsOneClickSwapAdapter
         sellAsset: sellAsset,
         sellToken: sellToken,
       ),
-      expiryLabel: quoteExpiryLabel,
       quoteExpiresAt: quoteExpiresAt,
       depositInstruction: SwapDepositInstruction(
         asset: sellAsset,
         address: quote.depositAddress ?? _placeholderDepositAddress,
-        expiresInLabel: depositExpiryLabel,
-        reuseWarning: 'Do not reuse this address',
         memo: quote.depositMemo,
         deadline: depositDeadline,
       ),
@@ -439,8 +430,8 @@ class NearIntentsOneClickSwapAdapter
     if (slippageBps == null || slippageBps < 0) {
       return _MinimumReceiveDisplay(
         amount: receiveAmount,
-        text: _notReportedText,
-        slippageToleranceTextOverride: _notReportedText,
+        text: kSwapNotReportedToken,
+        slippageToleranceTextOverride: kSwapNotReportedToken,
       );
     }
 
@@ -939,7 +930,8 @@ class NearIntentsOneClickSwapAdapter
     return {
       if (contentType) HttpHeaders.contentTypeHeader: 'application/json',
       if (bearerToken != null && bearerToken!.isNotEmpty)
-        HttpHeaders.authorizationHeader: 'Bearer $bearerToken',
+        HttpHeaders.authorizationHeader:
+            'Bearer $bearerToken', // l10n-ignore: HTTP header
     };
   }
 

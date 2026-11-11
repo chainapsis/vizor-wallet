@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/core/navigation/route_owned_redirect.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
@@ -70,10 +71,12 @@ import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fake_voting_round_session.dart';
 import 'round_plan_test_utils.dart';
 import 'voting_retry_recovery_test_utils.dart';
+import '../../support/test_l10n.dart';
 import '../../services/voting/fake_voting_http.dart';
 import 'fake_round_recovery_state.dart';
 
@@ -236,6 +239,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: const Scaffold(
@@ -1252,7 +1256,11 @@ void main() {
     await _pumpUntilFound(tester, find.text('Retry'));
 
     expect(find.text('Submission not complete'), findsOneWidget);
-    expect(find.textContaining('temporary setup unavailable'), findsOneWidget);
+    // The setup error is only logged; the screen shows the session summary.
+    expect(
+      find.textContaining(testL10n.votingErrorSessionFailed),
+      findsOneWidget,
+    );
     expect(notifier.refreshCalls, 1);
 
     await tester.tap(find.text('Retry'));
@@ -1945,8 +1953,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // The specific error stays behind "Show details" under the summary.
+    expect(find.text(testL10n.votingErrorSessionFailed), findsOne);
+    expect(find.textContaining('active account lookup failed'), findsNothing);
+    await tester.tap(find.text(testL10n.commonShowDetails));
+    await tester.pumpAndSettle();
     expect(find.text('active account lookup failed'), findsOne);
-    expect(find.text('Voting session action failed.'), findsNothing);
     expect(find.text('Retry'), findsOne);
   });
 
@@ -2081,6 +2093,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -2175,6 +2188,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -3028,6 +3042,7 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
     Widget voted({required bool privacyModeEnabled}) => MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(
@@ -3616,7 +3631,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining("Couldn't load results"), findsOneWidget);
+    // The SDK's reason is behind "Show details"; the copy says what to do.
+    expect(
+      find.text(
+        testL10n.votingResultsLoadFailed(testL10n.votingLoadFailedRetry),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(testL10n.commonShowDetails));
+    await tester.pumpAndSettle();
     expect(
       find.textContaining('not authenticated by voting config'),
       findsOneWidget,
@@ -4085,7 +4108,7 @@ void main() {
               key: staleKey,
               status: VotingSubmissionJobStatus.error,
               generation: 1,
-              errorMessage: 'stale key selected',
+              errorMessage: VotingLiteralMessage('stale key selected'),
             ),
           ),
         ),
@@ -4137,6 +4160,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -5123,6 +5147,7 @@ GoRouter _mobileProposalRouter() {
 
 Widget _mobileProposalApp(GoRouter router) {
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -5177,6 +5202,7 @@ Widget _statusHarness({
   );
 
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -5230,6 +5256,7 @@ Widget _proposalHarness({String? initialLocation}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -5261,6 +5288,7 @@ Widget _submissionHarness({Widget votingRoute = const Text('voting route')}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -5290,6 +5318,7 @@ Widget _resultsHarness({String? initialLocation}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );

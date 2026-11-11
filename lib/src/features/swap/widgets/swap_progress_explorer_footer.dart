@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -45,7 +46,7 @@ class SwapProgressExplorerFooter extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
         child: Row(
           children: [
-            const Expanded(child: Text('View on NEAR Intents')),
+            Expanded(child: Text(context.l10n.swapViewOnNearIntents)),
             const SizedBox(width: AppSpacing.xs),
             AppIcon(
               AppIcons.arrowTopRight,

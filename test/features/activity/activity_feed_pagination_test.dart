@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/features/activity/activity_scroll_anchor.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_skeleton_row.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 ActivityRowData row(int id) => ActivityRowData(
   stableId: 'row-$id',
@@ -18,6 +19,7 @@ ActivityRowData row(int id) => ActivityRowData(
   subtitle: 'Shielded',
   amountText: '+1 ZEC',
   statusText: 'Completed',
+  statusIsRoutine: true,
   timestampText: 'Oct 23, 12:00',
 );
 
@@ -27,6 +29,7 @@ void main() {
   ) async {
     const mobile = kAppFormFactor == AppFormFactor.mobile;
     Widget feed(bool loading) => MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.dark,
         child: Center(
@@ -89,6 +92,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: CustomScrollView(
@@ -114,6 +118,7 @@ void main() {
   testWidgets('completed empty state has no skeleton', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: const CustomScrollView(
@@ -134,6 +139,7 @@ void main() {
       late StateSetter update;
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: StatefulBuilder(

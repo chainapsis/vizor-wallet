@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import 'network_config.dart';
+import '../l10n/l10n.dart';
 export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
@@ -43,6 +44,20 @@ class RpcEndpointConfig {
   }
 }
 
+/// The group a preset is listed under.
+enum RpcEndpointRegion {
+  standard,
+  europe,
+  global,
+  americas,
+  asiaPacific,
+  community,
+  testnet,
+  regtest;
+
+  String label(AppLocalizations l10n) => l10n.endpointRegionName(name);
+}
+
 class RpcEndpointPreset {
   const RpcEndpointPreset({
     required this.id,
@@ -53,7 +68,7 @@ class RpcEndpointPreset {
   });
 
   final String id;
-  final String region;
+  final RpcEndpointRegion region;
   final String label;
   final String url;
   final bool isDefault;
@@ -62,7 +77,8 @@ class RpcEndpointPreset {
 
   bool get isAutomatic => id == kDefaultRpcEndpointPresetId;
 
-  String get displayLabel => isAutomatic ? label : hostPort;
+  String displayLabel(AppLocalizations l10n) =>
+      isAutomatic ? l10n.endpointAutomatic : hostPort;
 }
 
 // The default ID stores automatic selection intent. Its URL remains a local
@@ -70,77 +86,77 @@ class RpcEndpointPreset {
 final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,
-    region: 'Default',
-    label: 'Automatic',
+    region: RpcEndpointRegion.standard,
+    label: 'Automatic', // l10n-ignore: displayLabel shows endpointAutomatic
     url: ZcashNetwork.mainnet.lightwalletdUrl,
     isDefault: true,
   ),
   RpcEndpointPreset(
     id: kManualUsRpcEndpointPresetId,
-    region: 'Americas',
-    label: 'Stardust US',
+    region: RpcEndpointRegion.americas,
+    label: 'Stardust US', // l10n-ignore: provider name
     url: ZcashNetwork.mainnet.lightwalletdUrl,
   ),
   const RpcEndpointPreset(
     id: 'eu-zec-stardust',
-    region: 'Europe',
-    label: 'Stardust Europe',
+    region: RpcEndpointRegion.europe,
+    label: 'Stardust Europe', // l10n-ignore: provider name
     url: 'https://eu.zec.stardust.rest:443',
   ),
   const RpcEndpointPreset(
     id: 'zec-rocks',
-    region: 'Global',
-    label: 'Zec Rocks',
+    region: RpcEndpointRegion.global,
+    label: 'Zec Rocks', // l10n-ignore: provider name
     url: 'https://zec.rocks:443',
   ),
   const RpcEndpointPreset(
     id: 'na-zec-rocks',
-    region: 'Americas',
-    label: 'Zec Rocks North America',
+    region: RpcEndpointRegion.americas,
+    label: 'Zec Rocks North America', // l10n-ignore: provider name
     url: 'https://na.zec.rocks:443',
   ),
   const RpcEndpointPreset(
     id: 'sa-zec-rocks',
-    region: 'Americas',
-    label: 'Zec Rocks South America',
+    region: RpcEndpointRegion.americas,
+    label: 'Zec Rocks South America', // l10n-ignore: provider name
     url: 'https://sa.zec.rocks:443',
   ),
   const RpcEndpointPreset(
     id: 'eu-zec-rocks',
-    region: 'Europe',
-    label: 'Zec Rocks Europe',
+    region: RpcEndpointRegion.europe,
+    label: 'Zec Rocks Europe', // l10n-ignore: provider name
     url: 'https://eu.zec.rocks:443',
   ),
   // Failover follows list order. Keep this third Stardust host after the
   // Global, Americas, and Europe Zec Rocks hosts.
   const RpcEndpointPreset(
     id: 'kr-zec-stardust',
-    region: 'Asia Pacific',
-    label: 'Stardust Korea',
+    region: RpcEndpointRegion.asiaPacific,
+    label: 'Stardust Korea', // l10n-ignore: provider name
     url: 'https://kr.zec.stardust.rest:443',
   ),
   const RpcEndpointPreset(
     id: 'ap-zec-rocks',
-    region: 'Asia Pacific',
-    label: 'Zec Rocks Asia Pacific',
+    region: RpcEndpointRegion.asiaPacific,
+    label: 'Zec Rocks Asia Pacific', // l10n-ignore: provider name
     url: 'https://ap.zec.rocks:443',
   ),
   const RpcEndpointPreset(
     id: 'z3-deepikaw',
-    region: 'Community',
-    label: 'Deepikaw Z3',
+    region: RpcEndpointRegion.community,
+    label: 'Deepikaw Z3', // l10n-ignore: provider name
     url: 'https://z3.deepikaw.xyz:443',
   ),
   const RpcEndpointPreset(
     id: 'zprivacy',
-    region: 'Community',
-    label: 'ZPrivacy',
+    region: RpcEndpointRegion.community,
+    label: 'ZPrivacy', // l10n-ignore: provider name
     url: 'https://zprivacy.online:443',
   ),
   const RpcEndpointPreset(
     id: 'zcash-explorer',
-    region: 'Community',
-    label: 'Zcash Explorer',
+    region: RpcEndpointRegion.community,
+    label: 'Zcash Explorer', // l10n-ignore: provider name
     url: 'https://lwd.zcashexplorer.app:9067',
   ),
 ]);
@@ -148,15 +164,15 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
 final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   const RpcEndpointPreset(
     id: 'default-testnet',
-    region: 'Testnet',
-    label: 'Zec Rocks Testnet',
+    region: RpcEndpointRegion.testnet,
+    label: 'Zec Rocks Testnet', // l10n-ignore: provider name
     url: 'https://testnet.zec.rocks:443',
     isDefault: true,
   ),
   const RpcEndpointPreset(
     id: 'mysideoftheweb-testnet',
-    region: 'Community',
-    label: 'My Side of the Web Testnet',
+    region: RpcEndpointRegion.community,
+    label: 'My Side of the Web Testnet', // l10n-ignore: provider name
     url: 'https://zcash.mysideoftheweb.com:19067',
   ),
 ]);
@@ -164,21 +180,21 @@ final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
 final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: 'default-regtest',
-    region: 'Regtest',
-    label: 'Local Regtest',
+    region: RpcEndpointRegion.regtest,
+    label: 'Local Regtest', // l10n-ignore: provider name
     url: ZcashNetwork.regtest.lightwalletdUrl,
     isDefault: true,
   ),
   const RpcEndpointPreset(
     id: kRegtestSlowRpcEndpointPresetId,
-    region: 'Regtest',
-    label: 'Slow Regtest',
+    region: RpcEndpointRegion.regtest,
+    label: 'Slow Regtest', // l10n-ignore: provider name
     url: 'http://127.0.0.1:19068',
   ),
   const RpcEndpointPreset(
     id: kRegtestUnavailableRpcEndpointPresetId,
-    region: 'Regtest',
-    label: 'Unavailable Regtest',
+    region: RpcEndpointRegion.regtest,
+    label: 'Unavailable Regtest', // l10n-ignore: provider name
     url: 'http://127.0.0.1:19067',
   ),
 ]);
@@ -399,6 +415,69 @@ RpcEndpointPreset? findRpcEndpointPresetByUrl(
   return null;
 }
 
+/// Why an endpoint was refused. Screens show [message]; the exception keeps
+/// the English [logText], which logs and failover matching read.
+enum RpcEndpointIssue {
+  empty('Enter an endpoint.'), // l10n-ignore: log text
+  spaces('Endpoint cannot contain spaces.'), // l10n-ignore: log text
+  host('Enter a valid hostname and port.'), // l10n-ignore: log text
+  https('Use an https:// endpoint.'), // l10n-ignore: log text
+  port(
+    'Include a valid port, for example us.zec.stardust.rest:443.', // l10n-ignore: log text
+  ),
+  noSelection('Select an endpoint.'), // l10n-ignore: log text
+  automaticUnavailable(
+    'Automatic selection is unavailable.', // l10n-ignore: log text
+  );
+
+  const RpcEndpointIssue(this.logText);
+
+  final String logText;
+
+  String message(AppLocalizations l10n) => switch (this) {
+    RpcEndpointIssue.empty => l10n.endpointErrorEmpty,
+    RpcEndpointIssue.spaces => l10n.endpointErrorSpaces,
+    RpcEndpointIssue.host => l10n.endpointErrorHost,
+    RpcEndpointIssue.https => l10n.endpointErrorHttps,
+    RpcEndpointIssue.port => l10n.endpointErrorPort,
+    RpcEndpointIssue.noSelection => l10n.endpointErrorNoSelection,
+    RpcEndpointIssue.automaticUnavailable =>
+      l10n.endpointErrorAutomaticUnavailable,
+  };
+}
+
+/// An endpoint the user cannot use. A [FormatException], so existing handlers
+/// still catch it.
+class RpcEndpointFormatException extends FormatException {
+  RpcEndpointFormatException(this.issue) : super(issue.logText);
+
+  final RpcEndpointIssue issue;
+}
+
+/// The endpoint serves another Zcash network. The English message is what
+/// `shouldFallbackFromLightwalletdError` matches.
+class RpcEndpointNetworkMismatch extends FormatException {
+  RpcEndpointNetworkMismatch({
+    required this.endpointNetwork,
+    required this.walletNetwork,
+  }) : super(
+         'Endpoint is for $endpointNetwork, but this wallet uses $walletNetwork.', // l10n-ignore: matched by failover
+       );
+
+  final String endpointNetwork;
+  final String walletNetwork;
+}
+
+/// The text a screen shows for an endpoint error.
+String rpcEndpointErrorText(AppLocalizations l10n, FormatException error) {
+  return switch (error) {
+    RpcEndpointFormatException(:final issue) => issue.message(l10n),
+    RpcEndpointNetworkMismatch(:final endpointNetwork, :final walletNetwork) =>
+      l10n.endpointErrorWrongNetwork(endpointNetwork, walletNetwork),
+    _ => RpcEndpointIssue.host.message(l10n),
+  };
+}
+
 String normalizeRpcEndpointUrl(
   String input, {
   bool allowDefaultPort = false,
@@ -406,34 +485,30 @@ String normalizeRpcEndpointUrl(
 }) {
   final trimmed = input.trim();
   if (trimmed.isEmpty) {
-    throw const FormatException('Enter an endpoint.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.empty);
   }
   if (trimmed.contains(RegExp(r'\s'))) {
-    throw const FormatException('Endpoint cannot contain spaces.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.spaces);
   }
 
   final candidate = trimmed.contains('://') ? trimmed : 'https://$trimmed';
   final uri = Uri.tryParse(candidate);
   if (uri == null || uri.host.isEmpty) {
-    throw const FormatException('Enter a valid hostname and port.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.host);
   }
   if (uri.scheme != 'https' && uri.scheme != 'http') {
-    throw const FormatException('Use an https:// endpoint.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.https);
   }
   if (uri.scheme == 'http' && !(allowLocalHttp && _isLocalhost(uri.host))) {
-    throw const FormatException('Use an https:// endpoint.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.https);
   }
   final hasExplicitPort = _hasExplicitPort(candidate);
   if (!hasExplicitPort && !allowDefaultPort) {
-    throw const FormatException(
-      'Include a valid port, for example us.zec.stardust.rest:443.',
-    );
+    throw RpcEndpointFormatException(RpcEndpointIssue.port);
   }
   final port = hasExplicitPort ? uri.port : _defaultPortForScheme(uri.scheme);
   if (port <= 0 || port > 65535) {
-    throw const FormatException(
-      'Include a valid port, for example us.zec.stardust.rest:443.',
-    );
+    throw RpcEndpointFormatException(RpcEndpointIssue.port);
   }
 
   return '${uri.scheme}://${_formatRpcHost(uri.host)}:$port';

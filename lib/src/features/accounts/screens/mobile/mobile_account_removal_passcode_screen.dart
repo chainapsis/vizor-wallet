@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/feedback/app_haptics.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/biometric_icon.dart';
@@ -81,8 +82,8 @@ class _MobileAccountRemovalPasscodeScreenState
           .read(biometricUnlockProvider.notifier)
           .readPasscode(
             reason: widget.isLastAccount
-                ? 'Confirm wallet reset'
-                : 'Confirm account removal',
+                ? context.l10n.accountsRemovalResetBiometricReason
+                : context.l10n.accountsRemovalRemoveBiometricReason,
           );
     } catch (e, st) {
       log('MobileAccountRemoval: biometric read failed: $e\n$st');
@@ -94,7 +95,7 @@ class _MobileAccountRemovalPasscodeScreenState
         _entry = '';
         _checking = false;
         if (now != null && !now.enabled) {
-          _error = biometric.availability.kind.changedMessage;
+          _error = biometric.availability.kind.changedMessage(context.l10n);
         }
       });
       return;
@@ -131,12 +132,10 @@ class _MobileAccountRemovalPasscodeScreenState
         return;
       }
       unawaited(AppHaptics.error());
-      setState(() => _error = 'Incorrect passcode');
+      setState(() => _error = context.l10n.settingsIncorrectPasscode);
     } catch (_) {
       if (!mounted || !_isCurrentRoute) return;
-      setState(
-        () => _error = "Couldn't check your passcode. Please try again.",
-      );
+      setState(() => _error = context.l10n.settingsPasscodeCheckFailed);
     } finally {
       if (mounted) {
         setState(() {
@@ -159,7 +158,7 @@ class _MobileAccountRemovalPasscodeScreenState
             height: _kBiometricFooterHeight,
             child: Center(
               child: PasscodeBiometricButton(
-                label: biometric.availability.kind.signInLabel,
+                label: biometric.availability.kind.signInLabel(context.l10n),
                 icon: Center(
                   child: BiometricIcon(
                     kind: biometric.availability.kind,
@@ -172,11 +171,11 @@ class _MobileAccountRemovalPasscodeScreenState
             ),
           )
         : null;
-    const title = 'Enter Passcode';
+    final title = context.l10n.settingsEnterPasscodeTitle;
     const titleKey = ValueKey('mobile_account_removal_passcode');
     final subtitle = widget.isLastAccount
-        ? 'Enter your passcode to reset Vizor.'
-        : 'Enter your passcode to remove this account.';
+        ? context.l10n.accountsRemovalPasscodeResetSubtitle
+        : context.l10n.accountsRemovalPasscodeRemoveSubtitle;
     final prompt = PasscodePromptField(
       length: kMobilePasscodeLength,
       filled: _entry.length,

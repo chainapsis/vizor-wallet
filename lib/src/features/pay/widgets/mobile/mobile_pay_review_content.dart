@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
@@ -9,6 +10,7 @@ import '../../../../core/widgets/review_info_row.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../swap/domain/swap_quote.dart';
 import '../../../swap/models/swap_address_formatting.dart';
+import '../../../swap/models/swap_quote_text.dart';
 import '../../../swap/widgets/swap_asset_icon.dart';
 
 const _reviewCardRadius = 28.0;
@@ -71,7 +73,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
             children: [
               ReviewInfoRow(
                 key: const ValueKey('mobile_pay_review_paying_row'),
-                label: 'Paying',
+                label: context.l10n.payReviewPaying,
                 value: quote.receiveEstimateText,
                 valueFit: BoxFit.scaleDown,
                 leading: SwapAssetIcon(
@@ -85,7 +87,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
               const SizedBox(height: AppSpacing.md),
               ReviewInfoRow(
                 key: const ValueKey('mobile_pay_review_recipient_row'),
-                label: 'To',
+                label: context.l10n.commonTo,
                 value: contact?.label ?? compactRecipient,
                 leading: contact == null
                     ? const ReviewInfoIconCircle(iconName: AppIcons.wallet)
@@ -94,15 +96,17 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
                         size: AppProfilePictureSize.navLarge,
                       ),
                 bottomLeftText: contact == null
-                    ? 'Unknown address'
+                    ? context.l10n.payReviewUnknownAddress
                     : compactRecipient,
-                trailingActionLabel: 'Full address',
+                trailingActionLabel: context.l10n.commonFullAddress,
                 trailingActionKey: const ValueKey(
                   'mobile_pay_review_full_address_button',
                 ),
                 onTrailingAction: () => showMobileAddressVerifySheet(
                   context,
-                  title: '${quote.receiveAsset.chainLabel} address',
+                  title: context.l10n.commonAddressForChain(
+                    quote.receiveAsset.chainLabel,
+                  ),
                   address: widget.recipientAddress,
                   leading: SwapAssetIcon(
                     asset: quote.receiveAsset,
@@ -117,7 +121,8 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
         const SizedBox(height: AppSpacing.md),
         _QuoteExpiryDivider(
           expired: widget.expired,
-          expiresInText: widget.expiresInText ?? quote.expiryLabel,
+          expiresInText:
+              widget.expiresInText ?? swapQuoteExpiryText(context.l10n, quote),
         ),
         const SizedBox(height: AppSpacing.md),
         Container(
@@ -135,7 +140,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
             opacity: widget.expired ? 0.5 : 1,
             child: ReviewInfoRow(
               key: const ValueKey('mobile_pay_review_converted_row'),
-              label: 'Converted amount',
+              label: context.l10n.payReviewConvertedAmount,
               value: quote.sellAmountText,
               valueFit: BoxFit.scaleDown,
               leading: SwapAssetIcon(
@@ -173,7 +178,7 @@ class _QuoteExpiryDivider extends StatelessWidget {
           const SizedBox(width: AppSpacing.s),
           if (expired)
             Text(
-              'Quote expired',
+              context.l10n.payReviewQuoteExpired,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.destructive,
               ),
@@ -183,7 +188,7 @@ class _QuoteExpiryDivider extends StatelessWidget {
               TextSpan(
                 children: [
                   TextSpan(
-                    text: 'Quote expires in ',
+                    text: context.l10n.payReviewQuoteExpiresIn,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -250,14 +255,14 @@ class MobilePayReviewActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final blocked = startBlockedReason != null;
     final primaryLabel = inactive
-        ? 'Return to pay'
+        ? context.l10n.payReviewReturnToPay
         : expired
-        ? 'Refresh quote'
+        ? context.l10n.payReviewRefreshQuote
         : blocked
-        ? 'Not enough ZEC'
+        ? context.l10n.commonNotEnoughZec
         : starting
-        ? 'Paying'
-        : 'Confirm & pay';
+        ? context.l10n.commonPayingButton
+        : context.l10n.payReviewConfirmPay;
     final primaryAction = inactive
         ? onCancel
         : expired
@@ -296,7 +301,7 @@ class MobilePayReviewActions extends StatelessWidget {
             expand: true,
             constrainContent: true,
             onPressed: starting ? null : onCancel,
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ],

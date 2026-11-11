@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/input/app_password_input_source.dart';
 
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/confirm_access_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_password_input_source.dart';
 
@@ -143,6 +144,7 @@ void main() {
       ProviderScope(
         overrides: [appPasswordInputSourceProvider.overrideWithValue(service)],
         child: const MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: Scaffold(
             body: Column(
               children: [
@@ -170,6 +172,7 @@ void main() {
             appPasswordInputSourceProvider.overrideWithValue(service),
           ],
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Scaffold(

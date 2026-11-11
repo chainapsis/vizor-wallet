@@ -55,11 +55,13 @@ import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/app_test_fonts.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
 /// channel in widget tests.
@@ -233,7 +235,7 @@ class _HomeParticipationRecorder extends VotingParticipationCoordinator {
 
 Widget _app(
   SyncState syncState, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   ZecMarketData? marketData = const ZecMarketData(
     usdPrice: 70,
     change24hPct: 13.12,
@@ -463,6 +465,7 @@ Widget _app(
         ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: theme, child: child!),
     ),
@@ -785,7 +788,7 @@ void main() {
           orchardBalance: BigInt.from(100000000),
         ).copyWith(recentTransactions: [pending]),
         showVoting: false,
-        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+        etaLabels: const {'pending-receive': ActivityEta.standard},
       ),
     );
     for (var i = 0; i < 10; i++) {
@@ -3045,6 +3048,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
         home: Align(
           alignment: Alignment.bottomCenter,

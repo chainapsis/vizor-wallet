@@ -8,8 +8,9 @@ import '../../../core/widgets/app_button.dart';
 import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_claim_checking_content.dart';
-import 'payment_link_copy.dart';
 import 'payment_link_wizard_chrome.dart';
+import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/locale_typography.dart';
 
 enum PaymentLinkClaimDesktopState { loading, checking, waiting, ready, outcome }
 
@@ -23,16 +24,16 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
     this.onRevealMessage,
     this.decoration,
     this.statusContent,
-    this.backLabel = 'Cards',
-    this.title = 'You’ve received\na gift card!',
-    this.messageTitle = kPaymentLinkMessageAttachedTitle,
-    this.messageHint = 'Click on the card to reveal',
-    this.claimLabel = 'Claim the gift card',
-    this.cardActionLabel = kPaymentLinkRevealMessageSemanticLabel,
-    this.waitingStatusLabel = 'Checking the gift…',
-    this.waitingHeading = 'Your Gift Card\nis almost ready!',
-    this.waitingPrimaryText = kPaymentLinkClaimWaitingDescription,
-    this.waitingSecondaryText = kPaymentLinkWaitingDescription,
+    this.backLabel,
+    this.title,
+    this.messageTitle,
+    this.messageHint,
+    this.claimLabel,
+    this.cardActionLabel,
+    this.waitingStatusLabel,
+    this.waitingHeading,
+    this.waitingPrimaryText,
+    this.waitingSecondaryText,
     super.key,
   });
 
@@ -43,19 +44,40 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
   final VoidCallback? onRevealMessage;
   final Widget? decoration;
   final Widget? statusContent;
-  final String backLabel;
-  final String title;
-  final String messageTitle;
-  final String messageHint;
-  final String claimLabel;
-  final String cardActionLabel;
-  final String waitingStatusLabel;
-  final String waitingHeading;
-  final String waitingPrimaryText;
-  final String waitingSecondaryText;
+  final String? backLabel;
+  final String? title;
+  final String? messageTitle;
+  final String? messageHint;
+  final String? claimLabel;
+  final String? cardActionLabel;
+  final String? waitingStatusLabel;
+  final String? waitingHeading;
+  final String? waitingPrimaryText;
+  final String? waitingSecondaryText;
 
   @override
   Widget build(BuildContext context) {
+    final waitingStatusLabel =
+        this.waitingStatusLabel ?? context.l10n.paymentLinkCheckingGiftEllipsis;
+    final backLabel = this.backLabel ?? context.l10n.commonCards;
+    final title = this.title ?? context.l10n.paymentLinkReceivedHeadingDesktop;
+    final messageHint =
+        this.messageHint ?? context.l10n.paymentLinkClickToRevealShort;
+    final claimLabel =
+        this.claimLabel ?? context.l10n.paymentLinkClaimTheGiftCard;
+    final waitingHeading =
+        this.waitingHeading ??
+        context.l10n.paymentLinkAlmostReadyReceivedHeading;
+    final messageTitle =
+        this.messageTitle ?? context.l10n.paymentLinkMessageAttachedTitle;
+    final cardActionLabel =
+        this.cardActionLabel ??
+        context.l10n.paymentLinkRevealMessageSemanticLabel;
+    final waitingPrimaryText =
+        this.waitingPrimaryText ??
+        context.l10n.paymentLinkClaimWaitingDescription;
+    final waitingSecondaryText =
+        this.waitingSecondaryText ?? context.l10n.paymentLinkWaitingDescription;
     final ready = state == PaymentLinkClaimDesktopState.ready;
     final checking =
         state == PaymentLinkClaimDesktopState.loading ||
@@ -80,7 +102,10 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
               final width = constraints.maxWidth;
               double textHeight(String text, TextStyle style, double maxWidth) {
                 final painter = TextPainter(
-                  text: TextSpan(text: text, style: style),
+                  text: TextSpan(
+                    text: text,
+                    style: withLocaleFontFallback(context, style),
+                  ),
                   textDirection: Directionality.of(context),
                   textScaler: MediaQuery.textScalerOf(context),
                   locale: Localizations.maybeLocaleOf(context),
@@ -95,18 +120,18 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
               final headingHeight = [
                 144.0,
                 for (final text in [
-                  kPaymentLinkClaimCheckingHeading,
+                  context.l10n.paymentLinkClaimCheckingHeading,
                   waitingHeading,
                   title,
-                  kPaymentLinkRedeemTheCardTitle,
+                  context.l10n.paymentLinkRedeemTheCardTitle,
                 ])
                   textHeight(text, headingStyle, width) + AppSpacing.lg,
               ].reduce(math.max);
               final pillHeight = [
                 36.0,
                 for (final label in [
-                  'Checking the gift… 100%',
-                  'Wait 3:45 to claim',
+                  context.l10n.paymentLinkCheckingGiftFull,
+                  context.l10n.paymentLinkWaitToClaimSample,
                   waitingStatusLabel,
                 ])
                   textHeight(label, bodyStyle, math.max(1, width - 44)),
@@ -114,7 +139,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
               final detailsHeight = [
                 118.0,
                 textHeight(
-                      kPaymentLinkClaimCheckingDescription,
+                      context.l10n.paymentLinkClaimCheckingDescription,
                       bodyStyle,
                       width,
                     ) +
@@ -139,7 +164,10 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
               ].reduce(math.max);
               final actionHeight = [
                 36.0,
-                for (final label in ['Claim the gift card', claimLabel])
+                for (final label in [
+                  context.l10n.paymentLinkClaimTheGiftCard,
+                  claimLabel,
+                ])
                   textHeight(
                         label,
                         AppTypography.labelLarge,
@@ -163,9 +191,9 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                           alignment: Alignment.topCenter,
                           child: Text(
                             checking
-                                ? kPaymentLinkClaimCheckingHeading
+                                ? context.l10n.paymentLinkClaimCheckingHeading
                                 : outcome
-                                ? kPaymentLinkRedeemTheCardTitle
+                                ? context.l10n.paymentLinkRedeemTheCardTitle
                                 : ready
                                 ? title
                                 : waitingHeading,
@@ -304,20 +332,24 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
               key: const ValueKey('payment_link_received_message_icon'),
               width: 20,
               height: 16,
-              semanticsLabel: kPaymentLinkGiftMessageLabel,
+              semanticsLabel: context.l10n.paymentLinkGiftMessageLabel,
             ),
           ),
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          messageTitle,
+          messageTitle ?? context.l10n.paymentLinkMessageAttachedTitle,
           textAlign: TextAlign.center,
           style: AppTypography.bodyMediumStrong.copyWith(
             color: context.colors.text.brandCrimson,
           ),
         ),
         const SizedBox(height: AppSpacing.xs),
-        Text(messageHint, textAlign: TextAlign.center, style: bodyStyle),
+        Text(
+          messageHint ?? context.l10n.paymentLinkClickToRevealShort,
+          textAlign: TextAlign.center,
+          style: bodyStyle,
+        ),
       ],
     ),
   );

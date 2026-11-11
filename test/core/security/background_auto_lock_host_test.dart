@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -111,6 +112,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) => BackgroundAutoLockHost(
             router: router,

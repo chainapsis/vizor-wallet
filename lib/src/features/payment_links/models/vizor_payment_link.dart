@@ -18,7 +18,10 @@ const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
 /// Display-only value captured at card creation or claim time.
 /// It never participates in funding or claim calculations.
 class PaymentLinkFiatSnapshot {
-  const PaymentLinkFiatSnapshot({required this.amount, this.currency = 'USD'});
+  const PaymentLinkFiatSnapshot({
+    required this.amount,
+    this.currency = 'USD', // l10n-ignore: protocol currency code
+  }); // l10n-ignore: protocol currency code
 
   static PaymentLinkFiatSnapshot? capture({
     required BigInt amountZatoshi,

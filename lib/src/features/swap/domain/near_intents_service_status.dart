@@ -1,3 +1,4 @@
+// l10n-ignore-file: identifier, not copy
 /// Advisory status only. These records must never gate quote or payment work.
 class NearIntentsServiceIssue {
   const NearIntentsServiceIssue({

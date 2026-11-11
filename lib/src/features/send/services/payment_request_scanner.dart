@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/navigation/payment_uri_drain_policy.dart';
@@ -43,6 +44,7 @@ Future<SendPrefillArgs?> showPaymentRequestScanSheet(
   return showAppMobileSheet<SendPrefillArgs>(
     context: context,
     builder: (sheetContext) {
+      final l10n = sheetContext.l10n;
       void complete(SendPrefillArgs? result) {
         // A dismissed sheet remains mounted during its reverse transition.
         // Its late validation must not pop the screen underneath it.
@@ -64,14 +66,12 @@ Future<SendPrefillArgs?> showPaymentRequestScanSheet(
               networkName: networkName,
             );
             return MobileScanOutcome.accepted(decoded!.address);
-          } on FormatException catch (error) {
+          } on PaymentRequestQrException catch (error) {
             decoded = null;
-            return MobileScanOutcome.rejected(error.message);
+            return MobileScanOutcome.rejected(error.issue.text(l10n));
           } catch (_) {
             decoded = null;
-            return const MobileScanOutcome.rejected(
-              "Couldn't check this QR code. Try again.",
-            );
+            return MobileScanOutcome.rejected(l10n.sendRequestScanCheckFailed);
           }
         },
         onScanned: (_) => complete(decoded),
@@ -79,6 +79,33 @@ Future<SendPrefillArgs?> showPaymentRequestScanSheet(
       );
     },
   );
+}
+
+/// Why a scanned QR code was refused. The scan surfaces resolve it with
+/// [text] in the locale they are shown in.
+enum PaymentRequestQrIssue {
+  unsupportedRequest,
+  invalidRequest,
+  notRequest,
+  wrongNetwork,
+  invalidAddress;
+
+  String text(AppLocalizations l10n) => switch (this) {
+    unsupportedRequest => PaymentUriNotice.unsupported.text(l10n),
+    invalidRequest => l10n.sendRequestScanInvalidRequest,
+    notRequest => l10n.sendRequestScanNotRequest,
+    wrongNetwork => l10n.sendRequestScanWrongNetwork,
+    invalidAddress => l10n.sendRequestScanInvalidAddress,
+  };
+}
+
+class PaymentRequestQrException implements Exception {
+  const PaymentRequestQrException(this.issue);
+
+  final PaymentRequestQrIssue issue;
+
+  @override
+  String toString() => 'PaymentRequestQrException($issue)';
 }
 
 var _scanSequence = 0;
@@ -92,23 +119,23 @@ SendPrefillArgs parsePaymentRequestQr(String raw) {
     try {
       final request = Zip321PaymentRequest.parse(input);
       if (!request.isSupported) {
-        throw const FormatException(kPaymentUriUnsupportedMessage);
+        throw const PaymentRequestQrException(
+          PaymentRequestQrIssue.unsupportedRequest,
+        );
       }
       return sendPrefillArgsFromZip321Payment(
         id: id,
         payment: request.primaryPayment,
       ).withRequestSource(PaymentRequestSource.qrCode);
     } on Zip321ParseException {
-      throw const FormatException(
-        "This QR code doesn't contain a valid payment request.",
+      throw const PaymentRequestQrException(
+        PaymentRequestQrIssue.invalidRequest,
       );
     }
   }
   final uri = Uri.tryParse(input);
   if (input.isEmpty || uri == null || uri.hasScheme) {
-    throw const FormatException(
-      "This QR code isn't a Zcash address or payment request.",
-    );
+    throw const PaymentRequestQrException(PaymentRequestQrIssue.notRequest);
   }
   return SendPrefillArgs(
     id: id,
@@ -128,10 +155,10 @@ Future<SendPrefillArgs> decodePaymentRequestQr(
     network: networkName,
   );
   if (!address.isValid) {
-    throw FormatException(
+    throw PaymentRequestQrException(
       address.wrongNetwork
-          ? 'This address belongs to a different network.'
-          : "This QR code isn't a valid Zcash address.",
+          ? PaymentRequestQrIssue.wrongNetwork
+          : PaymentRequestQrIssue.invalidAddress,
     );
   }
   return prefill;

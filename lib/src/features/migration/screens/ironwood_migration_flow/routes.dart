@@ -84,7 +84,7 @@ class _IronwoodMigrationPrepareScreenState
     final inputs = ref.watch(ironwoodMigrationInputsProvider);
     final request = inputs.statusRequest;
     if (!inputs.ironwoodActiveAtTip || request == null) {
-      _go('/home', toast: 'Migration is not available for this account.');
+      _go('/home', toast: context.l10n.migrationRouteNotAvailable);
       return const _IronwoodMigrationLoadingShell(
         step: IronwoodMigrationFlowStep.prepare,
       );
@@ -100,10 +100,7 @@ class _IronwoodMigrationPrepareScreenState
     }
 
     if (inputs.hasSyncFailure) {
-      _go(
-        '/home',
-        toast: 'Sync could not finish. Try again once Vizor is synced.',
-      );
+      _go('/home', toast: context.l10n.migrationRouteSyncFailed);
       return const _IronwoodMigrationLoadingShell(
         step: IronwoodMigrationFlowStep.prepare,
       );
@@ -116,7 +113,7 @@ class _IronwoodMigrationPrepareScreenState
         step: IronwoodMigrationFlowStep.prepare,
       ),
       error: (_, _) {
-        _go('/home', toast: "Couldn't verify migration status.");
+        _go('/home', toast: context.l10n.migrationRouteStatusFailed);
         return const _IronwoodMigrationLoadingShell(
           step: IronwoodMigrationFlowStep.prepare,
         );
@@ -128,7 +125,7 @@ class _IronwoodMigrationPrepareScreenState
             _routeShouldStartMigration(status.phase)) {
           _go('/migration/intro');
         } else {
-          _go('/home', toast: 'Migration is not needed for this account.');
+          _go('/home', toast: context.l10n.migrationRouteNotNeeded);
         }
         return const _IronwoodMigrationLoadingShell(
           step: IronwoodMigrationFlowStep.prepare,

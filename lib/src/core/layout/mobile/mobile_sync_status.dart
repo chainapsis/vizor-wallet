@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 
 import '../../formatting/sync_status_label.dart';
+import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
 
 /// Subtle/slow motion constants for the syncing affordance. One full
@@ -152,7 +153,7 @@ class _SyncStatusState extends State<MobileSyncStatus>
     // Re-evaluate on dependency changes (e.g. the reduce-motion setting).
     _syncAnimation();
     final painter = TextPainter(
-      text: TextSpan(text: kSyncStatusSyncedLabel, style: _labelStyle),
+      text: TextSpan(text: context.l10n.syncVizorSynced, style: _labelStyle),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       maxLines: 1,

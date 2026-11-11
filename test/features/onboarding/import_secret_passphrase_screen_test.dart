@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart'
     show Color, FontWeight, MaterialApp, Scaffold, Scrollbar, TextField;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
     show
@@ -12,6 +13,7 @@ import 'package:flutter/widgets.dart'
         Focus,
         FocusNode,
         Positioned,
+        RichText,
         Scrollable,
         ScrollableState,
         SingleChildScrollView,
@@ -33,6 +35,7 @@ import 'package:zcash_wallet/src/features/onboarding/import/import_secret_passph
 import 'package:zcash_wallet/src/features/onboarding/import/import_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(() {
@@ -631,9 +634,18 @@ void main() {
       find.descendant(of: buttonFinder, matching: find.byType(AppIcon)),
       findsNothing,
     );
+    // At least 52 wide, and wider when the label needs it: the test font
+    // and Korean are wider than "Clear", and the label must stay one line.
     final pillSize = tester.getSize(buttonFinder);
-    expect(pillSize.width, closeTo(52, 0.5));
+    final label = tester.renderObject<RenderParagraph>(
+      find.descendant(of: buttonFinder, matching: find.byType(RichText)),
+    );
+    expect(pillSize.width, greaterThanOrEqualTo(52));
     expect(pillSize.height, 24);
+    expect(
+      label.getMaxIntrinsicWidth(double.infinity),
+      lessThanOrEqualTo(label.size.width),
+    );
 
     await tester.tapAt(tester.getCenter(buttonFinder));
     await tester.pump();
@@ -1070,6 +1082,7 @@ Widget _importPassphraseScreen({
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: theme,
         child: Scaffold(body: body),
@@ -1084,6 +1097,7 @@ Widget _importPassphraseShell() {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(
@@ -1126,6 +1140,7 @@ Widget _routerHarness(GoRouter router) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,

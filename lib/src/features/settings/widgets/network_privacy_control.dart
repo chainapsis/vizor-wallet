@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -64,10 +65,10 @@ extension NetworkPrivacyToggleActionX on NetworkPrivacyToggleAction {
   /// Assistive-technology label. Turning "Use Tor" off mid-connect is an escape
   /// from a wait, not a second transition, so it does not announce itself as
   /// one.
-  String get semanticsLabel =>
+  String semanticsLabel(AppLocalizations l10n) =>
       this == NetworkPrivacyToggleAction.cancelPendingTor
-      ? 'Stop connecting to Tor'
-      : 'Use Tor';
+      ? l10n.settingsTorStopConnecting
+      : l10n.settingsTorUse;
 }
 
 /// Shared desktop Tor control used both before wallet creation and in Settings.
@@ -86,6 +87,7 @@ class NetworkPrivacyControl extends ConsumerWidget {
     final state = ref.watch(networkPrivacyProvider);
     final toggleAction = networkPrivacyToggleAction(state);
     final presentation = _presentationFor(
+      context.l10n,
       state,
       platform: defaultTargetPlatform,
     );
@@ -118,7 +120,7 @@ class NetworkPrivacyControl extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Use Tor',
+                        context.l10n.settingsTorUse,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,
                         ),
@@ -160,7 +162,7 @@ class NetworkPrivacyControl extends ConsumerWidget {
                   key: const ValueKey('network_privacy_toggle'),
                   trackKey: const ValueKey('network_privacy_toggle_track'),
                   enabled: state.torEnabled,
-                  semanticsLabel: toggleAction.semanticsLabel,
+                  semanticsLabel: toggleAction.semanticsLabel(context.l10n),
                   onToggle: toggleAction.isInteractive
                       ? () => unawaited(
                           ref
@@ -206,7 +208,7 @@ class NetworkPrivacyControl extends ConsumerWidget {
               variant: AppButtonVariant.ghost,
               size: AppButtonSize.small,
               leading: const AppIcon(AppIcons.renew),
-              child: const Text('Retry updates'),
+              child: Text(context.l10n.settingsTorRetryUpdates),
             ),
           ),
         ] else if (state.status == NetworkPrivacyConnectionStatus.failed) ...[
@@ -224,8 +226,8 @@ class NetworkPrivacyControl extends ConsumerWidget {
               leading: const AppIcon(AppIcons.renew),
               child: Text(
                 (state.targetTorEnabled ?? state.torEnabled)
-                    ? 'Try again'
-                    : 'Try direct connection',
+                    ? context.l10n.commonTryAgain
+                    : context.l10n.settingsTorTryDirect,
               ),
             ),
           ),
@@ -252,7 +254,7 @@ class NetworkPrivacyControl extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.all(AppSpacing.xxs),
               child: Text(
-                'Privacy',
+                context.l10n.settingsPrivacyTitle,
                 key: const ValueKey('network_privacy_surface_title'),
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.text.secondary,
@@ -416,17 +418,17 @@ class _NetworkPrivacyPresentation {
 }
 
 _NetworkPrivacyPresentation _presentationFor(
+  AppLocalizations l10n,
   NetworkPrivacyState state, {
   required TargetPlatform platform,
 }) {
   if (!state.softwareUpdatesAvailable &&
       state.status == NetworkPrivacyConnectionStatus.connected) {
     return _NetworkPrivacyPresentation(
-      statusLabel: 'Connected',
+      statusLabel: l10n.settingsTorStatusConnected,
       // Large block downloads fetch public blocks directly, so the connected
       // copy does not promise every request.
-      description:
-          'Vizor uses Tor to protect your IP address, but software updates are unavailable.',
+      description: l10n.settingsTorDescConnectedNoUpdates,
       statusColor: (colors) => colors.text.destructive,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.destructive,
@@ -435,9 +437,8 @@ _NetworkPrivacyPresentation _presentationFor(
   if (!state.softwareUpdatesAvailable &&
       state.status == NetworkPrivacyConnectionStatus.off) {
     return _NetworkPrivacyPresentation(
-      statusLabel: 'Direct',
-      description:
-          'Network requests connect directly. Software updates are unavailable.',
+      statusLabel: l10n.settingsTorStatusDirect,
+      description: l10n.settingsTorDescDirectNoUpdates,
       statusColor: (colors) => colors.text.destructive,
       iconColor: (colors) => colors.icon.muted,
       descriptionColor: (colors) => colors.text.destructive,
@@ -447,29 +448,24 @@ _NetworkPrivacyPresentation _presentationFor(
   final isLinux = platform == TargetPlatform.linux;
   return switch ((state.status, targetTorEnabled)) {
     (NetworkPrivacyConnectionStatus.off, _) => _NetworkPrivacyPresentation(
-      statusLabel: 'Direct',
+      statusLabel: l10n.settingsTorStatusDirect,
       description: isLinux
-          ? 'Tor is off. Vizor requests, including software update checks, '
-                'connect directly. Update pages and downloads open in another app.'
-          : 'Tor is off. Requests to the Zcash network, in-app services, and software updates connect directly.',
+          ? l10n.settingsTorDescOffLinux
+          : l10n.settingsTorDescOff,
       statusColor: (colors) => colors.text.secondary,
       iconColor: (colors) => colors.icon.muted,
       descriptionColor: (colors) => colors.text.accent,
     ),
     (NetworkPrivacyConnectionStatus.connecting, true) =>
       _NetworkPrivacyPresentation(
-        statusLabel: 'Connecting…',
+        statusLabel: l10n.commonConnecting,
         // Names the way out. On a network that blocks Tor the wait runs to the
         // bootstrap deadline with every request failing closed, and restarting
         // the app only starts the same wait again, so the escape has to be
         // stated where the user is looking.
         description: isLinux
-            ? 'New requests wait until the Tor connection is ready. Turn Tor '
-                  'off to stop connecting and use a direct connection. Update '
-                  'pages and downloads opened in another app use that '
-                  'app’s connection.'
-            : 'New requests wait until the Tor connection is ready. Turn Tor '
-                  'off to stop connecting and use a direct connection.',
+            ? l10n.settingsTorDescConnectingLinux
+            : l10n.settingsTorDescConnecting,
         statusIconName: AppIcons.loader,
         statusColor: (colors) => colors.text.secondary,
         iconColor: (colors) => colors.icon.muted,
@@ -477,38 +473,35 @@ _NetworkPrivacyPresentation _presentationFor(
       ),
     (NetworkPrivacyConnectionStatus.connecting, false) =>
       _NetworkPrivacyPresentation(
-        statusLabel: 'Switching to direct…',
+        statusLabel: l10n.settingsTorStatusSwitchingDirect,
         description: isLinux
-            ? 'Vizor is switching its requests, including software update '
-                  'checks, to a direct connection.'
-            : 'Vizor is switching network requests and software updates to a direct connection.',
+            ? l10n.settingsTorDescSwitchingLinux
+            : l10n.settingsTorDescSwitching,
         statusIconName: AppIcons.loader,
         statusColor: (colors) => colors.text.secondary,
         iconColor: (colors) => colors.icon.brandCrimson,
         descriptionColor: (colors) => colors.text.accent,
       ),
-    (NetworkPrivacyConnectionStatus.connected, _) => _NetworkPrivacyPresentation(
-      statusLabel: 'Connected',
-      description:
-          'Vizor uses Tor to protect your IP address. Links opened in other apps use those apps’ network settings.',
-      statusColor: (colors) => colors.text.brandCrimson,
-      iconColor: (colors) => colors.icon.brandCrimson,
-      descriptionColor: (colors) => colors.text.accent,
-    ),
+    (NetworkPrivacyConnectionStatus.connected, _) =>
+      _NetworkPrivacyPresentation(
+        statusLabel: l10n.settingsTorStatusConnected,
+        description: l10n.settingsTorDescConnected,
+        statusColor: (colors) => colors.text.brandCrimson,
+        iconColor: (colors) => colors.icon.brandCrimson,
+        descriptionColor: (colors) => colors.text.accent,
+      ),
     (NetworkPrivacyConnectionStatus.failed, true) =>
       _NetworkPrivacyPresentation(
-        statusLabel: 'Connection failed',
-        description:
-            'Direct requests remain blocked. Try again or turn off Tor.',
+        statusLabel: l10n.settingsTorStatusConnectionFailed,
+        description: l10n.settingsTorDescConnectionFailed,
         statusColor: (colors) => colors.text.destructive,
         iconColor: (colors) => colors.icon.destructive,
         descriptionColor: (colors) => colors.text.destructive,
       ),
     (NetworkPrivacyConnectionStatus.failed, false) =>
       _NetworkPrivacyPresentation(
-        statusLabel: 'Switch failed',
-        description:
-            'Vizor could not switch to a direct connection. Try again.',
+        statusLabel: l10n.settingsTorStatusSwitchFailed,
+        description: l10n.settingsTorDescSwitchFailed,
         statusColor: (colors) => colors.text.destructive,
         iconColor: (colors) => colors.icon.destructive,
         descriptionColor: (colors) => colors.text.destructive,

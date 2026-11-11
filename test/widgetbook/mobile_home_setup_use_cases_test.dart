@@ -8,8 +8,10 @@ import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Widget _app(WidgetBuilder builder) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   home: AppTheme(
     data: AppThemeData.dark,
     child: Builder(builder: builder),

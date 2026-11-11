@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_sync_status.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../../support/test_l10n.dart';
 
 void main() {
   testWidgets(
@@ -19,6 +21,7 @@ void main() {
       Future<void> pump(bool reduced, bool leading) async {
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: MediaQuery(
@@ -102,6 +105,7 @@ void main() {
     Future<void> pump(String label, {required bool leading}) async {
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Center(
@@ -124,9 +128,9 @@ void main() {
     }
 
     final slot = find.byKey(const ValueKey('mobile_top_nav_sync_label_slot'));
-    await pump(kSyncStatusSyncedLabel, leading: false);
+    await pump(testL10n.syncVizorSynced, leading: false);
     final syncedWidth = tester.getSize(slot).width;
-    await pump(kSyncStatusCatchingUpLabel, leading: false);
+    await pump(testL10n.syncCatchingUp, leading: false);
     expect(tester.getSize(slot).width, syncedWidth);
     await pump('45% Syncing\u2026', leading: false);
     expect(tester.getSize(slot).width, syncedWidth);

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -186,9 +187,9 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
 
     String? localError;
     if (_controller.text.trim().isNotEmpty && amount == null) {
-      localError = 'Invalid amount';
+      localError = context.l10n.sendInvalidAmount;
     } else if (amount != null && amount > available) {
-      localError = 'Insufficient shielded balance';
+      localError = context.l10n.sendInsufficientBalanceShielded;
     }
     if (!mounted || sequence != _validationSequence) return;
     setState(() => _amountError = localError);
@@ -221,14 +222,15 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
       if (!mounted || sequence != _validationSequence || fee == null) return;
       setState(() {
         _amountError = amount + fee > available
-            ? 'Insufficient shielded balance including fee'
+            ? context.l10n.sendInsufficientBalanceIncludingFeeShielded
             : null;
       });
     } catch (error) {
       if (!mounted || sequence != _validationSequence) return;
       if (error.toString().toLowerCase().contains('insufficient')) {
         setState(() {
-          _amountError = 'Insufficient shielded balance including fee';
+          _amountError =
+              context.l10n.sendInsufficientBalanceIncludingFeeShielded;
         });
       } else {
         log('Donation: fee estimation failed (non-blocking): $error');
@@ -283,7 +285,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _globalError = friendlyProposeSendError(error.toString());
+        _globalError = friendlyProposeSendError(context.l10n, error.toString());
       });
     } finally {
       if (proposalId != null && !openedReview) {
@@ -337,7 +339,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
     final price = ref.watch(zecLiveUsdUnitPriceProvider);
     final amount = _amountZatoshi(price);
     final conversionText = _isUsd
-        ? '${amount == null ? '0' : ZecAmount.fromZatoshi(amount).pretty().amountText} ZEC'
+        ? '${amount == null ? '0' : ZecAmount.fromZatoshi(amount).pretty().amountText} ZEC' // l10n-ignore: currency code/amount format
         : amount == null || amount <= BigInt.zero || price == null
         ? r'$ 0'
         : r'$ ' + sendUsdDisplayTextForZatoshi(amount, price);
@@ -358,7 +360,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
             children: [
               const SizedBox(height: AppSpacing.s),
               MobileTopNav.back(
-                title: 'Support Vizor',
+                title: context.l10n.commonSupportVizor,
                 onBack: () =>
                     context.canPop() ? context.pop() : context.go('/settings'),
               ),
@@ -369,7 +371,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
                     controller: _controller,
                     mode: _mode,
                     conversionText: price == null && !_isUsd
-                        ? 'Price unavailable'
+                        ? context.l10n.donationPriceUnavailable
                         : conversionText,
                     balanceText: ZecAmount.fromZatoshi(
                       available,

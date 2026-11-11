@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:zcash_wallet/src/features/voting/voting_progress_presentation.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
@@ -8,6 +9,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 
 import 'round_plan_test_utils.dart';
+import '../../support/test_l10n.dart';
 
 /// A session mid-ballot.
 ///
@@ -95,7 +97,7 @@ void main() {
       );
       expect(midway.stage, VotingBallotStage.proving);
       expect(midway.provenProposals, 12);
-      expect(midway.detail, 'Casting votes');
+      expect(midway.detail(testL10n), 'Casting votes');
       expect(midway.fraction, greaterThan(early.fraction!));
     });
 
@@ -281,7 +283,7 @@ void main() {
       final delivering = votingBallotProgress(state);
       expect(delivering.stage, VotingBallotStage.delivering);
       expect(delivering.completedProposals, 1);
-      expect(delivering.detail, 'Delivering your responses');
+      expect(delivering.detail(testL10n), 'Delivering your responses');
     });
 
     test('uses concise casting copy while proving', () {
@@ -291,18 +293,18 @@ void main() {
           total: 37,
         ),
       );
-      expect(early.detail, 'Casting votes');
+      expect(early.detail(testL10n), 'Casting votes');
       expect(early.fraction, greaterThan(0));
 
       final single = votingBallotProgress(
         _ballotState(voteProgress: _proving(total: 1, proven: 0), total: 1),
       );
-      expect(single.detail, 'Casting votes');
+      expect(single.detail(testL10n), 'Casting votes');
 
       final submittingOne = votingBallotProgress(
         _ballotState(voteProgress: _proving(total: 1, proven: 1), total: 1),
       );
-      expect(submittingOne.detail, isEmpty);
+      expect(submittingOne.detail(testL10n), isEmpty);
     });
 
     test('a proof in flight moves the ring between whole questions', () {
@@ -325,7 +327,7 @@ void main() {
       );
       expect(progress.stage, VotingBallotStage.preparing);
       expect(progress.fraction, isNull);
-      expect(progress.detail, 'Preparing your ballot');
+      expect(progress.detail(testL10n), 'Preparing your ballot');
     });
 
     test('names the chain and then the helpers once proving is done', () {
@@ -333,7 +335,7 @@ void main() {
         _ballotState(voteProgress: _proving(total: 3, proven: 3), total: 3),
       );
       expect(submitting.stage, VotingBallotStage.submitting);
-      expect(submitting.detail, isEmpty);
+      expect(submitting.detail(testL10n), isEmpty);
 
       // The SDK makes each vote's helper plan durable before it broadcasts, so
       // this — the first per-vote event after proving — is the wallet waiting
@@ -357,7 +359,7 @@ void main() {
         ),
       );
       expect(confirming.stage, VotingBallotStage.confirming);
-      expect(confirming.detail, 'Waiting for chain confirmation');
+      expect(confirming.detail(testL10n), 'Waiting for chain confirmation');
 
       // On the wire and still unconfirmed is the same wait.
       final onWire = votingBallotProgress(
@@ -399,7 +401,7 @@ void main() {
         ),
       );
       expect(delivering.stage, VotingBallotStage.delivering);
-      expect(delivering.detail, 'Delivering your responses');
+      expect(delivering.detail(testL10n), 'Delivering your responses');
     });
 
     test('keeps a resumed run at the tally it inherited', () {
@@ -466,10 +468,13 @@ void main() {
       expect(votingAuthorityProgress(state(0.2)).fraction, closeTo(0.18, 1e-9));
       expect(votingAuthorityProgress(state(0.9)).fraction, closeTo(0.81, 1e-9));
       // Nothing proved yet is nothing to count. The ring is the report.
-      expect(votingAuthorityProgress(state(0.9)).detail, isNull);
+      expect(votingAuthorityProgress(state(0.9)).detail(testL10n), isNull);
       final proved = votingAuthorityProgress(state(1));
       expect(proved.provedBundles, 1);
-      expect(proved.detail, 'Finalizing delegation — 1 of 1 bundles proved');
+      expect(
+        proved.detail(testL10n),
+        'Finalizing delegation — 1 of 1 bundles proved',
+      );
     });
   });
 
@@ -537,7 +542,7 @@ void main() {
       );
       expect(shrunk.ballot.totalProposals, 37);
       expect(shrunk.ballot.provenProposals, 20);
-      expect(shrunk.ballot.detail, 'Casting votes');
+      expect(shrunk.ballot.detail(testL10n), 'Casting votes');
     });
 
     test('never sends the step list backwards', () {
@@ -581,7 +586,7 @@ void main() {
         ),
       );
       expect(back.ballot.stage, VotingBallotStage.delivering);
-      expect(back.ballot.detail, 'Delivering your responses');
+      expect(back.ballot.detail(testL10n), 'Delivering your responses');
       expect(back.ballot.fraction, 0.8);
     });
 
@@ -631,7 +636,7 @@ void main() {
       );
       expect(finalizing.authority.fraction, isNull);
       expect(
-        finalizing.authority.detail,
+        finalizing.authority.detail(testL10n),
         'Finalizing delegation — 2 of 2 bundles proved',
       );
     });
@@ -657,7 +662,7 @@ void main() {
         authorityProgress: authority(proved: 2, total: 3, fraction: 0.6),
       );
       expect(resumed.authority.fraction, 0.9);
-      expect(resumed.authority.detail, '2 of 3 bundles proved');
+      expect(resumed.authority.detail(testL10n), '2 of 3 bundles proved');
     });
 
     test('clamps a latched count to the denominator it is shown against', () {
@@ -691,7 +696,10 @@ void main() {
         ),
       );
       expect(ratchet.held?.step, view.step);
-      expect(ratchet.held?.ballot.detail, view.ballot.detail);
+      expect(
+        ratchet.held?.ballot.detail(testL10n),
+        view.ballot.detail(testL10n),
+      );
       ratchet.reset();
       expect(ratchet.held, isNull);
     });

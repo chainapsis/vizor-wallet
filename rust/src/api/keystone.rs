@@ -23,8 +23,11 @@ pub fn decode_ur_to_pczt(ur_string: String) -> Result<Vec<u8>, String> {
 /// until the full UR is decoded. `expected_ur_type` pins the scan to one UR
 /// registry type (e.g. `"zcash-pczt"`); parts of any other type are rejected.
 /// The session auto-resets on completion or when the expected type changes.
-pub fn decode_ur_part(part: String, expected_ur_type: String) -> Result<UrDecodeResult, String> {
-    keystone::decode_ur_part(&part, &expected_ur_type)
+pub fn decode_ur_part(
+    part: String,
+    expected_ur_type: String,
+) -> Result<UrDecodeResult, crate::api::sync::ApiWalletError> {
+    keystone::decode_ur_part(&part, &expected_ur_type).map_err(Into::into)
 }
 
 /// Encode PCZT bytes into multiple UR parts for animated QR display.

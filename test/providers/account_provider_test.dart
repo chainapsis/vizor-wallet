@@ -773,9 +773,9 @@ void main() {
               ],
             ),
         throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            'message',
+          isA<WalletLinkNetworkMismatchException>().having(
+            (error) => error.detail,
+            'detail',
             'Linked wallet network does not match the current app network.',
           ),
         ),

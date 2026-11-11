@@ -6,9 +6,11 @@ import '../activity_scroll_anchor.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -119,7 +121,9 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         );
       }
       _isLoading = pager.transactions == null && pager.isLoading;
-      _error = pager.error == null ? null : 'Activity could not be loaded.';
+      _error = pager.error == null
+          ? null
+          : context.l10n.activityLoadFailedDesktop;
     });
     restoreAnchor();
     if (!pager.isLoading && pager.error == null && pager.transactions != null) {
@@ -386,19 +390,19 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               showPendingEstimate: !ref
                   .watch(activityEtaExcludedTxidsProvider)
                   .contains(activityTxidKey(tx.txidHex)),
-              pendingLabel:
+              pendingEta:
                   (_hasFreshTransactionHistory &&
-                          _transactionsSnapshot ==
-                              activityHistorySnapshot(
-                                ref.watch(syncProvider).value,
-                              )
-                      ? activityEtaLabelFor(
-                          transaction: tx,
-                          labels: ref.watch(activityEtaLabelsProvider),
-                          giftCard: giftCard,
-                        )
-                      : null) ??
-                  ref.watch(activityPendingFallbackLabelProvider),
+                      _transactionsSnapshot ==
+                          activityHistorySnapshot(ref.watch(syncProvider).value)
+                  ? activityEtaFor(
+                      transaction: tx,
+                      labels: ref.watch(activityEtaLabelsProvider),
+                      giftCard: giftCard,
+                    )
+                  : null),
+              pendingFallbackLabel: ref
+                  .watch(activityPendingFallbackLabelProvider)
+                  .text(context.l10n),
               giftCardKind: giftCard?.kind,
               giftCardAmountZatoshi: giftCard?.amountZatoshi,
               giftCardBatchCount: giftCard?.batchCount,
@@ -435,6 +439,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
     entries.sort(_compareActivityEntries);
     final sections = _activityFeedSections(
+      context.l10n,
       entries.take(_pager?.visibleCount ?? activityPageSize).toList(),
     );
 
@@ -562,6 +567,7 @@ DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
 }
 
 List<ActivityFeedSectionData> _activityFeedSections(
+  AppLocalizations l10n,
   List<_ActivityEntry> entries,
 ) {
   final sections = <ActivityFeedSectionData>[];
@@ -569,7 +575,7 @@ List<ActivityFeedSectionData> _activityFeedSections(
   String? currentTitle;
 
   for (final entry in entries) {
-    final title = activitySectionTitleForSortKey(entry.sortKey);
+    final title = activitySectionTitleForSortKey(l10n, entry.sortKey);
     if (title != currentTitle) {
       currentTitle = title;
       currentRows = <ActivityRowData>[];
@@ -583,50 +589,36 @@ List<ActivityFeedSectionData> _activityFeedSections(
 
 @visibleForTesting
 String activitySectionTitleForSortKey(
+  AppLocalizations l10n,
   ActivityEntrySortKey sortKey, {
   DateTime? now,
 }) {
   if (sortKey.isPendingTransaction && sortKey.timestamp == null) {
-    return 'This week';
+    return l10n.activitySectionThisWeek;
   }
-  return activitySectionTitleForTimestamp(sortKey.timestamp, now: now);
+  return activitySectionTitleForTimestamp(l10n, sortKey.timestamp, now: now);
 }
 
 @visibleForTesting
-String activitySectionTitleForTimestamp(DateTime? timestamp, {DateTime? now}) {
-  if (timestamp == null) return 'Earlier';
+String activitySectionTitleForTimestamp(
+  AppLocalizations l10n,
+  DateTime? timestamp, {
+  DateTime? now,
+}) {
+  if (timestamp == null) return l10n.activitySectionEarlier;
 
   final local = timestamp.toLocal();
   final reference = now ?? DateTime.now();
   final weekStart = _startOfWeek(reference);
   final nextWeekStart = weekStart.add(const Duration(days: 7));
   if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
-    return 'This week';
+    return l10n.activitySectionThisWeek;
   }
 
-  return '${_monthName(local.month)} ${local.year}';
+  return DateFormat.yMMMM(l10n.localeName).format(local);
 }
 
 DateTime _startOfWeek(DateTime date) {
   final localDate = DateTime(date.year, date.month, date.day);
   return localDate.subtract(Duration(days: date.weekday - DateTime.monday));
-}
-
-String _monthName(int month) {
-  const months = [
-    '',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return months[month];
 }

@@ -1,6 +1,7 @@
 // Deterministic visual fixture; never imported by the production entry point.
 import 'dart:async';
 import 'package:flutter/widgets.dart';
+import '../src/core/l10n/l10n.dart';
 import '../src/features/home/widgets/mobile/shield/mobile_shield_backdrop.dart';
 import '../src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import '../src/features/home/widgets/mobile/shield/keystone_shield_morph.dart';
@@ -106,14 +107,14 @@ class _KeystoneShieldMotionPreviewState
       amount: '14.12',
       resultAmount: '14.1199',
       title: _stage == _Stage.review
-          ? 'Transparent Balance'
+          ? context.l10n.homeShieldBalanceTitle
           : _stage == _Stage.succeeded
-          ? 'Shielded successfully'
+          ? context.l10n.commonShieldedSuccessfully
           : scanner
           ? 'Scan your Keystone signature'
           : _stage == _Stage.qr
-          ? 'Approve with Keystone'
-          : 'Shielding your balance…',
+          ? context.l10n.homeShieldApproveTitle
+          : context.l10n.homeShieldingBalance,
       onCommit: _start,
       onClose: widget.onClose,
       onComplete: widget.onClose,

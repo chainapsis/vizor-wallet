@@ -1,3 +1,4 @@
+// l10n-ignore-file: generated account names are persisted, not UI copy
 import 'dart:math';
 
 import '../../../core/account_name_policy.dart';

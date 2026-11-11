@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../core/formatting/date_format.dart';
+import '../../features/voting/voting_message.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
@@ -140,7 +141,7 @@ class VotingSessionProgress {
 /// PIR diagnostics are carried separately because those failures are expected
 /// user-facing cases: an endpoint can be behind, ahead, malformed, or down.
 class VotingSessionError {
-  final String message;
+  final VotingMessage message;
   final Object? cause;
   final List<PirSnapshotEndpointDiagnostic> pirDiagnostics;
 
@@ -186,7 +187,12 @@ class VotingRoundDetails {
     final json = status.rawJson;
     return VotingRoundDetails(
       roundId: status.roundId,
-      title: _optionalStringFromJson(json, const ['title']) ?? '',
+      title:
+          _optionalStringFromJson(
+            json,
+            const ['title'], // l10n-ignore: JSON key
+          ) ??
+          '',
       status: status.status,
       snapshotHeight: _intFromJson(json, const ['snapshot_height']),
       eaPk: _fixedBytesFromJson(json, const ['ea_pk'], 32),
@@ -280,7 +286,7 @@ class VotingSessionState {
   keystoneSigningRequests;
   final UnmodifiableListView<rust_delegate.KeystoneSigningRequest>
   ledgerSigningRequests;
-  final String? keystoneScanError;
+  final VotingMessage? keystoneScanError;
 
   /// Why a bundle's delegation ended, when one did and the round carries on.
   ///
@@ -289,7 +295,7 @@ class VotingSessionState {
   /// still delegate and still vote. It rides alongside the phase rather than
   /// becoming one, because failing the session here would stop a round that
   /// can still be voted from ever reaching the ballot.
-  final String? terminalDelegationNotice;
+  final VotingTerminalDelegation? terminalDelegationNotice;
   final int? currentBundleIndex;
   final VotingVoteKey? currentVoteKey;
   final int voteSubmissionCompletedCount;
@@ -408,8 +414,8 @@ class VotingSessionState {
     Map<int, rust_wire.KeystoneSignatureRecord>? keystoneSignatures,
     List<rust_delegate.KeystoneSigningRequest>? keystoneSigningRequests,
     bool clearKeystoneSigningRequest = false,
-    String? keystoneScanError,
-    String? terminalDelegationNotice,
+    VotingMessage? keystoneScanError,
+    VotingTerminalDelegation? terminalDelegationNotice,
     bool clearTerminalDelegationNotice = false,
     bool clearKeystoneScanError = false,
     int? currentBundleIndex,

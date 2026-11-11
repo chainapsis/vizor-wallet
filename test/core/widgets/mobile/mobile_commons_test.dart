@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('MobileListRow renders label, value, and chevron', (
@@ -123,6 +124,7 @@ void main() {
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.dark,
       child: Center(child: child),

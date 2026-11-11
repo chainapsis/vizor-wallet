@@ -1,4 +1,5 @@
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const account = AccountInfo(
   uuid: 'a',
@@ -207,6 +209,7 @@ void main() {
         UncontrolledProviderScope(
           container: c,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Center(
@@ -513,6 +516,7 @@ void main() {
         UncontrolledProviderScope(
           container: c,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Center(
@@ -553,6 +557,7 @@ void main() {
           UncontrolledProviderScope(
             container: c,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.light,
                 child: Center(
@@ -630,6 +635,7 @@ void main() {
       UncontrolledProviderScope(
         container: c,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Center(
@@ -673,6 +679,7 @@ void main() {
       UncontrolledProviderScope(
         container: c,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Center(
@@ -690,7 +697,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
-    expect(find.text(LedgerRequestFailure.transportLost.title), findsOneWidget);
+    expect(
+      find.text(LedgerRequestFailure.transportLost.title(testL10n)),
+      findsOneWidget,
+    );
     expect(find.text('Ledger Flex'), findsNothing);
     expect(accounts.writes, 0);
   });
@@ -754,6 +764,7 @@ void main() {
         UncontrolledProviderScope(
           container: c,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Center(
@@ -809,6 +820,7 @@ void main() {
         UncontrolledProviderScope(
           container: c,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Center(
@@ -867,6 +879,7 @@ void main() {
             UncontrolledProviderScope(
               container: c,
               child: MaterialApp(
+                localizationsDelegates: appLocalizationsDelegates,
                 home: AppTheme(
                   data: AppThemeData.light,
                   child: Center(
@@ -950,7 +963,7 @@ void expectPairingFailure({required bool retryable}) {
     retryable ? findsNothing : findsOneWidget,
   );
   expect(
-    find.text(kLedgerViewingKeyRequestRejectedMessage),
+    find.text(testL10n.ledgerFailureMsgViewingKeyRejected),
     retryable ? findsNothing : findsOneWidget,
   );
 }

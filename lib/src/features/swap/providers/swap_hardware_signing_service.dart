@@ -304,6 +304,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
           .firstWhere((txid) => txid.isNotEmpty, orElse: () => ''),
       status: stored.status,
       message: stored.message,
+      notices: stored.notices,
     );
     try {
       await _ref.read(syncProvider.notifier).refreshAfterSend();

@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 
 import 'dart:async';
@@ -101,7 +102,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
         context: context,
         useRootNavigator: true,
         barrierDismissible: true,
-        barrierLabel: 'Dismiss',
+        barrierLabel: context.l10n.payScanBarrierDismiss,
         barrierColor: context.colors.background.neutralScrim,
         transitionDuration: Duration.zero,
         pageBuilder: (_, _, _) =>
@@ -195,14 +196,14 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 onClose: _closePayModal,
               ),
               _PayModalSurface.addressScanner => MobileAddressScanCard(
-                caption: 'Scan the recipient address QR code',
-                permissionTitle: 'Scan the recipient address',
-                steadyHint: 'Keep the QR code steady and fully visible.',
+                caption: context.l10n.payScanCaption,
+                permissionTitle: context.l10n.payScanPermissionTitle,
+                steadyHint: context.l10n.commonKeepQrSteady,
                 resolve: (raw) async {
                   final address = normalizeAddressScanPayload(raw)?.trim();
                   if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
+                    return MobileScanOutcome.rejected(
+                      context.l10n.commonQrNoAddress,
                     );
                   }
                   return MobileScanOutcome.accepted(address);
@@ -339,8 +340,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     }
 
     final title = switch (_step) {
-      _MobilePayStep.amount => 'Pay in ${swapState.externalAsset.symbol}',
-      _MobilePayStep.recipient => 'Select Recipient',
+      _MobilePayStep.amount => context.l10n.payTitleAmount(
+        swapState.externalAsset.symbol,
+      ),
+      _MobilePayStep.recipient => context.l10n.commonSelectRecipient,
     };
     final migrationSpendable = ref.watch(
       ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
@@ -396,10 +399,11 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                       _MobilePayStep.recipient => MobilePayRecipientStep(
                         controller: _recipientController,
                         typedAddress: swapState.destinationText,
-                        addressError: swapState.destinationAddressFormatError,
+                        addressError: swapState.destinationAddressFormatIssue
+                            ?.localizedMessage(context.l10n),
                         quoteError:
-                            swapState.externalAssetSupportError ??
-                            swapState.quoteError,
+                            swapState.externalAssetSupportError(context.l10n) ??
+                            swapState.quoteError?.text(context.l10n),
                         contacts: contacts,
                         recents: recents,
                         busy: swapState.quoteLoading,

@@ -50,6 +50,7 @@ import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
 import '../src/core/privacy/sensitive_privacy_overlay.dart';
 import '../src/core/security/software_wallet_secret.dart';
 import '../src/core/profile_pictures.dart';
+import '../src/core/l10n/app_language.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_button.dart';
@@ -116,6 +117,7 @@ import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
+import '../src/providers/pending_activity_evidence_provider.dart';
 
 const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -793,7 +795,10 @@ Widget buildSettingsMainUseCase(BuildContext context) {
 }
 
 /// Real mobile settings pinned to the top of the Account group.
-Widget buildMobileSettingsMainUseCase(BuildContext context) {
+Widget buildMobileSettingsMainUseCase(
+  BuildContext context, {
+  bool interactive = false,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -809,9 +814,12 @@ Widget buildMobileSettingsMainUseCase(BuildContext context) {
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
       ),
     ],
-    child: const _MobilePreviewFrame(
+    child: _MobilePreviewFrame(
       constrainToDesignSize: false,
-      child: IgnorePointer(child: _MobileSettingsMainPreview()),
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: const _MobileSettingsMainPreview(),
+      ),
     ),
   );
 }
@@ -2666,13 +2674,14 @@ Widget _buildActivityEtaUseCase({required bool home}) {
     recentTransactions: _etaTransactions(),
   );
   final previewChild = home ? null : _ActivityEtaPreviewRouter(mobile: mobile);
+  // `preview-connection` has no estimate; the fallback override below shows
+  // it as waiting for a connection.
   const etaLabels = {
-    'preview-eta': 'Est. 1–3 min',
-    'preview-long': 'Taking longer',
-    'preview-connection': 'Waiting for connection',
-    'funding:preview-tex': 'Est. 2–6 min',
-    'preview-gift-created': 'Est. 1–3 min',
-    'gift-card:preview-card': 'Est. 1–3 min',
+    'preview-eta': ActivityEta.standard,
+    'preview-long': ActivityEta.takingLonger,
+    'funding:preview-tex': ActivityEta.funding,
+    'preview-gift-created': ActivityEta.standard,
+    'gift-card:preview-card': ActivityEta.standard,
   };
   return mobile
       ? _buildMobileHomeUseCase(
@@ -2839,7 +2848,6 @@ Widget buildDesktopHomeSidebarSyncNetworkErrorUseCase(BuildContext context) {
       failure: const SyncFailure(
         kind: SyncFailureKind.network,
         rawMessage: 'network failed',
-        userMessage: 'Network connection lost.',
       ),
     ),
     migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
@@ -3623,16 +3631,19 @@ Widget _buildMobileIronwoodMigrationUseCase({
   };
   return ProviderScope(
     child: _MobilePreviewFrame(
-      child: MobileIronwoodMigrationFlowScreen(
-        step: step,
-        previewData: _ironwoodMigrationFlowData(
-          zatoshi: zatoshi,
-          accountName: accountName,
+      // The back scope asks the router whether it can pop.
+      child: _PreviewRouterHarness(
+        child: MobileIronwoodMigrationFlowScreen(
+          step: step,
+          previewData: _ironwoodMigrationFlowData(
+            zatoshi: zatoshi,
+            accountName: accountName,
+          ),
+          previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
+          previewImmediatePlan: previewImmediatePlan,
+          previewSurface: previewSurface,
+          privateMigrationSupported: privateMigrationSupported,
         ),
-        previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
-        previewImmediatePlan: previewImmediatePlan,
-        previewSurface: previewSurface,
-        privateMigrationSupported: privateMigrationSupported,
       ),
     ),
   );
@@ -3694,7 +3705,7 @@ Widget _buildMobileHomeUseCase({
   NativeMobileNavigationGeometry? geometryService,
   String initialLocation = '/home',
   Widget? previewChild,
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   bool setupPreview = false,
   bool inheritWalletState = false,
   bool shieldFlow = false,
@@ -3740,6 +3751,9 @@ Widget _buildMobileHomeUseCase({
         ),
       if (etaLabels != null) ...[
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
+        activityPendingFallbackLabelProvider.overrideWithValue(
+          ActivityPendingFallback.waitingForConnection,
+        ),
         swapActivityRecordsProvider.overrideWith((ref, account) async => []),
       ],
       votingHomeEntryVisibleProvider.overrideWithValue(votingVisible),
@@ -3851,7 +3865,7 @@ class _ShieldMotionPreview extends StatelessWidget {
 
 Widget _buildDesktopHomeUseCase({
   Widget? previewChild,
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   required AccountState accountState,
   required SyncState syncState,
   required IronwoodHomeMigrationCtaState migrationCta,
@@ -3874,6 +3888,9 @@ Widget _buildDesktopHomeUseCase({
         ),
       if (etaLabels != null) ...[
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
+        activityPendingFallbackLabelProvider.overrideWithValue(
+          ActivityPendingFallback.waitingForConnection,
+        ),
         swapActivityRecordsProvider.overrideWith((ref, account) async => []),
       ],
       if (receiptArgs != null) ...[
@@ -5605,6 +5622,35 @@ class _MobileMigrationScheduleHarnessState
   Widget build(BuildContext context) => Router.withConfig(config: _router);
 }
 
+/// Hosts [child] as the only route, so screens that read the router build;
+/// any navigation lands on a placeholder naming the destination.
+class _PreviewRouterHarness extends StatefulWidget {
+  const _PreviewRouterHarness({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PreviewRouterHarness> createState() => _PreviewRouterHarnessState();
+}
+
+class _PreviewRouterHarnessState extends State<_PreviewRouterHarness> {
+  late final GoRouter _router = GoRouter(
+    initialLocation: '/preview',
+    routes: [GoRoute(path: '/preview', builder: (_, _) => widget.child)],
+    errorBuilder: (_, state) =>
+        _PreviewRoutePlaceholder(label: state.uri.toString()),
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
+}
+
 class _PreviewRoutePlaceholder extends StatelessWidget {
   const _PreviewRoutePlaceholder({required this.label});
 
@@ -7144,6 +7190,10 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
       child: MaterialApp.router(
         routerConfig: _router,
         debugShowCheckedModeBanner: false,
+        // Keep the Widgetbook locale selection inside this nested app.
+        locale: Localizations.maybeLocaleOf(context),
+        supportedLocales: appSupportedLocales(preview: true),
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => _MobilePreviewFrame(
           child: Material(
             color: context.colors.background.window,
@@ -7240,7 +7290,7 @@ class _PreviewPrivateQueries extends EnhancePirNotifier {
 
 class _PreviewEnhancePirChanging extends EnhancePirTransitionNotifier {
   @override
-  String? build() => 'Changing setting…';
+  EnhancePirTransition? build() => EnhancePirTransition.changing;
 }
 
 Widget buildWelcomePrivateQueriesEnabledUseCase(BuildContext context) =>

@@ -55,11 +55,12 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
-import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/go_route_descendants.dart';
 import '../../features/swap/support/static_near_intents_swap_provider.dart';
+import '../../support/test_l10n.dart';
 
 class _NativeGeometryFixture extends NativeMobileNavigationGeometry {
   _NativeGeometryFixture(this.value);
@@ -136,6 +137,7 @@ Widget _app(
     ...overrides,
   ],
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: theme, child: child!),
   ),
@@ -234,7 +236,7 @@ void main() {
     final sidebar = tester.widget<MobileWalletSidebar>(
       find.byType(MobileWalletSidebar),
     );
-    expect(sidebar.status.label, kSyncStatusCatchingUpLabel);
+    expect(sidebar.status.label, testL10n.syncCatchingUp);
     expect(
       find.descendant(
         of: find.byType(MobileWalletSidebar),

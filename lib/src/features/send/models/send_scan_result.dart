@@ -13,6 +13,7 @@
 library;
 
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/zcash/zip321_payment_request.dart';
 import '../../address_scan/domain/address_scan_payload.dart';
 import 'send_prefill_args.dart';
@@ -48,18 +49,23 @@ enum SendScanDowngrade {
 ///
 /// [pasted] words it for a link pasted into the recipient field.
 String? sendScanDowngradeMessage(
+  AppLocalizations l10n,
   SendScanDowngrade? downgrade, {
   bool pasted = false,
 }) {
-  final verb = pasted ? 'Pasted' : 'Scanned';
   return switch (downgrade) {
     SendScanDowngrade.multipleRecipients =>
-      '$verb the first recipient only — this request asks for more '
-          'than one',
+      pasted
+          ? l10n.sendScanDowngradePastedMultipleRecipients
+          : l10n.sendScanDowngradeScannedMultipleRecipients,
     SendScanDowngrade.unsupportedMemo =>
-      "$verb the address only — the request's message couldn't be read",
+      pasted
+          ? l10n.sendScanDowngradePastedUnsupportedMemo
+          : l10n.sendScanDowngradeScannedUnsupportedMemo,
     SendScanDowngrade.malformedRequest =>
-      "$verb the address only — the payment request couldn't be read",
+      pasted
+          ? l10n.sendScanDowngradePastedMalformedRequest
+          : l10n.sendScanDowngradeScannedMalformedRequest,
     null => null,
   };
 }
@@ -181,10 +187,6 @@ SendScanDowngrade _refusedRequestDowngrade(Zip321PaymentRequest request) {
   }
   return SendScanDowngrade.malformedRequest;
 }
-
-/// The recipient field's error for a `zcash:` link that is not a valid
-/// address — "Invalid address" would read as a typo in an address.
-const kUnreadablePaymentLinkMessage = "This request link couldn't be read";
 
 /// Whether [raw] is a `zcash:` link rather than a bare address.
 bool isZcashPaymentLink(String raw) =>

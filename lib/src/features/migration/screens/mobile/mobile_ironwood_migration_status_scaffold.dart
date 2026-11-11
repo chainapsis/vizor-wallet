@@ -32,6 +32,7 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
               Consumer(
                 builder: (context, ref, _) {
                   final status = SyncStatusLabel.from(
+                    context.l10n,
                     sync,
                     displayWholePercentage: ref.watch(
                       syncDisplayWholePercentageProvider,

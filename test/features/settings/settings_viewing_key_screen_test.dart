@@ -14,10 +14,13 @@ import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_viewing_key_screen.dart';
-import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 const _ufvk =
     'uview1qthqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
@@ -119,7 +122,7 @@ void main() {
       }
       expect(find.text(_ufvk), findsOneWidget);
       expect(find.text('Full viewing key'), findsOneWidget);
-      expect(find.text(viewingKeyExplanation), findsOneWidget);
+      expect(find.text(_en.settingsViewingKeyExplanation), findsOneWidget);
       expect(
         tester
             .widget<Text>(
@@ -392,6 +395,7 @@ Widget _harness({
       syncProvider.overrideWith(_FakeSyncNotifier.new),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

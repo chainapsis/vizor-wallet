@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -16,7 +17,6 @@ class AccountPersonaRandomiseButton extends StatelessWidget {
 
   static const tapSize = 44.0;
   static const visualSize = 28.0;
-  static const _label = 'Randomise account name and profile picture';
 
   final VoidCallback? onPressed;
   final Key? actionKey;
@@ -26,11 +26,12 @@ class AccountPersonaRandomiseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final label = context.l10n.onboardingRandomiseAccountPersona;
     final enabled = onPressed != null;
     final button = Semantics(
       button: true,
       enabled: enabled,
-      label: _label,
+      label: label,
       onTap: onPressed,
       child: ExcludeSemantics(
         child: AppButton(
@@ -74,7 +75,7 @@ class AccountPersonaRandomiseButton extends StatelessWidget {
       ),
     );
     return showTooltip
-        ? Tooltip(message: _label, excludeFromSemantics: true, child: button)
+        ? Tooltip(message: label, excludeFromSemantics: true, child: button)
         : button;
   }
 }

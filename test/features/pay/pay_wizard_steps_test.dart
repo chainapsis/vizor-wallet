@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/pay/widgets/pay_review_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_page.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_stepper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/leading_decimal_input.dart';
 
@@ -47,6 +48,7 @@ final _recentContact = AddressBookContact(
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.light,
       child: Material(
@@ -518,9 +520,11 @@ void main() {
           Center(
             child: PayAmountAction(
               state: _amountState.copyWith(
-                supportedAssetsError:
-                    'Pay is unavailable over Tor because the service blocked '
-                    'this connection.\nTurn off Tor in Settings to pay.',
+                supportedAssetsError: const SwapFailureMessage(
+                  SwapFailureOperation.tokenList,
+                  SwapFailureCategory.torBlocked,
+                  surface: SwapFailureSurface.pay,
+                ),
               ),
               onContinue: () {},
             ),
@@ -548,9 +552,10 @@ void main() {
         _harness(
           PayAmountStep(
             state: _amountState.copyWith(
-              quoteError:
-                  'This route or address was rejected.\n'
-                  'Edit the details and request a new quote.',
+              quoteError: const SwapFailureMessage(
+                SwapFailureOperation.quote,
+                SwapFailureCategory.invalidRouteOrAddress,
+              ),
             ),
             controller: controller,
             focusNode: focusNode,

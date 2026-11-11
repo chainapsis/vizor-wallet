@@ -26,7 +26,7 @@ class PaymentUriUnlockClaim {
 
   /// Say this instead — the link was claimed but is not being delivered.
   /// Null when there is nothing to say (nothing was parked).
-  final String? notice;
+  final PaymentUriNotice? notice;
 }
 
 /// Claims the parked payment-URI prefill after a successful unlock.
@@ -52,7 +52,7 @@ PaymentUriUnlockClaim claimParkedPaymentUriAfterUnlock(WidgetRef ref) {
     // `takeIfFresh` already applied the park TTL; `expired` is the only
     // no-prefill outcome the user needs told about.
     return PaymentUriUnlockClaim(
-      notice: claimed.expired ? kPaymentUriExpiredMessage : null,
+      notice: claimed.expired ? PaymentUriNotice.expired : null,
     );
   }
 
@@ -80,7 +80,7 @@ PaymentUriUnlockClaim claimParkedPaymentUriAfterUnlock(WidgetRef ref) {
     // Whatever the policy would drop, drop here too, with its own sentence.
     PaymentUriDrainAction.dropWithMessage ||
     PaymentUriDrainAction.routeToWelcome => PaymentUriUnlockClaim(
-      notice: decision.message,
+      notice: decision.notice,
     ),
     // `wait` and `routeToUnlock` cannot be reached from a successful unlock
     // landing on `/home`. If the table ever grows a row that can, presenting

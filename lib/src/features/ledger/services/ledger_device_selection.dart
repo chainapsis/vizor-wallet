@@ -178,7 +178,7 @@ class LedgerDeviceSelectionRequest {
       _result.completeError(
         const LedgerMobileException(
           LedgerMobileFailure.cancelled,
-          'Ledger operation was cancelled.',
+          'Ledger operation was cancelled.', // l10n-ignore: exception text
         ),
       );
     }

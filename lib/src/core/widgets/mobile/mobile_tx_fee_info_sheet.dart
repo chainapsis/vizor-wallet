@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../l10n/l10n.dart';
 import '../../layout/mobile/app_mobile_sheet.dart';
 import '../../theme/app_theme.dart';
 import '../app_button.dart';
@@ -10,10 +11,8 @@ import '../app_button.dart';
 /// status detail cards.
 Future<void> showMobileTxFeeInfoSheet(
   BuildContext context, {
-  String title = 'Tx fee',
-  String description =
-      'The network fee is set by the Zcash protocol (ZIP 317) '
-      'based on the transaction size. Vizor adds no extra fee.',
+  String? title,
+  String? description,
 }) {
   return showAppMobileSheet<void>(
     context: context,
@@ -31,14 +30,14 @@ Future<void> showMobileTxFeeInfoSheet(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              title,
+              title ?? sheetContext.l10n.txFeeInfoTitle,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              description,
+              description ?? sheetContext.l10n.txFeeInfoDescription,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.primary,
               ),
@@ -48,7 +47,7 @@ Future<void> showMobileTxFeeInfoSheet(
               variant: AppButtonVariant.secondary,
               expand: true,
               onPressed: () => Navigator.of(sheetContext).pop(),
-              child: const Text('Close'),
+              child: Text(sheetContext.l10n.commonClose),
             ),
           ],
         ),

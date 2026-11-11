@@ -18,6 +18,7 @@ import 'payment_link_batch_inputs.dart';
 import 'payment_link_card_selector_rail.dart';
 import 'payment_link_gift_card.dart';
 import 'payment_link_wizard_chrome.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// The desktop-only path for creating several cards from one funding action.
 class PaymentLinkBulkDesktopFlow extends StatelessWidget {
@@ -88,7 +89,9 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PaymentLinkPane(
-      backLabel: reviewing && onEdit != null ? 'Edit cards' : 'Gift Cards',
+      backLabel: reviewing && onEdit != null
+          ? context.l10n.paymentLinkBulkEditCards
+          : context.l10n.paymentLinkGiftCardsTitle,
       onBack: reviewing ? onEdit ?? onBack : onBack,
       actions: _primaryAction(context),
       // Top-anchored at a fixed start, never centred: content can grow
@@ -142,10 +145,10 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
     children: [
       Text(
         reviewing
-            ? 'Review $count cards'
+            ? context.l10n.paymentLinkBulkReviewCards(count)
             : isLedger
-            ? 'Create multiple cards'
-            : 'Create cards for a group',
+            ? context.l10n.paymentLinkBulkCreateMultiple
+            : context.l10n.paymentLinkGroupEntryGroupSemantic,
         textAlign: TextAlign.center,
         style: AppTypography.headlineLarge.copyWith(
           color: context.colors.text.accent,
@@ -154,7 +157,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
       if (isLedger && !reviewing) ...[
         const SizedBox(height: AppSpacing.s),
         Text(
-          'Create up to $maxCount cards at once with Ledger.',
+          context.l10n.paymentLinkBulkLedgerLimit(maxCount),
           textAlign: TextAlign.center,
           style: AppTypography.bodyMedium.copyWith(
             color: context.colors.text.secondary,
@@ -213,11 +216,15 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
   Widget _primaryAction(BuildContext context) {
     final String label;
     if (submitting) {
-      label = retrySaving ? 'Saving…' : 'Creating…';
+      label = retrySaving
+          ? context.l10n.paymentLinkSaving
+          : context.l10n.commonCreating;
     } else if (retrySaving) {
-      label = 'Try saving again';
+      label = context.l10n.paymentLinkTrySavingAgain;
     } else {
-      label = reviewing ? 'Create $count cards' : 'Review $count cards';
+      label = reviewing
+          ? context.l10n.paymentLinkBulkCreateCards(count)
+          : context.l10n.paymentLinkBulkReviewCards(count);
     }
     final onPressed = reviewing ? onCreate : onReview;
     return AppButton(
@@ -249,7 +256,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
       children: [
         AppTextField(
           key: const ValueKey('payment_link_bulk_amount'),
-          label: 'Amount per card',
+          label: context.l10n.paymentLinkBulkAmountPerCard,
           labelStyle: _labelStyle(context),
           rightSlot: _available(context),
           controller: amountController,
@@ -259,7 +266,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
             size: 20,
             color: colors.icon.regular,
           ),
-          inlineSuffixText: 'ZEC',
+          inlineSuffixText: 'ZEC', // l10n-ignore: amount format
           inlineSuffixStyle: AppTypography.labelLarge.copyWith(
             color: colors.text.secondary,
           ),
@@ -295,10 +302,14 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
         AppIcon(AppIcons.wallet, size: 16, color: colors.icon.regular),
         const SizedBox(width: AppSpacing.xxs),
         Semantics(
-          label: balance == null ? 'Balance loading' : '$balance ZEC available',
+          label: balance == null
+              ? context.l10n.paymentLinkBulkBalanceLoading
+              : context.l10n.paymentLinkBulkZecAvailable(balance),
           child: ExcludeSemantics(
             child: Text(
-              balance == null ? '…' : '$balance ZEC',
+              balance == null
+                  ? '…'
+                  : '$balance ZEC', // l10n-ignore: amount format
               style: _labelStyle(
                 context,
               ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
@@ -337,7 +348,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
               runSpacing: AppSpacing.xxs,
               children: [
                 for (final preset in {10, 20, maxCount})
-                  if (preset <= maxCount) _countPreset(preset),
+                  if (preset <= maxCount) _countPreset(context, preset),
               ],
             ),
         ],
@@ -345,7 +356,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
       const SizedBox(height: AppSpacing.sm),
       Semantics(
         container: true,
-        label: 'Card design',
+        label: context.l10n.paymentLinkBulkCardDesign,
         child: LayoutBuilder(
           builder: (context, constraints) => Center(
             child: PaymentLinkCardSelectorRail(
@@ -410,7 +421,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
     );
   }
 
-  Widget _countPreset(int value) => Semantics(
+  Widget _countPreset(BuildContext context, int value) => Semantics(
     selected: count == value,
     child: AppButton(
       key: ValueKey('payment_link_bulk_preset_$value'),
@@ -419,7 +430,10 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
           ? AppButtonVariant.secondary
           : AppButtonVariant.ghost,
       size: AppButtonSize.medium,
-      child: Text('$value', semanticsLabel: '$value cards'),
+      child: Text(
+        '$value',
+        semanticsLabel: context.l10n.paymentLinkBulkCountSemantic(value),
+      ),
     ),
   );
 }
@@ -438,7 +452,7 @@ class _MixDesignsCheckbox extends StatelessWidget {
       key: const ValueKey('payment_link_bulk_mix'),
       button: false,
       checked: checked,
-      semanticLabel: 'Different design on each card',
+      semanticLabel: context.l10n.paymentLinkBulkDifferentDesign,
       onPressed: () => onChanged(!checked),
       builder: (context, hovered, focused) => PaymentLinkActionFocusRing(
         focused: focused,
@@ -480,7 +494,7 @@ class _MixDesignsCheckbox extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Flexible(
                 child: Text(
-                  'Different design on each card',
+                  context.l10n.paymentLinkBulkDifferentDesign,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.primary,
                   ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/navigation/route_owned_redirect.dart';
 import '../../../providers/account_provider.dart';
@@ -11,10 +12,12 @@ import '../../../providers/app_security_provider.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
+import '../voting_message.dart';
 import '../voting_poll_ordering.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
@@ -204,7 +207,12 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
       skipLoadingOnRefresh: false,
       loading: () => _stateView(const VotingPaneLoading()),
       error: (error, _) => _stateView(
-        _Message("Couldn't load review: ${friendlyVotingErrorMessage(error)}"),
+        _Message(
+          context.l10n.votingReviewLoadFailed(
+            friendlyVotingLoadErrorMessage(context.l10n, error),
+          ),
+          details: friendlyVotingErrorDetails(error),
+        ),
       ),
       data: (state) {
         final round = state.round;
@@ -237,6 +245,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
                 state.error == null &&
                 _shouldPrepareVotingPower(state));
         final eligibilityMessage = _votingEligibilityMessage(
+          context.l10n,
           state,
           preparing: votingPowerPreparing,
         );
@@ -258,7 +267,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
           children: [
             if (widget.showDesktopToolbar) ...[
               Text(
-                'Review your answers',
+                context.l10n.votingReviewTitle,
                 textAlign: TextAlign.center,
                 style: AppTypography.displaySmall.copyWith(
                   color: context.colors.text.accent,
@@ -275,7 +284,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
                   selectedChoice: draft.choices[entry.value.id],
                   readOnly: true,
                   statusLabel: draft.choices[entry.value.id] == null
-                      ? 'Skipped'
+                      ? context.l10n.votingReviewSkipped
                       : null,
                   titleCollapsedMaxLines: 1,
                 ),
@@ -284,7 +293,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
               ],
             if (state.hasConfirmedVotingEligibility && draft.isEmpty) ...[
               const SizedBox(height: AppSpacing.xs),
-              const _Message('Choose at least one option before submitting.'),
+              _Message(context.l10n.votingReviewChooseOne),
             ],
             if (eligibilityMessage != null) ...[
               const SizedBox(height: AppSpacing.xs),
@@ -298,7 +307,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
           variant: AppButtonVariant.primary,
           minWidth: widget.showDesktopToolbar ? 240 : null,
           expand: !widget.showDesktopToolbar,
-          child: const Text('Confirm & submit'),
+          child: Text(context.l10n.votingReviewConfirmSubmit),
         );
         if (!widget.showDesktopToolbar) {
           return Stack(
@@ -380,30 +389,38 @@ bool _shouldPrepareVotingPower(VotingSessionState state) {
 }
 
 String? _votingEligibilityMessage(
+  AppLocalizations l10n,
   VotingSessionState state, {
   required bool preparing,
 }) {
   if (state.hasConfirmedVotingEligibility) return null;
   final error = state.error;
-  if (error != null) return friendlyVotingErrorText(error.message);
-  if (preparing) return 'Preparing voting power.';
-  return 'Voting power unavailable.';
+  if (error != null) return normalizedVotingMessage(error.message).text(l10n);
+  if (preparing) return l10n.votingPreparingPower;
+  return l10n.votingPowerUnavailableSentence;
 }
 
 class _Message extends StatelessWidget {
-  const _Message(this.message);
+  const _Message(this.message, {this.details});
 
   final String message;
+  final String? details;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: AppTypography.bodyMedium.copyWith(
-          color: context.colors.text.secondary,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+          ...untranslatedDetailsButton(details),
+        ],
       ),
     );
   }

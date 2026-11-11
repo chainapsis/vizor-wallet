@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
@@ -317,8 +318,8 @@ class _MobileSwapReviewScreenState
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
-              ? "You don't have enough ZEC for this payment. Try a smaller amount."
-              : "You don't have enough ZEC for this swap. Try a smaller amount."
+              ? context.l10n.commonPayInsufficientZec
+              : context.l10n.swapReviewInsufficientZecSwap
         : null;
     _ensureExpiryTicker(widget.payMode ? quote : null);
     final paymentQuoteExpired =
@@ -360,7 +361,9 @@ class _MobileSwapReviewScreenState
         child: Column(
           children: [
             MobileTopNav.back(
-              title: widget.payMode ? 'Review Payment' : 'Review quote',
+              title: widget.payMode
+                  ? context.l10n.commonReviewPayment
+                  : context.l10n.commonReviewQuote,
               onBack: _startIntentInFlight ? null : _returnToSwap,
             ),
             Expanded(
@@ -385,11 +388,13 @@ class _MobileSwapReviewScreenState
                             expired: paymentQuoteExpired,
                           ),
                           for (final message in [
-                            swapState.reviewAmountDifferenceWarning,
-                            swapState.statusError,
+                            swapState.reviewAmountDifferenceWarning(
+                              context.l10n,
+                            ),
+                            swapState.statusError?.text(context.l10n),
                             startBlockedReason,
                             if (inactiveReview)
-                              'This quote is no longer active.',
+                              context.l10n.swapReviewQuoteInactive,
                           ])
                             if (message != null) ...[
                               const SizedBox(height: AppSpacing.s),
@@ -413,11 +418,13 @@ class _MobileSwapReviewScreenState
                         expired: widget.payMode
                             ? paymentQuoteExpired
                             : swapState.quoteExpired,
-                        amountWarning: swapState.reviewAmountDifferenceWarning,
-                        startError: swapState.statusError,
+                        amountWarning: swapState.reviewAmountDifferenceWarning(
+                          context.l10n,
+                        ),
+                        startError: swapState.statusError?.text(context.l10n),
                         startBlockedReason: startBlockedReason,
                         inactiveMessage: inactiveReview
-                            ? 'This quote is no longer active.'
+                            ? context.l10n.swapReviewQuoteInactive
                             : null,
                         payFiatTextOverride: swapReviewFiatTextForAsset(
                           swapState,

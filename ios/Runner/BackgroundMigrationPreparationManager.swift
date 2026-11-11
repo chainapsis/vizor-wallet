@@ -153,14 +153,13 @@ func migrationPreparationTrackingProgressPresentation(
 ) -> MigrationPreparationTrackingCompletionPresentation {
   guard progress.totalTransactionCount > 0 else {
     return MigrationPreparationTrackingCompletionPresentation(
-      title: "Preparing your migration",
-      subtitle: "Checking transaction confirmations"
+      title: NativeStrings.text(.nativePrepTaskTitle),
+      subtitle: NativeStrings.text(.nativePrepCheckingConfirmations)
     )
   }
   return MigrationPreparationTrackingCompletionPresentation(
-    title: "Preparing your migration",
-    subtitle:
-      "\(progress.completedTransactionCount) of \(progress.totalTransactionCount) preparation transactions confirmed"
+    title: NativeStrings.text(.nativePrepTaskTitle),
+    subtitle: migrationPreparationProgressText(progress)
   )
 }
 
@@ -180,22 +179,33 @@ func migrationPreparationTrackingCompletionPresentation(
   }
   guard let progress = batch.progress else {
     return MigrationPreparationTrackingCompletionPresentation(
-      title: "Preparation transactions confirmed",
-      subtitle: "Open Vizor to start the next step"
+      title: NativeStrings.text(.nativePrepConfirmedTitle),
+      subtitle: NativeStrings.text(.nativePrepOpenToStartNextStep)
     )
   }
   if progress.totalTransactionCount > 0
     && progress.completedTransactionCount >= progress.totalTransactionCount
   {
     return MigrationPreparationTrackingCompletionPresentation(
-      title: "Migration preparation complete",
-      subtitle: "Open Vizor to continue your migration"
+      title: NativeStrings.text(.nativePrepCompleteTitle),
+      subtitle: NativeStrings.text(.nativePrepOpenToContinueMigration)
     )
   }
   return MigrationPreparationTrackingCompletionPresentation(
-    title:
-      "\(progress.completedTransactionCount) of \(progress.totalTransactionCount) preparation transactions confirmed",
-    subtitle: "Open Vizor to start the next step"
+    title: migrationPreparationProgressText(progress),
+    subtitle: NativeStrings.text(.nativePrepOpenToStartNextStep)
+  )
+}
+
+private func migrationPreparationProgressText(
+  _ progress: MigrationPreparationConfirmationProgress
+) -> String {
+  NativeStrings.text(
+    .nativePrepProgress,
+    [
+      "completed": "\(progress.completedTransactionCount)",
+      "total": "\(progress.totalTransactionCount)",
+    ]
   )
 }
 
@@ -1433,8 +1443,8 @@ final class BackgroundMigrationPreparationManager {
       self.scheduleWatchdog()
       let request = BGContinuedProcessingTaskRequest(
         identifier: Self.taskIdentifier,
-        title: "Preparing your migration",
-        subtitle: "Checking transaction confirmations"
+        title: NativeStrings.text(.nativePrepTaskTitle),
+        subtitle: NativeStrings.text(.nativePrepCheckingConfirmations)
       )
       request.strategy = .fail
       let submission = self.stateLock.withPreparationLock {
@@ -2348,16 +2358,16 @@ final class BackgroundMigrationPreparationManager {
       // The OS reclaimed this execution slot mid-wave; say that instead of
       // leaving a caption that implies counting is still happening.
       task.updateTitle(
-        "Preparation tracking paused",
-        subtitle: "Open Vizor to resume"
+        NativeStrings.text(.nativePrepTrackingPausedTitle),
+        subtitle: NativeStrings.text(.nativePrepOpenToResume)
       )
     } else if runtime.quiesced {
       // The activity is still captioned "Checking transaction confirmations".
       // Leaving that text on a wallet the user just changed reads as a verdict
       // on their migration; say what actually happened instead.
       task.updateTitle(
-        "Preparation stopped",
-        subtitle: "Your wallet accounts changed"
+        NativeStrings.text(.nativePrepStoppedTitle),
+        subtitle: NativeStrings.text(.nativePrepAccountsChanged)
       )
     }
 
@@ -2869,8 +2879,8 @@ final class BackgroundMigrationPreparationManager {
       return
     }
     let content = UNMutableNotificationContent()
-    content.title = "Preparation tracking paused"
-    content.body = "Open Vizor to resume migration preparation."
+    content.title = NativeStrings.text(.nativePrepTrackingPausedTitle)
+    content.body = NativeStrings.text(.nativePrepTrackingPausedBody)
     content.sound = .default
     let request = UNNotificationRequest(
       identifier: Self.watchdogIdentifier,

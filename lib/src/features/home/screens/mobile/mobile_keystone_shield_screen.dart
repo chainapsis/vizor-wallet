@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:typed_data';
@@ -15,6 +16,7 @@ import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/zcash/wallet_error_code.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
@@ -229,15 +231,15 @@ class _MobileKeystoneShieldScreenState
   String _friendlyError(Object error) {
     final lower = error.toString().toLowerCase();
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return 'Keystone signature could not be applied.';
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
     if (lower.contains('extract')) {
-      return 'Shield transaction could not be finalized.';
+      return context.l10n.homeShieldErrorNotFinalized;
     }
-    return friendlyShieldBalanceError(error);
+    return friendlyShieldBalanceError(context.l10n, error);
   }
 
   void _startScanning() {
@@ -338,7 +340,7 @@ class _MobileKeystoneShieldScreenState
         setState(() {
           _decoding = false;
           _stage = _ShieldSignStage.failed;
-          _error ??= 'Keystone signing could not be prepared.';
+          _error ??= context.l10n.commonKeystoneSigningCouldNotBePrepared;
         });
         return;
       }
@@ -353,17 +355,16 @@ class _MobileKeystoneShieldScreenState
       if (!mounted || _closed) return;
       setState(() {
         _decoding = false;
-        _scanHint =
-            'This QR code could not be decoded as a Keystone signature.';
+        _scanHint = context.l10n.commonThisQRCodeCouldNotBe;
       });
     }
   }
 
   void _handleDecodeError(Object error) {
     if (!mounted || _closed || _cancellationStarted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the signed shield QR on Keystone, then scan again.'
-        : 'Keep the QR code steady and fully visible.';
+    final message = isUnexpectedUrTypeError(error)
+        ? context.l10n.homeShieldScanWrongQr
+        : context.l10n.commonKeepQrSteady;
     if (_scanHint == message) return;
     setState(() => _scanHint = message);
   }
@@ -426,7 +427,10 @@ class _MobileKeystoneShieldScreenState
       if (result.status != 'broadcasted') {
         setState(() {
           _stage = _ShieldSignStage.broadcastWarning;
-          _statusMessage = shieldPcztBroadcastStatusMessage(result);
+          _statusMessage = shieldPcztBroadcastStatusMessage(
+            context.l10n,
+            result,
+          );
         });
         return;
       }
@@ -436,7 +440,10 @@ class _MobileKeystoneShieldScreenState
       if (!mounted || _closed) return;
       await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
       if (!mounted || _closed) return;
-      final postBroadcastMessage = postBroadcastShieldErrorMessage(e);
+      final postBroadcastMessage = postBroadcastShieldErrorMessage(
+        context.l10n,
+        e,
+      );
       if (postBroadcastMessage != null) {
         setState(() {
           _stage = _ShieldSignStage.broadcastWarning;
@@ -447,7 +454,7 @@ class _MobileKeystoneShieldScreenState
       if (isHardwareBroadcastRetryable(e)) {
         setState(() {
           _stage = _ShieldSignStage.failed;
-          _error = kShieldWaitingForPrivateRecoveryMessage;
+          _error = context.l10n.homeShieldWaitingForPrivateRecovery;
           _retrySignatures = signatures;
         });
         return;
@@ -486,7 +493,8 @@ class _MobileKeystoneShieldScreenState
         .switchToFallbackFor(
           error,
           endpoint: attemptedEndpoint,
-          operation: 'mobile keystone shield broadcast',
+          operation:
+              'mobile keystone shield broadcast', // l10n-ignore: log label
         );
     if (switched) {
       unawaited(ref.read(syncProvider.notifier).restartSync());
@@ -525,8 +533,8 @@ class _MobileKeystoneShieldScreenState
       _retrySignatures = null;
       _statusMessage = null;
       _error = released
-          ? 'Shielding was cancelled.'
-          : 'Could not finish cancelling. Please try again.';
+          ? context.l10n.homeShieldCancelled
+          : context.l10n.commonCancelFailedRetry;
     });
   }
 
@@ -591,16 +599,16 @@ class _MobileKeystoneShieldScreenState
             privacyModeEnabled: privacyModeEnabled,
           ),
           title: !_started
-              ? 'Transparent Balance'
+              ? context.l10n.homeShieldBalanceTitle
               : _done
-              ? 'Shielded successfully'
+              ? context.l10n.commonShieldedSuccessfully
               : scanning
-              ? 'Scan your Keystone signature'
+              ? context.l10n.homeShieldScanTitle
               : _stage == _ShieldSignStage.showQr
-              ? 'Approve with Keystone'
+              ? context.l10n.homeShieldApproveTitle
               : terminal
-              ? 'Shielding needs attention'
-              : 'Shielding your balance…',
+              ? context.l10n.homeShieldAttentionTitle
+              : context.l10n.homeShieldingBalance,
           body: terminal ? _statusMessage ?? _error : null,
           keystoneFocus: KeystoneShieldFocus(
             stage: _started && !_done && !terminal
@@ -665,9 +673,8 @@ class _MobileKeystoneShieldScreenState
       cameraErrorBuilder: (viewSize) => MobileScanCameraErrorOverlay(
         controller: controller,
         maxWidth: viewSize,
-        permissionDeniedMessage:
-            'Allow camera access in Settings to scan Keystone signatures.',
-        unavailableMessage: 'The camera is unavailable right now.',
+        permissionDeniedMessage: context.l10n.homeShieldCameraDenied,
+        unavailableMessage: context.l10n.commonCameraUnavailableNow,
         onOpenSettings: _openCameraSettings,
       ),
     );
@@ -698,9 +705,9 @@ class _MobileKeystoneShieldScreenState
                       growWithContent: true,
                       variant: AppButtonVariant.ghost,
                       onPressed: _finishWarningOrFailure,
-                      child: const Text(
-                        'Back to wallet',
-                        style: TextStyle(color: Colors.white),
+                      child: Text(
+                        context.l10n.commonBackToWallet,
+                        style: const TextStyle(color: Colors.white),
                       ),
                     ),
                   ),
@@ -712,7 +719,7 @@ class _MobileKeystoneShieldScreenState
                       constrainContent: true,
                       growWithContent: true,
                       onPressed: _retryBroadcast,
-                      child: const Text('Try again'),
+                      child: Text(context.l10n.commonTryAgain),
                     ),
                   ),
                 ],
@@ -722,7 +729,7 @@ class _MobileKeystoneShieldScreenState
                 constrainContent: true,
                 growWithContent: true,
                 onPressed: _finishWarningOrFailure,
-                child: const Text('Back to wallet'),
+                child: Text(context.l10n.commonBackToWallet),
               ),
       );
     }

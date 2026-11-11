@@ -16,6 +16,7 @@ import '../../../providers/sync_keep_awake_provider.dart';
 import '../../../providers/sync_scan_slowdown_provider.dart';
 import '../../../services/biometric_unlock.dart';
 import '../../feedback/app_haptics.dart';
+import '../../l10n/l10n.dart';
 import '../../formatting/sync_status_label.dart';
 import '../../layout/app_form_factor.dart';
 import '../../layout/mobile/mobile_top_nav.dart';
@@ -217,7 +218,7 @@ class _SyncKeepAwakePrivacyLockScreenState
   var _passcodeEntry = '';
   var _submittingPasscode = false;
   var _unlockAttemptInFlight = false;
-  String? _passcodeError;
+  String Function(AppLocalizations)? _passcodeError;
   late final VoidCallback _detachBackHandler;
 
   @override
@@ -251,7 +252,7 @@ class _SyncKeepAwakePrivacyLockScreenState
     setState(() {
       _showPasscode = true;
       _passcodeEntry = '';
-      _passcodeError = error;
+      _passcodeError = error == null ? null : (_) => error;
       _submittingPasscode = false;
       _unlockAttemptInFlight = false;
     });
@@ -321,13 +322,13 @@ class _SyncKeepAwakePrivacyLockScreenState
     final wasEnabled = biometric.enabled;
     final passcode = await ref
         .read(biometricUnlockProvider.notifier)
-        .readPasscode(reason: 'Unlock Vizor');
+        .readPasscode(reason: context.l10n.commonUnlockVizor);
     if (!mounted) return;
 
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
       final error = wasEnabled && now != null && !now.enabled
-          ? biometric.availability.kind.changedMessage
+          ? biometric.availability.kind.changedMessage(context.l10n)
           : null;
       _openPasscodePrompt(error: error);
       return;
@@ -364,7 +365,7 @@ class _SyncKeepAwakePrivacyLockScreenState
       _unlockAttemptInFlight = false;
       _showPasscode = true;
       _passcodeEntry = '';
-      _passcodeError = 'Incorrect Passcode';
+      _passcodeError = (l10n) => l10n.passcodeIncorrect;
     });
   }
 
@@ -374,7 +375,7 @@ class _SyncKeepAwakePrivacyLockScreenState
       return _SyncKeepAwakePasscodeConfirmScreen(
         mode: widget.mode,
         entryLength: _passcodeEntry.length,
-        error: _passcodeError,
+        error: _passcodeError?.call(context.l10n),
         submitting: _submittingPasscode,
         onBack: _returnToStatusScreen,
         onDigit: _onPasscodeDigit,
@@ -406,25 +407,25 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
     final biometric =
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
+    final l10n = context.l10n;
     final main = switch (mode) {
       SyncKeepAwakePrivacyLockMode.done => const _SyncKeepAwakeDoneLockup(),
-      SyncKeepAwakePrivacyLockMode.interrupted =>
-        const _SyncKeepAwakeStatusLockup(
-          iconName: AppIcons.warning,
-          iconKey: ValueKey('sync_keep_awake_privacy_interrupted_warning'),
-          title: 'Sync paused',
-          body: 'Unlock Vizor to continue.',
-          success: false,
-        ),
+      SyncKeepAwakePrivacyLockMode.interrupted => _SyncKeepAwakeStatusLockup(
+        iconName: AppIcons.warning,
+        iconKey: const ValueKey('sync_keep_awake_privacy_interrupted_warning'),
+        title: l10n.lockSyncPausedTitle,
+        body: l10n.lockUnlockToContinuePausedBody,
+        success: false,
+      ),
       SyncKeepAwakePrivacyLockMode.hidden ||
       SyncKeepAwakePrivacyLockMode.syncing =>
         const _SyncKeepAwakeDisplayProgressLockup(),
     };
     final semanticsLabel = switch (mode) {
-      SyncKeepAwakePrivacyLockMode.done => 'Vizor is synced',
-      SyncKeepAwakePrivacyLockMode.interrupted => 'Vizor sync is paused',
+      SyncKeepAwakePrivacyLockMode.done => l10n.syncVizorSynced,
+      SyncKeepAwakePrivacyLockMode.interrupted => l10n.lockSyncPausedSemantics,
       SyncKeepAwakePrivacyLockMode.hidden ||
-      SyncKeepAwakePrivacyLockMode.syncing => 'Vizor is syncing',
+      SyncKeepAwakePrivacyLockMode.syncing => l10n.lockSyncingMessage,
     };
 
     return Material(
@@ -461,7 +462,7 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
                     onPressed: onUnlockPressed,
                     leading: _SyncKeepAwakeUnlockIcon(biometric: biometric),
                     minWidth: 165,
-                    child: const Text('Unlock Vizor'),
+                    child: Text(l10n.commonUnlockVizor),
                   ),
                 ],
               );
@@ -645,13 +646,14 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
         scopesRoute: true,
         namesRoute: true,
         explicitChildNodes: true,
-        label: 'Confirm passcode to unlock Vizor',
+        label: context.l10n.lockConfirmPasscodeSemantics,
         child: SafeArea(
           child: Column(
             children: [
               Consumer(
                 builder: (context, ref, _) {
                   final (title, titleSemanticsLabel) = _titleForMode(
+                    context.l10n,
                     mode == SyncKeepAwakePrivacyLockMode.syncing ||
                             mode == SyncKeepAwakePrivacyLockMode.hidden
                         ? ref.watch(syncDisplayWholePercentageProvider)
@@ -679,8 +681,8 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                     final sectionGap = compact ? AppSpacing.xs : AppSpacing.md;
 
                     return AdaptivePasscodeLayout(
-                      title: 'Welcome Back',
-                      subtitle: _bodyForMode(),
+                      title: context.l10n.commonWelcomeBack,
+                      subtitle: _bodyForMode(context.l10n),
                       prompt: PasscodePromptField(
                         length: kMobilePasscodeLength,
                         filled: entryLength,
@@ -709,7 +711,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                           children: [
                             SizedBox(height: topGap),
                             Text(
-                              'Welcome Back',
+                              context.l10n.commonWelcomeBack,
                               textAlign: TextAlign.center,
                               style: AppTypography.displayLarge.copyWith(
                                 color: colors.text.accent,
@@ -717,7 +719,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: AppSpacing.s),
                             Text(
-                              _bodyForMode(),
+                              _bodyForMode(context.l10n),
                               textAlign: TextAlign.center,
                               style: AppTypography.bodyMediumStrong.copyWith(
                                 color: colors.text.primary,
@@ -756,14 +758,25 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
   }
 
   /// The title and what a screen reader announces for it.
-  (String, String?) _titleForMode(int displayWholePercentage) {
+  (String, String?) _titleForMode(
+    AppLocalizations l10n,
+    int displayWholePercentage,
+  ) {
     return switch (mode) {
-      SyncKeepAwakePrivacyLockMode.done => ('Synced', null),
-      SyncKeepAwakePrivacyLockMode.interrupted => ('Sync paused', null),
+      SyncKeepAwakePrivacyLockMode.done => (l10n.syncSynced, null),
+      SyncKeepAwakePrivacyLockMode.interrupted => (
+        l10n.lockSyncPausedTitle,
+        null,
+      ),
       SyncKeepAwakePrivacyLockMode.hidden ||
       SyncKeepAwakePrivacyLockMode.syncing => (
-        formatSyncProgressLabel(displayWholePercentage, isChecking: false),
+        formatSyncProgressLabel(
+          l10n,
+          displayWholePercentage,
+          isChecking: false,
+        ),
         formatSyncProgressSemanticsLabel(
+          l10n,
           displayWholePercentage,
           isChecking: false,
         ),
@@ -771,15 +784,13 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
     };
   }
 
-  String _bodyForMode() {
-    if (submitting) return 'Checking passcode...';
+  String _bodyForMode(AppLocalizations l10n) {
+    if (submitting) return l10n.lockCheckingPasscode;
     return switch (mode) {
-      SyncKeepAwakePrivacyLockMode.done =>
-        'Synced successfully. Unlock Vizor to continue.',
-      SyncKeepAwakePrivacyLockMode.interrupted =>
-        'Sync paused. Unlock Vizor to continue.',
+      SyncKeepAwakePrivacyLockMode.done => l10n.lockBodySynced,
+      SyncKeepAwakePrivacyLockMode.interrupted => l10n.lockBodyPaused,
       SyncKeepAwakePrivacyLockMode.hidden ||
-      SyncKeepAwakePrivacyLockMode.syncing => 'Unlock to continue',
+      SyncKeepAwakePrivacyLockMode.syncing => l10n.lockUnlockToContinue,
     };
   }
 }
@@ -793,12 +804,17 @@ class _SyncKeepAwakeDoneLockup extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final catchingUp = ref.watch(syncKeepAwakeCompleteThroughCatchUpProvider);
+    final l10n = context.l10n;
     return _SyncKeepAwakeStatusLockup(
       iconName: AppIcons.checkCircle,
       iconKey: const ValueKey('sync_keep_awake_privacy_done_check'),
-      title: 'Sync Complete',
-      body: catchingUp ? 'Syncing new blocks…' : 'Unlock Vizor to continue',
-      bodySemanticsLabel: catchingUp ? 'Syncing new blocks' : null,
+      title: l10n.lockSyncCompleteTitle,
+      body: catchingUp
+          ? l10n.lockSyncingNewBlocks
+          : l10n.lockUnlockToContinueBody,
+      bodySemanticsLabel: catchingUp
+          ? l10n.lockSyncingNewBlocksSemantics
+          : null,
       success: true,
     );
   }
@@ -946,7 +962,7 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
                       SizedBox(
                         width: SyncKeepAwakePrivacyLockScreen._bodyWidth,
                         child: Text(
-                          'Vizor is syncing',
+                          context.l10n.lockSyncingMessage,
                           textAlign: TextAlign.center,
                           style: AppTypography.bodyMediumStrong.copyWith(
                             color: colors.text.primary,
@@ -958,7 +974,7 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
                         SizedBox(
                           width: SyncKeepAwakePrivacyLockScreen._slowdownWidth,
                           child: Text(
-                            _slowdownMessage(slowdown),
+                            _slowdownMessage(context.l10n, slowdown),
                             key: const ValueKey(
                               'sync_keep_awake_privacy_slowdown',
                             ),
@@ -1006,13 +1022,14 @@ class _SyncKeepAwakeLockupTextLayout extends SingleChildLayoutDelegate {
 /// Why sync is slower. Power saving says how to speed up again, naming Low
 /// Power Mode on iOS and power saving in general on Android, whose setting
 /// name varies by maker (Battery Saver, Power saving).
-String _slowdownMessage(SyncScanSlowdown slowdown) => switch (slowdown) {
-  SyncScanSlowdown.heat => 'Slowed down so your phone can cool',
-  SyncScanSlowdown.powerSaving =>
-    defaultTargetPlatform == TargetPlatform.iOS
-        ? 'Turn off Low Power Mode to sync faster'
-        : 'Turn off power saving to sync faster',
-};
+String _slowdownMessage(AppLocalizations l10n, SyncScanSlowdown slowdown) =>
+    switch (slowdown) {
+      SyncScanSlowdown.heat => l10n.lockSyncSlowedHeat,
+      SyncScanSlowdown.powerSaving =>
+        defaultTargetPlatform == TargetPlatform.iOS
+            ? l10n.lockSyncSlowedLowPowerMode
+            : l10n.lockSyncSlowedPowerSaving,
+    };
 
 class _SyncKeepAwakeSegmentedRingPainter extends CustomPainter {
   const _SyncKeepAwakeSegmentedRingPainter({

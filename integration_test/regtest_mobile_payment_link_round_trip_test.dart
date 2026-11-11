@@ -10,13 +10,13 @@ import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 
 import 'support/mobile_regtest_flow.dart';
 import 'support/gift_card_amount_regtest.dart';
+import '../test/support/test_l10n.dart';
 
 /// Mobile regtest E2E: the mobile twin of
 /// regtest_payment_link_round_trip_test.dart. One app holds both regtest
@@ -139,7 +139,7 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.textContaining(kPaymentLinkClaimWaitingDescription),
+          find.textContaining(testL10n.paymentLinkClaimWaitingDescription),
         ),
         description: 'the received card to wait for claim confirmations',
         timeout: const Duration(minutes: 2),

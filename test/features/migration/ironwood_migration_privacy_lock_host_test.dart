@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/migration/widgets/ironwood_migration_p
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _FakeSecurityNotifier extends AppSecurityNotifier {
   _FakeSecurityNotifier({this.confirmResult = true});
@@ -174,6 +175,7 @@ void main() {
           ),
         ],
         child: const MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: IronwoodMigrationPrivacyLockHost(
             idleTimeout: Duration(milliseconds: 1),
             child: Text('Unwrapped child'),
@@ -531,6 +533,7 @@ List<Override> _overrides(_FakeSecurityNotifier security) {
 
 Widget _themedHost(_TestClock clock, {VoidCallback? protectedTap}) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, child) => AppTheme(
       data: AppThemeData.dark,
       child: IronwoodMigrationPrivacyLockHost(

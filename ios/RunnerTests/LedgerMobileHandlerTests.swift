@@ -15,6 +15,13 @@ import XCTest
 #endif
 
 final class LedgerMobileHandlerTests: XCTestCase {
+  // Native copy follows the app language Dart last sent; these tests assert
+  // the English copy, so a language left on the simulator must not leak in.
+  override func setUp() {
+    super.setUp()
+    UserDefaults.standard.removeObject(forKey: NativeStrings.languageKey)
+  }
+
   @MainActor
   func testPermissionRequestWaitsForDecisionAndRejectsConcurrentDeviceWork() async {
     let transport = PendingLedgerTransport()

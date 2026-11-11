@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   for (final (builder, action, removedMenu) in [
@@ -133,6 +134,7 @@ Future<void> _pumpMobileAccountsUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       key: UniqueKey(),
       builder: (context, child) =>
           AppTheme(data: AppThemeData.light, child: child!),

@@ -7,6 +7,7 @@ import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../send/widgets/send_review_layout.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Display status of a transparent-balance shielding transaction.
 enum ShieldedReceiptStatus { inProgress, completed, failed }
@@ -24,8 +25,8 @@ class ShieldedReceiptView extends StatelessWidget {
     required this.txIdText,
     this.status = ShieldedReceiptStatus.completed,
     this.feeText,
-    this.feeLabel = 'Tx fee',
-    this.feeHelpText = kTxFeeHelpTooltip,
+    this.feeLabel,
+    this.feeHelpText,
     this.memoText,
     this.memoExpanded = false,
     this.memoLoading = false,
@@ -40,8 +41,8 @@ class ShieldedReceiptView extends StatelessWidget {
   final String txIdText;
   final ShieldedReceiptStatus status;
   final String? feeText;
-  final String feeLabel;
-  final String feeHelpText;
+  final String? feeLabel;
+  final String? feeHelpText;
   final String? memoText;
   final bool memoExpanded;
 
@@ -54,25 +55,26 @@ class ShieldedReceiptView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final l10n = context.l10n;
     final memo = memoText?.trim();
     final title = switch (status) {
-      ShieldedReceiptStatus.inProgress => 'Shielding in progress...',
-      ShieldedReceiptStatus.completed => 'Shielded successfully',
-      ShieldedReceiptStatus.failed => 'Shielding failed',
+      ShieldedReceiptStatus.inProgress => l10n.activityTitleShieldingInProgress,
+      ShieldedReceiptStatus.completed => l10n.commonShieldedSuccessfully,
+      ShieldedReceiptStatus.failed => l10n.activityTitleShieldingFailed,
     };
     final (statusValue, statusIconName, statusColor) = switch (status) {
       ShieldedReceiptStatus.inProgress => (
-        'In progress',
+        l10n.commonInProgress,
         AppIcons.loader,
         colors.text.secondary,
       ),
       ShieldedReceiptStatus.completed => (
-        'Completed',
+        l10n.commonCompleted,
         AppIcons.checkCircle,
         colors.text.positiveStrong,
       ),
       ShieldedReceiptStatus.failed => (
-        'Failed',
+        l10n.commonFailed,
         AppIcons.cancel,
         colors.text.destructive,
       ),
@@ -97,7 +99,7 @@ class ShieldedReceiptView extends StatelessWidget {
             connectorColor: colors.text.secondary,
             rows: [
               ReviewInfoRow(
-                label: 'Amount',
+                label: l10n.commonAmount,
                 value: amountText,
                 leading: ClipOval(
                   child: Image.asset(
@@ -108,17 +110,17 @@ class ShieldedReceiptView extends StatelessWidget {
                   ),
                 ),
                 bottomLeftIconName: AppIcons.transparentBalance,
-                bottomLeftText: 'From transparent balance',
+                bottomLeftText: l10n.activityBalanceFromTransparent,
               ),
               ReviewInfoRow(
-                label: 'To',
-                value: 'Shielded balance',
+                label: l10n.commonTo,
+                value: l10n.commonShieldedBalance,
                 leading: const ReviewInfoIconCircle(
                   iconName: AppIcons.shieldKeyholeOutline,
                 ),
                 bottomLeftIconName: AppIcons.shieldKeyhole,
                 bottomLeftIconColor: colors.text.brandCrimson,
-                bottomLeftText: 'Shielded',
+                bottomLeftText: l10n.poolShielded,
               ),
             ],
           ),
@@ -127,7 +129,7 @@ class ShieldedReceiptView extends StatelessWidget {
         ReviewWrapCard(
           children: [
             ReviewListRow(
-              label: 'Status',
+              label: l10n.activityReceiptStatus,
               value: statusValue,
               valueColor: statusColor,
               leadingIconName: statusIconName,
@@ -144,9 +146,12 @@ class ShieldedReceiptView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
-                ReviewListRow(label: 'Timestamp', value: timestampText),
                 ReviewListRow(
-                  label: 'Tx ID',
+                  label: l10n.commonTimestamp,
+                  value: timestampText,
+                ),
+                ReviewListRow(
+                  label: l10n.commonTxId,
                   value: txIdText,
                   trailingIconName: AppIcons.arrowTopRight,
                   onPressed: onTxIdPressed,
@@ -156,11 +161,12 @@ class ShieldedReceiptView extends StatelessWidget {
             if (feeText != null) ...[
               const ReviewWrapDivider(),
               ReviewListRow(
-                label: feeLabel,
+                label: feeLabel ?? l10n.txFeeInfoTitle,
                 value: feeText!,
                 trailingIconName: AppIcons.help,
                 trailingIconColor: colors.text.secondary,
-                trailingIconTooltip: feeHelpText,
+                trailingIconTooltip:
+                    feeHelpText ?? context.l10n.txFeeHelpTooltip,
                 onPressed: onFeeHelpPressed,
               ),
             ],

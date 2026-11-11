@@ -67,9 +67,10 @@ class _PrivateMigrationTransferStatusContent extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Left to transfer: '
-                  '${leftToTransfer.isEstimated ? '~' : ''}'
-                  '${_formatZecAmountCompact(leftToTransfer.value)} ZEC',
+                  context.l10n.migrationLeftToTransfer(
+                    '${leftToTransfer.isEstimated ? '~' : ''}' // l10n-ignore: amount format
+                    '${_formatZecAmountCompact(leftToTransfer.value)} ZEC',
+                  ),
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.accent,
@@ -87,8 +88,11 @@ class _PrivateMigrationTransferStatusContent extends StatelessWidget {
               currentBatchIndex: currentBatchIndex,
               currentBatchValue: currentBatchAmount.value,
               currentBatchValueIsEstimated: currentBatchAmount.isEstimated,
-              currentBatchStatus: _currentTransferBatchStatus(status),
-              estimatedArrival: _transferEstimatedArrival(status),
+              currentBatchStatus: _currentTransferBatchStatus(
+                context.l10n,
+                status,
+              ),
+              estimatedArrival: _transferEstimatedArrival(context.l10n, status),
             ),
           ),
           Positioned(
@@ -195,14 +199,16 @@ class _MigrationTransferBatchCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '$plannedBatchCount Planned batches',
+                    context.l10n.migrationPlannedBatches(
+                      plannedBatchCount.toString(),
+                    ),
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
                 ),
                 Text(
-                  'View',
+                  context.l10n.commonView,
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.accent,
                   ),
@@ -222,7 +228,7 @@ class _MigrationTransferBatchCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Current Batch',
+                    context.l10n.migrationCurrentBatch,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.accent,
                     ),
@@ -260,7 +266,7 @@ class _MigrationTransferBatchCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '${currentBatchValueIsEstimated ? '~' : ''}'
+                    '${currentBatchValueIsEstimated ? '~' : ''}' // l10n-ignore: amount format
                     '${_formatZecAmountCompact(currentBatchValue)} ZEC',
                     style: AppTypography.bodyMediumStrong.copyWith(
                       color: colors.text.accent,
@@ -282,7 +288,7 @@ class _MigrationTransferBatchCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Estimated arrival time',
+                    context.l10n.migrationEstimatedArrivalTime,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.accent,
                     ),

@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/feedback/app_haptics.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
 import '../../../core/privacy/route_coverage_aware.dart';
@@ -137,8 +138,8 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
           context,
         ).at(OnboardingFlow.importWallet, OnboardingStage.phraseReview).value,
         onBack: () => Navigator.of(context).maybePop(),
-        title: 'Review Import',
-        subtitle: 'Review your secret passphrase\nbefore import starts.',
+        title: context.l10n.onboardingReviewImportTitle,
+        subtitle: context.l10n.onboardingReviewImportSubtitle,
         bottomArea: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -149,8 +150,8 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
               expand: true,
               constrainContent: true,
               onPressed: () => _clear(context),
-              child: const Text(
-                'Clear secret passphrase',
+              child: Text(
+                context.l10n.onboardingReviewClearSecretPassphrase,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -161,7 +162,7 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
               expand: true,
               onPressed: () => _continue(context),
               trailing: const AppIcon(AppIcons.chevronForward),
-              child: const Text('Confirm & continue'),
+              child: Text(context.l10n.onboardingReviewConfirmContinue),
             ),
           ],
         ),

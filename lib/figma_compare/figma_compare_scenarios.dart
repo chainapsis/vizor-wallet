@@ -6,6 +6,7 @@ import 'mobile_passcode_capture.dart';
 import 'mobile_receive_capture.dart';
 import '../src/features/ledger/services/ledger_failure_guidance.dart';
 import 'desktop_welcome_capture.dart';
+import 'language_settings_capture.dart';
 import '../widgetbook/desktop_gift_onboarding_use_cases.dart';
 import '../widgetbook/desktop_gift_import_use_cases.dart';
 import 'desktop_onboarding_intro_capture.dart';
@@ -106,6 +107,72 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'copy-desktop-reset-countdown',
+    description: 'Localized reset button before the safety delay expires',
+    builder: buildLostPasswordCountdownUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-seed-auth',
+    description: 'Localized password instruction before showing recovery words',
+    builder: buildSettingsSecretPassphraseGateUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-viewing-key-auth',
+    description: 'Localized password instruction before showing viewing keys',
+    builder: buildSettingsViewingKeyGateUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-wallet-link-auth',
+    description: 'Localized password instruction before linking a phone',
+    builder: buildSettingsWalletLinkConfirmAccessUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-mobile-reset-final',
+    description: 'Localized final reset confirmation and safety countdown',
+    builder: buildMobileForgotPasscodeLastWarningUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-mobile-seed-screenshot-warning',
+    description: 'Localized recovery word screenshot warning in context',
+    builder: buildMobileSecretPassphraseScreenshotWarningUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-language-welcome',
+    description: 'Desktop Welcome language entry and interactive picker',
+    builder: buildDesktopWelcomeCapture,
+    allowPointer: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-language-settings',
+    description: 'Desktop settings language entry and interactive picker',
+    builder: buildSettingsMainUseCase,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-language-welcome',
+    description: 'Mobile Welcome language entry and interactive sheet',
+    builder: buildMobileLanguageWelcomeCapture,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    renderShadows: true,
+    outsideScaffold: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-language-settings',
+    description: 'Mobile settings language entry and interactive sheet',
+    builder: buildMobileLanguageSettingsCapture,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    outsideScaffold: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-account-removal-passcode',
     description: 'Passcode confirmation before account removal',
@@ -3966,6 +4033,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'receive-desktop-live-shielded',
+    description: 'Production desktop receive pane with a shielded address',
+    builder: buildReceiveDesktopLiveShieldedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-desktop-live-transparent',
+    description: 'Production desktop receive pane with a transparent address',
+    builder: buildReceiveDesktopLiveTransparentUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'receive-desktop-shielded',
     description: 'Desktop receive pane with copy/share and a labelled request',
     builder: buildReceiveDesktopRequestEntryUseCase,
@@ -4189,6 +4266,7 @@ Widget _buildLedgerSigningDeclined(BuildContext context) =>
       failureOverride: const LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
+        actionNeeded: true,
         message: 'Signing was declined on Ledger. Try again when you’re ready.',
         showDeviceAppPrompt: false,
         actionLabel: 'Try again',
@@ -4203,6 +4281,7 @@ Widget _buildLedgerSigningTexDeclined(BuildContext context) =>
       failureOverride: const LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
+        actionNeeded: true,
         message: 'Signing was declined on Ledger. Try again when you’re ready.',
         showDeviceAppPrompt: false,
         actionLabel: 'Try again',
@@ -4216,6 +4295,7 @@ Widget _buildLedgerSigningSaveFailed(BuildContext context) =>
       failureOverride: const LedgerSigningFailurePresentation(
         title: 'Could not save signed transaction',
         statusLabel: 'Signature preserved',
+        actionNeeded: false,
         message:
             'Keep Vizor open and try again. No new Ledger approval needed.',
         showDeviceAppPrompt: false,

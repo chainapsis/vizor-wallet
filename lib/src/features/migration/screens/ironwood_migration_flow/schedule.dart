@@ -143,7 +143,7 @@ class _IronwoodMigrationScheduleRouteState
     }
     if (!status.canAbandon && !widget.previewCanStop) {
       setState(() {
-        _manageError = 'This migration can no longer be cancelled.';
+        _manageError = context.l10n.migrationManageCannotCancel;
       });
       return;
     }
@@ -164,7 +164,7 @@ class _IronwoodMigrationScheduleRouteState
 
     if (!status.canAbandon && !widget.previewCanStop) {
       setState(() {
-        _manageError = 'This migration can no longer be cancelled.';
+        _manageError = context.l10n.migrationManageCannotCancel;
       });
       return;
     }
@@ -190,7 +190,7 @@ class _IronwoodMigrationScheduleRouteState
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _manageError = _migrationManageErrorMessage(error);
+        _manageError = _migrationManageErrorMessage(context.l10n, error);
         _submitting = false;
       });
       log('Migration schedule management failed: $error');
@@ -273,7 +273,7 @@ class _IronwoodMigrationScheduleRouteState
                 ? 'ironwood_migration_preparation_schedule_back_button'
                 : 'ironwood_migration_schedule_back_button',
           ),
-          label: 'Ironwood Migration',
+          label: context.l10n.migrationFlowTitle,
           onTap: () => context.go('/migration/private/status'),
         ),
       ),
@@ -332,12 +332,14 @@ class _IronwoodMigrationScheduleRouteState
   }
 }
 
-String _migrationManageErrorMessage(Object error) {
+String _migrationManageErrorMessage(AppLocalizations l10n, Object error) {
   final message = error.toString();
-  if (message.contains('No remaining Orchard balance')) {
-    return 'There is no remaining Orchard balance to migrate.';
+  const noBalance =
+      'No remaining Orchard balance'; // l10n-ignore: Rust error text
+  if (message.contains(noBalance)) {
+    return l10n.migrationManageNoBalance;
   }
-  return 'The migration could not be updated. Please try again.';
+  return l10n.migrationManageUpdateFailed;
 }
 
 class _MigrationManageButton extends StatelessWidget {
@@ -356,7 +358,7 @@ class _MigrationManageButton extends StatelessWidget {
         expand: false,
         leading: const AppIcon(AppIcons.wrench, size: 16),
         onPressed: onPressed,
-        child: const Text('Manage'),
+        child: Text(context.l10n.commonManage),
       ),
     );
   }
@@ -411,7 +413,7 @@ class _MigrationManageModal extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Manage Migration',
+          context.l10n.migrationManageTitle,
           style: AppTypography.bodyLarge.copyWith(
             color: colors.text.accent,
             fontWeight: FontWeight.w600,
@@ -420,7 +422,7 @@ class _MigrationManageModal extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         _MigrationManageChoiceRow(
           key: const ValueKey('ironwood_migration_manage_immediate_option'),
-          label: 'Switch to Immediate',
+          label: context.l10n.migrationManageSwitchImmediate,
           selected: choice == _MigrationManageChoice.immediate,
           enabled: canFinishImmediately,
           onTap: () => onChoiceChanged(_MigrationManageChoice.immediate),
@@ -428,7 +430,7 @@ class _MigrationManageModal extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         _MigrationManageChoiceRow(
           key: const ValueKey('ironwood_migration_manage_stop_option'),
-          label: 'Stop Migration',
+          label: context.l10n.migrationManageStop,
           selected: choice == _MigrationManageChoice.stop,
           enabled: canStop,
           onTap: () => onChoiceChanged(_MigrationManageChoice.stop),
@@ -440,7 +442,9 @@ class _MigrationManageModal extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         AppModalActions(
           onCancel: submitting ? null : onCancel,
-          actionLabel: submitting ? 'Loading...' : 'Continue',
+          actionLabel: submitting
+              ? context.l10n.commonLoadingDots
+              : context.l10n.commonContinue,
           onAction: submitting || !choiceIsAvailable ? null : onContinue,
           actionLeading: submitting
               ? const AppIcon(AppIcons.loader, size: 16)
@@ -461,7 +465,7 @@ class _MigrationManageModal extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Switch to Immediate',
+          context.l10n.migrationManageSwitchImmediate,
           style: AppTypography.bodyLarge.copyWith(
             color: colors.text.accent,
             fontWeight: FontWeight.w600,
@@ -469,24 +473,22 @@ class _MigrationManageModal extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Process the remaining migration immediately.',
+          context.l10n.migrationManageImmediateIntro,
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
-        const _MigrationManageBullet(
-          text:
-              'Remaining split notes will be processed as an immediate '
-              'migration, slightly increasing traceability',
+        _MigrationManageBullet(
+          text: context.l10n.migrationManageImmediateBullet1,
         ),
         const SizedBox(height: AppSpacing.xs),
-        const _MigrationManageBullet(
-          text: 'Transactions already broadcast will not be reverted',
+        _MigrationManageBullet(
+          text: context.l10n.migrationManageImmediateBullet2,
         ),
         const SizedBox(height: AppSpacing.xs),
-        const _MigrationManageBullet(
-          text: 'There’s no way to revert an immediate migration',
+        _MigrationManageBullet(
+          text: context.l10n.migrationManageImmediateBullet3,
         ),
         if (error != null) ...[
           const SizedBox(height: AppSpacing.sm),
@@ -495,7 +497,9 @@ class _MigrationManageModal extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         AppModalActions(
           onCancel: submitting ? null : onCancel,
-          actionLabel: submitting ? 'Stopping...' : 'Confirm',
+          actionLabel: submitting
+              ? context.l10n.migrationManageStopping
+              : context.l10n.migrationManageConfirm,
           onAction: submitting || !canFinishImmediately ? null : onConfirm,
           actionLeading: AppIcon(
             submitting ? AppIcons.loader : AppIcons.migrationFast,
@@ -519,7 +523,7 @@ class _MigrationManageModal extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Are you sure you want to stop?',
+          context.l10n.migrationManageStopTitle,
           style: AppTypography.bodyLarge.copyWith(
             color: colors.text.accent,
             fontWeight: FontWeight.w600,
@@ -527,8 +531,7 @@ class _MigrationManageModal extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'This cancels the remaining scheduled migration transactions. '
-          'You can re-start the migration from the home page.',
+          context.l10n.migrationManageStopBody,
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,
           ),
@@ -540,7 +543,9 @@ class _MigrationManageModal extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         AppModalActions(
           onCancel: submitting ? null : onCancel,
-          actionLabel: submitting ? 'Cancelling...' : 'Confirm',
+          actionLabel: submitting
+              ? context.l10n.migrationManageCancelling
+              : context.l10n.migrationManageConfirm,
           onAction: submitting || !canStop ? null : onConfirm,
           actionVariant: AppButtonVariant.destructive,
           actionLeading: submitting
@@ -768,7 +773,7 @@ class _MigrationPreparationScheduleContent extends ConsumerWidget {
                 key: const ValueKey(
                   'ironwood_migration_preparation_schedule_title',
                 ),
-                'Preparation Schedule',
+                context.l10n.migrationScheduleTitlePreparation,
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineSmall.copyWith(
                   color: colors.text.accent,
@@ -793,18 +798,21 @@ class _MigrationPreparationScheduleContent extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _MigrationSummaryMetric(
-                      label: 'Current round',
+                      label: context.l10n.migrationScheduleCurrentRound,
                       value: rounds.isEmpty
-                          ? 'Preparing'
-                          : '$currentRound of ${rounds.length}',
+                          ? context.l10n.commonPreparing
+                          : context.l10n.migrationScheduleRoundProgress(
+                              currentRound.toString(),
+                              rounds.length.toString(),
+                            ),
                     ),
                     const SizedBox(height: 16),
                     _MigrationSummaryMetric(
-                      label: 'Ready to migrate',
+                      label: context.l10n.migrationScheduleReadyToMigrate,
                       value: !hasCompletionProjection
-                          ? 'Calculating'
-                          : '#${formatGroupedInteger(finalProjectedHeight)}'
-                                '${remainingBlocks > 0 ? ' · ${_formatPreparationDuration(remainingBlocks, blockTimes)}' : ''}',
+                          ? context.l10n.migrationScheduleCalculating
+                          : '#${formatGroupedInteger(finalProjectedHeight)}' // l10n-ignore: height format
+                                '${remainingBlocks > 0 ? ' · ${_formatPreparationDuration(context.l10n, remainingBlocks, blockTimes)}' : ''}',
                       valueIcon: hasCompletionProjection
                           ? AppIcons.block
                           : null,
@@ -812,7 +820,7 @@ class _MigrationPreparationScheduleContent extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
                     _MigrationSummaryMetric(
-                      label: 'Current block',
+                      label: context.l10n.migrationSummaryCurrentBlock,
                       value: formatGroupedInteger(currentHeight),
                       valueIcon: AppIcons.block,
                       secondary: true,
@@ -832,7 +840,7 @@ class _MigrationPreparationScheduleContent extends ConsumerWidget {
             child: transactions.isEmpty
                 ? Center(
                     child: Text(
-                      'Preparing schedule',
+                      context.l10n.migrationRingPreparingSchedule,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
@@ -932,7 +940,9 @@ class _MigrationPreparationRoundSection extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Split round ${round.number}',
+                context.l10n.migrationScheduleSplitRound(
+                  round.number.toString(),
+                ),
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.text.accent,
                   fontWeight: FontWeight.w500,
@@ -980,6 +990,7 @@ class _MigrationPreparationStageCard extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       label: _preparationScheduleRowSemantics(
+        context.l10n,
         number,
         transaction,
         privacyModeEnabled: privacyModeEnabled,
@@ -1003,7 +1014,7 @@ class _MigrationPreparationStageCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '$number. ${_displayZecAmountCompact(transaction.approximateValueZatoshi, privacyModeEnabled: privacyModeEnabled)} ZEC',
+                        '$number. ${_displayZecAmountCompact(transaction.approximateValueZatoshi, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
@@ -1065,10 +1076,14 @@ class _MigrationPreparationOutputRow extends StatelessWidget {
     final colors = context.colors;
     final displayedValue = output.targetValueZatoshi ?? output.valueZatoshi;
     final destination = switch (output.kind) {
-      rust_sync.MigrationPreparationOutputKind.migration => 'For migration',
-      rust_sync.MigrationPreparationOutputKind.change => 'Stays in Orchard',
+      rust_sync.MigrationPreparationOutputKind.migration =>
+        context.l10n.migrationScheduleOutputMigration,
+      rust_sync.MigrationPreparationOutputKind.change =>
+        context.l10n.migrationScheduleOutputChange,
       rust_sync.MigrationPreparationOutputKind.continuation =>
-        'Used in round ${output.nextRound ?? 1}',
+        context.l10n.migrationScheduleOutputContinuation(
+          (output.nextRound ?? 1).toString(),
+        ),
     };
     return SizedBox(
       height: 24,
@@ -1083,7 +1098,7 @@ class _MigrationPreparationOutputRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '${_displayZecAmountCompact(displayedValue, privacyModeEnabled: privacyModeEnabled)} ZEC',
+              '${_displayZecAmountCompact(displayedValue, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppTypography.bodyMedium.copyWith(
@@ -1128,18 +1143,23 @@ class _MigrationPreparationScheduleStatus extends StatelessWidget {
     final overdueForecast =
         awaiting && transaction.projectedHeight <= currentHeight;
     final label = switch (state) {
-      rust_sync.MigrationPreparationTransactionState.completed => 'Completed',
+      rust_sync.MigrationPreparationTransactionState.completed =>
+        context.l10n.commonCompleted,
       rust_sync.MigrationPreparationTransactionState.confirming =>
-        '${transaction.confirmationCount} of '
-            '${transaction.confirmationTarget} confirmations',
+        context.l10n.migrationPreparationConfirmations(
+          transaction.confirmationCount.toString(),
+          transaction.confirmationTarget.toString(),
+        ),
       rust_sync.MigrationPreparationTransactionState.broadcasted =>
-        'Broadcasting',
+        context.l10n.migrationScheduleBroadcasting,
       rust_sync.MigrationPreparationTransactionState.scheduled =>
         '#${formatGroupedInteger(transaction.projectedHeight)}',
       rust_sync.MigrationPreparationTransactionState.awaitingInputs =>
         overdueForecast
-            ? 'Recalculating'
-            : 'Expected #${formatGroupedInteger(transaction.projectedHeight)}',
+            ? context.l10n.migrationScheduleRecalculating
+            : context.l10n.migrationScheduleExpected(
+                formatGroupedInteger(transaction.projectedHeight),
+              ),
     };
     final style = AppTypography.labelLarge.copyWith(
       color: completed
@@ -1186,57 +1206,84 @@ class _MigrationPreparationScheduleStatus extends StatelessWidget {
   }
 }
 
-String _formatPreparationDuration(int blocks, BlockTimeEstimate blockTimes) {
+String _formatPreparationDuration(
+  AppLocalizations l10n,
+  int blocks,
+  BlockTimeEstimate blockTimes,
+) {
   final minutes =
       (blockTimes.secondsForBlocks(blocks) / Duration.secondsPerMinute).ceil();
-  if (minutes < 60) return minutes == 1 ? '~1 min' : '~$minutes mins';
+  if (minutes < 60) return l10n.migrationDurationMinutes(minutes);
   final halfHours = (minutes / 30).ceil();
   final wholeHours = halfHours ~/ 2;
-  if (halfHours.isEven) {
-    return wholeHours == 1 ? '~1 hr' : '~$wholeHours hrs';
-  }
-  return '~$wholeHours.5 hrs';
+  if (halfHours.isEven) return l10n.migrationDurationHours(wholeHours);
+  return l10n.migrationDurationHalfHours(wholeHours.toString());
 }
 
 String _preparationScheduleRowSemantics(
+  AppLocalizations l10n,
   int number,
   rust_sync.MigrationPreparationTransactionStatus transaction, {
   required bool privacyModeEnabled,
 }) {
   final state = switch (transaction.state) {
     rust_sync.MigrationPreparationTransactionState.awaitingInputs =>
-      'waiting for previous split, expected at block '
-          '${transaction.projectedHeight}',
+      l10n.migrationScheduleSemanticsAwaiting(
+        transaction.projectedHeight.toString(),
+      ),
     rust_sync.MigrationPreparationTransactionState.scheduled =>
-      'scheduled at block ${transaction.projectedHeight}',
+      l10n.migrationScheduleSemanticsScheduled(
+        transaction.projectedHeight.toString(),
+      ),
     rust_sync.MigrationPreparationTransactionState.broadcasted =>
-      'broadcast, waiting to be mined, projected completion at block '
-          '${transaction.projectedCompletionHeight}',
+      l10n.migrationScheduleSemanticsBroadcast(
+        transaction.projectedCompletionHeight.toString(),
+      ),
     rust_sync.MigrationPreparationTransactionState.confirming =>
-      'confirming, ${transaction.confirmationCount} of '
-          '${transaction.confirmationTarget} confirmations, projected '
-          'completion at block ${transaction.projectedCompletionHeight}',
+      l10n.migrationScheduleSemanticsSplitConfirming(
+        transaction.confirmationCount.toString(),
+        transaction.confirmationTarget.toString(),
+        transaction.projectedCompletionHeight.toString(),
+      ),
     rust_sync.MigrationPreparationTransactionState.completed =>
-      'completed${transaction.minedHeight == null ? '' : ' at block ${transaction.minedHeight}'}',
+      transaction.minedHeight == null
+          ? l10n.migrationRingStatusCompleted
+          : l10n.migrationScheduleSemanticsCompletedAt(
+              transaction.minedHeight.toString(),
+            ),
   };
   final outputs = transaction.outputs
       .map((output) {
         final displayedValue = output.targetValueZatoshi ?? output.valueZatoshi;
         final destination = switch (output.kind) {
-          rust_sync.MigrationPreparationOutputKind.migration => 'for migration',
-          rust_sync.MigrationPreparationOutputKind.change => 'stays in Orchard',
+          rust_sync.MigrationPreparationOutputKind.migration =>
+            l10n.migrationScheduleSemanticsOutputMigration,
+          rust_sync.MigrationPreparationOutputKind.change =>
+            l10n.migrationScheduleSemanticsOutputChange,
           rust_sync.MigrationPreparationOutputKind.continuation =>
-            'used in round ${output.nextRound ?? 1}',
+            l10n.migrationScheduleSemanticsOutputContinuation(
+              (output.nextRound ?? 1).toString(),
+            ),
         };
-        return '${_displayZecAmountCompact(displayedValue, privacyModeEnabled: privacyModeEnabled)} ZEC, '
-            '$destination';
+        return l10n.migrationScheduleSemanticsOutput(
+          _displayZecAmountCompact(
+            displayedValue,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
+          destination,
+        );
       })
       .join('; ');
   return [
-    'Split $number, '
-        '${_displayZecAmountCompact(transaction.approximateValueZatoshi, privacyModeEnabled: privacyModeEnabled)} ZEC, '
-        '$state.',
-    if (outputs.isNotEmpty) 'Outputs: $outputs.',
+    l10n.migrationScheduleSemanticsSplit(
+      number.toString(),
+      _displayZecAmountCompact(
+        transaction.approximateValueZatoshi,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      state,
+    ),
+    if (outputs.isNotEmpty) l10n.migrationScheduleSemanticsOutputs(outputs),
   ].join(' ');
 }
 
@@ -1256,7 +1303,7 @@ class _MigrationScheduleErrorContent extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            'Migration schedule unavailable',
+            context.l10n.migrationScheduleUnavailableTitle,
             textAlign: TextAlign.center,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
@@ -1266,8 +1313,7 @@ class _MigrationScheduleErrorContent extends StatelessWidget {
           SizedBox(
             width: 318,
             child: Text(
-              "Vizor couldn't load the latest migration schedule. "
-              'Your saved migration state is unchanged.',
+              context.l10n.migrationScheduleUnavailableBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
@@ -1281,7 +1327,7 @@ class _MigrationScheduleErrorContent extends StatelessWidget {
               onPressed: onRetry,
               height: 44,
               minWidth: 160,
-              child: const Text('Retry'),
+              child: Text(context.l10n.commonRetry),
             ),
           ],
         ],
@@ -1324,7 +1370,7 @@ class _MigrationScheduleContent extends ConsumerWidget {
           const SizedBox(height: 16),
           Text(
             key: const ValueKey('ironwood_migration_schedule_title'),
-            'Migration Schedule',
+            context.l10n.migrationScheduleTitle,
             textAlign: TextAlign.center,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
@@ -1337,14 +1383,15 @@ class _MigrationScheduleContent extends ConsumerWidget {
               key: const ValueKey('ironwood_migration_schedule_summary'),
               children: [
                 _MigrationSummaryMetric(
-                  label: 'Left to migrate',
+                  label: context.l10n.migrationSummaryLeftToMigrate,
                   value:
-                      '${_displayZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero, privacyModeEnabled: privacyModeEnabled)} ZEC',
+                      '${_displayZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                 ),
                 const SizedBox(height: 16),
                 _MigrationSummaryMetric(
-                  label: 'Est. completion',
+                  label: context.l10n.migrationSummaryEstCompletion,
                   value: _migrationCompletionEstimateDisplay(
+                    context.l10n,
                     status,
                     blockTimes: blockTimes,
                     currentHeight: currentHeight,
@@ -1355,7 +1402,7 @@ class _MigrationScheduleContent extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 _MigrationSummaryMetric(
-                  label: 'Current block',
+                  label: context.l10n.migrationSummaryCurrentBlock,
                   value: formatGroupedInteger(currentHeight),
                   valueIcon: AppIcons.block,
                   secondary: true,
@@ -1428,6 +1475,7 @@ class _MigrationScheduleRow extends StatelessWidget {
     final value = part.valueZatoshi;
     return Semantics(
       label: _migrationScheduleRowSemantics(
+        context.l10n,
         number,
         part,
         privacyModeEnabled: privacyModeEnabled,
@@ -1453,7 +1501,7 @@ class _MigrationScheduleRow extends StatelessWidget {
                   child: Text.rich(
                     TextSpan(
                       text:
-                          '$number. ${_displayZecAmountCompact(value, privacyModeEnabled: privacyModeEnabled)} ZEC ',
+                          '$number. ${_displayZecAmountCompact(value, privacyModeEnabled: privacyModeEnabled)} ZEC ', // l10n-ignore: amount format
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w500,
@@ -1514,24 +1562,37 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
     final label = switch (state) {
       rust_sync.MigrationPartState.completed =>
         minedHeight == null
-            ? 'Complete'
-            : 'Completed at block ${formatGroupedInteger(minedHeight)}',
+            ? context.l10n.migrationEstimateComplete
+            : context.l10n.migrationScheduleCompletedAtBlock(
+                formatGroupedInteger(minedHeight),
+              ),
       rust_sync.MigrationPartState.confirming =>
-        'Confirming ${part.confirmationCount}/${part.confirmationTarget}',
-      rust_sync.MigrationPartState.migrating => 'Waiting to be mined',
+        context.l10n.migrationScheduleConfirmingProgress(
+          part.confirmationCount.toString(),
+          part.confirmationTarget.toString(),
+        ),
+      rust_sync.MigrationPartState.migrating =>
+        context.l10n.migrationScheduleWaitingToBeMined,
       rust_sync.MigrationPartState.scheduled =>
         effectiveHeight == null
-            ? 'Schedule pending'
+            ? context.l10n.migrationSchedulePending
             : effectiveHeight <= currentHeight
-            ? 'Due now'
+            ? context.l10n.migrationBroadcastDueNow
             : originalHeight != null && originalHeight != effectiveHeight
-            ? 'Rescheduled #${formatGroupedInteger(effectiveHeight)}'
-            : 'Scheduled #${formatGroupedInteger(effectiveHeight)}',
+            ? context.l10n.migrationScheduleRescheduled(
+                formatGroupedInteger(effectiveHeight),
+              )
+            : context.l10n.migrationScheduleScheduledAt(
+                formatGroupedInteger(effectiveHeight),
+              ),
       rust_sync.MigrationPartState.preparing =>
         waitingWindowHeight == null
-            ? 'Preparing'
-            : 'Window #${formatGroupedInteger(waitingWindowHeight!)}',
-      rust_sync.MigrationPartState.needsInput => 'Ready to sign',
+            ? context.l10n.commonPreparing
+            : context.l10n.migrationScheduleWindow(
+                formatGroupedInteger(waitingWindowHeight!),
+              ),
+      rust_sync.MigrationPartState.needsInput =>
+        context.l10n.migrationNextActionDetailReadyToSign,
     };
     final textStyle = AppTypography.labelLarge.copyWith(
       color: completed
@@ -1578,6 +1639,7 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
 }
 
 String _migrationScheduleRowSemantics(
+  AppLocalizations l10n,
   int number,
   rust_sync.MigrationPartStatus part, {
   required bool privacyModeEnabled,
@@ -1590,30 +1652,51 @@ String _migrationScheduleRowSemantics(
   final stateLabel = switch (part.state) {
     rust_sync.MigrationPartState.preparing =>
       waitingWindowHeight == null
-          ? 'preparing'
-          : 'waiting for window at block '
-                '${formatGroupedInteger(waitingWindowHeight)}',
+          ? l10n.migrationRingStatusPreparing
+          : l10n.migrationScheduleSemanticsWaitingWindow(
+              formatGroupedInteger(waitingWindowHeight),
+            ),
     rust_sync.MigrationPartState.scheduled =>
       effectiveHeight == null
-          ? 'schedule pending'
+          ? l10n.migrationScheduleSemanticsPending
           : effectiveHeight <= currentHeight
-          ? 'due now'
+          ? l10n.migrationScheduleSemanticsDue
           : originalHeight != null && originalHeight != effectiveHeight
-          ? 'rescheduled from block ${formatGroupedInteger(originalHeight)} '
-                'to block ${formatGroupedInteger(effectiveHeight)}'
-          : 'scheduled at block ${formatGroupedInteger(effectiveHeight)}',
-    rust_sync.MigrationPartState.migrating => 'broadcast, waiting to be mined',
+          ? l10n.migrationScheduleSemanticsRescheduled(
+              formatGroupedInteger(originalHeight),
+              formatGroupedInteger(effectiveHeight),
+            )
+          : l10n.migrationScheduleSemanticsScheduled(
+              formatGroupedInteger(effectiveHeight),
+            ),
+    rust_sync.MigrationPartState.migrating =>
+      l10n.migrationScheduleSemanticsMigrating,
     rust_sync.MigrationPartState.confirming =>
-      'confirming, ${part.confirmationCount} of '
-          '${part.confirmationTarget} confirmations'
-          '${minedHeight == null ? '' : ', mined at block ${formatGroupedInteger(minedHeight)}'}',
+      minedHeight == null
+          ? l10n.migrationScheduleSemanticsNoteConfirming(
+              part.confirmationCount.toString(),
+              part.confirmationTarget.toString(),
+            )
+          : l10n.migrationScheduleSemanticsNoteConfirmingMined(
+              part.confirmationCount.toString(),
+              part.confirmationTarget.toString(),
+              formatGroupedInteger(minedHeight),
+            ),
     rust_sync.MigrationPartState.completed =>
       minedHeight == null
-          ? 'completed'
-          : 'completed at block ${formatGroupedInteger(minedHeight)}',
-    rust_sync.MigrationPartState.needsInput => 'ready to sign',
+          ? l10n.migrationRingStatusCompleted
+          : l10n.migrationScheduleSemanticsCompletedAt(
+              formatGroupedInteger(minedHeight),
+            ),
+    rust_sync.MigrationPartState.needsInput =>
+      l10n.migrationScheduleSemanticsReadyToSign,
   };
-  return 'Note $number, '
-      '${_displayZecAmountCompact(part.valueZatoshi, privacyModeEnabled: privacyModeEnabled)} ZEC, '
-      '$stateLabel.';
+  return l10n.migrationScheduleSemanticsNote(
+    number.toString(),
+    _displayZecAmountCompact(
+      part.valueZatoshi,
+      privacyModeEnabled: privacyModeEnabled,
+    ),
+    stateLabel,
+  );
 }

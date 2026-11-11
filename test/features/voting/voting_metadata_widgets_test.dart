@@ -5,6 +5,7 @@ import 'package:zcash_wallet/widgetbook/fixtures/retroactive_q3_2026.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   for (final direction in TextDirection.values) {
@@ -18,6 +19,7 @@ void main() {
           addTearDown(tester.view.resetDevicePixelRatio);
           await tester.pumpWidget(
             MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.light,
                 child: MediaQuery(
@@ -141,6 +143,7 @@ class _ThemedHarness extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(

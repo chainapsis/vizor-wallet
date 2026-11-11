@@ -88,8 +88,10 @@ class _MobileMigrationStatusRail extends StatelessWidget {
                   Semantics(
                     label: parts[index].progress == null
                         ? null
-                        : '${parts[index].label} progress '
-                              '${(parts[index].progress! * 100).round()}%',
+                        : context.l10n.migrationMobilePartProgress(
+                            parts[index].label,
+                            (parts[index].progress! * 100).round(),
+                          ),
                     child: _MobileMigrationRailSegment(
                       width: widths[index],
                       status: parts[index].status,
@@ -235,7 +237,7 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           Flexible(
             child: Text(
-              'Completed',
+              context.l10n.commonCompleted,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: style,
@@ -248,7 +250,7 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
         children: [
           Flexible(
             child: Text(
-              'Needs input',
+              context.l10n.sidebarMigrationNeedsInput,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: style,
@@ -263,13 +265,13 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
         ],
       ),
       MobileIronwoodMigrationPartStatus.active => Text(
-        part.eta ?? 'Migrating...',
+        part.eta ?? context.l10n.commonMigrating,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: style,
       ),
       MobileIronwoodMigrationPartStatus.pending => Text(
-        part.eta ?? 'Queued',
+        part.eta ?? context.l10n.migrationMobilePartQueued,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: style,

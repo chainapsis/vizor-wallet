@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../../../core/l10n/l10n.dart' show AppLocalizations;
 import '../../../features/address_book/models/address_book_contact.dart';
 import '../../../providers/account_provider.dart';
 import '../wallet_link_config.dart';
@@ -389,7 +390,9 @@ class WalletLinkTransferAccount {
     );
   }
 
-  String get displayName => name.isEmpty ? 'Account ${order + 1}' : name;
+  String get displayName => name.isEmpty
+      ? 'Account ${order + 1}' // l10n-ignore: persisted default account name
+      : name;
 
   String? get effectiveHardwareKind {
     if (!isHardware) return null;
@@ -467,6 +470,38 @@ String? _normalizedOptionalString(Object? value) {
 
 enum WalletLinkPhase { idle, preparing, ready, linked, expired, error }
 
+/// Why preparing the desktop link failed. The screen maps it to text.
+enum WalletLinkErrorKind {
+  expiredBeforeShown,
+  noAccounts,
+  locked,
+  derivationMissing,
+  hardwareMetadataMissing,
+  serverUnreachable,
+  prepareFailed;
+
+  String message(AppLocalizations l10n) => switch (this) {
+    expiredBeforeShown => l10n.walletLinkDesktopErrorExpiredBeforeShown,
+    noAccounts => l10n.walletLinkDesktopErrorNoAccounts,
+    locked => l10n.walletLinkDesktopErrorLocked,
+    derivationMissing => l10n.walletLinkDesktopErrorDerivationMissing,
+    hardwareMetadataMissing =>
+      l10n.walletLinkDesktopErrorHardwareMetadataMissing,
+    serverUnreachable => l10n.walletLinkDesktopErrorServerUnreachable,
+    prepareFailed => l10n.walletLinkDesktopErrorPrepareFailed,
+  };
+}
+
+/// Thrown while preparing a desktop link; carries the reason for the screen.
+class WalletLinkFailure implements Exception {
+  const WalletLinkFailure(this.kind);
+
+  final WalletLinkErrorKind kind;
+
+  @override
+  String toString() => 'WalletLinkFailure(${kind.name})';
+}
+
 class WalletLinkState {
   const WalletLinkState({
     required this.phase,
@@ -477,7 +512,7 @@ class WalletLinkState {
     this.accountCount = 0,
     this.contactCount = 0,
     this.actualImportCounts = false,
-    this.errorMessage,
+    this.errorKind,
   });
 
   const WalletLinkState.initial()
@@ -489,7 +524,7 @@ class WalletLinkState {
       accountCount = 0,
       contactCount = 0,
       actualImportCounts = false,
-      errorMessage = null;
+      errorKind = null;
 
   final WalletLinkPhase phase;
   final String? qrPayload;
@@ -499,7 +534,7 @@ class WalletLinkState {
   final int accountCount;
   final int contactCount;
   final bool actualImportCounts;
-  final String? errorMessage;
+  final WalletLinkErrorKind? errorKind;
 
   bool get isPreparing => phase == WalletLinkPhase.preparing;
 
@@ -515,8 +550,8 @@ class WalletLinkState {
     int? accountCount,
     int? contactCount,
     bool? actualImportCounts,
-    String? errorMessage,
-    bool clearErrorMessage = false,
+    WalletLinkErrorKind? errorKind,
+    bool clearErrorKind = false,
   }) {
     return WalletLinkState(
       phase: phase ?? this.phase,
@@ -527,9 +562,7 @@ class WalletLinkState {
       accountCount: accountCount ?? this.accountCount,
       contactCount: contactCount ?? this.contactCount,
       actualImportCounts: actualImportCounts ?? this.actualImportCounts,
-      errorMessage: clearErrorMessage
-          ? null
-          : errorMessage ?? this.errorMessage,
+      errorKind: clearErrorKind ? null : errorKind ?? this.errorKind,
     );
   }
 }

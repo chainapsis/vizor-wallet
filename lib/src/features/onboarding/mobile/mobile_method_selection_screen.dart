@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import 'mobile_onboarding_progress_scope.dart';
 
 import '../../../core/widgets/app_icon.dart';
@@ -18,30 +19,31 @@ class MobileMethodSelectionScreen extends ConsumerWidget {
         ledgerSupportsBluetooth(ref.watch(ledgerTargetPlatformProvider));
     return MobileOnboardingSelectionPage(
       scrollKey: const ValueKey('mobile_method_selection_scroll'),
-      title: 'Import Account\nto Vizor',
-      subtitle: 'Select the method you want.',
+      title: context.l10n.onboardingImportMethodTitle,
+      subtitle: context.l10n.onboardingImportMethodSubtitle,
       cards: [
         MobileOnboardingSelectionCard(
           key: const ValueKey('mobile_import_passphrase'),
           iconName: AppIcons.key,
-          title: 'Import secret passphrase',
-          description: 'Vizor, ZODL, or any other wallet',
+          title: context.l10n.onboardingImportSecretPassphrase,
+          description:
+              context.l10n.onboardingImportSecretPassphraseDescriptionMobile,
           onPressed: () => context.pushOnboarding('/import'),
         ),
         MobileOnboardingSelectionCard(
           key: const ValueKey('mobile_welcome_link_desktop'),
           iconName: AppIcons.monitor,
-          title: 'Link Vizor Desktop',
-          description: 'Scan & connect to Vizor Desktop',
+          title: context.l10n.onboardingLinkVizorDesktop,
+          description: context.l10n.onboardingLinkVizorDesktopDescription,
           onPressed: () => context.pushOnboarding('/onboarding/link-desktop'),
         ),
         MobileOnboardingSelectionCard(
           key: const ValueKey('mobile_import_hardware'),
           iconName: AppIcons.usb,
-          title: 'Connect hardware wallet',
+          title: context.l10n.onboardingConnectHardwareWallet,
           description: showLedger
-              ? 'Ledger or Keystone wallet'
-              : 'Keystone wallet',
+              ? context.l10n.onboardingHardwareLedgerOrKeystone
+              : context.l10n.onboardingHardwareKeystoneOnly,
           onPressed: () => context.pushOnboarding('/onboarding/hardware'),
         ),
       ],
