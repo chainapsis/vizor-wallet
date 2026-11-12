@@ -8910,7 +8910,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsNearSwapPrivacyInfoOneTime =>
-      '使用 NEAR Intents 兑换时，你的钱包会向 NEAR 提供一个用于收款的 Zcash 地址，以及另一个用于退款的地址。开启 增强兑换隐私后，这些地址是专为兑换生成的一次性地址，因此未来的量子攻击者也无法将它们与你的钱包关联起来。';
+      '使用 NEAR Intents 兑换时，你的钱包会向 NEAR 提供一个用于收款的 Zcash 地址，以及另一个用于退款的地址。开启增强兑换隐私后，这些地址是专为兑换生成的一次性地址，因此未来的量子攻击者也无法将它们与你的钱包关联起来。';
 
   @override
   String get settingsNearSwapPrivacyInfoOwnAddresses =>
@@ -10302,7 +10302,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapNoticeNearSwapPrivacyUnknown =>
-      'Vizor 无法读取你的 增强兑换隐私设置。请在设置中重新选择后再兑换。';
+      'Vizor 无法读取你的增强兑换隐私设置。请在设置中重新选择后再兑换。';
 
   @override
   String get swapNoticeOk => '好的';
@@ -10316,7 +10316,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapNoticePrivateReceiveAddressUnavailable =>
-      '隐私兑换地址暂时不可用。请稍后重试，或关闭 增强兑换隐私以立即兑换。';
+      '隐私兑换地址暂时不可用。请稍后重试，或关闭增强兑换隐私以立即兑换。';
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>
