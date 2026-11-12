@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -22,8 +25,11 @@ import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
-import 'package:zcash_wallet/src/features/swap/providers/swap_provider_config.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
+import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
+import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
+import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -41,6 +47,53 @@ final _migrationFlowData = IronwoodMigrationFlowData(
 );
 
 void main() {
+  testWidgets(
+    'mobile mounted swap tab restores its session and home ends both sessions',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(_appHarness('/swap', swapEnabled: true));
+      await _pumpUntilPresent(tester, find.byType(MobileSwapScreen));
+      await tester.pump(const Duration(milliseconds: 500));
+      final originalTabState = tester.state(find.byType(MobileSwapScreen));
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ZcashWalletApp)),
+        listen: false,
+      );
+      final notifier = container.read(swapStateProvider.notifier);
+      final router = GoRouter.of(tester.element(find.byType(MobileSwapScreen)));
+      notifier.updateQuoteSettings(slippageBps: 125, confidential: false);
+
+      unawaited(router.push('/pay'));
+      await _pumpUntilPresent(tester, find.byType(MobilePayScreen));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(container.read(swapStateProvider).slippageBps, 200);
+      notifier.updateQuoteSettings(slippageBps: 300, confidential: false);
+
+      router.pop();
+      await _pumpUntilPresent(tester, find.byType(MobileSwapScreen));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        tester.state(find.byType(MobileSwapScreen)),
+        same(originalTabState),
+      );
+      expect(container.read(swapStateProvider).payMode, isFalse);
+      expect(container.read(swapStateProvider).slippageBps, 125);
+
+      router.go('/home');
+      await _pumpUntilPresent(tester, find.byType(MobileHomeScreen));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(container.read(swapStateProvider).slippageBps, 200);
+      router.go('/pay');
+      await _pumpUntilPresent(tester, find.byType(MobilePayScreen));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(container.read(swapStateProvider).slippageBps, 200);
+    },
+    tags: 'mobile',
+  );
+
   for (final route in [
     (location: '/send', screenType: SendScreen),
     (location: '/receive', screenType: ReceiveScreen),

@@ -38,6 +38,7 @@ import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
 import 'pay_activity_status_content.dart';
 import 'one_time_address_label.dart';
+import 'swap_confidential_ui.dart';
 import 'swap_status_page_content.dart';
 import '../../../core/l10n/l10n.dart';
 
@@ -994,6 +995,12 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
                 recipientAddress: recipient,
                 recipientName: recipientContact?.label,
                 recipientProfilePictureId: recipientContact?.profilePictureId,
+                flowConnector: intent.confidential
+                    ? SwapConfidentialRouteConnector.pay(
+                        review: false,
+                        flowing: swapConfidentialRouteFlows(intent.status),
+                      )
+                    : null,
               )
             : null,
         payHeaderRow: MobileSwapReviewHeaderRow(
@@ -1026,6 +1033,11 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
               ? OneTimeAddressRole.payout
               : null,
         ),
+        flowConnector: intent.confidential
+            ? SwapConfidentialRouteConnector.swap(
+                flowing: swapConfidentialRouteFlows(intent.status),
+              )
+            : null,
         activeTab: _activeTab,
         detailsExpanded: _detailsExpanded,
         onTabChanged: (tab) {
@@ -1062,6 +1074,12 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
         progressPresentation: presentation,
         activeTab: _activeTab,
         onTabChanged: (tab) => setState(() => _activeTab = tab),
+        flowConnector: intent.confidential
+            ? SwapConfidentialRouteConnector.pay(
+                review: false,
+                flowing: swapConfidentialRouteFlows(intent.status),
+              )
+            : null,
         onShowFullAddress: () => widget.onShowPayRecipientAddress?.call(
           recipientAddress,
           recipientContact,
@@ -1094,6 +1112,11 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       details: presentation.details,
       progressTabLabel: presentation.progressTabLabel,
       paymentMode: presentation.paymentMode,
+      flowConnector: intent.confidential
+          ? SwapConfidentialRouteConnector.swap(
+              flowing: swapConfidentialRouteFlows(intent.status),
+            )
+          : null,
       showTabs: presentation.showTabs,
       oneTimeAddress: presentation.oneTimeAddress,
       explorerUri: presentation.explorerUri,

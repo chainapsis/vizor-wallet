@@ -52,6 +52,28 @@ void main() {
     expect(payState.slippageBps, 200);
   });
 
+  test('keeps Swap and Pay quote settings independent', () {
+    var sessions = const SwapQuoteSettingsSessions();
+
+    sessions = sessions.update(payMode: false, slippageBps: 50);
+    sessions = sessions.update(
+      payMode: true,
+      slippageBps: 125,
+      confidential: true,
+    );
+
+    expect(sessions.slippageFor(payMode: false), 50);
+    expect(sessions.slippageFor(payMode: true), 125);
+    expect(sessions.confidentialFor(payMode: false), isFalse);
+    expect(sessions.confidentialFor(payMode: true), isTrue);
+
+    sessions = sessions.reset(payMode: true);
+
+    expect(sessions.slippageFor(payMode: false), 50);
+    expect(sessions.slippageFor(payMode: true), defaultSwapSlippageBps);
+    expect(sessions.confidentialFor(payMode: true), isFalse);
+  });
+
   test('blocks review when token amount exceeds asset decimals', () {
     const state = SwapState(
       direction: SwapDirection.zecToExternal,

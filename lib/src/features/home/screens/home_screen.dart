@@ -2859,6 +2859,7 @@ class _HomeDesktopActivityRowContent extends StatelessWidget {
                           if (row.subtitleIconName != null) ...[
                             AppIcon(
                               row.subtitleIconName!,
+                              semanticLabel: row.subtitleIconSemanticLabel,
                               size: 16,
                               color: colors.text.brandCrimson,
                             ),

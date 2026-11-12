@@ -291,6 +291,37 @@ class _TorBlockablePayNotifier extends SwapNotifier {
   }
 }
 
+/// Standard quotes fail for lack of liquidity, as 1Click does when only the
+/// confidential route can fill the amount.
+class _NoStandardLiquidityPayNotifier extends SwapNotifier {
+  int confidentialReviews = 0;
+
+  @override
+  SwapState build() => const SwapState(
+    direction: SwapDirection.zecToExternal,
+    quoteMode: SwapQuoteMode.exactOutput,
+    amountText: '0.025',
+    receiveAmountText: '10',
+    destinationText: '0x1111111111111111111111111111111111111111',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: [],
+    payMode: true,
+  );
+
+  @override
+  Future<void> showReview({bool preserveCurrentReview = false}) async {
+    if (state.confidential) {
+      confidentialReviews++;
+      return;
+    }
+    state = state.copyWith(
+      quoteError: const SwapNotice(SwapNoticeKind.noQuoteForAmount),
+      quoteNoLiquidity: true,
+    );
+  }
+}
+
 Widget _routedPayApp(
   GoRouter router,
   SwapNotifier notifier, {
@@ -957,12 +988,6 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_pay_slippage_button')));
     await tester.pump();
     expect(find.byType(MobileSwapSlippageStepperModal), findsOneWidget);
-    expect(
-      find.text(
-        'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.',
-      ),
-      findsOneWidget,
-    );
 
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
@@ -1126,6 +1151,46 @@ void main() {
     expect(find.text('Unable to fetch a quote. Try again.'), findsOneWidget);
     expect(find.text('Continue'), findsOneWidget);
     expect(find.text('Pay review route'), findsNothing);
+  });
+
+  testWidgets('a missing standard quote offers the confidential route', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final notifier = _NoStandardLiquidityPayNotifier();
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) =>
+              const MobilePayScreen(preservePreparedComposer: true),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_routedPayApp(router, notifier));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    final cta = find.byKey(
+      const ValueKey('mobile_pay_recipient_continue_button'),
+    );
+    await tester.tap(cta);
+    await tester.pumpAndSettle();
+
+    expect(find.text('No quote for this amount'), findsOneWidget);
+    expect(
+      find.descendant(of: cta, matching: find.text('Get confidential quote')),
+      findsOneWidget,
+    );
+    await tester.tap(cta);
+    await tester.pumpAndSettle();
+    expect(notifier.confidentialReviews, 1);
+    expect(notifier.state.confidential, isTrue);
   });
 
   testWidgets('a Tor-blocked token list closes the recipient CTA', (

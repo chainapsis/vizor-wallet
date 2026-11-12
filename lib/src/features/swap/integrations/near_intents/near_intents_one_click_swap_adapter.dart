@@ -103,6 +103,8 @@ class NearIntentsOneClickSwapAdapter
       'depositMode': 'SIMPLE', // l10n-ignore: protocol value
       'quoteWaitingTimeMs': quoteWaitingTimeMs,
       if (referral != null && referral!.isNotEmpty) 'referral': referral,
+      // Standard requests omit the field and keep the provider default.
+      if (request.confidential) 'confidentiality': 'basic',
     };
 
     await request.beforeSend?.call(deadline);
@@ -121,6 +123,7 @@ class NearIntentsOneClickSwapAdapter
       expectedSlippageBps: requestedSlippageBps,
       expectedRefundTo: requestedRefundTo,
       expectedRecipient: requestedRecipient,
+      expectedConfidential: request.confidential,
       sellToken: sellToken,
       receiveToken: receiveToken,
       allowFlexibleQuotedAmount:
@@ -341,6 +344,7 @@ class NearIntentsOneClickSwapAdapter
       amountOutBaseUnits: details?.amountOut,
       originChainTxHashes: details?.originChainTxHashes ?? const [],
       destinationChainTxHashes: details?.destinationChainTxHashes ?? const [],
+      confidential: quote.confidential,
     );
   }
 
@@ -401,6 +405,7 @@ class NearIntentsOneClickSwapAdapter
       originChainTxHashes: details?.originChainTxHashes ?? const [],
       destinationChainTxHashes: details?.destinationChainTxHashes ?? const [],
       statusOnly: true,
+      confidential: request.confidential,
     );
   }
 
@@ -483,6 +488,7 @@ class NearIntentsOneClickSwapAdapter
         receiveAsset: receiveAsset,
         receiveToken: receiveToken,
       ),
+      confidential: response.quoteRequest.confidential,
     );
   }
 
@@ -802,11 +808,24 @@ class NearIntentsOneClickSwapAdapter
     required int expectedSlippageBps,
     required String expectedRefundTo,
     required String expectedRecipient,
+    required bool expectedConfidential,
     required _OneClickToken sellToken,
     required _OneClickToken receiveToken,
     required bool allowFlexibleQuotedAmount,
   }) {
     final actual = response.quoteRequest;
+    final actualConfidentiality = actual.confidentiality;
+    final confidentialityMatches = expectedConfidential
+        ? actualConfidentiality == 'basic'
+        : actualConfidentiality == null || actualConfidentiality == 'public';
+    if (!confidentialityMatches) {
+      // Worded as a route mismatch so failures classify as unverified.
+      throw const OneClickApiException(
+        '1Click quote response did not match the requested route '
+        'confidentiality',
+        operation: 'quote',
+      );
+    }
     final actualSwapType = actual.swapTypeRaw?.trim().toUpperCase();
     final hasMismatchedSwapType = actualSwapType == null
         ? actual.mode != expectedMode

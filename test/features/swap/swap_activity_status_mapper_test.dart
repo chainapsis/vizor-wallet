@@ -219,8 +219,14 @@ void main() {
       contains('0x'),
     );
     expect(_detailRow(presentation.details, 'Timestamp').value, isNotEmpty);
+    // The wallet sends this deposit itself, and the Tx ID row already
+    // carries the address.
     expect(
-      _detailValue(presentation.details, 'Deposit ZEC to'),
+      presentation.details.where((row) => row.label == 'Deposit ZEC to'),
+      isEmpty,
+    );
+    expect(
+      _detailRow(presentation.details, 'Tx ID').linkUri!.pathSegments.last,
       contains('t1'),
     );
     expect(
@@ -830,10 +836,10 @@ void main() {
     expect(refund.addressBookLabel, 'Refund safe');
     expect(refund.addressNetwork, AddressBookNetwork.zcash);
 
-    final deposit = _detailRow(presentation.details, 'Deposit ZEC to');
-    expect(deposit.value, contains('t1'));
-    expect(deposit.copyText, 't1deposit-address');
-    expect(deposit.addressBookLabel, isNull);
+    expect(
+      presentation.details.where((row) => row.label == 'Deposit ZEC to'),
+      isEmpty,
+    );
 
     // The nickname is folded into the address row, not emitted as a separate
     // empty-label row.
@@ -1035,7 +1041,7 @@ void main() {
     );
   });
 
-  test('terminal deposit tx row links to the NEAR Intents explorer', () {
+  test('terminal Tx ID row links out and the deposit tx row copies', () {
     final presentation = swapActivityStatusPresentationForIntent(
       testL10n,
       _state(),
@@ -1051,9 +1057,96 @@ void main() {
 
     final txRow = _detailRow(presentation.details, 'USDC deposit tx');
     expect(txRow.copyText, '0xdeadbeefdeadbeefdeadbeef');
-    expect(txRow.linkUri, isNotNull);
-    expect(txRow.linkUri!.host, 'explorer.near-intents.org');
-    expect(txRow.linkUri!.pathSegments, ['transactions', '0xdeposit-address']);
+    expect(txRow.copyable, isTrue);
+    expect(txRow.linkUri, isNull);
+
+    final idRow = _detailRow(presentation.details, 'Tx ID');
+    expect(idRow.linkUri!.host, 'explorer.near-intents.org');
+    expect(idRow.linkUri!.pathSegments, ['transactions', '0xdeposit-address']);
+  });
+
+  test('a deposit still to send from another wallet shows its address', () {
+    SwapActivityStatusPresentation at(SwapIntentStatus status) =>
+        swapActivityStatusPresentationForIntent(
+          testL10n,
+          _state(),
+          _intent(
+            status: status,
+            direction: SwapDirection.externalToZec,
+            externalAsset: SwapAsset.usdc,
+            pair: 'USDC -> ZEC',
+            depositAddress: '0xdeposit-address',
+          ),
+        );
+    bool shows(SwapIntentStatus status) =>
+        at(status).details.any((row) => row.label == 'Deposit USDC to');
+
+    expect(shows(SwapIntentStatus.awaitingExternalDeposit), isTrue);
+    expect(shows(SwapIntentStatus.depositObserved), isFalse);
+    expect(shows(SwapIntentStatus.processing), isFalse);
+  });
+
+  test('a completed confidential swap keeps the delivery tx hash', () {
+    SwapActivityStatusPresentation of({required bool confidential}) =>
+        swapActivityStatusPresentationForIntent(
+          testL10n,
+          _state(),
+          _intent(
+            status: SwapIntentStatus.complete,
+            direction: SwapDirection.zecToExternal,
+            externalAsset: SwapAsset.usdc,
+            depositAddress: 't1deposit-address',
+            confidential: confidential,
+          ).copyWith(destinationChainTxHash: '0xdelivered'),
+        );
+
+    expect(
+      _detailRow(of(confidential: true).details, 'USDC delivery tx').copyText,
+      '0xdelivered',
+    );
+    expect(
+      of(
+        confidential: false,
+      ).details.where((row) => row.label == 'USDC delivery tx'),
+      isEmpty,
+    );
+  });
+
+  test('confidential status keeps tx values without explorer links', () {
+    final swap = swapActivityStatusPresentationForIntent(
+      testL10n,
+      _state(),
+      _intent(
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        pair: 'USDC -> ZEC',
+        depositAddress: '0xdeposit-address',
+        originChainTxHash: '0xdeadbeefdeadbeefdeadbeef',
+        confidential: true,
+      ),
+    );
+    final txRow = _detailRow(swap.details, 'USDC deposit tx');
+    expect(txRow.copyText, '0xdeadbeefdeadbeefdeadbeef');
+    expect(txRow.linkUri, isNull);
+
+    final pay = swapActivityStatusPresentationForIntent(
+      testL10n,
+      _state(),
+      _intent(
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo',
+        depositTxHash: 'zec-shielded-spend-txid',
+        nearIntentHash: 'near-intent-hash-123',
+        payMode: true,
+        confidential: true,
+      ),
+    );
+    expect(pay.payStatus!.txIdText, 't1bufats...CvaAzeBo');
+    expect(pay.payStatus!.txIdUri, isNull);
+    expect(pay.payStatus!.txIdCopyText, 't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo');
   });
 
   test(
@@ -1562,6 +1655,7 @@ SwapIntent _intent({
   DateTime? createdAt,
   DateTime? completedAt,
   bool payMode = false,
+  bool confidential = false,
   String? userExternalContactId,
 }) {
   return SwapIntent(
@@ -1590,6 +1684,7 @@ SwapIntent _intent({
     fiatValueBasis: fiatValueBasis,
     depositDeadline: depositDeadline,
     payMode: payMode,
+    confidential: confidential,
     userExternalContactId: userExternalContactId,
     createdAt: createdAt,
     completedAt: completedAt,

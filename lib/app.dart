@@ -32,6 +32,7 @@ import 'src/core/navigation/external_action_guard_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/navigation/windows_update_prompt_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
+import 'src/core/navigation/swap_composer_session_route_tracker.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/security/background_auto_lock_host.dart';
 import 'src/core/theme/app_theme.dart';
@@ -93,6 +94,7 @@ import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/onboarding/providers/welcome_network_settings_provider.dart';
 import 'src/features/pay/screens/pay_screen.dart';
+import 'src/features/swap/providers/swap_state_provider.dart';
 import 'src/features/payment_links/widgets/gift_claim_failure_toast_listener.dart';
 import 'src/features/payment_links/models/vizor_payment_link.dart';
 import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
@@ -655,6 +657,33 @@ final _routerProvider = Provider<_AppRouter>((ref) {
             ...appDesktopOnboardingRoutes(ref),
             ..._desktopRoutes(ref),
           ],
+  );
+
+  final composerSessionRoutes = SwapComposerSessionRouteTracker(
+    initialPath: bootstrap.initialLocation,
+  );
+  void trackComposerSession() {
+    final path = router.routerDelegate.currentConfiguration.uri.path;
+    final ended = composerSessionRoutes.didEndSession(path);
+    if (!ended && path != '/swap') return;
+    // Router notifications may arrive during a build. End the old session
+    // after that build, before the next user interaction.
+    scheduleMicrotask(() {
+      if (!ref.mounted) return;
+      final notifier = ref.read(swapStateProvider.notifier);
+      if (ended) notifier.resetComposerQuoteSettings();
+      // Mobile keeps its tab widget mounted while Pay covers it. Returning
+      // therefore has no new initState to restore the Swap session.
+      if (path == '/swap' &&
+          router.routerDelegate.currentConfiguration.uri.path == '/swap') {
+        notifier.prepareSwapComposer();
+      }
+    });
+  }
+
+  router.routerDelegate.addListener(trackComposerSession);
+  ref.onDispose(
+    () => router.routerDelegate.removeListener(trackComposerSession),
   );
 
   return _AppRouter(

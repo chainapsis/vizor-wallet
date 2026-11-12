@@ -50,24 +50,19 @@ class SwapAssetIcon extends StatelessWidget {
               assetPath: asset.tokenIconAsset,
               fallbackText: asset.symbol,
               selected: selected,
+              notch: showChainBadge
+                  ? _ChainBadgeNotch(badgeSize: badgeSize, overhang: overhang)
+                  : null,
             ),
           ),
           if (showChainBadge)
             Positioned(
               right: -overhang,
               bottom: -overhang,
-              child: Container(
+              child: SizedBox(
                 key: ValueKey('swap_asset_chain_badge_${asset.identityKey}'),
                 width: badgeSize,
                 height: badgeSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: context.colors.background.ground,
-                    width: 2,
-                    strokeAlign: BorderSide.strokeAlignOutside,
-                  ),
-                ),
                 child: _RoundAssetImage(
                   assetPath: asset.chainIconAsset,
                   fallbackText: asset.chainTicker,
@@ -82,32 +77,67 @@ class SwapAssetIcon extends StatelessWidget {
   }
 }
 
+/// Cuts the badge ring out of the token logo so the backdrop shows through.
+/// A painted ring would mismatch non-ground surfaces, and its inner edge
+/// would meet the badge's edge and leak the logo underneath.
+class _ChainBadgeNotch extends CustomClipper<Path> {
+  const _ChainBadgeNotch({required this.badgeSize, required this.overhang});
+
+  static const _ringWidth = 2.0;
+
+  final double badgeSize;
+  final double overhang;
+
+  @override
+  Path getClip(Size size) {
+    final center = Offset(
+      size.width + overhang - badgeSize / 2,
+      size.height + overhang - badgeSize / 2,
+    );
+    return Path.combine(
+      PathOperation.difference,
+      Path()..addOval(Offset.zero & size),
+      Path()..addOval(
+        Rect.fromCircle(center: center, radius: badgeSize / 2 + _ringWidth),
+      ),
+    );
+  }
+
+  @override
+  bool shouldReclip(_ChainBadgeNotch oldClipper) =>
+      oldClipper.badgeSize != badgeSize || oldClipper.overhang != overhang;
+}
+
 class _RoundAssetImage extends StatelessWidget {
   const _RoundAssetImage({
     required this.assetPath,
     required this.fallbackText,
     required this.selected,
     this.small = false,
+    this.notch,
   });
 
   final String assetPath;
   final String fallbackText;
   final bool selected;
   final bool small;
+  final CustomClipper<Path>? notch;
 
   @override
   Widget build(BuildContext context) {
-    return ClipOval(
-      child: Image.asset(
-        assetPath,
-        fit: BoxFit.cover,
-        errorBuilder: (context, _, _) => _AssetImageFallback(
-          label: fallbackText,
-          selected: selected,
-          small: small,
-        ),
+    final image = Image.asset(
+      assetPath,
+      fit: BoxFit.cover,
+      errorBuilder: (context, _, _) => _AssetImageFallback(
+        label: fallbackText,
+        selected: selected,
+        small: small,
       ),
     );
+    final notch = this.notch;
+    return notch == null
+        ? ClipOval(child: image)
+        : ClipPath(clipper: notch, child: image);
   }
 }
 

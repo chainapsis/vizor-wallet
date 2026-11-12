@@ -10467,6 +10467,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapActionAddRefundAddress => 'Add refund address';
 
   @override
+  String get swapActionGetConfidentialQuote => 'Get confidential quote';
+
+  @override
   String get swapActionGettingQuote => 'Getting quote';
 
   @override
@@ -10902,6 +10905,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapComposerYouReceive => 'You receive';
 
   @override
+  String get swapConfidentialLabel => 'Confidential';
+
+  @override
+  String get swapConfidentialRouteTooltip =>
+      'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.';
+
+  @override
+  String get swapConfidentialSettingDescription =>
+      'Your deposit and payout can\'t be tracked to each other. Quotes can differ from the standard route.';
+
+  @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';
 
   @override
@@ -11223,6 +11237,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Vizor couldn\'t read Enhance swap privacy. Set it again in Settings.';
 
   @override
+  String get swapNoticeNoConfidentialQuoteForAmount =>
+      'No confidential quote for this amount';
+
+  @override
+  String get swapNoticeNoQuoteForAmount => 'No quote for this amount';
+
+  @override
   String get swapNoticeOk => 'Ok';
 
   @override
@@ -11401,6 +11422,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapSettingsTitlePay => 'Payment settings';
+
+  @override
+  String get swapSettingsTitleSwap => 'Swap settings';
+
+  @override
   String get swapSignPayment => 'Sign payment';
 
   @override
@@ -11410,18 +11437,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapSlippageCustom => 'Custom';
 
   @override
-  String get swapSlippageDescriptionPay =>
-      'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.';
+  String get swapSlippageCustomValueSemantics =>
+      'Custom slippage tolerance, percent';
 
   @override
-  String get swapSlippageDescriptionSwap =>
-      'Sets the maximum rate change you\'ll accept. Network fees are separate.';
+  String get swapSlippageDecrease => 'Decrease slippage';
+
+  @override
+  String get swapSlippageIncrease => 'Increase slippage';
+
+  @override
+  String swapSlippagePresetSemantics(String value) {
+    return '$value slippage';
+  }
 
   @override
   String get swapSlippageRangeError => 'Slippage must be 0.1 - 5%';
 
   @override
   String get swapSlippageTitle => 'Slippage';
+
+  @override
+  String get swapSlippageValueSemantics => 'Slippage tolerance, percent';
 
   @override
   String get swapStartPending => 'Starting swap…';

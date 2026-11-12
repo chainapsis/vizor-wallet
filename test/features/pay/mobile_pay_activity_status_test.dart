@@ -35,6 +35,7 @@ Widget _harness(
   bool scroll = true,
   double width = 393,
   double textScale = 1,
+  bool animate = false,
 }) {
   return MaterialApp(
     localizationsDelegates: appLocalizationsDelegates,
@@ -45,7 +46,7 @@ Widget _harness(
         data: MediaQueryData(
           size: Size(width, 852),
           textScaler: TextScaler.linear(textScale),
-          disableAnimations: true,
+          disableAnimations: !animate,
         ),
         child: Align(
           alignment: Alignment.topLeft,
@@ -69,7 +70,10 @@ MobileSwapReviewHeaderRow _unusedRow() => MobileSwapReviewHeaderRow(
   asset: SwapAsset.zec,
 );
 
-SwapActivityStatusPresentation _presentation({required bool completed}) {
+SwapActivityStatusPresentation _presentation({
+  required bool completed,
+  bool confidential = false,
+}) {
   return SwapActivityStatusPresentation(
     title: completed ? 'Payment complete' : 'Payment in progress',
     payAsset: SwapAsset.zec,
@@ -84,7 +88,10 @@ SwapActivityStatusPresentation _presentation({required bool completed}) {
           : PayActivityStatusPhase.inProgress,
       timestampText: 'May 20, 2026 13:20',
       txIdText: '0123123124512512',
-      txIdUri: Uri.parse('https://explorer.near-intents.org/transactions/1'),
+      txIdUri: confidential
+          ? null
+          : Uri.parse('https://explorer.near-intents.org/transactions/1'),
+      txIdCopyText: '0123123124512512',
       convertedFromText: '4.125 ZEC',
       transactionFeeText: '0.0001 ZEC',
     ),
@@ -106,9 +113,12 @@ SwapActivityStatusPresentation _presentation({required bool completed}) {
   );
 }
 
-Widget _content({required bool completed}) {
+Widget _content({required bool completed, bool confidential = false}) {
   return MobileSwapStatusContent(
-    presentation: _presentation(completed: completed),
+    presentation: _presentation(
+      completed: completed,
+      confidential: confidential,
+    ),
     paymentHeader: MobilePayStatusHeader(
       asset: SwapAsset.usdc,
       amountText: '990 USDC',
@@ -128,6 +138,23 @@ Widget _content({required bool completed}) {
 }
 
 void main() {
+  testWidgets('confidential Pay copies the tx id instead of linking it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(_content(completed: true)));
+    await tester.pump();
+    expect(_appIcon(AppIcons.arrowTopRight), findsOneWidget);
+    final standardCopyIcons = _appIcon(AppIcons.copy).evaluate().length;
+
+    await tester.pumpWidget(
+      _harness(_content(completed: true, confidential: true)),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(_appIcon(AppIcons.arrowTopRight), findsNothing);
+    expect(_appIcon(AppIcons.copy).evaluate().length, standardCopyIcons + 1);
+  });
+
   testWidgets('scaled Pay headers and detail labels remain fully readable', (
     tester,
   ) async {
@@ -556,6 +583,77 @@ void main() {
       expect(_tooltipWithMessage(testL10n.txFeeHelpTooltip), findsOneWidget);
     },
   );
+
+  testWidgets('a confidential route flows on mobile only while in progress', (
+    tester,
+  ) async {
+    final flowing = find.byKey(
+      const ValueKey('swap_confidential_route_flowing'),
+    );
+    final route = find.byKey(const ValueKey('swap_confidential_route'));
+    for (final payMode in [true, false]) {
+      for (final status in [
+        SwapIntentStatus.processing,
+        SwapIntentStatus.complete,
+      ]) {
+        final intent = _intent(
+          status: status,
+          payMode: payMode,
+        ).copyWith(accountUuid: 'account-1', confidential: true);
+        final state = SwapState(
+          direction: SwapDirection.zecToExternal,
+          amountText: '',
+          receiveAmountText: '',
+          destinationText: '',
+          externalAsset: SwapAsset.usdc,
+          reviewVisible: false,
+          intents: [intent],
+          selectedIntentId: intent.id,
+          payMode: payMode,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              accountProvider.overrideWith(_PayAccountNotifier.new),
+              addressBookProvider.overrideWith(_EmptyAddressBookNotifier.new),
+              swapStateProvider.overrideWith(() => _PayStatusNotifier(state)),
+              syncProvider.overrideWith(FakeSyncNotifier.new),
+            ],
+            child: _harness(
+              SwapActivityDetailPagePanel(
+                state: state,
+                intent: intent,
+                layout: SwapActivityDetailLayout.mobile,
+                depositChecking: false,
+                depositCheckWarning: null,
+                onRefreshStatus: () {},
+                onMarkDeposited: () {},
+                onDepositTxHashChanged: (_) {},
+                onSubmitDepositTransaction: () {},
+                onReviewFreshQuote: () {},
+                onSignZecDeposit: (_) {},
+                intentIsHardware: false,
+              ),
+              scroll: false,
+              animate: true,
+            ),
+          ),
+        );
+        // An in-progress route repeats, so it never settles.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final reason = '${payMode ? 'Pay' : 'Swap'} ${status.name}';
+        expect(route, findsOneWidget, reason: reason);
+        expect(
+          flowing,
+          status == SwapIntentStatus.processing ? findsOneWidget : findsNothing,
+          reason: reason,
+        );
+        expect(tester.takeException(), isNull, reason: reason);
+      }
+    }
+  });
 
   testWidgets('mobile Pay Activity shows the selected duplicate contact', (
     tester,

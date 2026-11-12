@@ -71,7 +71,6 @@ Map<String, Object?> _preferencesToJson(SwapComposerPreferences preferences) {
   return {
     'direction': preferences.direction.name,
     'externalAsset': preferences.externalAsset.toPersistedJson(),
-    'slippageBps': preferences.slippageBps,
   };
 }
 
@@ -83,18 +82,10 @@ SwapComposerPreferences? _preferencesFromJson(Map<String, dynamic> json) {
   final externalAsset = SwapAsset.fromPersistedJson(json['externalAsset']);
   if (direction == null || externalAsset == null) return null;
   if (externalAsset == SwapAsset.zec) return null;
-  final slippageBps = _optionalInt(json['slippageBps'])?.clamp(10, 500).toInt();
   return SwapComposerPreferences(
     direction: direction,
     externalAsset: externalAsset,
-    slippageBps: slippageBps ?? defaultSwapSlippageBps,
   );
-}
-
-int? _optionalInt(Object? value) {
-  if (value is int) return value;
-  if (value is String) return int.tryParse(value);
-  return null;
 }
 
 T? _optionalEnumByName<T extends Enum>(List<T> values, Object? name) {
