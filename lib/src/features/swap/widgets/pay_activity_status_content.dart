@@ -32,6 +32,7 @@ class PayActivityStatusContent extends StatelessWidget {
     this.progressPresentation,
     this.activeTab = SwapStatusTab.progress,
     this.onTabChanged,
+    this.flowConnector,
     super.key,
   });
 
@@ -46,6 +47,9 @@ class PayActivityStatusContent extends StatelessWidget {
   final SwapActivityStatusPresentation? progressPresentation;
   final SwapStatusTab activeTab;
   final ValueChanged<SwapStatusTab>? onTabChanged;
+
+  /// Optional replacement for the amount-to-recipient arrow.
+  final Widget? flowConnector;
 
   static const Size contentSize = Size(396, 549);
   static const double reviewInfoHeight = 204;
@@ -148,6 +152,7 @@ class PayActivityStatusContent extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         child: ReviewInfoFlow(
+          connector: flowConnector,
           rows: [
             ReviewInfoRow(
               key: const ValueKey('pay_status_amount_row'),
@@ -235,6 +240,8 @@ class PayActivityStatusContent extends StatelessWidget {
                     ? null
                     : AppIcons.arrowTopRight,
                 trailingIconColor: colors.icon.muted,
+                // Without an explorer link the row copies the Tx ID instead.
+                copyText: onOpenExplorer == null ? status.txIdCopyText : null,
                 onPressed: onOpenExplorer,
               ),
             ],

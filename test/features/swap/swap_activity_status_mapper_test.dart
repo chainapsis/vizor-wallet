@@ -1086,6 +1086,69 @@ void main() {
     expect(shows(SwapIntentStatus.processing), isFalse);
   });
 
+  test('a completed confidential swap keeps the delivery tx hash', () {
+    SwapActivityStatusPresentation of({required bool confidential}) =>
+        swapActivityStatusPresentationForIntent(
+          testL10n,
+          _state(),
+          _intent(
+            status: SwapIntentStatus.complete,
+            direction: SwapDirection.zecToExternal,
+            externalAsset: SwapAsset.usdc,
+            depositAddress: 't1deposit-address',
+            confidential: confidential,
+          ).copyWith(destinationChainTxHash: '0xdelivered'),
+        );
+
+    expect(
+      _detailRow(of(confidential: true).details, 'USDC delivery tx').copyText,
+      '0xdelivered',
+    );
+    expect(
+      of(
+        confidential: false,
+      ).details.where((row) => row.label == 'USDC delivery tx'),
+      isEmpty,
+    );
+  });
+
+  test('confidential status keeps tx values without explorer links', () {
+    final swap = swapActivityStatusPresentationForIntent(
+      testL10n,
+      _state(),
+      _intent(
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        pair: 'USDC -> ZEC',
+        depositAddress: '0xdeposit-address',
+        originChainTxHash: '0xdeadbeefdeadbeefdeadbeef',
+        confidential: true,
+      ),
+    );
+    final txRow = _detailRow(swap.details, 'USDC deposit tx');
+    expect(txRow.copyText, '0xdeadbeefdeadbeefdeadbeef');
+    expect(txRow.linkUri, isNull);
+
+    final pay = swapActivityStatusPresentationForIntent(
+      testL10n,
+      _state(),
+      _intent(
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo',
+        depositTxHash: 'zec-shielded-spend-txid',
+        nearIntentHash: 'near-intent-hash-123',
+        payMode: true,
+        confidential: true,
+      ),
+    );
+    expect(pay.payStatus!.txIdText, 't1bufats...CvaAzeBo');
+    expect(pay.payStatus!.txIdUri, isNull);
+    expect(pay.payStatus!.txIdCopyText, 't1bufatsuYMEZJ8watyV52rsNZ4CvaAzeBo');
+  });
+
   test(
     'uses captured fiat basis instead of current pricing for status summary',
     () {
@@ -1592,6 +1655,7 @@ SwapIntent _intent({
   DateTime? createdAt,
   DateTime? completedAt,
   bool payMode = false,
+  bool confidential = false,
   String? userExternalContactId,
 }) {
   return SwapIntent(
@@ -1620,6 +1684,7 @@ SwapIntent _intent({
     fiatValueBasis: fiatValueBasis,
     depositDeadline: depositDeadline,
     payMode: payMode,
+    confidential: confidential,
     userExternalContactId: userExternalContactId,
     createdAt: createdAt,
     completedAt: completedAt,

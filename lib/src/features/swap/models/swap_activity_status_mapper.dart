@@ -54,12 +54,16 @@ class PayActivityStatusPresentation {
     this.refundedAmountText,
     this.refundFeeText,
     this.txIdUri,
+    this.txIdCopyText,
   });
 
   final PayActivityStatusPhase phase;
   final String timestampText;
   final String txIdText;
   final Uri? txIdUri;
+
+  /// Full Tx ID, copied where the row offers no explorer link.
+  final String? txIdCopyText;
   final String convertedFromText;
   final String transactionFeeText;
   final String? refundAddress;
@@ -370,6 +374,7 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
             separator: '...',
           ),
     txIdUri: swapActivityExplorerUri(intent),
+    txIdCopyText: explorerId,
     convertedFromText: amount(intent.sellAmount),
     transactionFeeText:
         confirmedDepositFeeZatoshi != null &&
@@ -673,6 +678,18 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           copyable: true,
           copyText: depositTxHash,
         ),
+      // The explorer link on the Tx ID row shows the delivery; a confidential
+      // swap has no link, so it keeps the hash.
+      if (intent.confidential &&
+          destinationChainTxHash != null &&
+          destinationChainTxHash.isNotEmpty)
+        SwapStatusDetailRowData(
+          label: l10n.swapActivityDetailDeliveryTx(receiveSymbol),
+          kind: SwapStatusDetailKind.deliveryTx,
+          value: compactSwapAddress(destinationChainTxHash),
+          copyable: true,
+          copyText: destinationChainTxHash,
+        ),
       if (failed &&
           refundAddress != null &&
           refundAddress.isNotEmpty &&
@@ -952,14 +969,17 @@ String? _recordedRefundFeeText(SwapProviderRefundInfo? info) {
   return _firstNonEmpty([info?.recordedRefundFeeText]);
 }
 
-Uri? swapActivityExplorerUri(SwapIntent intent) => nearIntentsExplorerUri(
-  depositAddress: intent.depositAddress,
-  nearIntentHash: intent.nearIntentHash,
-  depositTxHash: _firstNonEmpty([
-    intent.depositTxHash,
-    intent.originChainTxHash,
-  ]),
-);
+/// The explorer cannot show a confidential swap, so it gets no link.
+Uri? swapActivityExplorerUri(SwapIntent intent) => intent.confidential
+    ? null
+    : nearIntentsExplorerUri(
+        depositAddress: intent.depositAddress,
+        nearIntentHash: intent.nearIntentHash,
+        depositTxHash: _firstNonEmpty([
+          intent.depositTxHash,
+          intent.originChainTxHash,
+        ]),
+      );
 
 SwapStatusDetailRowData? _swapActivityTxIdRow(
   AppLocalizations l10n,
@@ -973,14 +993,17 @@ SwapStatusDetailRowData? _swapActivityTxIdRow(
   ]);
   if (txId == null || txId.isEmpty) return null;
 
+  // A confidential swap keeps the row, copyable, without the explorer link.
   final linkUri = swapActivityExplorerUri(intent);
-  if (linkUri == null) return null;
+  if (linkUri == null && !intent.confidential) return null;
 
   return SwapStatusDetailRowData(
     label: l10n.commonTxId,
     kind: SwapStatusDetailKind.txId,
     value: compactSwapAddress(txId),
     linkUri: linkUri,
+    copyable: linkUri == null,
+    copyText: txId,
   );
 }
 
