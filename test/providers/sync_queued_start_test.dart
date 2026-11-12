@@ -146,6 +146,10 @@ class _Api extends RustLibApi {
     await syncs[index].close();
   }
 
+  /// Accepts the receiver-round cancellation the sync notifier sends.
+  @override
+  void crateApiOneTimeIvkCancelSwapRecovery() {}
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
