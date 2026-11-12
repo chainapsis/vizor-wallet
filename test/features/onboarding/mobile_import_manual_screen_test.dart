@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/privacy/custom_keyboard_policy.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
@@ -196,6 +198,34 @@ void main() {
       find.byKey(const ValueKey('mobile_import_manual_field')),
     );
     expect(field.enableIMEPersonalizedLearning, isFalse);
+  });
+
+  testWidgets('seed screen rejects custom keyboards while it is mounted', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    CustomKeyboardPolicy.resetForTesting();
+    const channel = MethodChannel('com.zcash.wallet/keyboard_policy');
+    final rejected = <Object?>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      expect(call.method, 'setCustomKeyboardsRejected');
+      rejected.add((call.arguments as Map)['rejected']);
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    try {
+      await tester.pumpWidget(_app());
+      await tester.pump();
+
+      expect(rejected, [true]);
+
+      await tester.pumpWidget(const SizedBox());
+      expect(rejected, [true, false]);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('typing a prefix offers suggestions and accepts a word', (

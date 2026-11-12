@@ -9,6 +9,7 @@ import '../../../core/feedback/app_haptics.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/custom_keyboard_policy.dart';
 import '../../../core/privacy/route_coverage_aware.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
@@ -95,6 +96,8 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
   @override
   void initState() {
     super.initState();
+    // Before the autofocused field brings the keyboard up.
+    CustomKeyboardPolicy.hold();
     _ownsPrivacyController = widget.privacyOverlayController == null;
     _privacyController =
         widget.privacyOverlayController ??
@@ -129,6 +132,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
 
   @override
   void dispose() {
+    CustomKeyboardPolicy.release();
     _screenshotSub?.cancel();
     if (_ownsPrivacyController) _privacyController.dispose();
     _controller.dispose();
