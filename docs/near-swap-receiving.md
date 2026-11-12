@@ -6,18 +6,18 @@ Software accounts can receive NEAR swap payouts and refunds at derived Ironwood 
 
 The feature runs on mainnet. It uses the selected private query server and waits while none is selected. Private queries don't gate it.
 
-NEAR swap privacy (`set_near_swap_privacy_enabled`) decides whether new swaps get one-time addresses. Turning it off blocks new reservations, but a quote for an address that's already reserved still finishes.
+Enhance swap privacy (`set_near_swap_privacy_enabled`) decides whether new swaps get one-time addresses. Turning it off blocks new reservations, but a quote for an address that's already reserved still finishes.
 
 ## Account set
 
 Each round and each filter step works out which accounts to watch. A software account is in the set if any of these holds:
-- NEAR swap privacy is on
+- Enhance swap privacy is on
 - the account's use marker is set
 - a history check is running for the account, or the round is that check's own round
 
 Accounts outside the set make no receiver requests. Hardware accounts are never in it. An account that leaves the set just stops being queried. Nothing is paused or deleted.
 
-The use marker records that an account has used one-time addresses. It's set once and stays set, through reorgs too, so the account keeps being watched with NEAR swap privacy off. These set it:
+The use marker records that an account has used one-time addresses. It's set once and stays set, through reorgs too, so the account keeps being watched with Enhance swap privacy off. These set it:
 - handing out a receive address or a refund address
 - recording the account's own swap funding
 - storing an authenticated payment at or after the birthday
@@ -25,7 +25,7 @@ The use marker records that an account has used one-time addresses. It's set onc
 
 Handing out an address and the quote that follows enable recovery on that account alone.
 
-With NEAR swap privacy off, a second device doesn't watch an account whose swaps only ever paid into ZEC, until the setting goes on or a history check runs. A swap out of ZEC always leaves a funding memo, and the memo sets the marker. A memo held back by the 100-index gap rule still sets it, but that refund address itself isn't watched until the gap closes or the wallet proves it owns the funding input.
+With Enhance swap privacy off, a second device doesn't watch an account whose swaps only ever paid into ZEC, until the setting goes on or a history check runs. A swap out of ZEC always leaves a funding memo, and the memo sets the marker. A memo held back by the 100-index gap rule still sets it, but that refund address itself isn't watched until the gap closes or the wallet proves it owns the funding input.
 
 ## Receive addresses
 
@@ -69,11 +69,11 @@ A hit queues its lookup, which makes a round due. A step reports `needs_round` w
 
 ## Triggers
 
-Rounds aren't tied to sync polling. The app owes one on launch, unlock, return to the app, an account switch, choosing a private query server, turning NEAR swap privacy on, a NEAR payout or refund status, a retry after a failure, the wallet reporting a round due (`SwapRecoveryStatus.round_due`: a queued lookup, an unfinished seed walk, or a marker more than 10 blocks behind the scanned tip), and a filter step's `needs_round`. It runs the owed round after the next completed sync, or at once when the wallet is already at the tip. A round does the active account's work first. It reports `more` when work is left that another round can run right away, so the app chains rounds, and otherwise says why the rest waits: no server, sync, a newer publication or a lookup's retry delay. A round that queued a rescan says so, and the app starts sync.
+Rounds aren't tied to sync polling. The app owes one on launch, unlock, return to the app, an account switch, choosing a private query server, turning Enhance swap privacy on, a NEAR payout or refund status, a retry after a failure, the wallet reporting a round due (`SwapRecoveryStatus.round_due`: a queued lookup, an unfinished seed walk, or a marker more than 10 blocks behind the scanned tip), and a filter step's `needs_round`. It runs the owed round after the next completed sync, or at once when the wallet is already at the tip. A round does the active account's work first. It reports `more` when work is left that another round can run right away, so the app chains rounds, and otherwise says why the rest waits: no server, sync, a newer publication or a lookup's retry delay. A round that queued a rescan says so, and the app starts sync.
 
 ## Check swap history
 
-Check swap history is the manual fallback, only needed if a swap payment or refund is missing, or after lowering a birthday. It watches every software account until it ends and queries every address the wallet has enrolled, older ones and refund addresses past their window included. A new check first forgets the answers earlier lookups gave, as a server switch does, so every address is read again from its history start and a payment an earlier answer left out is found. Afterwards an account it found nothing for leaves the set if NEAR swap privacy is off. Pausing keeps the job's position, and the next check resumes it without starting over.
+Check swap history is the manual fallback, only needed if a swap payment or refund is missing, or after lowering a birthday. It watches every software account until it ends and queries every address the wallet has enrolled, older ones and refund addresses past their window included. A new check first forgets the answers earlier lookups gave, as a server switch does, so every address is read again from its history start and a payment an earlier answer left out is found. Afterwards an account it found nothing for leaves the set if Enhance swap privacy is off. Pausing keeps the job's position, and the next check resumes it without starting over.
 
 ## Tachyon
 

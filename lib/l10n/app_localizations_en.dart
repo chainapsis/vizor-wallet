@@ -9662,7 +9662,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsNearSwapPrivacyInfoOneTime =>
-      'When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With NEAR swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can\'t tie them to your wallet.';
+      'When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With Enhance swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can\'t tie them to your wallet.';
 
   @override
   String get settingsNearSwapPrivacyInfoOwnAddresses =>
@@ -9681,7 +9681,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.';
 
   @override
-  String get settingsNearSwapPrivacyLabel => 'NEAR swap privacy';
+  String get settingsNearSwapPrivacyLabel => 'Enhance swap privacy';
 
   @override
   String get settingsNearSwapPrivacyOff => 'Swaps use regular Zcash addresses.';
@@ -11174,7 +11174,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapNoticeNearSwapPrivacyUnknown =>
-      'Vizor couldn\'t read your NEAR swap privacy setting. Choose it again in Settings to swap.';
+      'Vizor couldn\'t read your Enhance swap privacy setting. Choose it again in Settings to swap.';
 
   @override
   String get swapNoticeOk => 'Ok';
@@ -11188,7 +11188,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapNoticePrivateReceiveAddressUnavailable =>
-      'Private swap addresses are unavailable right now. Try again later, or turn off NEAR swap privacy to swap now.';
+      'Private swap addresses are unavailable right now. Try again later, or turn off Enhance swap privacy to swap now.';
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>

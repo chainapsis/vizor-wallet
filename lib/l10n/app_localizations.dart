@@ -10187,7 +10187,7 @@ abstract class AppLocalizations {
   /// **'Vote'**
   String get navVote;
 
-  /// Status line under the NEAR swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved.
+  /// Status line under the Enhance swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t save this choice. It applies until you close Vizor.'**
@@ -15788,37 +15788,37 @@ abstract class AppLocalizations {
   /// **'Couldn\'t update language.'**
   String get settingsLanguageUpdateFailed;
 
-  /// Subtitle under the NEAR swap privacy setting while a hardware wallet account is active.
+  /// Subtitle under the Enhance swap privacy setting while a hardware wallet account is active.
   ///
   /// In en, this message translates to:
   /// **'Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.'**
   String get settingsNearSwapPrivacyHardware;
 
-  /// [security] First paragraph of the NEAR swap privacy explanation: what the setting does. NEAR Intents is a brand name.
+  /// [security] First paragraph of the Enhance swap privacy explanation: what the setting does. NEAR Intents is a brand name.
   ///
   /// In en, this message translates to:
-  /// **'When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With NEAR swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can\'t tie them to your wallet.'**
+  /// **'When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With Enhance swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can\'t tie them to your wallet.'**
   String get settingsNearSwapPrivacyInfoOneTime;
 
-  /// [security] Third paragraph of the NEAR swap privacy explanation: what the setting does not protect. Ethereum is a brand name.
+  /// [security] Third paragraph of the Enhance swap privacy explanation: what the setting does not protect. Ethereum is a brand name.
   ///
   /// In en, this message translates to:
   /// **'Addresses you enter yourself, like an Ethereum address you reuse for several swaps, are still shared with NEAR and can link those swaps. Hardware wallet accounts don\'t use one-time addresses.'**
   String get settingsNearSwapPrivacyInfoOwnAddresses;
 
-  /// [security] Fourth paragraph of the NEAR swap privacy explanation: restoring from the recovery phrase still finds swap payments.
+  /// [security] Fourth paragraph of the Enhance swap privacy explanation: restoring from the recovery phrase still finds swap payments.
   ///
   /// In en, this message translates to:
   /// **'Your recovery phrase still recovers everything. After a restore, your wallet finds these payments privately on its own.'**
   String get settingsNearSwapPrivacyInfoRestore;
 
-  /// [security] Second paragraph of the NEAR swap privacy explanation: when a one-time address can be used more than once.
+  /// [security] Second paragraph of the Enhance swap privacy explanation: when a one-time address can be used more than once.
   ///
   /// In en, this message translates to:
   /// **'A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.'**
   String get settingsNearSwapPrivacyInfoReuse;
 
-  /// Last paragraph of the NEAR swap privacy explanation: what turning the setting off changes.
+  /// Last paragraph of the Enhance swap privacy explanation: what turning the setting off changes.
   ///
   /// In en, this message translates to:
   /// **'Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.'**
@@ -15827,16 +15827,16 @@ abstract class AppLocalizations {
   /// Name of the setting that gives NEAR Intents swaps one-time Zcash addresses. NEAR is a brand name.
   ///
   /// In en, this message translates to:
-  /// **'NEAR swap privacy'**
+  /// **'Enhance swap privacy'**
   String get settingsNearSwapPrivacyLabel;
 
-  /// Subtitle under the NEAR swap privacy setting while it is off.
+  /// Subtitle under the Enhance swap privacy setting while it is off.
   ///
   /// In en, this message translates to:
   /// **'Swaps use regular Zcash addresses.'**
   String get settingsNearSwapPrivacyOff;
 
-  /// Subtitle under the NEAR swap privacy setting while it is on.
+  /// Subtitle under the Enhance swap privacy setting while it is on.
   ///
   /// In en, this message translates to:
   /// **'Swaps use one-time Zcash addresses.'**
@@ -15848,13 +15848,13 @@ abstract class AppLocalizations {
   /// **'Vizor finds swap payments and refunds automatically. If one is missing after a swap finished, this check looks at every private swap address and refund key this wallet has used. It starts from the beginning of Ironwood history and runs over Private queries. It can take a few minutes.'**
   String get settingsNearSwapPrivacyTroubleshootingBody;
 
-  /// Heading of the section at the end of the NEAR swap privacy explanation that offers the swap history check.
+  /// Heading of the section at the end of the Enhance swap privacy explanation that offers the swap history check.
   ///
   /// In en, this message translates to:
   /// **'Troubleshooting'**
   String get settingsNearSwapPrivacyTroubleshootingTitle;
 
-  /// Subtitle under the NEAR swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again.
+  /// Subtitle under the Enhance swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again.
   ///
   /// In en, this message translates to:
   /// **'Vizor couldn\'t read your saved choice. Set it again to swap.'**
@@ -18276,10 +18276,10 @@ abstract class AppLocalizations {
   /// **'Maintenance window: {networks}'**
   String swapNoticeMaintenanceWindow(String networks);
 
-  /// Swap quote error when the saved NEAR swap privacy setting could not be read. NEAR swap privacy is the name of the setting.
+  /// Swap quote error when the saved Enhance swap privacy setting could not be read. Enhance swap privacy is the name of the setting.
   ///
   /// In en, this message translates to:
-  /// **'Vizor couldn\'t read your NEAR swap privacy setting. Choose it again in Settings to swap.'**
+  /// **'Vizor couldn\'t read your Enhance swap privacy setting. Choose it again in Settings to swap.'**
   String get swapNoticeNearSwapPrivacyUnknown;
 
   /// Button that dismisses the NEAR Intents service notice.
@@ -18294,16 +18294,16 @@ abstract class AppLocalizations {
   /// **'Payments may not work right now.'**
   String get swapNoticePaymentsMayFail;
 
-  /// Swap quote error with NEAR swap privacy on: the wallet could not reserve a one-time receive address for the swap.
+  /// Swap quote error with Enhance swap privacy on: the wallet could not reserve a one-time receive address for the swap.
   ///
   /// In en, this message translates to:
   /// **'Could not prepare a fresh wallet receive address. Try again after wallet sync.'**
   String get swapNoticePrivateReceiveAddressPreparationFailed;
 
-  /// Swap quote error with NEAR swap privacy on: no one-time receive address is available even after the wallet checked its swap history. NEAR swap privacy is the name of the setting.
+  /// Swap quote error with Enhance swap privacy on: no one-time receive address is available even after the wallet checked its swap history. Enhance swap privacy is the name of the setting.
   ///
   /// In en, this message translates to:
-  /// **'Private swap addresses are unavailable right now. Try again later, or turn off NEAR swap privacy to swap now.'**
+  /// **'Private swap addresses are unavailable right now. Try again later, or turn off Enhance swap privacy to swap now.'**
   String get swapNoticePrivateReceiveAddressUnavailable;
 
   /// Swap or Pay quote error: the wallet could not reserve a new receive address for the swap.

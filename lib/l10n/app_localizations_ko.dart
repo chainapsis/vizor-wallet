@@ -9513,7 +9513,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsNearSwapPrivacyInfoOneTime =>
-      'NEAR Intents‍로 스‍왑‍하‍면 지‍갑‍이 NEAR‍에 수‍령‍용 Zcash 주‍소‍와 환‍불‍용 주‍소‍를 하‍나‍씩 알‍려‍줘‍요. NEAR 스‍왑 프‍라‍이‍버‍시‍를 켜‍면 이 주‍소‍들‍은 스‍왑 전‍용‍으‍로 만‍든 일‍회‍용 주‍소‍라‍서, 미‍래‍의 양‍자 컴‍퓨‍터 공‍격‍자‍도 이 주‍소‍들‍을 지‍갑‍과 연‍결‍할 수 없‍어‍요.';
+      'NEAR Intents‍로 스‍왑‍하‍면 지‍갑‍이 NEAR‍에 수‍령‍용 Zcash 주‍소‍와 환‍불‍용 주‍소‍를 하‍나‍씩 알‍려‍줘‍요. 스‍왑 프‍라‍이‍버‍시 강‍화‍를 켜‍면 이 주‍소‍들‍은 스‍왑 전‍용‍으‍로 만‍든 일‍회‍용 주‍소‍라‍서, 미‍래‍의 양‍자 컴‍퓨‍터 공‍격‍자‍도 이 주‍소‍들‍을 지‍갑‍과 연‍결‍할 수 없‍어‍요.';
 
   @override
   String get settingsNearSwapPrivacyInfoOwnAddresses =>
@@ -9532,7 +9532,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 설‍정‍을 끄‍면 새 스‍왑‍에‍만 일‍반 주‍소‍가 쓰‍여‍요. 이‍미 사‍용‍한 일‍회‍용 주‍소‍로 들‍어‍오‍는 수‍령‍액‍과 환‍불‍은 계‍속 표‍시‍돼‍요.';
 
   @override
-  String get settingsNearSwapPrivacyLabel => 'NEAR 스‍왑 프‍라‍이‍버‍시';
+  String get settingsNearSwapPrivacyLabel => '스‍왑 프‍라‍이‍버‍시 강‍화';
 
   @override
   String get settingsNearSwapPrivacyOff => '스‍왑‍에 일‍반 Zcash 주‍소‍를 사‍용‍해‍요.';
@@ -11003,7 +11003,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapNoticeNearSwapPrivacyUnknown =>
-      'Vizor‍가 NEAR 스‍왑 프‍라‍이‍버‍시 설‍정‍을 읽‍지 못‍했‍어‍요. 스‍왑‍하‍려‍면 설‍정‍에‍서 다‍시 선‍택‍해 주‍세‍요.';
+      'Vizor‍가 스‍왑 프‍라‍이‍버‍시 강‍화 설‍정‍을 읽‍지 못‍했‍어‍요. 스‍왑‍하‍려‍면 설‍정‍에‍서 다‍시 선‍택‍해 주‍세‍요.';
 
   @override
   String get swapNoticeOk => '확‍인';
@@ -11017,7 +11017,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapNoticePrivateReceiveAddressUnavailable =>
-      '지‍금‍은 비‍공‍개 스‍왑 주‍소‍를 사‍용‍할 수 없‍어‍요. 나‍중‍에 다‍시 시‍도‍하‍거‍나, 지‍금 스‍왑‍하‍려‍면 NEAR 스‍왑 프‍라‍이‍버‍시‍를 끄‍세‍요.';
+      '지‍금‍은 비‍공‍개 스‍왑 주‍소‍를 사‍용‍할 수 없‍어‍요. 나‍중‍에 다‍시 시‍도‍하‍거‍나, 지‍금 스‍왑‍하‍려‍면 스‍왑 프‍라‍이‍버‍시 강‍화‍를 끄‍세‍요.';
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>
