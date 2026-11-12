@@ -9863,8 +9863,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           container.read(swapStateProvider).quoteError?.text(testL10n),
-          "Vizor couldn't read your NEAR swap privacy setting. Choose it "
-          'again in Settings to swap.',
+          testL10n.swapNoticeNearSwapPrivacyUnknown,
         );
         expect(swapReservations + ordinaryReservations, 0);
 

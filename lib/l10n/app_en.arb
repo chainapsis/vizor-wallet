@@ -7997,7 +7997,7 @@
   },
   "nearSwapPrivacyUnsaved": "Couldn't save this choice. It applies until you close Vizor.",
   "@nearSwapPrivacyUnsaved": {
-    "description": "Status line under the NEAR swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved."
+    "description": "Status line under the Enhance swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved."
   },
   "networkPrivacyFinishUpdateBeforeTorOff": "Finish the current software update before turning off Tor.",
   "@networkPrivacyFinishUpdateBeforeTorOff": {
@@ -12258,39 +12258,39 @@
   },
   "settingsNearSwapPrivacyHardware": "Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.",
   "@settingsNearSwapPrivacyHardware": {
-    "description": "Subtitle under the NEAR swap privacy setting while a hardware wallet account is active."
+    "description": "Subtitle under the Enhance swap privacy setting while a hardware wallet account is active."
   },
-  "settingsNearSwapPrivacyInfoOneTime": "When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With NEAR swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can't tie them to your wallet.",
+  "settingsNearSwapPrivacyInfoOneTime": "When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With Enhance swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can't tie them to your wallet.",
   "@settingsNearSwapPrivacyInfoOneTime": {
-    "description": "[security] First paragraph of the NEAR swap privacy explanation: what the setting does. NEAR Intents is a brand name."
+    "description": "[security] First paragraph of the Enhance swap privacy explanation: what the setting does. NEAR Intents is a brand name."
   },
   "settingsNearSwapPrivacyInfoOwnAddresses": "Addresses you enter yourself, like an Ethereum address you reuse for several swaps, are still shared with NEAR and can link those swaps. Hardware wallet accounts don't use one-time addresses.",
   "@settingsNearSwapPrivacyInfoOwnAddresses": {
-    "description": "[security] Third paragraph of the NEAR swap privacy explanation: what the setting does not protect. Ethereum is a brand name."
+    "description": "[security] Third paragraph of the Enhance swap privacy explanation: what the setting does not protect. Ethereum is a brand name."
   },
   "settingsNearSwapPrivacyInfoRestore": "Your recovery phrase still recovers everything. After a restore, your wallet finds these payments privately on its own.",
   "@settingsNearSwapPrivacyInfoRestore": {
-    "description": "[security] Fourth paragraph of the NEAR swap privacy explanation: restoring from the recovery phrase still finds swap payments."
+    "description": "[security] Fourth paragraph of the Enhance swap privacy explanation: restoring from the recovery phrase still finds swap payments."
   },
   "settingsNearSwapPrivacyInfoReuse": "A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.",
   "@settingsNearSwapPrivacyInfoReuse": {
-    "description": "[security] Second paragraph of the NEAR swap privacy explanation: when a one-time address can be used more than once."
+    "description": "[security] Second paragraph of the Enhance swap privacy explanation: when a one-time address can be used more than once."
   },
   "settingsNearSwapPrivacyInfoTurnOff": "Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.",
   "@settingsNearSwapPrivacyInfoTurnOff": {
-    "description": "Last paragraph of the NEAR swap privacy explanation: what turning the setting off changes."
+    "description": "Last paragraph of the Enhance swap privacy explanation: what turning the setting off changes."
   },
-  "settingsNearSwapPrivacyLabel": "NEAR swap privacy",
+  "settingsNearSwapPrivacyLabel": "Enhance swap privacy",
   "@settingsNearSwapPrivacyLabel": {
     "description": "Name of the setting that gives NEAR Intents swaps one-time Zcash addresses. NEAR is a brand name."
   },
   "settingsNearSwapPrivacyOff": "Swaps use regular Zcash addresses.",
   "@settingsNearSwapPrivacyOff": {
-    "description": "Subtitle under the NEAR swap privacy setting while it is off."
+    "description": "Subtitle under the Enhance swap privacy setting while it is off."
   },
   "settingsNearSwapPrivacyOn": "Swaps use one-time Zcash addresses.",
   "@settingsNearSwapPrivacyOn": {
-    "description": "Subtitle under the NEAR swap privacy setting while it is on."
+    "description": "Subtitle under the Enhance swap privacy setting while it is on."
   },
   "settingsNearSwapPrivacyTroubleshootingBody": "Vizor finds swap payments and refunds automatically. If one is missing after a swap finished, this check looks at every private swap address and refund key this wallet has used. It starts from the beginning of Ironwood history and runs over Private queries. It can take a few minutes.",
   "@settingsNearSwapPrivacyTroubleshootingBody": {
@@ -12298,11 +12298,11 @@
   },
   "settingsNearSwapPrivacyTroubleshootingTitle": "Troubleshooting",
   "@settingsNearSwapPrivacyTroubleshootingTitle": {
-    "description": "Heading of the section at the end of the NEAR swap privacy explanation that offers the swap history check."
+    "description": "Heading of the section at the end of the Enhance swap privacy explanation that offers the swap history check."
   },
   "settingsNearSwapPrivacyUnknown": "Vizor couldn't read your saved choice. Set it again to swap.",
   "@settingsNearSwapPrivacyUnknown": {
-    "description": "Subtitle under the NEAR swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again."
+    "description": "Subtitle under the Enhance swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again."
   },
   "settingsNewBadge": "New",
   "@settingsNewBadge": {
@@ -14205,9 +14205,9 @@
       }
     }
   },
-  "swapNoticeNearSwapPrivacyUnknown": "Vizor couldn't read your NEAR swap privacy setting. Choose it again in Settings to swap.",
+  "swapNoticeNearSwapPrivacyUnknown": "Vizor couldn't read your Enhance swap privacy setting. Choose it again in Settings to swap.",
   "@swapNoticeNearSwapPrivacyUnknown": {
-    "description": "Swap quote error when the saved NEAR swap privacy setting could not be read. NEAR swap privacy is the name of the setting."
+    "description": "Swap quote error when the saved Enhance swap privacy setting could not be read. Enhance swap privacy is the name of the setting."
   },
   "swapNoticeOk": "Ok",
   "@swapNoticeOk": {
@@ -14219,11 +14219,11 @@
   },
   "swapNoticePrivateReceiveAddressPreparationFailed": "Could not prepare a fresh wallet receive address. Try again after wallet sync.",
   "@swapNoticePrivateReceiveAddressPreparationFailed": {
-    "description": "Swap quote error with NEAR swap privacy on: the wallet could not reserve a one-time receive address for the swap."
+    "description": "Swap quote error with Enhance swap privacy on: the wallet could not reserve a one-time receive address for the swap."
   },
-  "swapNoticePrivateReceiveAddressUnavailable": "Private swap addresses are unavailable right now. Try again later, or turn off NEAR swap privacy to swap now.",
+  "swapNoticePrivateReceiveAddressUnavailable": "Private swap addresses are unavailable right now. Try again later, or turn off Enhance swap privacy to swap now.",
   "@swapNoticePrivateReceiveAddressUnavailable": {
-    "description": "Swap quote error with NEAR swap privacy on: no one-time receive address is available even after the wallet checked its swap history. NEAR swap privacy is the name of the setting."
+    "description": "Swap quote error with Enhance swap privacy on: no one-time receive address is available even after the wallet checked its swap history. Enhance swap privacy is the name of the setting."
   },
   "swapNoticeReceiveAddressUnavailable": "Could not prepare a fresh wallet receive address. Retry after wallet sync or close older pending swaps before requesting a new quote.",
   "@swapNoticeReceiveAddressUnavailable": {
