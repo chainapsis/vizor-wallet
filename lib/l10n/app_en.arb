@@ -13225,6 +13225,10 @@
   "@swapActionAddRefundAddress": {
     "description": "Primary button label on the swap screen that opens the refund address editor."
   },
+  "swapActionGetConfidentialQuote": "Get confidential quote",
+  "@swapActionGetConfidentialQuote": {
+    "description": "Swap and Pay primary button shown when the standard route has no quote; it requests a quote on the NEAR Intents confidential route. Keep it short."
+  },
   "swapActionGettingQuote": "Getting quote",
   "@swapActionGettingQuote": {
     "description": "Primary button label on the swap screen while a quote is loading."
@@ -13891,6 +13895,18 @@
   "@swapComposerYouReceive": {
     "description": "Label above the amount the user gets in the swap composer."
   },
+  "swapConfidentialLabel": "Confidential",
+  "@swapConfidentialLabel": {
+    "description": "Name of the NEAR Intents confidential route: the settings toggle label and the badge on swap and Pay review and status screens."
+  },
+  "swapConfidentialRouteTooltip": "Your deposit and payout can't be matched on NEAR Intents or found in its explorer. Both still show on their own chains.",
+  "@swapConfidentialRouteTooltip": {
+    "description": "Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen."
+  },
+  "swapConfidentialSettingDescription": "Your deposit and payout can't be tracked to each other. Quotes can differ from the standard route.",
+  "@swapConfidentialSettingDescription": {
+    "description": "Description under the Confidential toggle in the swap and Pay settings modal."
+  },
   "swapContactAlreadyInAddressBook": "Already in your address book",
   "@swapContactAlreadyInAddressBook": {
     "description": "Toast on mobile after the user tries to save a swap address that is already in the address book."
@@ -14273,6 +14289,14 @@
   "@swapNoticeNearSwapPrivacyUnknown": {
     "description": "Swap quote error when the saved Enhance swap privacy setting could not be read. Enhance swap privacy is the name of the setting."
   },
+  "swapNoticeNoConfidentialQuoteForAmount": "No confidential quote for this amount",
+  "@swapNoticeNoConfidentialQuoteForAmount": {
+    "description": "Swap or Pay quote error shown above the primary button when the confidential route has no quote for the entered amount. Up to two lines."
+  },
+  "swapNoticeNoQuoteForAmount": "No quote for this amount",
+  "@swapNoticeNoQuoteForAmount": {
+    "description": "Swap or Pay quote error shown above the primary button when the standard route has no quote for the entered amount. Up to two lines."
+  },
   "swapNoticeOk": "Ok",
   "@swapNoticeOk": {
     "description": "Button that dismisses the NEAR Intents service notice."
@@ -14504,6 +14528,14 @@
       }
     }
   },
+  "swapSettingsTitlePay": "Payment settings",
+  "@swapSettingsTitlePay": {
+    "description": "Title of the Pay settings modal, which holds the Confidential toggle and slippage."
+  },
+  "swapSettingsTitleSwap": "Swap settings",
+  "@swapSettingsTitleSwap": {
+    "description": "Title of the swap settings modal, which holds the Confidential toggle and slippage."
+  },
   "swapSignPayment": "Sign payment",
   "@swapSignPayment": {
     "description": "Mobile Ledger signing screen title when the operation is a payment."
@@ -14516,6 +14548,14 @@
   "@swapSlippageCustom": {
     "description": "Label of the custom slippage input option in the slippage modal."
   },
+  "swapSlippageCustomValueSemantics": "Custom slippage tolerance, percent",
+  "@swapSlippageCustomValueSemantics": {
+    "description": "Screen-reader label of the custom slippage input in the desktop swap settings modal."
+  },
+  "swapSlippageDecrease": "Decrease slippage",
+  "@swapSlippageDecrease": {
+    "description": "Screen-reader label of the minus button in the mobile slippage stepper."
+  },
   "swapSlippageDescriptionPay": "Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.",
   "@swapSlippageDescriptionPay": {
     "description": "Slippage modal explanation shown in pay mode: extra ZEC allowed when the quote moves."
@@ -14524,6 +14564,19 @@
   "@swapSlippageDescriptionSwap": {
     "description": "Slippage modal explanation shown in swap mode: maximum rate change accepted."
   },
+  "swapSlippageIncrease": "Increase slippage",
+  "@swapSlippageIncrease": {
+    "description": "Screen-reader label of the plus button in the mobile slippage stepper."
+  },
+  "swapSlippagePresetSemantics": "{value} slippage",
+  "@swapSlippagePresetSemantics": {
+    "description": "Screen-reader label of a slippage preset option in the desktop swap settings modal; {value} is a percentage such as 0.5%.",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "swapSlippageRangeError": "Slippage must be 0.1 - 5%",
   "@swapSlippageRangeError": {
     "description": "Validation error in the slippage modal when the custom value is outside 0.1 to 5 percent."
@@ -14531,6 +14584,10 @@
   "swapSlippageTitle": "Slippage",
   "@swapSlippageTitle": {
     "description": "Title of the slippage settings modal and field label for the allowed price movement."
+  },
+  "swapSlippageValueSemantics": "Slippage tolerance, percent",
+  "@swapSlippageValueSemantics": {
+    "description": "Screen-reader label of the slippage value input in the mobile slippage stepper."
   },
   "swapStartPending": "Starting swap…",
   "@swapStartPending": {
