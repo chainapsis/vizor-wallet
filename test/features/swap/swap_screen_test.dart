@@ -6151,13 +6151,14 @@ void main() {
       findsNothing,
     );
 
-    // Tapping the deposit-tx row's value pill (which carries the explorer
-    // linkUri and the external-link arrow) opens url_launcher, not the
-    // clipboard.
-    final depositTxValue = find.text('0xdeadbee ... eadbeef');
-    await tester.ensureVisible(depositTxValue);
+    // Tapping the Tx ID row (which carries the explorer linkUri and the
+    // external-link arrow) opens url_launcher, not the clipboard.
+    final txIdRow = find.byWidgetPredicate(
+      (widget) => widget is ReviewListRow && widget.label == 'Tx ID',
+    );
+    await tester.ensureVisible(txIdRow);
     await tester.pumpAndSettle();
-    await tester.tap(depositTxValue);
+    await tester.tap(txIdRow);
     await tester.pumpAndSettle();
 
     expect(launchedUrls, hasLength(1));
@@ -7229,7 +7230,7 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is ReviewListRow &&
-            widget.label.startsWith('Deposit ') &&
+            widget.label == 'Tx ID' &&
             widget.value == '0xstored-deposit',
       ),
       findsOneWidget,
