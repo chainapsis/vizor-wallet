@@ -33,7 +33,7 @@ pub(crate) fn supported(network: WalletNetwork) -> bool {
 /// finishes either way.
 pub(crate) fn require_new_address(network: WalletNetwork) -> Result<(), String> {
     if !supported(network) || !crate::api::sync::near_swap_privacy_enabled() {
-        return Err("Enable NEAR swap privacy before reserving an address".into());
+        return Err("Turn on Enhance swap privacy before reserving an address".into());
     }
     Ok(())
 }

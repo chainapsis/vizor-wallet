@@ -9703,14 +9703,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'When a payout address is shared';
 
   @override
-  String get settingsNearSwapPrivacyLabel => 'NEAR swap privacy';
+  String get settingsNearSwapPrivacyLabel => 'Enhance swap privacy';
 
   @override
   String get settingsNearSwapPrivacyLearnMore => 'Learn more';
 
   @override
   String get settingsNearSwapPrivacyLearnMoreSemantics =>
-      'Learn more about NEAR swap privacy';
+      'Learn more about Enhance swap privacy';
 
   @override
   String get settingsNearSwapPrivacyOff => 'Swaps use regular Zcash addresses.';
@@ -11220,7 +11220,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapNoticeNearSwapPrivacyUnknown =>
-      'Vizor couldn\'t read NEAR swap privacy. Set it again in Settings.';
+      'Vizor couldn\'t read Enhance swap privacy. Set it again in Settings.';
 
   @override
   String get swapNoticeOk => 'Ok';

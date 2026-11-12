@@ -3305,7 +3305,7 @@ fn discovery_runs_with_the_toggle_off() {
     .err()
     .unwrap();
     assert!(
-        refused.message.contains("NEAR swap privacy"),
+        refused.message.contains("Enhance swap privacy"),
         "{}",
         refused.message
     );

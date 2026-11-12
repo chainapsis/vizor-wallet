@@ -8949,13 +8949,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsNearSwapPrivacyInfoReuseTitle => '收款地址被共用时';
 
   @override
-  String get settingsNearSwapPrivacyLabel => 'NEAR 兑换隐私';
+  String get settingsNearSwapPrivacyLabel => '增强兑换隐私';
 
   @override
   String get settingsNearSwapPrivacyLearnMore => '了解更多';
 
   @override
-  String get settingsNearSwapPrivacyLearnMoreSemantics => '了解有关 NEAR 兑换隐私的更多信息';
+  String get settingsNearSwapPrivacyLearnMoreSemantics => '了解有关增强兑换隐私的更多信息';
 
   @override
   String get settingsNearSwapPrivacyOff => '兑换使用普通 Zcash 地址。';
@@ -10346,7 +10346,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapNoticeNearSwapPrivacyUnknown =>
-      'Vizor 无法读取 NEAR 兑换隐私设置。请在设置中重新设置。';
+      'Vizor 无法读取增强兑换隐私设置。请在设置中重新设置。';
 
   @override
   String get swapNoticeOk => '好的';

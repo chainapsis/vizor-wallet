@@ -878,7 +878,7 @@ void main() {
     await tester.scrollUntilVisible(row, 200);
     final label = find.descendant(
       of: row,
-      matching: find.text('NEAR swap privacy'),
+      matching: find.text(testL10n.settingsNearSwapPrivacyLabel),
     );
     expect(
       tester.renderObject<RenderParagraph>(label).didExceedMaxLines,
@@ -973,7 +973,7 @@ void main() {
     await tester.scrollUntilVisible(pirThumb, 200);
     expect(find.text('Advanced'), findsNothing);
     expect(find.text('Private queries'), findsOneWidget);
-    expect(find.text('NEAR swap privacy'), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyLabel), findsOneWidget);
     final swapRow = tester.widget<GestureDetector>(
       find.byKey(const ValueKey('mobile_settings_near_swap_privacy_row')),
     );

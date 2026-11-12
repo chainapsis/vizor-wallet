@@ -9552,14 +9552,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsNearSwapPrivacyInfoReuseTitle => '수‍령 주‍소‍가 다‍시 쓰‍이‍는 경‍우';
 
   @override
-  String get settingsNearSwapPrivacyLabel => 'NEAR 스‍왑 프‍라‍이‍버‍시';
+  String get settingsNearSwapPrivacyLabel => '스‍왑 프‍라‍이‍버‍시 강‍화';
 
   @override
   String get settingsNearSwapPrivacyLearnMore => '자‍세‍히 알‍아‍보‍기';
 
   @override
   String get settingsNearSwapPrivacyLearnMoreSemantics =>
-      'NEAR 스‍왑 프‍라‍이‍버‍시 자‍세‍히 알‍아‍보‍기';
+      '스‍왑 프‍라‍이‍버‍시 강‍화 자‍세‍히 알‍아‍보‍기';
 
   @override
   String get settingsNearSwapPrivacyOff => '스‍왑‍에 일‍반 Zcash 주‍소‍를 사‍용‍해‍요.';
@@ -11046,7 +11046,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapNoticeNearSwapPrivacyUnknown =>
-      'Vizor‍가 NEAR 스‍왑 프‍라‍이‍버‍시 설‍정‍을 읽‍지 못‍했‍어‍요. 설‍정‍에‍서 다‍시 지‍정‍해 주‍세‍요.';
+      'Vizor‍가 스‍왑 프‍라‍이‍버‍시 강‍화 설‍정‍을 읽‍지 못‍했‍어‍요. 설‍정‍에‍서 다‍시 지‍정‍해 주‍세‍요.';
 
   @override
   String get swapNoticeOk => '확‍인';

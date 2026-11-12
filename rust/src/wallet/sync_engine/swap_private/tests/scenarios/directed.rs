@@ -803,7 +803,7 @@ fn a_refund_memo_activates_an_account() {
         .collect();
     assert_eq!(found, [(false, 0, 4_900_000), (true, 0, 700_000)]);
     let refused = world.reserve_in(phone, 0, false).unwrap();
-    assert!(refused.is_err_and(|(_, e)| e.contains("NEAR swap privacy")));
+    assert!(refused.is_err_and(|(_, e)| e.contains("Enhance swap privacy")));
 }
 
 /// A second device learns R0 from the other device's funding memo when it syncs the
@@ -894,7 +894,7 @@ fn turning_the_feature_off_stops_only_new_addresses() {
     world.toggle(0);
     for incoming in [true, false] {
         let refused = world.reserve(0, 0, incoming).unwrap();
-        assert!(refused.is_err_and(|e| e.message.contains("NEAR swap privacy")));
+        assert!(refused.is_err_and(|e| e.message.contains("Enhance swap privacy")));
     }
     let line = world
         .act(&Action::LateReply {

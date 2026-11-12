@@ -10187,7 +10187,7 @@ abstract class AppLocalizations {
   /// **'Vote'**
   String get navVote;
 
-  /// Status line under the NEAR swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved.
+  /// Status line under the Enhance swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t save this choice. It applies until you close Vizor.'**
@@ -15794,67 +15794,67 @@ abstract class AppLocalizations {
   /// **'Couldn\'t update language.'**
   String get settingsLanguageUpdateFailed;
 
-  /// Progress line with a loader under the NEAR swap privacy setting while the wallet looks for past one-time swap payments.
+  /// Progress line with a loader under the Enhance swap privacy setting while the wallet looks for past one-time swap payments.
   ///
   /// In en, this message translates to:
   /// **'Checking past swaps'**
   String get settingsNearSwapPrivacyCheckingPastSwaps;
 
-  /// Subtitle under the NEAR swap privacy setting while a hardware wallet account is active.
+  /// Subtitle under the Enhance swap privacy setting while a hardware wallet account is active.
   ///
   /// In en, this message translates to:
   /// **'Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.'**
   String get settingsNearSwapPrivacyHardware;
 
-  /// Body of the "What changes" section of the NEAR swap privacy explanation.
+  /// Body of the "What changes" section of the Enhance swap privacy explanation.
   ///
   /// In en, this message translates to:
   /// **'Swaps that send ZEC are paid from your Ironwood balance only. A swap can take a few minutes to prepare while Vizor checks its address\'s history.'**
   String get settingsNearSwapPrivacyInfoChangesBody;
 
-  /// Section heading in the NEAR swap privacy explanation.
+  /// Section heading in the Enhance swap privacy explanation.
   ///
   /// In en, this message translates to:
   /// **'What changes'**
   String get settingsNearSwapPrivacyInfoChangesTitle;
 
-  /// [security] First paragraph of the NEAR swap privacy explanation, opened from Learn more in Settings. NEAR Intents is a brand name.
+  /// [security] First paragraph of the Enhance swap privacy explanation, opened from Learn more in Settings. NEAR Intents is a brand name.
   ///
   /// In en, this message translates to:
   /// **'Each swap gives NEAR Intents a one-time Zcash address for its ZEC side, the payout when you receive ZEC or the refund when you send it. Even a future quantum computer can\'t tie it to this wallet.'**
   String get settingsNearSwapPrivacyInfoLead;
 
-  /// [security] Body of the "What it doesn't cover" section of the NEAR swap privacy explanation. Ethereum is a brand name.
+  /// [security] Body of the "What it doesn't cover" section of the Enhance swap privacy explanation. Ethereum is a brand name.
   ///
   /// In en, this message translates to:
   /// **'It keeps these addresses from being tied to your wallet; it doesn\'t change how your funds are secured. Addresses you enter yourself, like an Ethereum address you reuse, can still link your swaps. Hardware wallet accounts use regular addresses.'**
   String get settingsNearSwapPrivacyInfoLimitsBody;
 
-  /// Section heading in the NEAR swap privacy explanation, about what the setting does not protect.
+  /// Section heading in the Enhance swap privacy explanation, about what the setting does not protect.
   ///
   /// In en, this message translates to:
   /// **'What it doesn\'t cover'**
   String get settingsNearSwapPrivacyInfoLimitsTitle;
 
-  /// [security] Body of the "After a restore, or while it is off" section of the NEAR swap privacy explanation. "Check swap history" is the button name.
+  /// [security] Body of the "After a restore, or while it is off" section of the Enhance swap privacy explanation. "Check swap history" is the button name.
   ///
   /// In en, this message translates to:
   /// **'After a restore, your wallet finds these payments privately on its own. If this is off when you restore, payouts of swaps into ZEC show up once you turn it on or run Check swap history. Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.'**
   String get settingsNearSwapPrivacyInfoRestore;
 
-  /// Section heading in the NEAR swap privacy explanation, about restoring the wallet and turning the setting off.
+  /// Section heading in the Enhance swap privacy explanation, about restoring the wallet and turning the setting off.
   ///
   /// In en, this message translates to:
   /// **'After a restore, or while it is off'**
   String get settingsNearSwapPrivacyInfoRestoreTitle;
 
-  /// [security] Body of the "When a payout address is shared" section of the NEAR swap privacy explanation.
+  /// [security] Body of the "When a payout address is shared" section of the Enhance swap privacy explanation.
   ///
   /// In en, this message translates to:
   /// **'A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.'**
   String get settingsNearSwapPrivacyInfoReuse;
 
-  /// Section heading in the NEAR swap privacy explanation, about a payout address used by more than one quote.
+  /// Section heading in the Enhance swap privacy explanation, about a payout address used by more than one quote.
   ///
   /// In en, this message translates to:
   /// **'When a payout address is shared'**
@@ -15863,40 +15863,40 @@ abstract class AppLocalizations {
   /// Name of the setting that gives NEAR Intents swaps one-time Zcash addresses. NEAR is a brand name.
   ///
   /// In en, this message translates to:
-  /// **'NEAR swap privacy'**
+  /// **'Enhance swap privacy'**
   String get settingsNearSwapPrivacyLabel;
 
-  /// Button under the NEAR swap privacy setting that opens its explanation.
+  /// Button under the Enhance swap privacy setting that opens its explanation.
   ///
   /// In en, this message translates to:
   /// **'Learn more'**
   String get settingsNearSwapPrivacyLearnMore;
 
-  /// Screen reader label of the Learn more button under the NEAR swap privacy setting.
+  /// Screen reader label of the Learn more button under the Enhance swap privacy setting.
   ///
   /// In en, this message translates to:
-  /// **'Learn more about NEAR swap privacy'**
+  /// **'Learn more about Enhance swap privacy'**
   String get settingsNearSwapPrivacyLearnMoreSemantics;
 
-  /// Subtitle under the NEAR swap privacy setting while it is off.
+  /// Subtitle under the Enhance swap privacy setting while it is off.
   ///
   /// In en, this message translates to:
   /// **'Swaps use regular Zcash addresses.'**
   String get settingsNearSwapPrivacyOff;
 
-  /// Subtitle under the NEAR swap privacy setting while it is on.
+  /// Subtitle under the Enhance swap privacy setting while it is on.
   ///
   /// In en, this message translates to:
   /// **'Swaps use one-time Zcash addresses.'**
   String get settingsNearSwapPrivacyOn;
 
-  /// Status shown in place of the NEAR swap privacy switch for a hardware wallet account. Short.
+  /// Status shown in place of the Enhance swap privacy switch for a hardware wallet account. Short.
   ///
   /// In en, this message translates to:
   /// **'Not available'**
   String get settingsNearSwapPrivacyUnavailable;
 
-  /// Subtitle under the NEAR swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again.
+  /// Subtitle under the Enhance swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again.
   ///
   /// In en, this message translates to:
   /// **'Vizor couldn\'t read your saved choice. Set it again to swap.'**
@@ -18354,10 +18354,10 @@ abstract class AppLocalizations {
   /// **'Maintenance window: {networks}'**
   String swapNoticeMaintenanceWindow(String networks);
 
-  /// Swap quote error when the saved NEAR swap privacy setting could not be read. NEAR swap privacy is the name of the setting.
+  /// Swap quote error when the saved Enhance swap privacy setting could not be read. Enhance swap privacy is the name of the setting.
   ///
   /// In en, this message translates to:
-  /// **'Vizor couldn\'t read NEAR swap privacy. Set it again in Settings.'**
+  /// **'Vizor couldn\'t read Enhance swap privacy. Set it again in Settings.'**
   String get swapNoticeNearSwapPrivacyUnknown;
 
   /// Button that dismisses the NEAR Intents service notice.
@@ -18378,13 +18378,13 @@ abstract class AppLocalizations {
   /// **'Too many swaps are waiting. Try again after one finishes or expires.'**
   String get swapNoticePrivateReceiveAddressLimit;
 
-  /// Swap quote error with NEAR swap privacy on: the wallet could not reserve a one-time receive address for the swap.
+  /// Swap quote error with Enhance swap privacy on: the wallet could not reserve a one-time receive address for the swap.
   ///
   /// In en, this message translates to:
   /// **'Could not prepare a fresh wallet receive address. Try again after wallet sync.'**
   String get swapNoticePrivateReceiveAddressPreparationFailed;
 
-  /// Swap quote error with NEAR swap privacy on: no one-time receive address is available even after the wallet checked its swap history. NEAR swap privacy is the name of the setting.
+  /// Swap quote error with Enhance swap privacy on: no one-time receive address is available even after the wallet checked its swap history. Enhance swap privacy is the name of the setting.
   ///
   /// In en, this message translates to:
   /// **'Private swaps aren\'t available right now. Try again in a few minutes.'**
