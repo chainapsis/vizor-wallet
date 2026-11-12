@@ -858,9 +858,7 @@ void main() {
         if (privacyModeEnabled) {
           expect(find.textContaining('($visible available)'), findsNothing);
           expect(
-            find.bySemanticsLabel(
-              RegExp(RegExp.escape('($visible available)')),
-            ),
+            find.bySemanticsLabel(RegExp(RegExp.escape('($visible available)'))),
             findsNothing,
           );
           expect(find.textContaining('ZEC ZEC'), findsNothing);

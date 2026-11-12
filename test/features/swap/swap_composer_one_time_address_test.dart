@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_composer_panel.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 SwapState _state(SwapDirection direction) => SwapState(
   direction: direction,
@@ -20,6 +21,7 @@ Widget _panel(
   bool oneTimeZecAddress = true,
   bool preparing = false,
 }) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   home: Scaffold(
     body: SwapComposerPanel(

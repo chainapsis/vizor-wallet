@@ -6,12 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/one_time_address_label.dart';
 import '../../../support/test_l10n.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 /// Registers the one-time address label tests, so the desktop and mobile
 /// lanes check the same cases.
 void oneTimeAddressLabelTests() {
   Future<void> pump(WidgetTester tester, Widget label) => tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: Scaffold(body: Center(child: label)),
     ),

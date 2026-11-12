@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/one_time_address_label.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 /// Registers the [ReviewInfoRow.trailing] layout tests, so the desktop and
 /// mobile lanes check the same cases.
@@ -16,6 +17,7 @@ void reviewInfoRowTrailingTests() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => AppTheme(
           data: AppThemeData.light,
           child: MediaQuery(

@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import '../../support/test_l10n.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 final _now = DateTime.utc(2026, 10, 27, 12);
 const _state = SwapState(
@@ -373,6 +374,7 @@ void main() {
     ActivityRowData? row;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(

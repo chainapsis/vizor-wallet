@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../../fakes/fake_sync_notifier.dart';
 import '../../../support/test_l10n.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 /// Registers the swap detail's update notice tests for `layout`, so the
 /// desktop and mobile lanes check the same cases.
@@ -43,6 +44,7 @@ void swapUpdateRequiredNoticeTests(SwapActivityDetailLayout layout) {
           ),
         ],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: (_, navigator) =>
               AppTheme(data: AppThemeData.light, child: navigator!),
           home: MediaQuery(
