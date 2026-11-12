@@ -192,6 +192,9 @@ ActivityRowData buildSwapActivityRow({
         : _swapActivityAssetSubtitle(l10n, sellAsset) ?? item.providerLabel,
     // Only the confidential route is marked; standard rows stay unmarked.
     subtitleIconName: item.confidential ? AppIcons.incognito : null,
+    subtitleIconSemanticLabel: item.confidential
+        ? l10n.swapConfidentialLabel
+        : null,
     amountText: activityAmountTextForFormFactor(
       payMode
           ? _payActivityAmountText(item, privacyModeEnabled: privacyModeEnabled)

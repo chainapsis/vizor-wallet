@@ -10,6 +10,7 @@ class ActivityRowData {
     this.leadingProgressValue,
     this.subtitle,
     this.subtitleIconName,
+    this.subtitleIconSemanticLabel,
     required this.amountText,
     this.amountIconName,
     this.amountIconColor,
@@ -36,6 +37,10 @@ class ActivityRowData {
   final double? leadingProgressValue;
   final String? subtitle;
   final String? subtitleIconName;
+
+  /// Screen-reader text for [subtitleIconName] when the icon says something
+  /// the subtitle text does not.
+  final String? subtitleIconSemanticLabel;
   final String amountText;
   final String? amountIconName;
   final Color? amountIconColor;

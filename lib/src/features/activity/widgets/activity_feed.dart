@@ -1098,6 +1098,7 @@ class _ActivityRowTitle extends StatelessWidget {
           _ActivityRowSubtitle(
             text: row.subtitle!,
             iconName: row.subtitleIconName,
+            iconSemanticLabel: row.subtitleIconSemanticLabel,
           ),
         ],
       ],
@@ -1106,10 +1107,15 @@ class _ActivityRowTitle extends StatelessWidget {
 }
 
 class _ActivityRowSubtitle extends StatelessWidget {
-  const _ActivityRowSubtitle({required this.text, this.iconName});
+  const _ActivityRowSubtitle({
+    required this.text,
+    this.iconName,
+    this.iconSemanticLabel,
+  });
 
   final String text;
   final String? iconName;
+  final String? iconSemanticLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1120,10 +1126,7 @@ class _ActivityRowSubtitle extends StatelessWidget {
         if (iconName != null) ...[
           AppIcon(
             iconName!,
-            // The confidential mark has no text of its own in the row.
-            semanticLabel: iconName == AppIcons.incognito
-                ? context.l10n.swapConfidentialLabel
-                : null,
+            semanticLabel: iconSemanticLabel,
             size: _activityRowSubtitleIconSize,
             color:
                 iconName == AppIcons.shieldKeyholeOutline ||

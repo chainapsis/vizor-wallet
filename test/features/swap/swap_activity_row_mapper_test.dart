@@ -785,6 +785,11 @@ void main() {
     expect(rows['pay']!.subtitleIconName, AppIcons.incognito);
     expect(rows['pay']!.leadingIconName, AppIcons.coins);
     expect(rows['standard']!.subtitleIconName, isNull);
+    // The label travels with the row, so every screen that draws the mark
+    // names it for screen readers.
+    expect(rows['swap']!.subtitleIconSemanticLabel, 'Confidential');
+    expect(rows['pay']!.subtitleIconSemanticLabel, 'Confidential');
+    expect(rows['standard']!.subtitleIconSemanticLabel, isNull);
   });
 
   testWidgets(
