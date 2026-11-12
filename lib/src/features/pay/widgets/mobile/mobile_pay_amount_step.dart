@@ -10,6 +10,7 @@ import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../swap/models/swap_models.dart';
 import '../../../swap/widgets/swap_asset_icon.dart';
 import '../../../swap/widgets/swap_quote_error_text.dart';
+import '../../../swap/widgets/swap_confidential_ui.dart';
 import '../../models/pay_amount_input.dart';
 
 const _amountCardHeight = 240.0;
@@ -35,6 +36,7 @@ class MobilePayAmountStep extends StatelessWidget {
     required this.onToggleFiatInputMode,
     required this.onOpenAssetSelector,
     required this.slippageLabel,
+    required this.confidentialReveal,
     required this.onOpenSlippage,
     required this.onContinue,
     super.key,
@@ -53,6 +55,9 @@ class MobilePayAmountStep extends StatelessWidget {
   final VoidCallback onToggleFiatInputMode;
   final VoidCallback onOpenAssetSelector;
   final String slippageLabel;
+
+  /// Raised each time confidential turns on, landing the mark once.
+  final int confidentialReveal;
   final VoidCallback onOpenSlippage;
   final VoidCallback onContinue;
 
@@ -132,6 +137,14 @@ class MobilePayAmountStep extends StatelessWidget {
                     horizontal: AppSpacing.xxs,
                   ),
                   onPressed: onOpenSlippage,
+                  // Marks the button while the confidential route is set in
+                  // the settings it opens.
+                  leading: state.confidential
+                      ? SwapConfidentialIcon(
+                          reveal: confidentialReveal,
+                          labeled: true,
+                        )
+                      : null,
                   trailing: const AppIcon(AppIcons.cog, size: 20),
                   child: Text(
                     slippageLabel,

@@ -67,6 +67,7 @@ class SwapAddressPlan {
     int? slippageBps,
     Duration? deadline,
     SwapQuoteSendHook? beforeSend,
+    bool confidential = false,
   }) {
     return SwapQuoteRequest(
       direction: direction,
@@ -82,6 +83,7 @@ class SwapAddressPlan {
       slippageBps: slippageBps,
       deadline: deadline,
       beforeSend: beforeSend,
+      confidential: confidential,
     );
   }
 }

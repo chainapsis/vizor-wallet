@@ -9646,6 +9646,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActionAddRefundAddress => '添加退款地址';
 
   @override
+  String get swapActionGetConfidentialQuote => '获取保密报价';
+
+  @override
   String get swapActionGettingQuote => '正在获取报价';
 
   @override
@@ -10067,6 +10070,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapComposerYouReceive => '你将收到';
 
   @override
+  String get swapConfidentialLabel => '保密';
+
+  @override
+  String get swapConfidentialRouteTooltip =>
+      '在 NEAR Intents 上无法将你的存入与收款对应起来，也无法在其区块浏览器中查到。两笔交易仍会显示在各自的链上。';
+
+  @override
+  String get swapConfidentialSettingDescription =>
+      '无法将你的存入与收款相互关联追踪。报价可能与普通路径不同。';
+
+  @override
   String get swapContactAlreadyInAddressBook => '已在你的地址簿中';
 
   @override
@@ -10349,6 +10363,12 @@ class AppLocalizationsZh extends AppLocalizations {
       'Vizor 无法读取增强兑换隐私设置。请在设置中重新设置。';
 
   @override
+  String get swapNoticeNoConfidentialQuoteForAmount => '此金额暂无可用保密报价';
+
+  @override
+  String get swapNoticeNoQuoteForAmount => '此金额暂无可用报价';
+
+  @override
   String get swapNoticeOk => '好的';
 
   @override
@@ -10517,6 +10537,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get swapSettingsTitlePay => '支付设置';
+
+  @override
+  String get swapSettingsTitleSwap => '兑换设置';
+
+  @override
   String get swapSignPayment => '签署支付';
 
   @override
@@ -10526,17 +10552,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapSlippageCustom => '自定义';
 
   @override
-  String get swapSlippageDescriptionPay =>
-      '报价波动时最多可多付的 ZEC 数量，超出则执行失败。网络手续费另计。';
+  String get swapSlippageCustomValueSemantics => '自定义滑点容差（百分比）';
 
   @override
-  String get swapSlippageDescriptionSwap => '设置你可接受的最大汇率变动。网络手续费另计。';
+  String get swapSlippageDecrease => '降低滑点';
+
+  @override
+  String get swapSlippageIncrease => '提高滑点';
+
+  @override
+  String swapSlippagePresetSemantics(String value) {
+    return '滑点 $value';
+  }
 
   @override
   String get swapSlippageRangeError => '滑点必须在 0.1 - 5% 之间';
 
   @override
   String get swapSlippageTitle => '滑点';
+
+  @override
+  String get swapSlippageValueSemantics => '滑点容差（百分比）';
 
   @override
   String get swapStartPending => '正在开始兑换…';

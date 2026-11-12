@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_address_edit_modal.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_confidential_ui.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -72,6 +73,7 @@ AppBootstrapState _bootstrap({bool privacyMode = false}) => AppBootstrapState(
 Widget _app({
   NearIntentsServiceStatus? serviceStatus,
   _MobileDelayedQuoteSwapProvider? swapProvider,
+  SwapState? seededState,
   SwapComposerPreferencesStore? composerPreferencesStore,
   List<AddressBookContact> addressBookContacts = const [],
   bool oneTimeZecAddress = false,
@@ -93,6 +95,8 @@ Widget _app({
     ),
     if (swapProvider != null)
       swapIntentProvider.overrideWithValue(swapProvider),
+    if (seededState != null)
+      swapStateProvider.overrideWith(() => _SeededSwapNotifier(seededState)),
     if (composerPreferencesStore != null)
       swapComposerPreferencesStoreProvider.overrideWithValue(
         composerPreferencesStore,
@@ -267,7 +271,8 @@ void main() {
             data: AppThemeData.dark,
             child: MobileSwapSlippageStepperModal(
               slippageBps: 100,
-              onSubmitted: (_) {},
+              confidential: false,
+              onSubmitted: (_, _) {},
               onCancel: () {},
             ),
           ),
@@ -277,12 +282,6 @@ void main() {
     await tester.pump();
 
     expect(
-      find.text(
-        "Sets the maximum rate change you'll accept. Network fees are separate.",
-      ),
-      findsOneWidget,
-    );
-    expect(
       tester.getSize(find.byKey(const ValueKey('mobile_swap_slippage_minus'))),
       const Size(60, 50),
     );
@@ -290,6 +289,46 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('mobile_swap_slippage_plus'))),
       const Size(60, 50),
     );
+    expect(find.bySemanticsLabel('Decrease slippage'), findsOneWidget);
+    expect(find.bySemanticsLabel('Increase slippage'), findsOneWidget);
+  });
+
+  testWidgets('stepper stays put below 2 percent', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        home: Scaffold(
+          body: AppTheme(
+            data: AppThemeData.dark,
+            child: MobileSwapSlippageStepperModal(
+              slippageBps: 200,
+              confidential: false,
+              onSubmitted: (_, _) {},
+              onCancel: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final field = find.byKey(const ValueKey('mobile_swap_slippage_value'));
+    final minus = find.byKey(const ValueKey('mobile_swap_slippage_minus'));
+    final plus = find.byKey(const ValueKey('mobile_swap_slippage_plus'));
+    final fieldRect = tester.getRect(field);
+    final minusRect = tester.getRect(minus);
+    final plusRect = tester.getRect(plus);
+
+    await tester.tap(minus);
+    await tester.pump();
+
+    // The value field widens for 1.9; its vertical bounds stay fixed.
+    expect(tester.getRect(field).top, fieldRect.top);
+    expect(tester.getRect(field).bottom, fieldRect.bottom);
+    expect(tester.getRect(minus), minusRect);
+    expect(tester.getRect(plus), plusRect);
+    semantics.dispose();
   });
 
   testWidgets(
@@ -304,7 +343,8 @@ void main() {
               data: AppThemeData.dark,
               child: MobileSwapSlippageStepperModal(
                 slippageBps: 100,
-                onSubmitted: (value) => submittedBps = value,
+                confidential: false,
+                onSubmitted: (value, _) => submittedBps = value,
                 onCancel: () {},
               ),
             ),
@@ -370,7 +410,8 @@ void main() {
             data: AppThemeData.dark,
             child: MobileSwapSlippageStepperModal(
               slippageBps: 100,
-              onSubmitted: (value) => submittedBps = value,
+              confidential: false,
+              onSubmitted: (value, _) => submittedBps = value,
               onCancel: () {},
             ),
           ),
@@ -403,6 +444,94 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_slippage_update_button')));
     await tester.pump();
     expect(submittedBps, 90);
+  });
+
+  testWidgets(
+    'settings sheet sets confidential and marks the settings button',
+    (tester) async {
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Swap').last);
+      await tester.pumpAndSettle();
+      final settings = find.byKey(const ValueKey('swap_settings_button'));
+      final mark = find.descendant(
+        of: settings,
+        matching: find.byType(SwapConfidentialIcon),
+      );
+      expect(mark, findsNothing);
+
+      await tester.tap(settings);
+      await tester.pumpAndSettle();
+      expect(find.text('Swap settings'), findsOneWidget);
+      // Opening the sheet to flip confidential must not raise the keypad.
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('mobile_swap_slippage_value')),
+            )
+            .focusNode!
+            .hasFocus,
+        isFalse,
+      );
+      AppButton update() => tester.widget<AppButton>(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      expect(update().onPressed, isNull);
+      await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+      await tester.pumpAndSettle();
+      // The flip enables Update and waits for it.
+      expect(mark, findsNothing);
+      expect(update().onPressed, isNotNull);
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
+      expect(mark, findsOneWidget);
+    },
+  );
+
+  testWidgets('a missing standard quote offers the confidential route', (
+    tester,
+  ) async {
+    // Seeded rather than quoted: this harness has no address services, and
+    // the failure classification has its own provider tests.
+    await tester.pumpWidget(
+      _app(
+        seededState: SwapState(
+          direction: SwapDirection.zecToExternal,
+          amountText: '0.5',
+          receiveAmountText: '',
+          destinationText: '0x52908400098527886e0f7030069857d2e4169ee7',
+          externalAsset: SwapAsset.usdc,
+          reviewVisible: false,
+          intents: const [],
+          quoteError: const SwapNotice(SwapNoticeKind.noQuoteForAmount),
+          quoteNoLiquidity: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    final review = find.byKey(const ValueKey('mobile_swap_review_button'));
+    expect(find.text('No quote for this amount'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: review,
+        matching: find.text('Get confidential quote'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(review);
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSwapScreen)),
+    );
+    expect(container.read(swapStateProvider).confidential, isTrue);
   });
 
   testWidgets('swap composer CTA fits on narrow Android-sized screens', (
@@ -1101,4 +1230,13 @@ class _NoWalletPirServers extends WalletPirServerNotifier {
   @override
   Future<WalletPirServerState> build() async =>
       const WalletPirServerState(source: null);
+}
+
+class _SeededSwapNotifier extends SwapNotifier {
+  _SeededSwapNotifier(this.initialState);
+
+  final SwapState initialState;
+
+  @override
+  SwapState build() => initialState;
 }

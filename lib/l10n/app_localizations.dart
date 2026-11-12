@@ -17180,6 +17180,12 @@ abstract class AppLocalizations {
   /// **'Add refund address'**
   String get swapActionAddRefundAddress;
 
+  /// Swap and Pay primary button shown when the standard route has no quote; it requests a quote on the NEAR Intents confidential route. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Get confidential quote'**
+  String get swapActionGetConfidentialQuote;
+
   /// Primary button label on the swap screen while a quote is loading.
   ///
   /// In en, this message translates to:
@@ -17838,6 +17844,24 @@ abstract class AppLocalizations {
   /// **'You receive'**
   String get swapComposerYouReceive;
 
+  /// Name of the NEAR Intents confidential route: the settings toggle label and the badge on swap and Pay review and status screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidential'**
+  String get swapConfidentialLabel;
+
+  /// Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.'**
+  String get swapConfidentialRouteTooltip;
+
+  /// Description under the Confidential toggle in the swap and Pay settings modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit and payout can\'t be tracked to each other. Quotes can differ from the standard route.'**
+  String get swapConfidentialSettingDescription;
+
   /// Toast on mobile after the user tries to save a swap address that is already in the address book.
   ///
   /// In en, this message translates to:
@@ -18360,6 +18384,18 @@ abstract class AppLocalizations {
   /// **'Vizor couldn\'t read Enhance swap privacy. Set it again in Settings.'**
   String get swapNoticeNearSwapPrivacyUnknown;
 
+  /// Swap or Pay quote error shown above the primary button when the confidential route has no quote for the entered amount. Up to two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'No confidential quote for this amount'**
+  String get swapNoticeNoConfidentialQuoteForAmount;
+
+  /// Swap or Pay quote error shown above the primary button when the standard route has no quote for the entered amount. Up to two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'No quote for this amount'**
+  String get swapNoticeNoQuoteForAmount;
+
   /// Button that dismisses the NEAR Intents service notice.
   ///
   /// In en, this message translates to:
@@ -18660,6 +18696,18 @@ abstract class AppLocalizations {
   /// **'To: {address}'**
   String swapReviewToAddress(String address);
 
+  /// Title of the Pay settings modal, which holds the Confidential toggle and slippage.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment settings'**
+  String get swapSettingsTitlePay;
+
+  /// Title of the swap settings modal, which holds the Confidential toggle and slippage.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap settings'**
+  String get swapSettingsTitleSwap;
+
   /// Mobile Ledger signing screen title when the operation is a payment.
   ///
   /// In en, this message translates to:
@@ -18678,17 +18726,29 @@ abstract class AppLocalizations {
   /// **'Custom'**
   String get swapSlippageCustom;
 
-  /// Slippage modal explanation shown in pay mode: extra ZEC allowed when the quote moves.
+  /// Screen-reader label of the custom slippage input in the desktop swap settings modal.
   ///
   /// In en, this message translates to:
-  /// **'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'**
-  String get swapSlippageDescriptionPay;
+  /// **'Custom slippage tolerance, percent'**
+  String get swapSlippageCustomValueSemantics;
 
-  /// Slippage modal explanation shown in swap mode: maximum rate change accepted.
+  /// Screen-reader label of the minus button in the mobile slippage stepper.
   ///
   /// In en, this message translates to:
-  /// **'Sets the maximum rate change you\'ll accept. Network fees are separate.'**
-  String get swapSlippageDescriptionSwap;
+  /// **'Decrease slippage'**
+  String get swapSlippageDecrease;
+
+  /// Screen-reader label of the plus button in the mobile slippage stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Increase slippage'**
+  String get swapSlippageIncrease;
+
+  /// Screen-reader label of a slippage preset option in the desktop swap settings modal; {value} is a percentage such as 0.5%.
+  ///
+  /// In en, this message translates to:
+  /// **'{value} slippage'**
+  String swapSlippagePresetSemantics(String value);
 
   /// Validation error in the slippage modal when the custom value is outside 0.1 to 5 percent.
   ///
@@ -18701,6 +18761,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Slippage'**
   String get swapSlippageTitle;
+
+  /// Screen-reader label of the slippage value input in the mobile slippage stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage tolerance, percent'**
+  String get swapSlippageValueSemantics;
 
   /// Shown in place of a swap's funding instructions, and as its activity status, while the wallet is still reserving its private address.
   ///

@@ -1120,8 +1120,14 @@ class _ActivityRowSubtitle extends StatelessWidget {
         if (iconName != null) ...[
           AppIcon(
             iconName!,
+            // The confidential mark has no text of its own in the row.
+            semanticLabel: iconName == AppIcons.incognito
+                ? context.l10n.swapConfidentialLabel
+                : null,
             size: _activityRowSubtitleIconSize,
-            color: iconName == AppIcons.shieldKeyholeOutline
+            color:
+                iconName == AppIcons.shieldKeyholeOutline ||
+                    iconName == AppIcons.incognito
                 ? colors.icon.brandCrimson
                 : colors.icon.muted,
           ),

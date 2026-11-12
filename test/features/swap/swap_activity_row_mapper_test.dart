@@ -734,6 +734,59 @@ void main() {
     expect(row!.childRows.single.onTap, isNull);
   });
 
+  testWidgets('marks only confidential swap and pay rows', (tester) async {
+    SwapActivityRowItem item({
+      required bool confidential,
+      bool payMode = false,
+    }) {
+      return SwapActivityRowItem.fromRecord(
+        SwapIntentRecord(
+          id: 'swap-${confidential ? 'confidential' : 'standard'}-$payMode',
+          providerLabel: 'NEAR Intents',
+          pairText: 'ZEC -> USDC',
+          sellAmountText: '0.0030 ZEC',
+          receiveEstimateText: '0.21 USDC',
+          status: SwapIntentStatus.processing,
+          nextAction: 'Wait for the swap',
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          payMode: payMode,
+          confidential: confidential,
+        ),
+      );
+    }
+
+    final rows = <String, ActivityRowData>{};
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              for (final (name, entry) in [
+                ('swap', item(confidential: true)),
+                ('pay', item(confidential: true, payMode: true)),
+                ('standard', item(confidential: false)),
+              ]) {
+                rows[name] = buildSwapActivityRow(
+                  context: context,
+                  item: entry,
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(rows['swap']!.subtitleIconName, AppIcons.incognito);
+    expect(rows['pay']!.subtitleIconName, AppIcons.incognito);
+    expect(rows['pay']!.leadingIconName, AppIcons.coins);
+    expect(rows['standard']!.subtitleIconName, isNull);
+  });
+
   testWidgets(
     'completed external->ZEC swap absorbs the settled receive amount and tap',
     (tester) async {
