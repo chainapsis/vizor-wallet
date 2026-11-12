@@ -10,7 +10,7 @@ import UIKit
   private var keyboardToolbarHandler: KeyboardToolbarHandler?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
-  /// True while a seed-entry screen is mounted (`keyboard_policy` channel).
+  /// True while a seed-entry screen is showing (`keyboard_policy` channel).
   private(set) var rejectsCustomKeyboards = false
 
   override func application(

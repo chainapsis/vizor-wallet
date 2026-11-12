@@ -200,7 +200,7 @@ void main() {
     expect(field.enableIMEPersonalizedLearning, isFalse);
   });
 
-  testWidgets('seed screen rejects custom keyboards while it is mounted', (
+  testWidgets('seed screen rejects custom keyboards while it is showing', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -221,8 +221,26 @@ void main() {
 
       expect(rejected, [true]);
 
-      await tester.pumpWidget(const SizedBox());
+      // A later import step keeps its own keyboard once it covers the screen.
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(builder: (_) => const SizedBox()),
+        ),
+      );
+      await tester.pump();
+      expect(rejected, [true]);
+      await tester.pump(const Duration(seconds: 1));
       expect(rejected, [true, false]);
+
+      // Coming back re-engages as the pop starts, before any frame.
+      navigator.pop();
+      expect(rejected, [true, false, true]);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      await tester.pumpWidget(const SizedBox());
+      expect(rejected, [true, false, true, false]);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

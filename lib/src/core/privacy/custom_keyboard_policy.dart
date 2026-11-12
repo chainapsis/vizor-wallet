@@ -4,10 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Asks iOS to use only the system keyboard while a seed-entry screen is
-/// mounted, so an installed keyboard extension does not receive the words.
+/// showing, so an installed keyboard extension does not receive the words.
 ///
-/// Callers hold before the field can take focus and release on dispose. Other
-/// platforms have no app-level equivalent and ignore the request.
+/// Callers hold before the field can take focus and release once the screen
+/// is covered or disposed. Other platforms have no app-level equivalent and
+/// ignore the request.
 abstract final class CustomKeyboardPolicy {
   static const _channel = MethodChannel('com.zcash.wallet/keyboard_policy');
 

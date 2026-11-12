@@ -34,8 +34,14 @@ mixin RouteCoverageAware<T extends StatefulWidget> on State<T> {
   void _onSecondaryStatus(AnimationStatus status) {
     final covered = status == AnimationStatus.completed;
     if (covered == _coveredByNextRoute || !mounted) return;
+    onRouteCoverageChanged(covered);
     setState(() => _coveredByNextRoute = covered);
   }
+
+  /// Called in the same turn as the transition status change, before the
+  /// rebuild, for work that cannot wait a frame.
+  @protected
+  void onRouteCoverageChanged(bool covered) {}
 
   @override
   void dispose() {
