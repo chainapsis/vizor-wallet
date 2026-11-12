@@ -651,7 +651,6 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       l10n,
       intent.completedAt ?? intent.createdAt,
     );
-    final explorerUri = swapActivityExplorerUri(intent);
     return [
       if (!failed && !payMode)
         SwapStatusDetailRowData(
@@ -673,17 +672,6 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           value: compactSwapAddress(depositTxHash),
           copyable: true,
           copyText: depositTxHash,
-          linkUri: explorerUri,
-        ),
-      if (payMode &&
-          destinationChainTxHash != null &&
-          destinationChainTxHash.isNotEmpty)
-        SwapStatusDetailRowData(
-          label: l10n.swapActivityDetailDeliveryTx(receiveSymbol),
-          kind: SwapStatusDetailKind.deliveryTx,
-          value: compactSwapAddress(destinationChainTxHash),
-          copyable: true,
-          copyText: destinationChainTxHash,
         ),
       if (failed &&
           refundAddress != null &&
@@ -776,7 +764,13 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         addressBookContacts: addressBookContacts,
         contactId: intent.userExternalContactId,
       ),
-    if (depositAddress != null && depositAddress.isNotEmpty)
+    // The Tx ID row carries this address too, so it shows here only while
+    // the user still has a deposit to send from another wallet.
+    if (depositAddress != null &&
+        depositAddress.isNotEmpty &&
+        !sendsZec &&
+        intent.status != SwapIntentStatus.depositObserved &&
+        intent.status != SwapIntentStatus.processing)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailDepositTo(sourceSymbol),
         kind: SwapStatusDetailKind.depositAddress,
