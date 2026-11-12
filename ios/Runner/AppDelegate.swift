@@ -10,6 +10,8 @@ import UIKit
   private var keyboardToolbarHandler: KeyboardToolbarHandler?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
+  /// True while a seed-entry screen is showing (`keyboard_policy` channel).
+  private(set) var rejectsCustomKeyboards = false
 
   override func application(
     _ application: UIApplication,
@@ -41,6 +43,16 @@ import UIKit
       IronwoodMigrationNotificationGate.shared.enforceOnForeground()
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // A keyboard extension receives every key typed into a non-secure field.
+  // Returning `false` for all keyboards would apply this app-wide instead.
+  override func application(
+    _ application: UIApplication,
+    shouldAllowExtensionPointIdentifier extensionPointIdentifier: UIApplication
+      .ExtensionPointIdentifier
+  ) -> Bool {
+    !(extensionPointIdentifier == .keyboard && rejectsCustomKeyboards)
   }
 
   override func applicationWillEnterForeground(_ application: UIApplication) {
@@ -678,6 +690,22 @@ import UIKit
         result(FlutterMethodNotImplemented)
       }
     }
+
+    // Seed entry asks for the system keyboard only; see
+    // `application(_:shouldAllowExtensionPointIdentifier:)`.
+    FlutterMethodChannel(name: "com.zcash.wallet/keyboard_policy", binaryMessenger: messenger)
+      .setMethodCallHandler { [weak self] (call, result) in
+        guard
+          call.method == "setCustomKeyboardsRejected",
+          let args = call.arguments as? [String: Any],
+          let rejected = args["rejected"] as? Bool
+        else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.rejectsCustomKeyboards = rejected
+        result(nil)
+      }
 
     // EventChannel for screenshot detection — sensitive screens (secret
     // passphrase) warn when the user captures them.
