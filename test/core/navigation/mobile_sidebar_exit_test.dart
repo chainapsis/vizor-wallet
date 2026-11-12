@@ -9,9 +9,11 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_navigation_scope.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_destinations.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_sidebar_exit.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Widget _app(GoRouter router, MobileSidebarExitController controller) =>
     MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => MobileNavigationScope(
         mode: MobileNavigationMode.sidebar,

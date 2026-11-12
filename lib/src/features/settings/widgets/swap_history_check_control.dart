@@ -3,37 +3,32 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/swap_history_check_provider.dart';
 import '../../../providers/sync_provider.dart'
-    show kSwapRecoveryUpdateMessage, swapRecoveryUpdateRequiredProvider;
-
-export '../../../providers/sync_provider.dart' show kSwapRecoveryUpdateMessage;
+    show swapRecoveryUpdateRequiredProvider;
 
 /// What the swap history check says for each state.
-String swapHistoryCheckStatus(SwapHistoryCheck check) => switch (check) {
-  SwapHistoryCheck.idle => 'Missing a payout or refund?',
-  SwapHistoryCheck.checking => 'Checking… this can take a few minutes.',
-  SwapHistoryCheck.done => 'Check complete.',
-  // Mobile runs no rounds in the background (see canRunAppProcessWork).
-  SwapHistoryCheck.continuing =>
-    'The check will keep going while Vizor is open.',
-  SwapHistoryCheck.paused => 'Paused. Check again to resume.',
-  SwapHistoryCheck.failed =>
-    "Swap history can't be checked right now. Try again later.",
-  SwapHistoryCheck.walletChanged =>
-    'The check stopped because the wallet changed. Try again.',
-  SwapHistoryCheck.notStarted =>
-    "The check couldn't start. Try again in a moment.",
-  SwapHistoryCheck.pauseFailed => "Couldn't pause the check. Try again.",
-  SwapHistoryCheck.waitingForSync =>
-    'Waiting for wallet sync. Try again in a few minutes.',
-  SwapHistoryCheck.waitingForService =>
-    "The swap recovery service hasn't caught up with this wallet yet. "
-        'Try again in a few minutes.',
-  SwapHistoryCheck.updateRequired => kSwapRecoveryUpdateMessage,
-};
+String swapHistoryCheckStatus(AppLocalizations l10n, SwapHistoryCheck check) =>
+    switch (check) {
+      SwapHistoryCheck.idle => l10n.settingsSwapHistoryIdle,
+      SwapHistoryCheck.checking => l10n.settingsSwapHistoryChecking,
+      SwapHistoryCheck.done => l10n.settingsSwapHistoryDone,
+      // Mobile runs no rounds in the background (see canRunAppProcessWork).
+      SwapHistoryCheck.continuing => l10n.settingsSwapHistoryContinuing,
+      SwapHistoryCheck.paused => l10n.settingsSwapHistoryPaused,
+      SwapHistoryCheck.failed => l10n.settingsSwapHistoryFailed,
+      SwapHistoryCheck.walletChanged => l10n.settingsSwapHistoryWalletChanged,
+      SwapHistoryCheck.notStarted => l10n.settingsSwapHistoryNotStarted,
+      SwapHistoryCheck.pauseFailed => l10n.settingsSwapHistoryPauseFailed,
+      SwapHistoryCheck.waitingForSync => l10n.settingsSwapHistoryWaitingForSync,
+      SwapHistoryCheck.waitingForService =>
+        l10n.settingsSwapHistoryWaitingForService,
+      // Matches the swap quote's update message.
+      SwapHistoryCheck.updateRequired => l10n.swapRecoveryUpdateRequired,
+    };
 
 /// The "Check swap history" control at the bottom of the NEAR swap privacy
 /// explanation: why to run it, or how it is going, with the one action that
@@ -63,7 +58,7 @@ class SwapHistoryCheckControl extends ConsumerWidget {
     final status = Semantics(
       liveRegion: true,
       child: Text(
-        swapHistoryCheckStatus(check),
+        swapHistoryCheckStatus(context.l10n, check),
         key: const ValueKey('settings_check_swap_history_status'),
         textAlign: stacked ? TextAlign.center : TextAlign.start,
         style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
@@ -78,7 +73,7 @@ class SwapHistoryCheckControl extends ConsumerWidget {
             variant: variant,
             size: size,
             expand: stacked,
-            child: const Text('Pause'),
+            child: Text(context.l10n.settingsSwapHistoryPauseButton),
           )
         : check == SwapHistoryCheck.updateRequired
         ? null
@@ -90,8 +85,8 @@ class SwapHistoryCheckControl extends ConsumerWidget {
             expand: stacked,
             child: Text(
               check == SwapHistoryCheck.idle
-                  ? 'Check swap history'
-                  : 'Check again',
+                  ? context.l10n.settingsSwapHistoryCheckButton
+                  : context.l10n.settingsSwapHistoryCheckAgainButton,
             ),
           );
     if (stacked) {

@@ -1,11 +1,12 @@
 import 'package:flutter/widgets.dart';
 
-import '../../core/privacy/privacy_mask.dart';
+import '../../core/l10n/l10n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/models/swap_models.dart';
 import '../swap/models/swap_payout_discovery.dart';
+import '../swap/models/swap_privacy_mask.dart';
 import 'activity_amount_text.dart';
 import 'activity_row_mapper.dart';
 import 'models/activity_row_data.dart';
@@ -157,6 +158,7 @@ ActivityRowData buildSwapActivityRow({
   bool findingPayout = false,
 }) {
   final colors = context.colors;
+  final l10n = context.l10n;
   final failed = _swapActivityFailed(item.status);
   final timedOut = item.status == SwapIntentStatus.expired;
   final returnsFunds = _swapActivityReturnsFunds(item);
@@ -165,41 +167,49 @@ ActivityRowData buildSwapActivityRow({
   final sellAsset = _swapActivitySellAsset(item);
   final receiveAsset = _swapActivityReceiveAsset(item);
   final progress = _swapActivityProgress(item);
+  final starting = item.startPending && !item.status.isTerminal;
   final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
 
   return ActivityRowData(
     stableId: item.stableId,
     // Until the wallet finds the payout, the swap reads as in progress.
     title: payMode
-        ? _payActivityTitle(item.status)
+        ? _payActivityTitle(l10n, item.status)
         : findingPayout
-        ? _swapActivityTitle(SwapIntentStatus.processing)
-        : _swapActivityTitle(item.status),
+        ? _swapActivityTitle(l10n, SwapIntentStatus.processing)
+        : _swapActivityTitle(l10n, item.status),
     leadingIconName: payMode ? AppIcons.coins : AppIcons.swapArrows,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     leadingProgressValue: complete ? null : progress?.value,
     subtitle: payMode
-        ? _payActivitySubtitle(receiveAsset)
-        : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
+        ? _payActivitySubtitle(l10n, receiveAsset)
+        : _swapActivityAssetSubtitle(l10n, sellAsset) ?? item.providerLabel,
     amountText: activityAmountTextForFormFactor(
       payMode
           ? _payActivityAmountText(item, privacyModeEnabled: privacyModeEnabled)
           : _swapActivityAmountText(
+              l10n,
               item,
               includeSign: !(returnsFunds || timedOut),
               privacyModeEnabled: privacyModeEnabled,
             ),
     ),
     amountColor: outgoingAmountColor(colors),
-    amountSubtitle: timedOut ? 'Timeout' : null,
+    amountSubtitle: timedOut ? l10n.activitySwapTimeout : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
-    statusText: item.startPending && !item.status.isTerminal
-        ? swapStartingText
+    statusText: starting
+        ? l10n.swapStartPending
         : findingPayout
-        ? kSwapFindingPayoutLabel
-        : _swapActivityStatusText(item.status, progress),
+        ? l10n.swapFindingPayout
+        : _swapActivityStatusText(l10n, item.status, progress),
+    // The feed shows a starting swap's status, and a payout the wallet is
+    // still finding, not its timestamp.
+    statusIsRoutine:
+        !starting &&
+        !findingPayout &&
+        _swapActivityStatusIsRoutine(item.status),
     statusIconName: findingPayout
         ? null
         : failed
@@ -217,6 +227,7 @@ ActivityRowData buildSwapActivityRow({
         ? colors.text.brandCrimson
         : colors.text.secondary,
     timestampText: formatActivityTimestamp(
+      l10n,
       item.activityTimestamp,
       dateOnly: dateOnlyTimestamp,
     ),
@@ -257,13 +268,17 @@ List<ActivityRowData> _swapActivityChildRows({
   }
 
   final colors = context.colors;
+  final l10n = context.l10n;
   final receivesZec = direction == SwapDirection.externalToZec;
   // The absorbed on-chain receive carries the real settled amount; fall back
   // to the quote estimate until the payout tx is matched.
-  final amountText =
-      receivesZec && receivedAmountText != null && !privacyModeEnabled
-      ? receivedAmountText
+  final amountText = receivesZec && receivedAmountText != null
+      ? _swapActivityAmountTextForPrivacy(
+          receivedAmountText,
+          privacyModeEnabled: privacyModeEnabled,
+        )
       : _swapActivityReceiveAmountText(
+          l10n,
           item,
           privacyModeEnabled: privacyModeEnabled,
         );
@@ -272,8 +287,8 @@ List<ActivityRowData> _swapActivityChildRows({
       stableId:
           'swap:${item.intentId}:${receivesZec ? 'received' : 'deposited'}',
       title: receivesZec
-          ? 'Received ${receiveAsset.symbol}'
-          : 'Deposited ${receiveAsset.symbol}',
+          ? l10n.activitySwapReceivedAsset(receiveAsset.symbol)
+          : l10n.activitySwapDepositedAsset(receiveAsset.symbol),
       leadingIconName: AppIcons.swapArrows,
       leadingBackgroundColor: colors.background.neutralSubtleOpacity,
       leadingIconColor: colors.icon.regular,
@@ -281,25 +296,32 @@ List<ActivityRowData> _swapActivityChildRows({
       amountColor: outgoingAmountColor(colors),
       statusText: '',
       timestampText: dateOnlyTimestamp
-          ? _swapActivityChildTimestamp(item, dateOnly: true)
+          ? _swapActivityChildTimestamp(l10n, item, dateOnly: true)
           : '',
       onTap: receivesZec ? onReceivedLegTap : null,
     ),
   ];
 }
 
+/// Masks after the visible amount is chosen so the mask keeps that leg's own
+/// symbol (`*** USDC`), not the ZEC default.
+String _swapActivityAmountTextForPrivacy(
+  String amountText, {
+  required bool privacyModeEnabled,
+}) {
+  return swapAmountTextForPrivacy(
+    amountText,
+    privacyModeEnabled: privacyModeEnabled,
+    maskLength: _swapActivityAmountPrivacyMaskLength,
+  );
+}
+
 String _swapActivityAmountText(
+  AppLocalizations l10n,
   SwapActivityRowItem item, {
   required bool includeSign,
   required bool privacyModeEnabled,
 }) {
-  if (privacyModeEnabled) {
-    return hideAmountIfPrivacyMode(
-      '',
-      privacyModeEnabled: true,
-      maskLength: _swapActivityAmountPrivacyMaskLength,
-    );
-  }
   // A refund row shows what came back once the provider records it.
   final refundedAmount = item.refundedAmountText?.trim();
   final amount =
@@ -308,40 +330,31 @@ String _swapActivityAmountText(
       ? refundedAmount!
       : item.sellAmountText;
   if (amount.trim().isEmpty) return '--';
-  if (!includeSign || amount == kSwapAmountNotReported) return amount;
-  return '-$amount';
+  if (amount == kSwapNotReportedToken) return l10n.swapActivityNotReported;
+  return _swapActivityAmountTextForPrivacy(
+    includeSign ? '-$amount' : amount,
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 String _swapActivityReceiveAmountText(
+  AppLocalizations l10n,
   SwapActivityRowItem item, {
   required bool privacyModeEnabled,
 }) {
-  if (privacyModeEnabled) {
-    return hideAmountIfPrivacyMode(
-      '',
-      privacyModeEnabled: true,
-      maskLength: _swapActivityAmountPrivacyMaskLength,
-    );
-  }
   final amount = item.receiveEstimateText.trim();
   if (amount.isEmpty) return '--';
-  if (amount.startsWith('+') || amount == kSwapAmountNotReported) {
-    return amount;
-  }
-  return '+$amount';
+  if (amount == kSwapNotReportedToken) return l10n.swapActivityNotReported;
+  return _swapActivityAmountTextForPrivacy(
+    amount.startsWith('+') ? amount : '+$amount',
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 String _payActivityAmountText(
   SwapActivityRowItem item, {
   required bool privacyModeEnabled,
 }) {
-  if (privacyModeEnabled) {
-    return hideAmountIfPrivacyMode(
-      '',
-      privacyModeEnabled: true,
-      maskLength: _swapActivityAmountPrivacyMaskLength,
-    );
-  }
   final depositedAmount = item.depositedAmountText?.trim();
   final hasProviderDepositAmount = _isPositiveSwapAmount(depositedAmount);
   final showsDepositDebit =
@@ -363,10 +376,11 @@ String _payActivityAmountText(
                 item.status == SwapIntentStatus.incompleteDeposit)
       ? depositedAmount!
       : item.receiveEstimateText.trim();
-  if (showsDepositDebit && amount.isNotEmpty && !amount.startsWith('-')) {
-    return '-$amount';
-  }
-  return amount.isEmpty ? '--' : amount;
+  if (amount.isEmpty) return '--';
+  return _swapActivityAmountTextForPrivacy(
+    showsDepositDebit && !amount.startsWith('-') ? '-$amount' : amount,
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 bool _payActivityRepresentsDepositDebit(SwapActivityRowItem item) {
@@ -384,39 +398,58 @@ bool _isPositiveSwapAmount(String? amountText) {
   return amount != null && amount.isFinite && amount > 0;
 }
 
-String _payActivityTitle(SwapIntentStatus status) {
+String _payActivityTitle(AppLocalizations l10n, SwapIntentStatus status) {
   return switch (status) {
-    SwapIntentStatus.complete => 'Paid',
-    SwapIntentStatus.refunded => 'Payment refunded',
-    SwapIntentStatus.failed || SwapIntentStatus.expired => 'Payment failed',
-    _ => 'Payment in progress',
+    SwapIntentStatus.complete => l10n.activityPayPaid,
+    SwapIntentStatus.refunded => l10n.commonPaymentRefunded,
+    SwapIntentStatus.failed ||
+    SwapIntentStatus.expired => l10n.commonPaymentFailed,
+    _ => l10n.commonPaymentInProgress,
   };
 }
 
-String _payActivitySubtitle(SwapAsset? receiveAsset) {
+String _payActivitySubtitle(AppLocalizations l10n, SwapAsset? receiveAsset) {
   final network = receiveAsset?.chainLabel;
   if (network == null || network.isEmpty) {
-    return 'from shielded ZEC';
+    return l10n.activityPayFromShielded;
   }
-  return 'from shielded ZEC · $network';
+  return l10n.activityPayFromShieldedOnChain(network);
 }
 
 String _swapActivityStatusText(
+  AppLocalizations l10n,
   SwapIntentStatus status,
   _SwapActivityProgress? progress,
 ) {
   return switch (status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit =>
-      progress?.label ?? 'In progress',
-    SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
+      progress?.label(l10n) ?? l10n.commonInProgress,
+    SwapIntentStatus.incompleteDeposit => l10n.activityStatusIncompleteDeposit,
     SwapIntentStatus.depositObserved ||
     SwapIntentStatus.processing ||
-    SwapIntentStatus.providerStatusUnknown => progress?.label ?? 'In progress',
-    SwapIntentStatus.complete => 'Completed',
-    SwapIntentStatus.refunded => 'Refunded',
-    SwapIntentStatus.expired => 'Failed',
-    SwapIntentStatus.failed => 'Failed',
+    SwapIntentStatus.providerStatusUnknown =>
+      progress?.label(l10n) ?? l10n.commonInProgress,
+    SwapIntentStatus.complete => l10n.commonCompleted,
+    SwapIntentStatus.refunded => l10n.commonRefunded,
+    SwapIntentStatus.expired => l10n.commonFailed,
+    SwapIntentStatus.failed => l10n.commonFailed,
+  };
+}
+
+/// In progress and completed rows show their timestamp instead of the status.
+bool _swapActivityStatusIsRoutine(SwapIntentStatus status) {
+  return switch (status) {
+    SwapIntentStatus.awaitingDeposit ||
+    SwapIntentStatus.awaitingExternalDeposit ||
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
+    SwapIntentStatus.providerStatusUnknown ||
+    SwapIntentStatus.complete => true,
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.refunded ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.failed => false,
   };
 }
 
@@ -431,7 +464,8 @@ class _SwapActivityProgress {
 
   double get value => currentStep / totalSteps;
 
-  String get label => '$currentStep/$totalSteps In progress';
+  String label(AppLocalizations l10n) =>
+      l10n.activitySwapStep(currentStep, totalSteps);
 }
 
 bool _swapActivityFailed(SwapIntentStatus status) {
@@ -520,12 +554,13 @@ SwapActivityLegAbsorption matchSwapActivityLegAbsorption({
   );
 }
 
-String _swapActivityTitle(SwapIntentStatus status) {
+String _swapActivityTitle(AppLocalizations l10n, SwapIntentStatus status) {
   return switch (status) {
-    SwapIntentStatus.complete => 'Swapped',
-    SwapIntentStatus.refunded => 'Swap refunded',
-    SwapIntentStatus.failed || SwapIntentStatus.expired => 'Swap failed',
-    _ => 'Swapping...',
+    SwapIntentStatus.complete => l10n.activitySwapSwapped,
+    SwapIntentStatus.refunded => l10n.commonSwapRefunded,
+    SwapIntentStatus.failed ||
+    SwapIntentStatus.expired => l10n.commonSwapFailed,
+    _ => l10n.activitySwapSwapping,
   };
 }
 
@@ -543,29 +578,34 @@ SwapAsset? _swapActivityReceiveAsset(SwapActivityRowItem item) {
   return direction.toAsset(externalAsset);
 }
 
-String? _swapActivityAssetSubtitle(SwapAsset? asset) {
+String? _swapActivityAssetSubtitle(AppLocalizations l10n, SwapAsset? asset) {
   if (asset == null) return null;
   if (asset.isNativeZec) return '${asset.symbol} ${asset.chainLabel}';
-  return '${asset.symbol} on ${asset.chainLabel}';
+  return l10n.activitySwapAssetOnChain(asset.symbol, asset.chainLabel);
 }
 
 String _swapActivityChildTimestamp(
+  AppLocalizations l10n,
   SwapActivityRowItem item, {
   bool dateOnly = false,
 }) {
   final timestamp =
       item.completedAt ?? item.lastStatusCheckedAt ?? item.updatedAt;
   if (timestamp == null) return '--';
-  if (dateOnly) return formatActivityTimestamp(timestamp, dateOnly: true);
-  return _relativeActivityTimestamp(timestamp) ??
-      formatActivityTimestamp(timestamp);
+  if (dateOnly) {
+    return formatActivityTimestamp(l10n, timestamp, dateOnly: true);
+  }
+  return _relativeActivityTimestamp(l10n, timestamp) ??
+      formatActivityTimestamp(l10n, timestamp);
 }
 
-String? _relativeActivityTimestamp(DateTime timestamp) {
+String? _relativeActivityTimestamp(AppLocalizations l10n, DateTime timestamp) {
   final elapsed = DateTime.now().difference(timestamp.toLocal());
   if (elapsed.isNegative) return null;
-  if (elapsed.inMinutes < 1) return 'just now';
-  if (elapsed.inHours < 1) return '${elapsed.inMinutes}m ago';
+  if (elapsed.inMinutes < 1) return l10n.commonJustNow;
+  if (elapsed.inHours < 1) {
+    return l10n.activitySwapMinutesAgo(elapsed.inMinutes);
+  }
   return null;
 }
 

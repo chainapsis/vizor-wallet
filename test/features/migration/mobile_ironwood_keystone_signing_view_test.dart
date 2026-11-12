@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Widget _app({
   required MobileIronwoodKeystoneSigningViewState state,
@@ -21,6 +22,7 @@ Widget _app({
   VoidCallback? onShowScanHelp,
 }) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.dark,
       child: MobileIronwoodKeystoneSigningView(

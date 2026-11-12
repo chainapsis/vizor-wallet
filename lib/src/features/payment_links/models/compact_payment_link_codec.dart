@@ -4,7 +4,8 @@ part of 'vizor_payment_link.dart';
 /// Failures never include the secret-bearing input.
 abstract final class _CompactPaymentLinkCodec {
   static const _entropyLengths = [16, 20, 24, 28, 32];
-  static const _defaultLabel = 'Payment link';
+  static const _defaultLabel =
+      'Payment link'; // l10n-ignore: stored link label, data
   static final _maxAmount = BigInt.from(21000000) * BigInt.from(100000000);
 
   static FormatException get _invalid =>
@@ -74,7 +75,12 @@ abstract final class _CompactPaymentLinkCodec {
       final presentation = PaymentLinkPresentation.fromPayload({
         'artworkId': artwork,
         'message': message,
-        'fiat': fiat == null ? null : {'amount': fiat, 'currency': 'USD'},
+        'fiat': fiat == null
+            ? null
+            : {
+                'amount': fiat,
+                'currency': 'USD', // l10n-ignore: protocol currency code
+              }, // l10n-ignore: protocol currency code
       });
       final mnemonic = rust_wallet.giftMnemonicFromEntropy(entropy: entropy);
       final link = VizorPaymentLink._parsed(

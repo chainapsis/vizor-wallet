@@ -1,58 +1,40 @@
 import 'dart:async';
 
-import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
+import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart';
+import '../models/swap_message.dart';
 
-const _statusAutoRefreshMessage =
-    "We couldn't refresh the latest status.\n"
-    "We'll keep trying and update this screen automatically.";
+export '../models/swap_message.dart'
+    show
+        SwapFailureCategory,
+        SwapFailureMessage,
+        SwapFailureOperation,
+        SwapFailureSurface,
+        SwapLiteralMessage,
+        SwapMessage;
 
-enum SwapFailureOperation {
-  tokenList,
-  quote,
-  start,
-  refreshStatus,
-  submitDeposit,
-  sendZecDeposit,
-}
-
-enum SwapFailureSurface { swap, pay }
-
-enum SwapFailureCategory {
-  unsupportedAsset,
-  amountTooLow,
-  amountPrecision,
-  invalidRouteOrAddress,
-  noQuoteOrLiquidity,
-  torBlocked,
-  serviceUnavailable,
-  networkTimeout,
-  unverifiedResponse,
-  retryLater,
-  zecDepositFunding,
-  zecDepositIronwoodFunding,
-  walletPreflight,
-  depositNotFound,
-  depositRejected,
-  unknown,
-}
-
-String swapFailureMessage(
+/// The message for a failed swap [operation], as a code the screen words.
+SwapMessage swapFailureMessage(
   SwapFailureOperation operation,
   Object error, {
   SwapFailureSurface surface = SwapFailureSurface.swap,
   bool torEnabled = false,
 }) {
   if (operation == SwapFailureOperation.sendZecDeposit) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
-    if (upgradeHold != null) return upgradeHold;
+    switch (networkUpgradeHoldKind(error)) {
+      case NetworkUpgradeHold.hold:
+        return const SwapNotice(SwapNoticeKind.networkUpgradeHold);
+      case NetworkUpgradeHold.scheduleChanged:
+        return const SwapNotice(SwapNoticeKind.networkUpgradeScheduleChanged);
+      case null:
+        break;
+    }
   }
-  final category = swapFailureCategory(
+  return SwapFailureMessage(
     operation,
-    error,
-    torEnabled: torEnabled,
+    swapFailureCategory(operation, error, torEnabled: torEnabled),
+    surface: surface,
   );
-  return _messageFor(operation, category, surface);
 }
 
 SwapFailureCategory swapFailureCategory(
@@ -141,119 +123,6 @@ bool _isTorExitBlockedResponse(OneClickApiException error) {
   return body != null &&
       body.contains('request blocked') &&
       body.contains('cloudfront');
-}
-
-String _messageFor(
-  SwapFailureOperation operation,
-  SwapFailureCategory category,
-  SwapFailureSurface surface,
-) {
-  return switch (category) {
-    SwapFailureCategory.unsupportedAsset => _unsupportedAssetMessage(operation),
-    SwapFailureCategory.amountTooLow =>
-      surface == SwapFailureSurface.pay
-          ? 'Amount is too low for this payment.\nTry a larger amount.'
-          : 'Amount is too low for this swap.\nTry a larger amount.',
-    SwapFailureCategory.amountPrecision =>
-      'Amount has too many decimal places.\nUse fewer decimals and try again.',
-    SwapFailureCategory.invalidRouteOrAddress =>
-      'This route or address was rejected.\nEdit the details and request a new quote.',
-    SwapFailureCategory.noQuoteOrLiquidity =>
-      'No quote is available for this route or amount.\n'
-          'Adjust the amount, slippage, or asset and try again.',
-    SwapFailureCategory.torBlocked =>
-      surface == SwapFailureSurface.pay
-          ? 'Pay is unavailable over Tor because the service blocked this '
-                'connection.\nTurn off Tor in Settings to pay.'
-          : 'Swap is unavailable over Tor because the service blocked this '
-                'connection.\nTurn off Tor in Settings to use swap.',
-    SwapFailureCategory.serviceUnavailable => _serviceUnavailableMessage(
-      operation,
-    ),
-    SwapFailureCategory.networkTimeout => _timeoutMessage(operation),
-    SwapFailureCategory.unverifiedResponse => _unverifiedResponseMessage(
-      operation,
-    ),
-    SwapFailureCategory.retryLater => _retryLaterMessage(operation),
-    SwapFailureCategory.zecDepositFunding =>
-      'Not enough spendable ZEC to cover this swap and its network fee.\n'
-          'Try a smaller amount or use Max.',
-    SwapFailureCategory.zecDepositIronwoodFunding =>
-      surface == SwapFailureSurface.pay
-          ? "Private payments use Ironwood ZEC only, which can't cover this "
-                'payment and its network fee.\n'
-                'Move funds to Ironwood or try a smaller amount.'
-          : "Private swaps use Ironwood ZEC only, which can't cover this swap "
-                'and its network fee.\n'
-                'Move funds to Ironwood or try a smaller amount.',
-    SwapFailureCategory.walletPreflight =>
-      'ZEC deposit could not be prepared.\nCheck your balance and try again.',
-    SwapFailureCategory.depositNotFound =>
-      'Deposit is not indexed yet.\nCheck again in a few minutes.',
-    SwapFailureCategory.depositRejected =>
-      'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.',
-    SwapFailureCategory.unknown => _unknownMessage(operation),
-  };
-}
-
-String _unsupportedAssetMessage(SwapFailureOperation operation) {
-  return switch (operation) {
-    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      'Swap status uses an unsupported asset pair.\nDo not resend funds. Try again later.',
-    _ =>
-      'This asset is not available for swap right now.\nChoose another asset or try again later.',
-  };
-}
-
-String _serviceUnavailableMessage(SwapFailureOperation operation) {
-  return switch (operation) {
-    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      _statusAutoRefreshMessage,
-    _ => 'Swap service is temporarily unavailable.\nTry again later.',
-  };
-}
-
-String _timeoutMessage(SwapFailureOperation operation) {
-  return switch (operation) {
-    SwapFailureOperation.quote =>
-      'Quote request timed out.\nCheck your connection and try again.',
-    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      _statusAutoRefreshMessage,
-    _ => 'Request timed out.\nCheck your connection and try again.',
-  };
-}
-
-String _retryLaterMessage(SwapFailureOperation operation) {
-  return switch (operation) {
-    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      _statusAutoRefreshMessage,
-    _ => 'Swap service is still processing.\nWait a moment and try again.',
-  };
-}
-
-String _unverifiedResponseMessage(SwapFailureOperation operation) {
-  return switch (operation) {
-    SwapFailureOperation.quote =>
-      'Quote response could not be verified.\nTry again later.',
-    _ => 'Swap response could not be verified.\nTry again later.',
-  };
-}
-
-String _unknownMessage(SwapFailureOperation operation) {
-  return switch (operation) {
-    SwapFailureOperation.tokenList =>
-      'Swap tokens could not be loaded.\nTry again later.',
-    SwapFailureOperation.quote =>
-      'Quote is unavailable right now.\nTry again later.',
-    SwapFailureOperation.start =>
-      'Swap could not be started.\nTry again later.',
-    SwapFailureOperation.refreshStatus =>
-      'Could not refresh swap status.\nTry again later.',
-    SwapFailureOperation.submitDeposit =>
-      'Deposit status could not be submitted.\nTry again later.',
-    SwapFailureOperation.sendZecDeposit =>
-      'ZEC deposit could not be sent.\nTry again later.',
-  };
 }
 
 bool _isUnsupportedAssetError(OneClickApiException error) {

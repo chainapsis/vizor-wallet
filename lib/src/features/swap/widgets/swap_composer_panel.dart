@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
@@ -152,12 +153,12 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final receiveInputIsFiat =
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final targetDirection = state.direction.toggled;
-    final rateText = _rateTextForState(state);
+    final rateText = _rateTextForState(context.l10n, state);
     final quoteError =
-        state.quoteAmountPrecisionError ??
-        state.externalAssetSupportError ??
+        state.quoteAmountPrecisionError(context.l10n) ??
+        state.externalAssetSupportError(context.l10n) ??
         widget.balanceMessage ??
-        state.quoteError;
+        state.quoteError?.text(context.l10n);
     final zecAmountOverAvailable = _zecAmountOverAvailable(
       state,
       widget.zecAvailableZatoshi,
@@ -173,7 +174,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final ticket = _SwapTicketShell(
       key: const ValueKey('swap_compact_ticket'),
       payCard: _SwapAmountCard(
-        label: 'You pay',
+        label: context.l10n.commonYouPay,
         active: payActive,
         amount: _SwapAmountInput(
           key: const ValueKey('swap_amount_field'),
@@ -189,7 +190,10 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               : state.direction.fromAsset(state.externalAsset).decimals,
         ),
         asset: sendsZec
-            ? const _TokenPill(asset: SwapAsset.zec, label: 'Zcash')
+            ? const _TokenPill(
+                asset: SwapAsset.zec,
+                label: 'Zcash', // l10n-ignore: product name
+              )
             : _ExternalAssetButton(
                 selected: state.externalAsset,
                 open: widget.assetSelectorOpen,
@@ -199,7 +203,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
             ? _MaxAmountTrigger(
                 availableText: widget.zecAvailableText,
                 loading: state.maxAmountLoading,
-                errorText: state.maxAmountError,
+                errorText: state.maxAmountError?.text(context.l10n),
                 balanceExceeded: zecAmountOverAvailable,
                 onTap: widget.onUseMaxZecAmount,
               )
@@ -244,13 +248,13 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 trailing: _AddressTrigger(
                   value: state.destinationText,
                   contactName: widget.destinationContactName,
-                  emptyText: 'Add refund address...',
+                  emptyText: context.l10n.swapComposerAddRefundAddressEllipsis,
                   onTap: widget.onOpenDestinationAddress,
                 ),
               ),
       ),
       receiveCard: _SwapAmountCard(
-        label: 'You receive',
+        label: context.l10n.swapComposerYouReceive,
         active: receiveActive,
         amount: _SwapAmountInput(
           key: const ValueKey('swap_receive_amount_field'),
@@ -271,7 +275,10 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 open: widget.assetSelectorOpen,
                 onTap: widget.onOpenExternalAssetPicker,
               )
-            : const _TokenPill(asset: SwapAsset.zec, label: 'Zcash'),
+            : const _TokenPill(
+                asset: SwapAsset.zec,
+                label: 'Zcash', // l10n-ignore: product name
+              ),
         footer: sendsZec
             ? _SwapCardFooter(
                 leading: _SwapFiatValueText(
@@ -289,7 +296,8 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 trailing: _AddressTrigger(
                   value: state.destinationText,
                   contactName: widget.destinationContactName,
-                  emptyText: 'Add recipient address...',
+                  emptyText:
+                      context.l10n.swapComposerAddRecipientAddressEllipsis,
                   onTap: widget.onOpenDestinationAddress,
                 ),
               )
@@ -344,7 +352,9 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 maxLines: quoteError == widget.balanceMessage ? null : 2,
                 action: switch (widget.onViewSwaps) {
                   final onViewSwaps? => swapQuoteErrorAction(
-                    quoteError,
+                    context.l10n,
+                    state.quoteError,
+                    shown: quoteError,
                     onViewSwaps: onViewSwaps,
                   ),
                   null => null,
@@ -784,7 +794,7 @@ class _MaxAmountTrigger extends StatelessWidget {
     final colors = context.colors;
     final hasError = errorText != null || balanceExceeded;
     final label =
-        errorText ?? (hasError ? 'Max: $availableText' : 'Max: $availableText');
+        errorText ?? context.l10n.swapComposerMaxAmount(availableText);
     return MouseRegion(
       cursor: loading ? SystemMouseCursors.basic : SystemMouseCursors.click,
       child: GestureDetector(
@@ -821,18 +831,18 @@ class _MaxAmountTrigger extends StatelessWidget {
   }
 }
 
-String _rateTextForState(SwapState state) {
+String _rateTextForState(AppLocalizations l10n, SwapState state) {
   final quote = state.quote;
-  if (quote != null) return quote.rateText;
+  if (quote != null) return swapDetailValueText(l10n, quote.rateText);
 
   final externalPerZec =
       state.indicativeExternalPerZec[state.externalAsset] ??
       state.externalAsset.fallbackExternalPerZec;
-  if (externalPerZec <= 0) return '--';
+  if (externalPerZec <= 0) return '--'; // l10n-ignore: placeholder glyph
   if (state.direction.sendsZec) {
-    return '1 ZEC = ${externalPerZec.toStringAsFixed(2)} ${state.externalAsset.symbol}';
+    return '1 ZEC = ${externalPerZec.toStringAsFixed(2)} ${state.externalAsset.symbol}'; // l10n-ignore: rate format
   }
-  return '1 ${state.externalAsset.symbol} = ${(1 / externalPerZec).toStringAsFixed(4)} ZEC';
+  return '1 ${state.externalAsset.symbol} = ${(1 / externalPerZec).toStringAsFixed(4)} ZEC'; // l10n-ignore: rate format
 }
 
 bool _zecAmountOverAvailable(SwapState state, BigInt availableZatoshi) {

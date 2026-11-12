@@ -96,7 +96,9 @@ abstract interface class ReceiveReservationStore {
 /// transactions that attribute a recovered payment to the swap.
 api.SwapProviderStatus _providerStatus(SwapIntentSnapshot snapshot) =>
     api.SwapProviderStatus(
-      status: snapshot.providerStatusRaw ?? 'UNKNOWN',
+      status:
+          snapshot.providerStatusRaw ??
+          'UNKNOWN', // l10n-ignore: protocol value
       swapType: snapshot.providerSwapType,
       refundedAmount: snapshot.refundedAmountBaseUnits,
       amountOut: snapshot.amountOutBaseUnits,

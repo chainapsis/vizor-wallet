@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart';
+import '../../support/test_l10n.dart';
 
 class _NearSwapPrivacy extends NearSwapPrivacyNotifier {
   @override
@@ -232,7 +233,10 @@ void main() {
       await pumpEventQueue();
       c.read(swapRecoveryNeedsServerProvider.notifier).set(true);
       expect(c.read(swapAddressWaitProvider(false)), SwapAddressWait.server);
-      expect(swapAddressWaitLabel(SwapAddressWait.server), 'Choose a server');
+      expect(
+        swapAddressWaitLabel(testL10n, SwapAddressWait.server),
+        'Choose a server',
+      );
 
       c.read(swapRecoveryNeedsServerProvider.notifier).set(false);
       expect(c.read(swapAddressWaitProvider(false)), SwapAddressWait.preparing);

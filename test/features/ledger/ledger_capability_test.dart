@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../support/test_l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/rust/wallet/ledger.dart' show LedgerAppSupport;
@@ -165,7 +166,7 @@ void main() {
         );
       }
       expect(
-        ledgerBluetoothSupportedModels(platform),
+        ledgerBluetoothSupportedModels(testL10n, platform),
         'Nano X, Flex, Stax, and Nano Gen5',
       );
     }

@@ -1,4 +1,5 @@
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
+import 'voting_message.dart';
 
 bool hasBlockingRoundRecoveryWork(rust_wire.RoundPlanView? roundPlan) {
   return roundPlan?.blockingRecovery ?? false;
@@ -120,22 +121,18 @@ List<int> delegationBundleIndexesNeedingSigning(
 /// Every terminal bundle is named: a round can end one bundle and still have
 /// live work in another, and the live work finishing is not a reason to leave
 /// the dead one unreported.
-String? terminalDelegationMessage(rust_wire.RoundPlanView? roundPlan) {
-  final reasons = <String>[];
-  for (final status
-      in roundPlan?.delegationStatuses ??
-          const <rust_wire.DelegationStatusView>[]) {
-    if (!status.terminal) continue;
-    final diagnostic = status.submissionDiagnostic;
-    final reason = diagnostic == null
-        ? 'it ended without confirming'
-        : diagnostic.message;
-    reasons.add('bundle ${status.bundleIndex + 1} ($reason)');
-  }
-  if (reasons.isEmpty) return null;
-  final subject = reasons.length == 1
-      ? 'Delegation ${reasons.single}'
-      : 'Delegation for ${reasons.join(', ')}';
-  return '$subject cannot continue. Do not retry it; the transaction may '
-      'already be on the chain.';
+VotingTerminalDelegation? terminalDelegationNotice(
+  rust_wire.RoundPlanView? roundPlan,
+) {
+  final bundles = [
+    for (final status
+        in roundPlan?.delegationStatuses ??
+            const <rust_wire.DelegationStatusView>[])
+      if (status.terminal)
+        VotingTerminalBundle(
+          bundleNumber: status.bundleIndex + 1,
+          diagnostic: status.submissionDiagnostic?.message,
+        ),
+  ];
+  return bundles.isEmpty ? null : VotingTerminalDelegation(bundles);
 }

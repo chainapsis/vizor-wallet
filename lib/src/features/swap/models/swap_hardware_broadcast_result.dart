@@ -5,5 +5,6 @@ class SwapHardwareBroadcastResult extends SwapDepositBroadcastResult {
     required super.txHash,
     required super.status,
     super.message,
+    super.notices,
   });
 }

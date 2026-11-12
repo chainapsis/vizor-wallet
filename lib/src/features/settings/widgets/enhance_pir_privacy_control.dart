@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/private_transparent_recovery_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/enhance_pir_provider.dart';
@@ -13,9 +14,9 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
     required this.enabled,
     required this.onToggle,
     required this.transition,
-    this.label = 'Private queries',
+    this.label,
     this.keyPrefix = 'settings_enhance_pir',
-    this.description = kPrivateQueriesSettingsCopy,
+    this.description,
     this.serverSettings = true,
     this.iconName = AppIcons.eye,
     this.unavailableLabel,
@@ -23,9 +24,12 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
     super.key,
   });
 
-  final String label;
+  /// The row's label, or null for Private queries.
+  final String? label;
   final String keyPrefix;
-  final String description;
+
+  /// The text under the row, or null for the Private queries explanation.
+  final String? description;
   final bool enabled;
   final VoidCallback? onToggle;
 
@@ -47,7 +51,7 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
   /// deliberately not surfaced here: they are dominated by obligations that
   /// can never complete (dummy actions, outputs the wallet cannot open), so
   /// they read as failures the user is expected to act on.
-  final String? transition;
+  final EnhancePirTransition? transition;
 
   /// Whether this build's private queries also recover transparent funds.
 
@@ -90,7 +94,7 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              label,
+                              label ?? context.l10n.settingsPrivateQueriesLabel,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTypography.labelLarge.copyWith(
@@ -108,7 +112,10 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        unavailableLabel ?? (enabled ? 'On' : 'Off'),
+                        unavailableLabel ??
+                            (enabled
+                                ? context.l10n.settingsStatusOn
+                                : context.l10n.settingsStatusOff),
                         key: ValueKey('${keyPrefix}_status'),
                         style: AppTypography.labelLarge.copyWith(
                           color: enabled && unavailableLabel == null
@@ -126,7 +133,8 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
                     key: ValueKey('${keyPrefix}_toggle'),
                     trackKey: ValueKey('${keyPrefix}_toggle_track'),
                     enabled: enabled,
-                    semanticsLabel: label,
+                    semanticsLabel:
+                        label ?? context.l10n.settingsPrivateQueriesLabel,
                     onToggle: onToggle,
                   ),
                 ],
@@ -137,7 +145,7 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
         if (transition != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
-            transition!,
+            transition!.message(context.l10n),
             key: ValueKey('${keyPrefix}_transition'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -148,7 +156,7 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            description,
+            description ?? privateQueriesSettingsCopy(context.l10n),
             key: ValueKey('${keyPrefix}_description'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,

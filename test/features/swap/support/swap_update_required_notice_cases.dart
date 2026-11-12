@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../../fakes/fake_sync_notifier.dart';
+import '../../../support/test_l10n.dart';
 
 /// Registers the swap detail's update notice tests for `layout`, so the
 /// desktop and mobile lanes check the same cases.
@@ -74,7 +75,7 @@ void swapUpdateRequiredNoticeTests(SwapActivityDetailLayout layout) {
     tester,
   ) async {
     await pump(tester, _incoming);
-    expect(find.text(kSwapPayoutUpdateRequiredText), findsOneWidget);
+    expect(find.text(testL10n.swapPayoutUpdateRequired), findsOneWidget);
   });
 
   testWidgets('a completed private swap still finding its payout says so', (
@@ -88,7 +89,7 @@ void swapUpdateRequiredNoticeTests(SwapActivityDetailLayout layout) {
         destinationChainTxHash: 'ab' * 32,
       ),
     );
-    expect(find.text(kSwapPayoutUpdateRequiredText), findsOneWidget);
+    expect(find.text(testL10n.swapPayoutUpdateRequired), findsOneWidget);
   });
 
   testWidgets('an eight-day-old missing payout keeps its notice', (
@@ -102,33 +103,33 @@ void swapUpdateRequiredNoticeTests(SwapActivityDetailLayout layout) {
         destinationChainTxHash: 'ab' * 32,
       ),
     );
-    expect(find.text(kSwapPayoutUpdateRequiredText), findsOneWidget);
-    expect(find.text(kSwapFindingPayoutLabel), findsWidgets);
+    expect(find.text(testL10n.swapPayoutUpdateRequired), findsOneWidget);
+    expect(find.text(testL10n.swapFindingPayout), findsWidgets);
   });
 
   testWidgets('a pending private swap out of ZEC says refund', (tester) async {
     await pump(tester, _outgoing);
-    expect(find.text(kSwapRefundUpdateRequiredText), findsOneWidget);
+    expect(find.text(testL10n.swapRefundUpdateRequired), findsOneWidget);
   });
 
   testWidgets('no notice once the update flag clears', (tester) async {
     await pump(tester, _incoming, updateRequired: false);
-    expect(find.text(kSwapPayoutUpdateRequiredText), findsNothing);
+    expect(find.text(testL10n.swapPayoutUpdateRequired), findsNothing);
   });
 
   testWidgets('no notice on an ordinary swap', (tester) async {
     await pump(tester, _incoming.copyWith(privateAddress: false));
     await pump(tester, _outgoing.copyWith(privateAddress: false));
-    expect(find.text(kSwapPayoutUpdateRequiredText), findsNothing);
-    expect(find.text(kSwapRefundUpdateRequiredText), findsNothing);
+    expect(find.text(testL10n.swapPayoutUpdateRequired), findsNothing);
+    expect(find.text(testL10n.swapRefundUpdateRequired), findsNothing);
   });
 
   testWidgets('no notice on a completed private swap', (tester) async {
     // No payout hash to look for, so the payout counts as found.
     await pump(tester, _incoming.copyWith(status: SwapIntentStatus.complete));
-    expect(find.text(kSwapPayoutUpdateRequiredText), findsNothing);
+    expect(find.text(testL10n.swapPayoutUpdateRequired), findsNothing);
     await pump(tester, _outgoing.copyWith(status: SwapIntentStatus.complete));
-    expect(find.text(kSwapRefundUpdateRequiredText), findsNothing);
+    expect(find.text(testL10n.swapRefundUpdateRequired), findsNothing);
   });
 }
 

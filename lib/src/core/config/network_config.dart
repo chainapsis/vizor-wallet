@@ -58,9 +58,9 @@ enum ZcashNetwork {
   };
 
   String get currencyTicker => switch (this) {
-    mainnet => 'ZEC',
-    testnet => 'TAZ',
-    regtest => 'TAZ',
+    mainnet => 'ZEC', // l10n-ignore: currency ticker
+    testnet => 'TAZ', // l10n-ignore: currency ticker
+    regtest => 'TAZ', // l10n-ignore: currency ticker
   };
 
   String get lightwalletdUrl => switch (this) {

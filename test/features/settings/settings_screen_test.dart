@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
-import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -27,14 +26,21 @@ import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_contr
 import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart'
     show ReceiveError, ReceiveErrorKind, SwapRecoveryStatus;
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_app_language_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+import '../../support/test_l10n.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   testWidgets('private recovery is labelled experimental', (tester) async {
@@ -54,6 +60,7 @@ void main() {
     Future<String> description() async {
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: EnhancePirPrivacyControl(
@@ -72,7 +79,7 @@ void main() {
     }
 
     final defaultCopy = await description();
-    expect(defaultCopy, kPrivateQueriesSettingsCopy);
+    expect(defaultCopy, testL10n.settingsPrivateQueriesCopy);
   });
 
   test('uninstall setting is supported only on macOS and Linux', () {
@@ -423,7 +430,7 @@ void main() {
     }
   });
 
-  testWidgets('Settings preserves the underlying Windows update error', (
+  testWidgets('Settings shows its own copy for a native Windows update error', (
     tester,
   ) async {
     _overridePlatform(TargetPlatform.windows);
@@ -446,11 +453,18 @@ void main() {
       await tester.tap(find.text('Updates'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Signed feed verification failed.'), findsOneWidget);
+      // The native text stays behind "Show details" under the app's copy.
       expect(
         find.text("Couldn't complete the update. Try again."),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Signed feed verification failed.'),
         findsNothing,
       );
+      await tester.tap(find.text(testL10n.commonShowDetails));
+      await tester.pumpAndSettle();
+      expect(find.text('Signed feed verification failed.'), findsOneWidget);
     } finally {
       await tester.binding.setSurfaceSize(null);
       _resetPlatformOverride();
@@ -583,10 +597,10 @@ void main() {
     // Leaving a wait is not a second transition, and does not announce itself
     // as one.
     expect(
-      NetworkPrivacyToggleAction.cancelPendingTor.semanticsLabel,
+      NetworkPrivacyToggleAction.cancelPendingTor.semanticsLabel(_en),
       'Stop connecting to Tor',
     );
-    expect(NetworkPrivacyToggleAction.disable.semanticsLabel, 'Use Tor');
+    expect(NetworkPrivacyToggleAction.disable.semanticsLabel(_en), 'Use Tor');
     expect(NetworkPrivacyToggleAction.none.isInteractive, isFalse);
   });
 
@@ -623,7 +637,7 @@ void main() {
     await tester.pumpWidget(_settingsHarness());
     await tester.pump();
     // Private queries are off, which doesn't affect it.
-    expect(find.text(kNearSwapPrivacyOffCopy), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOff), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('settings_near_swap_privacy_sub_option')),
@@ -645,12 +659,12 @@ void main() {
     expect(
       find.descendant(
         of: dialog,
-        matching: find.text(kNearSwapPrivacyInfoTitle),
+        matching: find.text(testL10n.settingsNearSwapPrivacyLabel),
       ),
       findsOneWidget,
     );
-    expect(find.text(kNearSwapPrivacyInfoLead), findsOneWidget);
-    for (final section in kNearSwapPrivacyInfoSections) {
+    expect(find.text(testL10n.settingsNearSwapPrivacyInfoLead), findsOneWidget);
+    for (final section in nearSwapPrivacyInfoSections(testL10n)) {
       expect(find.text(section.title), findsOneWidget);
       expect(find.text(section.body), findsOneWidget);
     }
@@ -678,8 +692,8 @@ void main() {
       _settingsHarness(enhancePirEnabled: true, nearSwapPrivacyEnabled: true),
     );
     await tester.pump();
-    expect(find.text(kNearSwapPrivacyOnCopy), findsOneWidget);
-    expect(find.text(kNearSwapPrivacyOffCopy), findsNothing);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOff), findsNothing);
   });
 
   testWidgets('NEAR swap privacy off describes regular addresses', (
@@ -695,14 +709,14 @@ void main() {
             ),
           )
           .data,
-      kNearSwapPrivacyOffCopy,
+      testL10n.settingsNearSwapPrivacyOff,
     );
-    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsNothing);
   });
 
   for (final (name, own) in [
-    ('while it changes', kEnhancePirChangingMessage),
-    ('when it fails', kEnhancePirUnchangedMessage),
+    ('while it changes', EnhancePirTransition.changing),
+    ('when it fails', EnhancePirTransition.unchanged),
   ]) {
     testWidgets('NEAR swap privacy feedback shows under its own row $name', (
       tester,
@@ -723,7 +737,7 @@ void main() {
           of: find.byKey(
             const ValueKey('settings_near_swap_privacy_sub_option'),
           ),
-          matching: find.text(own),
+          matching: find.text(own.message(testL10n)),
         ),
         findsOneWidget,
       );
@@ -740,7 +754,10 @@ void main() {
     await tester.pump();
     final dialog = await _openNearSwapPrivacyInfo(tester);
     expect(dialog, findsOneWidget);
-    expect(find.text(kNearSwapPrivacyInfoSections.last.body), findsOneWidget);
+    expect(
+      find.text(nearSwapPrivacyInfoSections(testL10n).last.body),
+      findsOneWidget,
+    );
     expect(_historyCheck, findsOneWidget);
     expect(find.byType(SwapHistoryCheckControl), findsOneWidget);
   });
@@ -790,7 +807,9 @@ void main() {
     expect(
       find.descendant(
         of: section,
-        matching: find.text(swapHistoryCheckStatus(SwapHistoryCheck.idle)),
+        matching: find.text(
+          swapHistoryCheckStatus(testL10n, SwapHistoryCheck.idle),
+        ),
       ),
       findsOneWidget,
     );
@@ -810,7 +829,9 @@ void main() {
       tester.getTopLeft(section).dy,
       greaterThan(
         tester
-            .getBottomLeft(find.text(kNearSwapPrivacyInfoSections.last.body))
+            .getBottomLeft(
+              find.text(nearSwapPrivacyInfoSections(testL10n).last.body),
+            )
             .dy,
       ),
       reason: 'after the explanation',
@@ -891,7 +912,7 @@ void main() {
     await _openNearSwapPrivacyInfo(tester);
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.checking),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.checking),
     );
     expect(
       find.byKey(const ValueKey('settings_cancel_swap_history')),
@@ -909,7 +930,7 @@ void main() {
     await _openNearSwapPrivacyInfo(tester);
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.done),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.done),
     );
     expect(
       find.byKey(const ValueKey('settings_cancel_swap_history')),
@@ -955,7 +976,7 @@ void main() {
     await tester.pump();
     await _openNearSwapPrivacyInfo(tester);
     await tester.pump();
-    expect(find.text(kSwapRecoveryUpdateMessage), findsOneWidget);
+    expect(find.text(testL10n.swapRecoveryUpdateRequired), findsOneWidget);
     // Only an update helps, so there is nothing to press.
     expect(
       find.byKey(const ValueKey('settings_check_swap_history')),
@@ -1015,7 +1036,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(paused, isTrue);
     expect(
-      find.text(swapHistoryCheckStatus(SwapHistoryCheck.paused)),
+      find.text(swapHistoryCheckStatus(testL10n, SwapHistoryCheck.paused)),
       findsOneWidget,
     );
     // Let the stopped watch's last poll interval run out.
@@ -1055,7 +1076,7 @@ void main() {
     );
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.idle),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.idle),
     );
     await tester.ensureVisible(start);
     await tester.tap(start);
@@ -1063,7 +1084,7 @@ void main() {
     expect(begun, 1);
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.checking),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.checking),
     );
 
     final pause = find.byKey(const ValueKey('settings_cancel_swap_history'));
@@ -1073,7 +1094,7 @@ void main() {
     expect(paused, 1);
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.paused),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.paused),
     );
 
     final earlierPolls = polls.length;
@@ -1090,7 +1111,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.done),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.done),
     );
   });
 
@@ -1115,8 +1136,8 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text(kNearSwapPrivacyHardwareCopy), findsOneWidget);
-    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+    expect(find.text(testL10n.settingsNearSwapPrivacyHardware), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsNothing);
     // No switch, and no "On" beside "not available".
     expect(
       tester
@@ -1124,7 +1145,7 @@ void main() {
             find.byKey(const ValueKey('settings_near_swap_privacy_status')),
           )
           .data,
-      kNearSwapPrivacyUnavailableLabel,
+      testL10n.settingsNearSwapPrivacyUnavailable,
     );
     expect(
       find.byKey(const ValueKey('settings_near_swap_privacy_toggle')),
@@ -1161,7 +1182,7 @@ void main() {
     // The loader keeps spinning, so step frames instead of settling.
     await tester.pump();
     await tester.pump();
-    final line = find.text(kNearSwapPrivacyCheckingPastSwapsCopy);
+    final line = find.text(testL10n.settingsNearSwapPrivacyCheckingPastSwaps);
     expect(line, findsOneWidget);
     // It sits on the description's edge, as Learn more's icon does.
     final description = find.byKey(
@@ -1200,8 +1221,8 @@ void main() {
     expect(find.text('Connected'), findsOneWidget);
     expect(
       find.text(
-        'Vizor’s network requests go through Tor. Links opened in other apps '
-        'use those apps’ network settings.',
+        'Vizor uses Tor to protect your IP address. Links opened in other '
+        'apps use those apps’ network settings.',
       ),
       findsOneWidget,
     );
@@ -1274,8 +1295,8 @@ void main() {
 
       expect(
         find.text(
-          'Vizor’s network requests go through Tor. Links opened in other apps '
-          'use those apps’ network settings.',
+          'Vizor uses Tor to protect your IP address. Links opened in other '
+          'apps use those apps’ network settings.',
         ),
         findsOneWidget,
       );
@@ -1466,11 +1487,14 @@ void main() {
         walletPrivate: true,
       );
       expect(_turnOffDialog, findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffBody), findsOneWidget);
       expect(
-        kPrivateQueriesTurnOffDisclosure,
+        find.text(_en.settingsPrivateQueriesTurnOffDisclosure),
+        findsOneWidget,
+      );
+      expect(
+        _en.settingsPrivateQueriesTurnOffDisclosure,
         allOf(
           contains('every transparent address of every account'),
           contains('IDs of transactions private recovery found'),
@@ -1478,7 +1502,7 @@ void main() {
         ),
       );
       expect(
-        kPrivateQueriesTurnOffBody,
+        _en.settingsPrivateQueriesTurnOffBody,
         'Vizor will rebuild your transparent history publicly, allowing the '
         'server to learn all your addresses.',
       );
@@ -1574,7 +1598,7 @@ void main() {
 
     expect(
       find.text(
-        'Vizor’s network requests go through Tor, but software updates are '
+        'Vizor uses Tor to protect your IP address, but software updates are '
         'unavailable.',
       ),
       findsOneWidget,
@@ -1631,6 +1655,76 @@ void main() {
     } finally {
       _resetPlatformOverride();
     }
+  });
+
+  group('language', () {
+    testWidgets(
+      'the Language row is hidden while English is the only language',
+      (tester) async {
+        await tester.pumpWidget(
+          _settingsHarness(
+            extraOverrides: [
+              availableAppLanguagesProvider.overrideWithValue(const [
+                AppLanguage.en,
+              ]),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey('settings_language_row')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('a language applies only after Update', (tester) async {
+      final saved = <AppLanguage>[];
+      await tester.pumpWidget(
+        _settingsHarness(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('settings_language_row'));
+      await tester.ensureVisible(row);
+      expect(
+        find.descendant(of: row, matching: find.text('English')),
+        findsOneWidget,
+      );
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      for (final option in ['en', 'ko', 'zh']) {
+        expect(find.byKey(ValueKey('language_option_$option')), findsOneWidget);
+      }
+      expect(
+        find.byKey(const ValueKey('language_option_system')),
+        findsNothing,
+      );
+      expect(find.text('简体中文'), findsOneWidget);
+
+      // Update stays disabled until the choice differs from the saved one.
+      await tester.tap(
+        find.byKey(const ValueKey('account_modal_action_button')),
+      );
+      await tester.pump();
+      expect(saved, isEmpty);
+
+      await tester.tap(find.byKey(const ValueKey('language_option_ko')));
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('account_modal_action_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(saved, [AppLanguage.ko]);
+      expect(find.byKey(const ValueKey('language_option_ko')), findsNothing);
+      expect(
+        find.descendant(of: row, matching: find.text('한국어')),
+        findsOneWidget,
+      );
+    });
   });
 }
 
@@ -1724,20 +1818,21 @@ Widget _settingsHarness({
       ...extraOverrides,
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
 
-/// Setting feedback fixed at `message`.
+/// Setting feedback fixed at `transition`.
 class _Feedback extends EnhancePirTransitionNotifier {
-  _Feedback(this.message);
+  _Feedback(this.transition);
 
-  final String? message;
+  final EnhancePirTransition? transition;
 
   @override
-  String? build() => message;
+  EnhancePirTransition? build() => transition;
 }
 
 class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {

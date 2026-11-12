@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sh
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_device_sheet.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'ledger_pairing_recovery_test.dart' as fixture;
 
@@ -48,6 +50,7 @@ Future<void> _frames(WidgetTester tester) async {
 }
 
 Widget _harness(Widget child, {double scale = 1}) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   home: AppTheme(
     data: AppThemeData.light,
     child: Builder(
@@ -511,9 +514,9 @@ void main() {
         );
         await _frames(tester);
         await _press(tester, 'Next: phone settings');
-        await tester.ensureVisible(find.text(model.nameHelp));
+        await tester.ensureVisible(find.text(model.nameHelp(testL10n)));
         await _frames(tester);
-        expect(find.text(model.nameHelp), findsOneWidget);
+        expect(find.text(model.nameHelp(testL10n)), findsOneWidget);
         await _press(tester, 'Next: search in Vizor');
         expect(find.text('Search again'), findsOneWidget);
         expect(tester.takeException(), isNull);

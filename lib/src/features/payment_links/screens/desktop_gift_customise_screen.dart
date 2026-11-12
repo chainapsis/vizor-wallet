@@ -13,6 +13,7 @@ import '../../onboarding/shared/onboarding_chrome.dart';
 import '../providers/gift_claim_flow_provider.dart';
 import '../services/gift_claim_setup_coordinator.dart';
 import 'gift_customise_account_screen.dart' show GiftCustomiseAccountArgs;
+import '../../../core/l10n/l10n.dart';
 
 class DesktopGiftCustomiseScreen extends ConsumerStatefulWidget {
   const DesktopGiftCustomiseScreen({
@@ -52,7 +53,7 @@ class _DesktopGiftCustomiseState
   Widget build(BuildContext context) => CustomiseAccountScreen.gift(
     random: widget.random,
     backTarget: OnboardingBackTarget.callback(
-      label: 'Redeem the card',
+      label: context.l10n.paymentLinkRedeemCardStepTitle,
       onTap: () {
         _continuingToSecurity = true;
         _flow.cancelWalletSetup(widget.args.inspection);

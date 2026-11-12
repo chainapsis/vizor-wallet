@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/widgets/app_icon.dart';
 
 const votingAutoAdvanceDelay = Duration(milliseconds: 600);
@@ -14,7 +15,7 @@ class VotingAutoAdvanceIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
     return Semantics(
-      label: 'Moving to the next unanswered question',
+      label: context.l10n.votingAutoAdvanceSemantics,
       child: ExcludeSemantics(
         child: SizedBox.square(
           dimension: 20,

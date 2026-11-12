@@ -121,11 +121,18 @@ class PaymentLinkHardwareFundingResult {
     required this.status,
     required this.fundingMetadataSaved,
     this.message,
+    this.notices = const [],
   });
 
   final String txids;
   final String status;
+
+  /// Rust's English result text.
   final String? message;
+
+  /// [message] as sentences for the display language
+  /// (`broadcastResultText`).
+  final List<rust_sync.BroadcastNotice> notices;
   final bool fundingMetadataSaved;
 }
 
@@ -435,7 +442,9 @@ class RustPaymentLinkHardwareSigningService
       'PaymentLinkHardwareSigning: proposal cleanup remains pending '
       'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$lastError',
     );
-    throw StateError('Could not finish cancelling. Please try again.');
+    throw StateError(
+      'Could not finish cancelling. Please try again.',
+    ); // l10n-ignore: StateError text; overlays show their own localized copy
   }
 
   @override
@@ -517,6 +526,7 @@ class RustPaymentLinkHardwareSigningService
           .firstWhere((txid) => txid.isNotEmpty, orElse: () => ''),
       status: stored.status,
       message: stored.message,
+      notices: stored.notices,
     );
 
     final fundingAccepted = isPaymentLinkFundingSubmitted(
@@ -569,6 +579,7 @@ class RustPaymentLinkHardwareSigningService
       txids: result.txid,
       status: result.status,
       message: result.message,
+      notices: result.notices,
       fundingMetadataSaved: fundingMetadataSaved,
     );
   }

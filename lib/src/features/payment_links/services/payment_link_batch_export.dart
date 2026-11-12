@@ -18,7 +18,7 @@ Future<bool> exportPaymentLinkBatchCsv(
   final path = await pickSaveLocation(
     suggestedName: 'vizor-gift-cards-$date.csv',
     type: const XTypeGroup(
-      label: 'CSV file',
+      label: 'CSV file', // l10n-ignore: file dialog type label
       extensions: ['csv'],
       mimeTypes: ['text/csv'],
       uniformTypeIdentifiers: ['public.comma-separated-values-text'],

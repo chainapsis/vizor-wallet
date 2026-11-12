@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'package:flutter/material.dart'
     show MaterialApp, SingleChildScrollView, Tooltip;
 import 'package:flutter/widgets.dart';
@@ -13,11 +14,13 @@ import 'package:zcash_wallet/src/features/swap/models/swap_address_formatting.da
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../core/widgets/support/review_info_row_trailing_cases.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, navigator) =>
         AppTheme(data: AppThemeData.light, child: navigator!),
     home: Directionality(
@@ -248,10 +251,10 @@ void main() {
     await tester.pumpWidget(_harness(_content()));
 
     expect(
-      _tooltipWithMessage(swapMinimumReceiveTooltip('USDC')),
+      _tooltipWithMessage(swapMinimumReceiveTooltip(testL10n, 'USDC')),
       findsOneWidget,
     );
-    expect(_tooltipWithMessage(swapFeeTooltip), findsOneWidget);
+    expect(_tooltipWithMessage(swapFeeTooltip(testL10n)), findsOneWidget);
   });
 
   testWidgets('external address compact text keeps a single middle ellipsis', (

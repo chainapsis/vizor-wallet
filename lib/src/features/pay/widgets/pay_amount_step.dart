@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -43,9 +44,11 @@ class PayAmountStep extends StatelessWidget {
     final asset = state.externalAsset;
     final inputIsFiat =
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
-    final precisionError = state.quoteAmountPrecisionError;
+    final precisionError = state.quoteAmountPrecisionError(context.l10n);
     final quoteError =
-        precisionError ?? state.externalAssetSupportError ?? state.quoteError;
+        precisionError ??
+        state.externalAssetSupportError(context.l10n) ??
+        state.quoteError?.text(context.l10n);
     final counterpartText = inputIsFiat
         ? (state.receiveAmountText.trim().isEmpty
               ? null
@@ -86,7 +89,7 @@ class PayAmountStep extends StatelessWidget {
                   child: Row(
                     children: [
                       Text(
-                        'Paying in',
+                        context.l10n.payAmountPayingIn,
                         style: AppTypography.labelLarge.copyWith(
                           fontWeight: FontWeight.w400,
                           color: colors.text.secondary,
@@ -185,7 +188,9 @@ class PayAmountStep extends StatelessWidget {
                                         ),
                                         const SizedBox(width: AppSpacing.xs),
                                         Text(
-                                          inputIsFiat ? 'USD' : asset.symbol,
+                                          inputIsFiat
+                                              ? 'USD' // l10n-ignore: currency code
+                                              : asset.symbol,
                                           key: const ValueKey(
                                             'pay_amount_unit',
                                           ),
@@ -273,7 +278,7 @@ class PayAmountStep extends StatelessWidget {
                           spacing: AppSpacing.xxs,
                           children: [
                             Text(
-                              'Estimated spend',
+                              context.l10n.payAmountEstimatedSpend,
                               style: AppTypography.labelLarge.copyWith(
                                 fontWeight: FontWeight.w400,
                                 color: colors.text.secondary,
@@ -296,7 +301,7 @@ class PayAmountStep extends StatelessWidget {
                                 ),
                               ),
                             Text(
-                              'ZEC',
+                              'ZEC', // l10n-ignore: asset symbol
                               style: AppTypography.labelLarge.copyWith(
                                 fontWeight: FontWeight.w400,
                                 color: colors.text.secondary,
@@ -313,7 +318,7 @@ class PayAmountStep extends StatelessWidget {
                       ),
                       const SizedBox(width: AppSpacing.xs),
                       Text(
-                        'ZEC',
+                        'ZEC', // l10n-ignore: asset symbol
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,
                         ),
@@ -334,7 +339,7 @@ class PayAmountStep extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Paying from your',
+                      context.l10n.payAmountPayingFrom,
                       style: AppTypography.labelLarge.copyWith(
                         fontWeight: FontWeight.w400,
                         color: colors.text.primary,
@@ -348,7 +353,7 @@ class PayAmountStep extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(
-                      'Shielded balance',
+                      context.l10n.commonShieldedBalance,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
@@ -390,7 +395,7 @@ class PayAmountAction extends StatelessWidget {
       size: AppButtonSize.large,
       minWidth: 196,
       onPressed: payAmountCanContinue(state) ? onContinue : null,
-      child: const Text('Continue'),
+      child: Text(context.l10n.commonContinue),
     );
   }
 }

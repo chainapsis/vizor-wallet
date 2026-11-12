@@ -6,6 +6,9 @@ import '../models/vizor_payment_link.dart';
 
 enum PaymentLinkIntakeResult { accepted, ignored, rejected }
 
+/// Why an incoming link was rejected; the app shell turns it into a toast.
+enum PaymentLinkIntakeError { queueFull, couldNotOpen }
+
 /// The queue of Gift Card links that arrived but have not been opened yet.
 ///
 /// **Deliberately not the same store as `paymentUriPrefillProvider`**, even
@@ -20,13 +23,10 @@ enum PaymentLinkIntakeResult { accepted, ignored, rejected }
 const kPaymentLinkIntakeQueueCapacity = 16;
 
 class PaymentLinkIntakeState {
-  const PaymentLinkIntakeState({
-    this.pendingLinks = const [],
-    this.errorMessage,
-  });
+  const PaymentLinkIntakeState({this.pendingLinks = const [], this.error});
 
   final List<VizorPaymentLink> pendingLinks;
-  final String? errorMessage;
+  final PaymentLinkIntakeError? error;
 
   VizorPaymentLink? get pendingLink =>
       pendingLinks.isEmpty ? null : pendingLinks.first;
@@ -78,7 +78,7 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
           kPaymentLinkIntakeQueueCapacity) {
         state = PaymentLinkIntakeState(
           pendingLinks: pendingLinks,
-          errorMessage: 'Too many payment links are waiting to open.',
+          error: PaymentLinkIntakeError.queueFull,
         );
         return PaymentLinkIntakeResult.rejected;
       }
@@ -87,7 +87,7 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
     } on FormatException {
       state = PaymentLinkIntakeState(
         pendingLinks: state.pendingLinks,
-        errorMessage: 'Payment link could not be opened.',
+        error: PaymentLinkIntakeError.couldNotOpen,
       );
       return PaymentLinkIntakeResult.rejected;
     }
@@ -104,7 +104,7 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
         kPaymentLinkIntakeQueueCapacity) {
       state = PaymentLinkIntakeState(
         pendingLinks: state.pendingLinks,
-        errorMessage: 'Too many payment links are waiting to open.',
+        error: PaymentLinkIntakeError.queueFull,
       );
       return PaymentLinkIntakeResult.rejected;
     }
@@ -138,7 +138,7 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
     if (link == null) return null;
     state = PaymentLinkIntakeState(
       pendingLinks: state.pendingLinks.sublist(1),
-      errorMessage: state.errorMessage,
+      error: state.error,
     );
     return link;
   }
@@ -150,7 +150,7 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
         for (final pending in state.pendingLinks)
           if (!pending.hasSameCanonicalPayload(link)) pending,
       ],
-      errorMessage: state.errorMessage,
+      error: state.error,
     );
   }
 

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile_home_carousel.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('stays on the current banner until the user changes it', (
@@ -190,6 +191,7 @@ Widget _harness({
   TextDirection textDirection = TextDirection.ltr,
 }) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (context, child) => AppTheme(
       data: AppThemeData.dark,
       child: MediaQuery(

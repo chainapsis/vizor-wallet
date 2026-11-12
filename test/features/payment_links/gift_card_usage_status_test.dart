@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/gift_card_usage_status.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('only the failed card displays a card-specific update error', (
@@ -25,6 +26,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: const Scaffold(
@@ -87,6 +89,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: const Scaffold(

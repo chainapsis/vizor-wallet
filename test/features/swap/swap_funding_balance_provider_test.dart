@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_funding_balance_provider.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   group('swapIronwoodOnlyShortfallMessage', () {
@@ -13,6 +14,7 @@ void main() {
     test('explains a shortfall only Ironwood-only funding causes', () {
       expect(
         swapIronwoodOnlyShortfallMessage(
+          testL10n,
           balance,
           needs(900000000),
           payment: false,
@@ -22,6 +24,7 @@ void main() {
       );
       expect(
         swapIronwoodOnlyShortfallMessage(
+          testL10n,
           balance,
           needs(900000000),
           payment: true,
@@ -34,6 +37,7 @@ void main() {
     test('leaves enough ZEC, and too little ZEC overall, to the button', () {
       expect(
         swapIronwoodOnlyShortfallMessage(
+          testL10n,
           balance,
           needs(500000000),
           payment: false,
@@ -43,6 +47,7 @@ void main() {
       );
       expect(
         swapIronwoodOnlyShortfallMessage(
+          testL10n,
           balance,
           needs(1200000000),
           payment: false,
@@ -55,6 +60,7 @@ void main() {
     test('masks the balance in privacy mode', () {
       expect(
         swapIronwoodOnlyShortfallMessage(
+          testL10n,
           balance,
           needs(900000000),
           payment: false,

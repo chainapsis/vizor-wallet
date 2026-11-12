@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -55,11 +56,14 @@ import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/app_test_fonts.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+import '../../support/test_l10n.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
 /// channel in widget tests.
@@ -233,7 +237,7 @@ class _HomeParticipationRecorder extends VotingParticipationCoordinator {
 
 Widget _app(
   SyncState syncState, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   ZecMarketData? marketData = const ZecMarketData(
     usdPrice: 70,
     change24hPct: 13.12,
@@ -466,6 +470,7 @@ Widget _app(
         ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: theme, child: child!),
     ),
@@ -788,7 +793,7 @@ void main() {
           orchardBalance: BigInt.from(100000000),
         ).copyWith(recentTransactions: [pending]),
         showVoting: false,
-        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+        etaLabels: const {'pending-receive': ActivityEta.standard},
       ),
     );
     for (var i = 0; i < 10; i++) {
@@ -1510,6 +1515,90 @@ void main() {
     expect(find.text('No activity, yet...'), findsOneWidget);
   });
 
+  testWidgets('a short catch-up reads as syncing without a percentage', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final synced = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      percentage: 1,
+      scannedHeight: 3000000,
+      chainTipHeight: 3000000,
+    );
+    final notifier = FakeSyncNotifier(synced);
+    await tester.pumpWidget(_app(synced, syncNotifier: notifier));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Vizor is synced'), findsOneWidget);
+
+    final startedAt = DateTime.now();
+    SyncState catchUp(int remainingScanBlocks) => SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncing: true,
+      phase: 'scan',
+      scannedHeight: 3000000,
+      chainTipHeight: 3000000 + remainingScanBlocks,
+      remainingScanBlocks: remainingScanBlocks,
+      lastSyncStartedAt: startedAt,
+      startedFromCompletedSync: true,
+    );
+    final nav = find.byType(MobileTopNav);
+    final slot = find.byKey(const ValueKey('mobile_top_nav_sync_label_slot'));
+    final syncedSlot = tester.getRect(slot);
+    final syncedColor = tester
+        .widget<Text>(find.text('Vizor is synced'))
+        .style
+        ?.color;
+    final colors = AppThemeData.dark.colors;
+    bool navBarIs(Color color) => tester
+        .widgetList<Container>(
+          find.descendant(of: nav, matching: find.byType(Container)),
+        )
+        .any(
+          (c) =>
+              c.decoration is BoxDecoration &&
+              (c.decoration as BoxDecoration).color == color,
+        );
+    expect(navBarIs(colors.sync.lightSuccess), isTrue);
+
+    notifier.emit(catchUp(3));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Syncing\u2026'), findsOneWidget);
+    expect(find.bySemanticsLabel('Syncing'), findsOneWidget);
+    expect(find.text('Vizor is synced'), findsNothing);
+    expect(find.textContaining('% Syncing'), findsNothing);
+    // The synced look stays: color, bar, no shimmer, and the label's slot.
+    expect(
+      tester.widget<Text>(find.text('Syncing\u2026')).style?.color,
+      syncedColor,
+    );
+    expect(navBarIs(colors.sync.lightSuccess), isTrue);
+    expect(
+      find.descendant(of: nav, matching: find.byType(ShaderMask)),
+      findsNothing,
+    );
+    expect(tester.getRect(slot), syncedSlot);
+
+    // The catch-up turns out large: its percentage shows, as syncing.
+    notifier.emit(catchUp(5000));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Syncing\u2026'), findsNothing);
+    expect(find.textContaining('% Syncing\u2026'), findsOneWidget);
+    expect(navBarIs(colors.text.muted), isTrue);
+    expect(
+      find.descendant(of: nav, matching: find.byType(ShaderMask)),
+      findsOneWidget,
+    );
+    expect(tester.getRect(slot), syncedSlot);
+    expect(find.bySemanticsLabel(RegExp(r'^\d+% Syncing$')), findsOneWidget);
+    semantics.dispose();
+  });
+
   testWidgets('empty activity is centered with the original vertical spacing', (
     tester,
   ) async {
@@ -1998,6 +2087,54 @@ void main() {
     await tester.pump();
 
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
+  });
+
+  testWidgets('privacy mode masks the migrating amount in the banner', (
+    tester,
+  ) async {
+    tester.view.physicalSize =
+        const Size(393, 852) * tester.view.devicePixelRatio;
+    addTearDown(tester.view.resetPhysicalSize);
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(200_000_000),
+          ironwoodBalance: BigInt.from(200_000_000),
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(
+            kIronwoodMigrationBroadcastScheduledPhase,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('2 ZEC still migrating'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp('2 ZEC still migrating')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.bySemanticsLabel('Hide balance'));
+    await tester.pump();
+
+    expect(find.text('****** ZEC still migrating'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp(r'\*{6} ZEC still migrating')),
+      findsOneWidget,
+    );
+    expect(find.text('2 ZEC still migrating'), findsNothing);
+    expect(
+      find.bySemanticsLabel(RegExp('2 ZEC still migrating')),
+      findsNothing,
+    );
+    expect(find.textContaining('ZEC ZEC', findRichText: true), findsNothing);
+    expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+    semantics.dispose();
   });
 
   testWidgets('waits for confirmation after Orchard holdings reach zero', (
@@ -2916,6 +3053,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
         home: Align(
           alignment: Alignment.bottomCenter,
@@ -3749,7 +3887,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(kSwapFindingPayoutLabel), findsNWidgets(10));
+    expect(find.text(testL10n.swapFindingPayout), findsNWidgets(10));
     expect(checked, hasLength(10));
     expect(checked, isNot(contains(swapChainTxidToWalletTxidHex(txid(0)))));
   });

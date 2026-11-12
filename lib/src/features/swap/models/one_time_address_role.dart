@@ -1,3 +1,5 @@
+import '../../../core/l10n/l10n.dart';
+
 /// Which end of a swap uses a one-time Zcash address.
 enum OneTimeAddressRole {
   /// The payout of a swap into ZEC.
@@ -8,21 +10,16 @@ enum OneTimeAddressRole {
 
   /// The composer's short label, the same for both ends; [explanation] says
   /// what the address is for.
-  String get label => 'One-time address';
+  String label(AppLocalizations l10n) => l10n.swapOneTimeAddressLabel;
 
   /// The review and status label, which names the refund end.
-  String get detailLabel => switch (this) {
-    payout => 'One-time address',
-    refund => 'One-time refund address',
+  String detailLabel(AppLocalizations l10n) => switch (this) {
+    payout => l10n.swapOneTimeAddressLabel,
+    refund => l10n.swapOneTimeRefundAddressLabel,
   };
 
-  String get explanation => switch (this) {
-    payout =>
-      'A one-time Zcash address for this swap. Even a future quantum '
-          "computer can't tie it to your wallet.",
-    refund =>
-      'If this swap is refunded, the ZEC comes back to a one-time Zcash '
-          "address. Even a future quantum computer can't tie it to your "
-          'wallet.',
+  String explanation(AppLocalizations l10n) => switch (this) {
+    payout => l10n.swapOneTimeAddressPayoutExplanation,
+    refund => l10n.swapOneTimeAddressRefundExplanation,
   };
 }

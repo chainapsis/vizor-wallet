@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../models/vizor_payment_link.dart';
 import '../models/gift_card_usage.dart';
@@ -33,22 +34,16 @@ enum PaymentLinkRecoveryState { draft, funded, shared }
 /// shared; removal proceeds, so the user must copy them first. A null [count]
 /// means the check failed or has not finished.
 String? unsharedGiftCardRemovalWarning(
+  AppLocalizations l10n,
   int? count, {
   required bool walletReset,
 }) {
+  final subject = walletReset ? 'reset' : 'remove';
   if (count == null) {
-    final action = walletReset ? 'resetting Vizor' : 'removing this account';
-    return "Couldn't check for unshared gift card links. "
-        'Copy any links you still need before $action.';
+    return l10n.paymentLinkRemovalWarningCheckFailed(subject);
   }
   if (count <= 0) return null;
-  final subject = walletReset ? 'Resetting Vizor' : 'Removing this account';
-  if (count == 1) {
-    return '1 funded gift card link has not been shared. '
-        '$subject loses it. Copy the link first.';
-  }
-  return '$count funded gift card links have not been shared. '
-      '$subject loses them. Copy the links first.';
+  return l10n.paymentLinkRemovalWarningUnshared(count, subject);
 }
 
 const _fieldNotProvided = Object();
@@ -169,7 +164,7 @@ class PaymentLinkRecoveryStoreFormatException implements Exception {
   final String message;
 
   @override
-  String toString() => 'PaymentLinkRecoveryStoreFormatException: $message';
+  String toString() => 'PaymentLinkRecoveryStoreFormatException: $message'; // l10n-ignore: exception text
 }
 
 abstract interface class PaymentLinkRecoveryStorage {
@@ -318,7 +313,8 @@ class PaymentLinkRecoveryStore {
       invalid: (record) =>
           record.state != PaymentLinkRecoveryState.draft ||
           record.submittedAtHeight != null,
-      error: 'Gift Card batch has already crossed submission.',
+      error:
+          'Gift Card batch has already crossed submission.', // l10n-ignore: internal invariant StateError, never displayed
       update: (record, now) => record.copyWith(
         state: PaymentLinkRecoveryState.draft,
         updatedAt: now,
@@ -343,7 +339,8 @@ class PaymentLinkRecoveryStore {
           !_sameFundingTxid(record.fundingTxids, fundingTxid) ||
           (record.preparedExpiryHeight != null &&
               record.preparedExpiryHeight != expiryHeight),
-      error: 'Gift Card batch preparation state is inconsistent.',
+      error:
+          'Gift Card batch preparation state is inconsistent.', // l10n-ignore: internal invariant StateError, never displayed
       update: (record, now) => record.copyWith(
         state: PaymentLinkRecoveryState.draft,
         updatedAt: now,
@@ -368,7 +365,8 @@ class PaymentLinkRecoveryStore {
           (record.state != PaymentLinkRecoveryState.draft ||
               record.submittedAtHeight != null),
       invalid: _cannotTakeBatchFunding(fundingTxids),
-      error: 'Gift Card batch submission state is inconsistent.',
+      error:
+          'Gift Card batch submission state is inconsistent.', // l10n-ignore: internal invariant StateError, never displayed
       update: (record, now) => record.copyWith(
         state: PaymentLinkRecoveryState.draft,
         updatedAt: now,
@@ -390,7 +388,8 @@ class PaymentLinkRecoveryStore {
           record.state != PaymentLinkRecoveryState.draft &&
           _sameFundingTxid(record.fundingTxids, fundingTxids),
       invalid: _cannotTakeBatchFunding(fundingTxids),
-      error: 'Gift Card batch funding state is inconsistent.',
+      error:
+          'Gift Card batch funding state is inconsistent.', // l10n-ignore: internal invariant StateError, never displayed
       update: (record, now) => record.copyWith(
         state: PaymentLinkRecoveryState.funded,
         updatedAt: now,
@@ -413,7 +412,8 @@ class PaymentLinkRecoveryStore {
         !(refusedAfterMarker &&
             record.isAmbiguousSubmission &&
             record.preparedExpiryHeight == null),
-    error: 'A submitted Gift Card batch cannot be removed.',
+    error:
+        'A submitted Gift Card batch cannot be removed.', // l10n-ignore: internal invariant StateError, never displayed
   );
 
   Future<void> removeUnbroadcastBatch(String batchId) => _removeBatch(
@@ -421,7 +421,8 @@ class PaymentLinkRecoveryStore {
     retained: (record) =>
         record.state != PaymentLinkRecoveryState.draft ||
         record.submittedAtHeight != null,
-    error: 'A broadcast Gift Card batch cannot be removed.',
+    error:
+        'A broadcast Gift Card batch cannot be removed.', // l10n-ignore: internal invariant StateError, never displayed
   );
 
   /// Caller must have a definitive rejection or expiry from the signed
@@ -429,7 +430,8 @@ class PaymentLinkRecoveryStore {
   Future<void> removeTerminalBatch(String batchId) => _removeBatch(
     batchId,
     retained: (record) => record.state != PaymentLinkRecoveryState.draft,
-    error: 'A funded Gift Card batch cannot be removed.',
+    error:
+        'A funded Gift Card batch cannot be removed.', // l10n-ignore: internal invariant StateError, never displayed
   );
 
   /// Rewrites every member of [batchId] in one secure-store write, unless all

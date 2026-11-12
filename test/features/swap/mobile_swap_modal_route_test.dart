@@ -32,6 +32,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_addres
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/providers/wallet_pir_server_provider.dart';
 import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart'
     show SwapAccountReadiness;
@@ -124,6 +125,7 @@ Widget _app({
     walletPirServerProvider.overrideWith(_NoWalletPirServers.new),
   ],
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: GoRouter(
       initialLocation: '/home',
       routes: buildMobileRoutes(entryRoutes: const []),
@@ -220,6 +222,7 @@ void main() {
   testWidgets('review actions use the mobile button height', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: Scaffold(
           body: AppTheme(
             data: AppThemeData.dark,
@@ -258,6 +261,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: Scaffold(
           body: AppTheme(
             data: AppThemeData.dark,
@@ -294,6 +298,7 @@ void main() {
       var submittedBps = 0;
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: Scaffold(
             body: AppTheme(
               data: AppThemeData.dark,
@@ -359,6 +364,7 @@ void main() {
     var submittedBps = 0;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: Scaffold(
           body: AppTheme(
             data: AppThemeData.dark,
@@ -962,6 +968,7 @@ void main() {
       'backIcon', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
         home: Builder(
           builder: (context) => MobileTopNav.back(

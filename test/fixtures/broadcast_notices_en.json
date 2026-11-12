@@ -1,0 +1,87 @@
+[
+  {
+    "notices": [
+      {"kind": "transaction_unknown", "index": 1, "total": 2, "detail": "connection reset"},
+      {"kind": "stored_locally"}
+    ],
+    "message": "Transaction 1 of 2 has an unknown broadcast result: connection reset The accepted-or-ambiguous transaction prefix was stored locally for recovery."
+  },
+  {
+    "notices": [
+      {"kind": "transaction_rejected", "index": 2, "total": 3, "detail": "Broadcast rejected: bad-txns-inputs-spent (code -26)"},
+      {"kind": "stored_locally"}
+    ],
+    "message": "Transaction 2 of 3 was rejected and was not stored: Broadcast rejected: bad-txns-inputs-spent (code -26) The accepted-or-ambiguous transaction prefix was stored locally for recovery."
+  },
+  {
+    "notices": [
+      {"kind": "route_unavailable", "index": 2, "total": 2, "detail": "Tor is still starting"},
+      {"kind": "storage_failed", "detail": "database is locked"}
+    ],
+    "message": "Failed to open the broadcast route for transaction 2 of 2; it was not stored: Tor is still starting A transaction may already be on the network, but local storage failed: database is locked. Do not send again until sync or an explorer confirms the result."
+  },
+  {
+    "notices": [
+      {"kind": "text", "detail": "Broadcast rejected: missing inputs (code -25)"},
+      {"kind": "storage_failed", "detail": "disk full"},
+      {"kind": "retention_failed", "detail": "lock busy"}
+    ],
+    "message": "Broadcast rejected: missing inputs (code -25) A transaction may already be on the network, but local storage failed: disk full. Do not send again until sync or an explorer confirms the result. Proposal input-lock retention also failed: lock busy."
+  },
+  {
+    "notices": [
+      {"kind": "storage_failed", "detail": "disk full"}
+    ],
+    "message": "A transaction may already be on the network, but local storage failed: disk full. Do not send again until sync or an explorer confirms the result."
+  },
+  {
+    "notices": [
+      {"kind": "expired", "txid": "4f1c", "expiry_height": 3000000, "chain_height": 2999990}
+    ],
+    "message": "Hardware signing request expired before broadcast: txid=4f1c, expiry height 3000000, current chain height 2999990. Start the signing flow again so Vizor can build a fresh transaction."
+  },
+  {
+    "notices": [
+      {"kind": "broadcast_storage_failed", "txid": "4f1c", "detail": "Primary: missing note. Fallback: database is locked"}
+    ],
+    "message": "Broadcast succeeded (txid=4f1c) but local storage failed. Primary: missing note. Fallback: database is locked. The transaction is on the network; check an explorer to confirm, and do not attempt to send again until the next sync reconciles your balance."
+  },
+  {
+    "notices": [
+      {"kind": "response_unavailable", "txid": "4f1c", "detail": "status: DeadlineExceeded"},
+      {"kind": "retrying_locally"}
+    ],
+    "message": "Broadcast response was unavailable for txid=4f1c (status: DeadlineExceeded). The transaction may already be on the network. Do not send again until sync or an explorer confirms whether this transaction was accepted. It was stored locally and will retry automatically during sync until it is confirmed or expires."
+  },
+  {
+    "notices": [
+      {"kind": "response_unavailable", "txid": "4f1c", "detail": "status: Unavailable"},
+      {"kind": "tracking_failed", "detail": "database is locked"}
+    ],
+    "message": "Broadcast response was unavailable for txid=4f1c (status: Unavailable). The transaction may already be on the network. Do not send again until sync or an explorer confirms whether this transaction was accepted. Local tracking also failed: database is locked. Check an explorer before retrying this send."
+  },
+  {
+    "notices": [
+      {"kind": "database_unavailable", "detail": "unable to open database file"}
+    ],
+    "message": "Failed to open DB for broadcast after local transaction creation: unable to open database file"
+  },
+  {
+    "notices": [
+      {"kind": "raw_transaction_unavailable", "txid": "4f1c", "detail": "Query returned no rows"}
+    ],
+    "message": "Failed to get raw tx for 4f1c after local transaction creation: Query returned no rows"
+  },
+  {
+    "notices": [
+      {"kind": "broadcast_failed", "index": 1, "total": 2, "txid": "4f1c", "detail": "Broadcast rejected: bad-txns-inputs-spent (code -26)"}
+    ],
+    "message": "Broadcast failed after 1/2 txs sent (4f1c). Error: Broadcast rejected: bad-txns-inputs-spent (code -26)"
+  },
+  {
+    "notices": [
+      {"kind": "broadcast_failed", "index": 0, "total": 1, "txid": "", "detail": "transport error"}
+    ],
+    "message": "Broadcast failed after 0/1 txs sent (). Error: transport error"
+  }
+]

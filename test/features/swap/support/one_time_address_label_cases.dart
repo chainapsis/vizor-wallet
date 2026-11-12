@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/one_time_address_label.dart';
+import '../../../support/test_l10n.dart';
 
 /// Registers the one-time address label tests, so the desktop and mobile
 /// lanes check the same cases.
@@ -34,7 +35,10 @@ void oneTimeAddressLabelTests() {
         await tester.sendKeyEvent(LogicalKeyboardKey.tab);
         await tester.sendKeyEvent(key);
         await tester.pump();
-        expect(find.text(OneTimeAddressRole.refund.explanation), findsOne);
+        expect(
+          find.text(OneTimeAddressRole.refund.explanation(testL10n)),
+          findsOne,
+        );
         await tester.pump(const Duration(seconds: 10));
       });
     }
@@ -46,7 +50,10 @@ void oneTimeAddressLabelTests() {
       expect(node, findsOne);
       tester.semantics.tap(node);
       await tester.pump();
-      expect(find.text(OneTimeAddressRole.refund.explanation), findsOne);
+      expect(
+        find.text(OneTimeAddressRole.refund.explanation(testL10n)),
+        findsOne,
+      );
       await tester.pump(const Duration(seconds: 10));
       semantics.dispose();
     });

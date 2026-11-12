@@ -263,6 +263,7 @@ void main() {
         tester,
         const ValueKey('mobile_account_remove_confirm'),
       );
+      await enterPasscode(tester, mobileE2ePasscode);
       await _waitForRecord(tester, link, (record) => record == null);
       expect(await directory.exists(), isFalse);
       final accounts = _container(tester).read(accountProvider).value!;

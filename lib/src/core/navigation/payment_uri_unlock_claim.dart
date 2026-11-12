@@ -26,15 +26,17 @@ class PaymentUriUnlockClaim {
 
   /// Say this instead — the link was claimed but is not being delivered.
   /// Null when there is nothing to say (nothing was parked).
-  final String? notice;
+  final PaymentUriNotice? notice;
 }
 
 /// Claims the parked payment-URI prefill after a successful unlock.
 ///
 /// Call it *after* the post-unlock work (`restoreAfterUnlock`,
-/// `refreshAfterUnlock`, `startSyncAnyway`) and before the `go('/home')`:
-/// claiming earlier would clear the prefill with no way to recover it if any
-/// of those threw, and the returned decision reads state those calls settle.
+/// `refreshAfterUnlock`) and before the `go('/home')`: claiming earlier would
+/// clear the prefill with no way to recover it if either threw, and the
+/// returned decision reads state those calls settle. The sync start that
+/// follows them settles nothing the claim reads, so it does not hold the
+/// claim or the navigation.
 ///
 /// The claim is more than the TTL. `decidePaymentUriDrain` is the one place
 /// that says whether a link can be shown at all, and its answer can change
@@ -50,7 +52,7 @@ PaymentUriUnlockClaim claimParkedPaymentUriAfterUnlock(WidgetRef ref) {
     // `takeIfFresh` already applied the park TTL; `expired` is the only
     // no-prefill outcome the user needs told about.
     return PaymentUriUnlockClaim(
-      notice: claimed.expired ? kPaymentUriExpiredMessage : null,
+      notice: claimed.expired ? PaymentUriNotice.expired : null,
     );
   }
 
@@ -78,7 +80,7 @@ PaymentUriUnlockClaim claimParkedPaymentUriAfterUnlock(WidgetRef ref) {
     // Whatever the policy would drop, drop here too, with its own sentence.
     PaymentUriDrainAction.dropWithMessage ||
     PaymentUriDrainAction.routeToWelcome => PaymentUriUnlockClaim(
-      notice: decision.message,
+      notice: decision.notice,
     ),
     // `wait` and `routeToUnlock` cannot be reached from a successful unlock
     // landing on `/home`. If the table ever grows a row that can, presenting

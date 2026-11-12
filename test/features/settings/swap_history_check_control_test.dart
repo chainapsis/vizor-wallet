@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/swap_history_check_control.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/swap_history_check_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import '../../support/test_l10n.dart';
 
 /// NEAR swap privacy, on.
 class _Privacy extends NearSwapPrivacyNotifier {
@@ -50,6 +52,7 @@ Widget _control(
     if (api != null) swapHistoryApiProvider.overrideWithValue(api),
   ],
   child: MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (context, child) => AppTheme(data: theme, child: child!),
     home: const Scaffold(
       body: Center(
@@ -227,10 +230,7 @@ void main() {
       _control(AppThemeData.dark, SwapHistoryCheck.updateRequired),
     );
     await tester.pump();
-    expect(
-      find.text(kSwapRecoveryUpdateMessage),
-      findsOneWidget,
-    );
+    expect(find.text(testL10n.swapRecoveryUpdateRequired), findsOneWidget);
   });
 
   testWidgets('a long check promises progress only while Vizor is open', (

@@ -2,11 +2,11 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/primitives.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../models/ironwood_migration_upgrade_stop.dart';
 import '../../models/mobile_ironwood_migration_attention_state.dart';
 
 class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
@@ -28,17 +28,15 @@ class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
     final colors = context.colors;
     final title = switch (kind) {
       MobileIronwoodMigrationAttentionKind.signature =>
-        count == 1
-            ? '1 note is ready for your signature'
-            : '$count notes are ready for your signature',
+        context.l10n.migrationMobileAttentionSignatureSheet(count),
       MobileIronwoodMigrationAttentionKind.continueMigration =>
-        'Continue your migration',
+        context.l10n.migrationMobileAttentionContinueTitle,
       MobileIronwoodMigrationAttentionKind.proof =>
-        'Your next migration batch is ready',
+        context.l10n.migrationMobileAttentionProofTitle,
       MobileIronwoodMigrationAttentionKind.lateBroadcast =>
-        'A migration transaction needs attention',
+        context.l10n.migrationMobileAttentionLateTitle,
       MobileIronwoodMigrationAttentionKind.upgradeStopped =>
-        'Migration stopped by network upgrade',
+        context.l10n.commonMigrationStoppedByNetworkUpgrade,
     };
     final caution = switch (kind) {
       MobileIronwoodMigrationAttentionKind.lateBroadcast ||
@@ -74,8 +72,8 @@ class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
             onPressed: onOpenMigration,
             child: Text(
               kind == MobileIronwoodMigrationAttentionKind.upgradeStopped
-                  ? kIronwoodUpgradeStopMoveRemainingLabel
-                  : 'Go to migration page',
+                  ? context.l10n.migrationUpgradeStopMoveRemainingLabel
+                  : context.l10n.migrationMobileAttentionOpen,
             ),
           ),
           const SizedBox(height: AppSpacing.s),
@@ -84,7 +82,7 @@ class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
             height: 50,
             variant: AppButtonVariant.ghost,
             onPressed: onLater,
-            child: const Text('I’ll visit later'),
+            child: Text(context.l10n.migrationMobileAttentionLater),
           ),
         ],
       ),
@@ -175,27 +173,29 @@ class _MobileIronwoodMigrationBannerState
     final label = widget.actionNeeded
         ? switch (widget.attentionKind!) {
             MobileIronwoodMigrationAttentionKind.signature =>
-              widget.actionNeededCount == 1
-                  ? '1 note is ready for signing'
-                  : '${widget.actionNeededCount} notes are ready for signing',
+              context.l10n.migrationMobileBannerSignature(
+                widget.actionNeededCount,
+              ),
             MobileIronwoodMigrationAttentionKind.continueMigration =>
-              'Continue your migration',
+              context.l10n.migrationMobileAttentionContinueTitle,
             MobileIronwoodMigrationAttentionKind.proof =>
-              'Next migration batch is ready',
+              context.l10n.migrationMobileBannerProof,
             MobileIronwoodMigrationAttentionKind.lateBroadcast =>
-              'Migration needs attention',
+              context.l10n.migrationMobileBannerLate,
             MobileIronwoodMigrationAttentionKind.upgradeStopped =>
-              'Migration stopped',
+              context.l10n.commonMigrationStopped,
           }
         : widget.inProgress
         ? widget.preparing
-              ? 'Preparing migration'
+              ? context.l10n.migrationNextActionDetailPreparing
               : widget.waitingForConfirmation
-              ? 'Waiting for confirmation...'
+              ? context.l10n.commonWaitingForConfirmation
               : widget.remainingText == null
-              ? 'Migration in progress'
-              : '${widget.remainingText} ZEC still migrating'
-        : 'Migrate to Ironwood';
+              ? context.l10n.migrationStatusDefaultButton
+              : context.l10n.migrationMobileBannerRemaining(
+                  widget.remainingText!,
+                )
+        : context.l10n.commonMigrateToIronwood;
     final contentColor = colors.text.homeCard;
     final stopped =
         widget.attentionKind ==

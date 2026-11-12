@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -42,7 +43,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'Privacy',
+              context.l10n.settingsPrivacyTitle,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
@@ -67,12 +68,12 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 children: [
                   _MobileSubOptionRow(
                     iconName: AppIcons.linkOff,
-                    label: 'NEAR swap privacy',
+                    label: context.l10n.settingsNearSwapPrivacyLabel,
                     keyPrefix: 'mobile_settings_near_swap_privacy',
                     enabled: nearSwapPrivacy.enabled,
                     unavailableLabel: nearSwapPrivacy.available
                         ? null
-                        : kNearSwapPrivacyUnavailableLabel,
+                        : context.l10n.settingsNearSwapPrivacyUnavailable,
                     onToggle: nearSwapPrivacy.available
                         ? () => unawaited(
                             ref.read(nearSwapPrivacyProvider.notifier).toggle(),
@@ -82,7 +83,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                   // Feedback for this toggle only, as under Private queries.
                   if (nearSwapPrivacy.transition case final transition?)
                     Text(
-                      transition,
+                      transition.message(context.l10n),
                       key: const ValueKey(
                         'mobile_settings_near_swap_privacy_transition',
                       ),
@@ -96,7 +97,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                       horizontal: AppSpacing.xxs,
                     ),
                     child: Text(
-                      nearSwapPrivacy.description,
+                      nearSwapPrivacy.description.text(context.l10n),
                       key: const ValueKey(
                         'mobile_settings_near_swap_privacy_description',
                       ),
@@ -192,7 +193,10 @@ class _MobileSubOptionRow extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        unavailableLabel ?? (enabled ? 'On' : 'Off'),
+                        unavailableLabel ??
+                            (enabled
+                                ? context.l10n.settingsStatusOn
+                                : context.l10n.settingsStatusOff),
                         key: ValueKey('${keyPrefix}_status'),
                         style: AppTypography.labelLarge.copyWith(
                           color: enabled && !unavailable

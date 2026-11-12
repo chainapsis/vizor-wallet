@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_hardware_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -49,6 +50,7 @@ void main() {
           ledgerTargetPlatformProvider.overrideWithValue(platform),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(

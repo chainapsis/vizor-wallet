@@ -9,6 +9,7 @@ import 'shield_icon.dart';
 import 'shield_haptics.dart';
 import 'shield_metal.dart';
 import 'shield_motion.dart';
+import '../../../../../core/l10n/l10n.dart';
 
 /// "Drag to shield": a glass track with a metal pin (Figma 8810:78585/78587).
 ///
@@ -209,7 +210,7 @@ class _SlideToShieldState extends State<SlideToShield>
     final reduce = MediaQuery.disableAnimationsOf(context);
     return Semantics(
       button: true,
-      label: 'Drag to shield',
+      label: context.l10n.homeShieldDrag,
       enabled: !_committed,
       onTap: _committed ? null : () => _commit(1200),
       child: Listener(
@@ -390,10 +391,11 @@ class _TrackPainter extends CustomPainter {
     canvas.drawRect(
       rect,
       Paint()
-        ..shader = ui.Gradient.radial(Offset(knobX + 30, size.height / 2), 100, [
-          const Color(0xFFAA2455).withValues(alpha: 0.36 + 0.32 * progress),
-          const Color(0x00AA2455),
-        ]),
+        ..shader =
+            ui.Gradient.radial(Offset(knobX + 30, size.height / 2), 100, [
+              const Color(0xFFAA2455).withValues(alpha: 0.36 + 0.32 * progress),
+              const Color(0x00AA2455),
+            ]),
     );
     if (flash > 0) {
       canvas.drawRect(rect, Paint()..color = _white.withValues(alpha: flash));
@@ -418,7 +420,7 @@ class _Label extends StatelessWidget {
     // Clears by halfway and drifts a little with the pin.
     final opacity = (1 - progress / 0.5).clamp(0.0, 1.0);
     Widget text = Text(
-      'Drag to shield',
+      context.l10n.homeShieldDrag,
       style: VText.labelL.copyWith(color: _white),
     );
     final phase = shimmer;

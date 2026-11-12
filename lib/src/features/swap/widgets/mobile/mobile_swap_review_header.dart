@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/review_info_row.dart';
@@ -62,9 +63,7 @@ class MobileSwapReviewHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      child: ReviewInfoFlow(
-        rows: [_row(context, pay), _row(context, receive)],
-      ),
+      child: ReviewInfoFlow(rows: [_row(context, pay), _row(context, receive)]),
     );
   }
 
@@ -82,7 +81,9 @@ class MobileSwapReviewHeader extends StatelessWidget {
       trailing: fullAddress == null && row.oneTimeAddress != null
           ? OneTimeAddressLabel(role: row.oneTimeAddress!)
           : null,
-      trailingActionLabel: fullAddress == null ? null : 'Full address',
+      trailingActionLabel: fullAddress == null
+          ? null
+          : context.l10n.commonFullAddress,
       trailingActionKey: const ValueKey('mobile_swap_full_address'),
       onTrailingAction: fullAddress == null
           ? null
@@ -91,8 +92,10 @@ class MobileSwapReviewHeader extends StatelessWidget {
               title:
                   row.addressNetworkLabel ??
                   (row.asset.isNativeZec
-                      ? 'Zcash address'
-                      : '${row.asset.chainLabel} address'),
+                      ? context.l10n.commonZcashAddress
+                      : context.l10n.commonAddressForChain(
+                          row.asset.chainLabel,
+                        )),
               address: fullAddress,
               leading: SwapAssetIcon(
                 asset: row.asset,

@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_surface.dart';
 import 'package:zcash_wallet/widgetbook/payment_request_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('mobile status previews show details and matching actions', (
@@ -129,6 +130,7 @@ Future<void> _pumpPaymentRequest(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: textScaler),
         child: child!,

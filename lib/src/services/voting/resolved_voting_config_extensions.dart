@@ -76,8 +76,8 @@ extension ResolvedVotingConfigX on ResolvedVotingConfig {
       return;
     }
     final reason = isRoundExplicitlySkipped(roundId)
-        ? 'it is present but failed dynamic-config authentication'
-        : 'it is absent from the authenticated round set';
+        ? 'it is present but failed dynamic-config authentication' // l10n-ignore: diagnostic text
+        : 'it is absent from the authenticated round set'; // l10n-ignore: diagnostic text
     throw StateError(
       'Round $roundId is not authenticated by voting config: $reason.',
     );

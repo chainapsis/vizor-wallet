@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/l10n/l10n.dart' show AppLocalizations;
 import '../../providers/voting/voting_state.dart';
 import 'voting_resume_plan.dart';
 
@@ -57,7 +58,7 @@ class VotingAuthorityProgress {
   ///
   /// Derived from the counts rather than stored, so a ratcheted copy of this
   /// projection describes the counts it actually shows.
-  String? get detail {
+  String? detail(AppLocalizations l10n) {
     if (totalBundles <= 0) return null;
     // Same rule as the ballot line: the count appears once it has left zero.
     // A bundle only counts as proved when its whole proof lands, so until the
@@ -65,18 +66,18 @@ class VotingAuthorityProgress {
     // one bundle — the common one — would sit on `0 of 1 bundles proved` for
     // the entire proof. The ring carries that proof's progress meanwhile.
     final count = provedBundles > 0
-        ? '$provedBundles of $totalBundles bundles proved'
+        ? l10n.votingProgressBundlesProved(provedBundles, totalBundles)
         : null;
     final suffix = count == null ? '' : ' — $count';
     if (provedBundles >= totalBundles) {
       // A finished proof still owes signing and, on the recovery paths that
       // still submit separately, a chain episode. Keep the ring animating.
       return awaitingChain
-          ? 'Waiting for submission and confirmation$suffix'
-          : 'Finalizing delegation$suffix';
+          ? l10n.votingProgressWaitingConfirmation(suffix)
+          : l10n.votingProgressFinalizingDelegation(suffix);
     }
-    if (reusingProof) return 'Reusing an in-progress proof$suffix';
-    if (awaitingChain) return 'Waiting for submission and confirmation$suffix';
+    if (reusingProof) return l10n.votingProgressReusingProof(suffix);
+    if (awaitingChain) return l10n.votingProgressWaitingConfirmation(suffix);
     return count;
   }
 }
@@ -145,14 +146,14 @@ class VotingBallotProgress {
   /// the whole stage is often over in a couple of seconds, so the number spent
   /// its life mid-jump — a count that reads as a flicker is worse than no
   /// count. [completedProposals] still carries the figure for the ring.
-  String? get detail {
+  String? detail(AppLocalizations l10n) {
     if (totalProposals <= 0) return null;
     return switch (stage) {
-      VotingBallotStage.preparing => 'Preparing your ballot',
-      VotingBallotStage.proving => 'Casting votes',
+      VotingBallotStage.preparing => l10n.votingBallotPreparing,
+      VotingBallotStage.proving => l10n.votingBallotCasting,
       VotingBallotStage.submitting => '',
-      VotingBallotStage.confirming => 'Waiting for chain confirmation',
-      VotingBallotStage.delivering => 'Delivering your responses',
+      VotingBallotStage.confirming => l10n.votingBallotWaitingChain,
+      VotingBallotStage.delivering => l10n.votingBallotDelivering,
       VotingBallotStage.complete => null,
     };
   }
@@ -493,18 +494,18 @@ class VotingProgressRatchet {
     _totalBundles = _advanceTotal(
       stored: _totalBundles,
       incoming: authority.totalBundles,
-      label: 'authority total',
+      label: 'authority total', // l10n-ignore: log label
     );
     _provedBundles = _advanceCount(
       stored: _provedBundles,
       incoming: authority.provedBundles,
       total: _totalBundles,
-      label: 'bundles proved',
+      label: 'bundles proved', // l10n-ignore: log label
     );
     _authorityFractionMax = _advanceFraction(
       stored: _authorityFractionMax,
       incoming: authority.fraction,
-      label: 'authority ring',
+      label: 'authority ring', // l10n-ignore: log label
     );
     return VotingAuthorityProgress(
       provedBundles: _provedBundles,
@@ -526,19 +527,19 @@ class VotingProgressRatchet {
     _totalProposals = _advanceTotal(
       stored: _totalProposals,
       incoming: ballot.totalProposals,
-      label: 'ballot total',
+      label: 'ballot total', // l10n-ignore: log label
     );
     _provenProposals = _advanceCount(
       stored: _provenProposals,
       incoming: ballot.provenProposals,
       total: _totalProposals,
-      label: 'votes proven',
+      label: 'votes proven', // l10n-ignore: log label
     );
     _completedProposals = _advanceCount(
       stored: _completedProposals,
       incoming: ballot.completedProposals,
       total: _totalProposals,
-      label: 'votes completed',
+      label: 'votes completed', // l10n-ignore: log label
     );
     final storedStage = _stage;
     if (storedStage == null || ballot.stage.index > storedStage.index) {
@@ -549,7 +550,7 @@ class VotingProgressRatchet {
     _ballotFractionMax = _advanceFraction(
       stored: _ballotFractionMax,
       incoming: ballot.fraction,
-      label: 'ballot ring',
+      label: 'ballot ring', // l10n-ignore: log label
     );
     final stage = _stage ?? ballot.stage;
     final complete = stage == VotingBallotStage.complete;
@@ -642,7 +643,7 @@ class VotingProgressRatchet {
   /// in a frame is still reported — several can happen at once.
   void _logRegression(String what, String incoming, String held) {
     final message =
-        '[zcash] Voting: progress regression suppressed '
+        '[zcash] Voting: progress regression suppressed ' // l10n-ignore: log text
         '$what incoming=$incoming held=$held';
     _frameRegressions.add(message);
     if (_loggedRegressions.contains(message)) return;

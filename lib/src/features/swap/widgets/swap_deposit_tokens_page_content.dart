@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -63,8 +64,8 @@ class SwapDepositTokensPageContent extends StatelessWidget {
         checking: checking,
         warning: checkWarning,
         buttonLabel: kAppFormFactor == AppFormFactor.mobile
-            ? 'I’ve deposited tokens'
-            : "I've deposited",
+            ? context.l10n.swapDepositDoneMobile
+            : context.l10n.swapDepositDoneDesktop,
         onDeposited: onDeposited,
         mobile: mobile,
       ),
@@ -110,7 +111,7 @@ class SwapHardwareZecDepositPageContent extends StatelessWidget {
       actionArea: _DepositConfirmActionArea(
         checking: false,
         warning: null,
-        buttonLabel: 'Deposit ZEC',
+        buttonLabel: context.l10n.swapDepositZecButton,
         onDeposited: onDepositZec,
         mobile: mobile,
       ),
@@ -192,7 +193,7 @@ class _SwapDepositPageShell extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Deposit tokens',
+            context.l10n.swapDepositTitle,
             key: const ValueKey('swap_deposit_tokens_title'),
             textAlign: TextAlign.center,
             style: appSerifDisplayStyle(color: colors.text.accent),
@@ -242,7 +243,7 @@ class _DepositNetworkGuidance extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
         child: Center(
           child: Text(
-            'Send only ${asset.symbol} on ${asset.chainLabel}',
+            context.l10n.swapDepositSendOnly(asset.symbol, asset.chainLabel),
             textAlign: TextAlign.center,
             style: AppTypography.labelMedium.copyWith(
               color: context.colors.text.secondary,
@@ -464,7 +465,11 @@ class _DepositConfirmButtonLabel extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('Checking', maxLines: 1, overflow: TextOverflow.ellipsis),
+        Text(
+          context.l10n.swapDepositChecking,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(width: AppSpacing.xxs),
         const AppIcon(
           AppIcons.loader,
@@ -551,7 +556,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xxs),
                     Text(
-                      'Time’s up',
+                      context.l10n.commonTimeSUp,
                       key: const ValueKey('swap_deposit_timeout_label'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -563,7 +568,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  'Swap failed',
+                  context.l10n.commonSwapFailed,
                   key: const ValueKey('swap_deposit_timeout_title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -572,7 +577,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  'This deposit address is no longer valid.\nPlease, start another swap transaction.',
+                  context.l10n.swapDepositTimeoutBody,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
@@ -591,7 +596,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
             size: AppButtonSize.large,
             height: 36,
             leading: const AppIcon(AppIcons.renew, size: 16),
-            child: const Text('Restart swap'),
+            child: Text(context.l10n.swapTimeoutRestart),
           ),
         ],
       ),
@@ -771,9 +776,9 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
       return _formatCountdown(_remaining);
     }
     if (_remaining.inHours >= 1) {
-      return _formatDepositDurationLabel(_remaining);
+      return _formatDepositDurationLabel(context.l10n, _remaining);
     }
-    return _formatMinuteLabel(_remaining.inMinutes);
+    return _formatMinuteLabel(context.l10n, _remaining.inMinutes);
   }
 
   @override
@@ -788,7 +793,7 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Deposit within',
+            context.l10n.swapDepositWithin,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: textStyle,
@@ -814,7 +819,7 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
       children: [
         Flexible(
           child: Text(
-            'Deposit within',
+            context.l10n.swapDepositWithin,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: textStyle,
@@ -1003,10 +1008,14 @@ class _DepositDetailsList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _detailRow(
-            label: mobile ? 'Amount to deposit' : 'Amount',
+            label: mobile
+                ? context.l10n.swapDepositAmountToDeposit
+                : context.l10n.commonAmount,
             value: amountText,
             copyText: _depositAmountCopyText(amountText, asset),
-            toastMessage: mobile ? 'Amount copied' : 'Amount Copied',
+            toastMessage: mobile
+                ? context.l10n.swapDepositAmountCopiedMobile
+                : context.l10n.swapDepositAmountCopiedDesktop,
             copyKey: const ValueKey('swap_copy_deposit_amount'),
             rightKey: const ValueKey('swap_deposit_amount_right_item'),
             desktopLabelWidth: _desktopAmountLabelWidth,
@@ -1015,10 +1024,10 @@ class _DepositDetailsList extends StatelessWidget {
             desktopValueOverflow: TextOverflow.visible,
           ),
           _detailRow(
-            label: 'One-time address',
+            label: context.l10n.swapDepositOneTimeAddress,
             value: compactSwapAddress(depositAddress),
             copyText: depositAddress,
-            toastMessage: 'Address copied',
+            toastMessage: context.l10n.commonAddressCopied,
             copyKey: const ValueKey('swap_copy_deposit_address'),
             scaleValueToFit: true,
             rightKey: const ValueKey('swap_deposit_address_right_item'),
@@ -1027,10 +1036,10 @@ class _DepositDetailsList extends StatelessWidget {
           ),
           if (memo?.trim().isNotEmpty ?? false)
             _detailRow(
-              label: 'Memo',
+              label: context.l10n.commonMemo,
               value: memo!.trim(),
               copyText: memo!.trim(),
-              toastMessage: 'Memo copied',
+              toastMessage: context.l10n.swapDepositMemoCopied,
               copyKey: const ValueKey('swap_copy_deposit_memo'),
               rightKey: const ValueKey('swap_deposit_memo_right_item'),
               desktopLabelWidth: _desktopMemoLabelWidth,
@@ -1403,21 +1412,25 @@ String _formatCountdown(Duration remaining) {
   return '$minutes:$seconds';
 }
 
-String _formatDepositDurationLabel(Duration remaining) {
+String _formatDepositDurationLabel(AppLocalizations l10n, Duration remaining) {
   if (remaining <= Duration.zero) return '00:00';
   if (remaining.inHours >= 1) {
     final hours = (remaining.inSeconds / Duration.secondsPerHour).ceil();
-    return _formatHourLabel(hours);
+    return _formatHourLabel(l10n, hours);
   }
-  return _formatMinuteLabel(remaining.inMinutes);
+  return _formatMinuteLabel(l10n, remaining.inMinutes);
 }
 
-String _formatHourLabel(int hours) {
-  return hours == 1 ? '1hr' : '${hours}hrs';
+String _formatHourLabel(AppLocalizations l10n, int hours) {
+  return hours == 1
+      ? l10n.commonDurationOneHour
+      : l10n.swapDepositHoursMany(hours);
 }
 
-String _formatMinuteLabel(int minutes) {
-  return minutes == 1 ? '1min' : '${minutes}mins';
+String _formatMinuteLabel(AppLocalizations l10n, int minutes) {
+  return minutes == 1
+      ? l10n.commonDurationOneMinute
+      : l10n.swapDepositMinutesMany(minutes);
 }
 
 String _depositAmountCopyText(String amountText, SwapAsset asset) {

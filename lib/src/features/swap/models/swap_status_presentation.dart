@@ -1,4 +1,6 @@
+import '../../../core/l10n/l10n.dart';
 import '../../address_book/models/address_book_contact.dart';
+import 'swap_detail_tooltips.dart';
 
 enum SwapStatusBadgeKind { liveQuote, completed, refunded, warning, failed }
 
@@ -6,10 +8,21 @@ enum SwapStatusTab { progress, details }
 
 enum SwapStatusStepState { complete, active, pending }
 
+/// What a progress step does; picks the icon of a step that is not done.
+enum SwapStatusStepKind {
+  /// The provider swaps the assets.
+  swap,
+
+  /// The provider sends the swapped asset to this wallet.
+  walletDelivery,
+  other,
+}
+
 class SwapStatusStepData {
   const SwapStatusStepData({
     required this.title,
     required this.state,
+    this.kind = SwapStatusStepKind.other,
     this.completeTitle,
     this.activeTitle,
     this.pendingTitle,
@@ -19,6 +32,7 @@ class SwapStatusStepData {
 
   final String title;
   final SwapStatusStepState state;
+  final SwapStatusStepKind kind;
   final String? completeTitle;
   final String? activeTitle;
   final String? pendingTitle;
@@ -37,6 +51,7 @@ class SwapStatusStepData {
     return SwapStatusStepData(
       title: title,
       state: state,
+      kind: kind,
       completeTitle: completeTitle,
       activeTitle: activeTitle,
       pendingTitle: pendingTitle,
@@ -46,10 +61,90 @@ class SwapStatusStepData {
   }
 }
 
+/// Semantic identity of a status detail row. Widgets branch on this, never on
+/// the (localized) label text.
+enum SwapStatusDetailKind {
+  swapFee,
+  totalFees,
+  txFee,
+  refundFee,
+  refundedAmount,
+  refundTo,
+  guaranteedMinimum,
+  priceProtection,
+  account,
+  timestamp,
+  txId,
+  slippageTolerance,
+  memo,
+  missingDeposit,
+  requiredDeposit,
+  detectedDeposit,
+  depositDeadline,
+  depositAddress,
+  recipient,
+  refundAddress,
+  sourceTx,
+  deliveryTx,
+  other;
+
+  /// Fee rows sort last and get the divider before them.
+  bool get isFee => switch (this) {
+    swapFee || totalFees || txFee || refundFee => true,
+    _ => false,
+  };
+
+  /// Values that are addresses or tx ids: shortened/scaled to fit the row.
+  bool get compactsValue => switch (this) {
+    depositAddress ||
+    recipient ||
+    refundAddress ||
+    refundTo ||
+    refundFee ||
+    refundedAmount ||
+    txId ||
+    sourceTx ||
+    deliveryTx => true,
+    _ => false,
+  };
+
+  bool get isDepositAddress => this == depositAddress;
+
+  /// Address rows hidden from the mobile success details.
+  bool get isSuccessAddress => this == recipient || this == depositAddress;
+
+  bool get hiddenOnMobile => this == priceProtection || this == account;
+
+  /// Rows kept in the mobile progress "transaction details" card.
+  bool get inMobileProgressTransactionDetails => switch (this) {
+    depositAddress ||
+    slippageTolerance ||
+    guaranteedMinimum ||
+    memo ||
+    missingDeposit ||
+    requiredDeposit ||
+    detectedDeposit ||
+    depositDeadline ||
+    refundFee ||
+    timestamp ||
+    txId => true,
+    _ => false,
+  };
+
+  /// Fallback tooltip for a help row that carries no explicit tooltip.
+  String helpTooltipFor(AppLocalizations l10n) => switch (this) {
+    swapFee => swapFeeTooltip(l10n),
+    guaranteedMinimum => swapGenericMinimumReceiveTooltip(l10n),
+    totalFees => swapTotalFeesTooltip(l10n),
+    _ => swapStatusDetailTooltip(l10n),
+  };
+}
+
 class SwapStatusDetailRowData {
   const SwapStatusDetailRowData({
     required this.label,
     required this.value,
+    this.kind = SwapStatusDetailKind.other,
     this.copyable = false,
     this.copyText,
     this.help = false,
@@ -62,6 +157,7 @@ class SwapStatusDetailRowData {
 
   final String label;
   final String value;
+  final SwapStatusDetailKind kind;
   final bool copyable;
   final String? copyText;
   final bool help;

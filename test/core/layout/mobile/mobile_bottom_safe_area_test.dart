@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 /// Home-indicator inset reported by Face ID iPhones.
 const double _inset = 34;
@@ -34,6 +35,7 @@ const _barKey = ValueKey('bar');
 
 Widget _shellHost() {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     home: MediaQuery(
       data: const MediaQueryData(

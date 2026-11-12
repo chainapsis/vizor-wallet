@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -26,11 +27,12 @@ enum SwapAddressWait {
 }
 
 /// The composer button's label while a quote waits for [wait].
-String swapAddressWaitLabel(SwapAddressWait wait) => switch (wait) {
-  SwapAddressWait.preparing => 'Preparing address…',
-  SwapAddressWait.sync => 'Waiting for sync…',
-  SwapAddressWait.server => 'Choose a server',
-};
+String swapAddressWaitLabel(AppLocalizations l10n, SwapAddressWait wait) =>
+    switch (wait) {
+      SwapAddressWait.preparing => l10n.swapOneTimeAddressPreparing,
+      SwapAddressWait.sync => l10n.swapAddressWaitSync,
+      SwapAddressWait.server => l10n.swapAddressWaitServer,
+    };
 
 /// What, if anything, a quote for a swap that sends ZEC ([sendsZec]) or
 /// receives it waits for. Only swaps with a one-time ZEC address wait.

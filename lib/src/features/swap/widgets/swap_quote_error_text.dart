@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../providers/swap_state_provider.dart'
-    show kPrivateSwapAddressLimitMessage;
+import '../models/swap_message.dart';
 
 /// A quote error under the swap or pay composer.
 class SwapQuoteErrorText extends StatelessWidget {
@@ -53,11 +53,17 @@ class SwapQuoteErrorText extends StatelessWidget {
   }
 }
 
-/// The "View swaps" link under [kPrivateSwapAddressLimitMessage]: the swaps
-/// holding every one-time address are in Activity.
+/// The "View swaps" link under the error for a full set of one-time
+/// addresses ([SwapNoticeKind.privateReceiveAddressLimit]), when [shown] is
+/// that [quoteError]: the swaps holding every one-time address are in
+/// Activity.
 ({String label, VoidCallback onPressed})? swapQuoteErrorAction(
-  String? message, {
+  AppLocalizations l10n,
+  SwapMessage? quoteError, {
+  required String? shown,
   required VoidCallback onViewSwaps,
-}) => message == kPrivateSwapAddressLimitMessage
-    ? (label: 'View swaps', onPressed: onViewSwaps)
+}) =>
+    quoteError == const SwapNotice(SwapNoticeKind.privateReceiveAddressLimit) &&
+        shown == quoteError?.text(l10n)
+    ? (label: l10n.swapQuoteErrorViewSwaps, onPressed: onViewSwaps)
     : null;

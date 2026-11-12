@@ -20,12 +20,14 @@ import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/widgetbook/mobile_gift_onboarding_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../figma_compare/figma_compare_font_loader.dart';
 
 Future<void> _render(WidgetTester tester, WidgetBuilder builder) async {
   await tester.binding.setSurfaceSize(const Size(393, 852));
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Builder(builder: builder),

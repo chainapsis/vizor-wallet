@@ -1,20 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/l10n/l10n.dart';
 import '../services/device_owner_auth.dart';
-
-const kWalletResetDeviceAuthReason = 'Confirm reset Vizor';
-const kWalletResetDeviceAuthRequiredMessage =
-    'Device authentication is required to reset Vizor.';
-const kWalletResetDeviceAuthFailedMessage =
-    "Couldn't verify device ownership. Please try again.";
-const kWalletResetFailedMessage = "Couldn't reset Vizor. Please try again.";
 
 final deviceOwnerAuthProvider = Provider<DeviceOwnerAuth>(
   (ref) => DeviceOwnerAuth(),
 );
 
-Future<bool> verifyDeviceOwnerForWalletReset(WidgetRef ref) {
+Future<bool> verifyDeviceOwnerForWalletReset(
+  WidgetRef ref,
+  AppLocalizations l10n,
+) {
   return ref
       .read(deviceOwnerAuthProvider)
-      .verify(reason: kWalletResetDeviceAuthReason);
+      .verify(reason: l10n.walletResetDeviceAuthReason);
 }

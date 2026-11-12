@@ -23,11 +23,18 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_ledger_signing_overl
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
-  for (final scenario in ['fresh', 'removed', 'cached', 'checkpoint']) {
+  for (final scenario in [
+    'fresh',
+    'removed',
+    'cached',
+    'checkpoint',
+    'review',
+  ]) {
     final leaveRoute = scenario == 'removed';
     final cached = scenario == 'cached';
     testWidgets('mobile Ledger persists before ack ($scenario)', (
@@ -65,7 +72,10 @@ void main() {
             builder: (context, _) {
               signingContext = context;
               return MobileSwapLedgerSignScreen(
-                args: MobileSwapLedgerSignArgs(intent: _intent),
+                args: MobileSwapLedgerSignArgs(
+                  intent: _intent,
+                  startedFromReview: scenario == 'review',
+                ),
               );
             },
           ),
@@ -98,6 +108,7 @@ void main() {
             ),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -224,6 +235,7 @@ void main() {
           ),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),

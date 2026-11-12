@@ -10,8 +10,14 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/widgetbook/send_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+
+import '../support/app_test_fonts.dart';
 
 void main() {
+  // The address action pills size to their label, so measure real glyphs.
+  setUpAll(loadAppTestFonts);
+
   testWidgets('mobile send recipient empty use case renders send screen', (
     tester,
   ) async {
@@ -553,6 +559,7 @@ Future<void> _pumpMobileSendUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       theme: platform == null ? null : ThemeData(platform: platform),
       builder: (context, child) {
         if (textScaler == null) return child!;

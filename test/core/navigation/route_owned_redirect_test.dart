@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/navigation/route_owned_redirect.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('coalesces rebuilds and revalidates the latest request', (
@@ -13,6 +14,7 @@ void main() {
     final navigated = <String>[];
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         navigatorObservers: [RouteOwnedNavigationObserver()],
         home: ValueListenableBuilder<int>(
           valueListenable: revision,
@@ -51,6 +53,7 @@ void main() {
       final root = GlobalKey<NavigatorState>();
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           navigatorKey: root,
           navigatorObservers: [RouteOwnedNavigationObserver()],
           home: Navigator(

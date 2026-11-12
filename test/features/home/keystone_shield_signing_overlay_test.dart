@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/widgets/keystone_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -53,6 +54,7 @@ Widget _host(ProviderContainer container, {required bool mountOverlay}) {
     child: AppTheme(
       data: AppThemeData.dark,
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: Scaffold(
           body: mountOverlay
               ? KeystoneShieldSigningOverlay(onCancel: () {}, onComplete: () {})

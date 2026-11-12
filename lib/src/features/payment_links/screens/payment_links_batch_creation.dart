@@ -69,10 +69,8 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       };
 
   String? get _batchErrorText => switch (_batchSubmission) {
-    _BatchUncertain() =>
-      'Vizor couldn’t confirm the payment was sent. Check this group in Gift Cards before creating another.',
-    _BatchUnsaved() =>
-      'Funding was sent, but the cards could not be saved. Try again before closing Vizor.',
+    _BatchUncertain() => context.l10n.paymentLinkBatchUncertain,
+    _BatchUnsaved() => context.l10n.paymentLinkBatchFundedNotSaved,
     _ => switch (_batchQuote) {
       _BatchQuoteReady(:final problem) => problem,
       _BatchQuoteFailed(:final message) => message,
@@ -220,7 +218,9 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     final minimum = BigInt.from(_batchCount) * amount;
     if (sync!.spendableBalance <= minimum) {
       setState(
-        () => _batchQuote = const _BatchQuoteFailed(_kBatchOverBalanceText),
+        () => _batchQuote = _BatchQuoteFailed(
+          context.l10n.paymentLinkBatchOverBalance,
+        ),
       );
       return;
     }
@@ -255,8 +255,8 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
         _batchCount < kPaymentLinkBatchMinCount ||
         _batchCount > _batchMaxCount) {
       setState(
-        () => _batchQuote = const _BatchQuoteFailed(
-          'No active account is available.',
+        () => _batchQuote = _BatchQuoteFailed(
+          context.l10n.paymentLinkNoActiveAccountAvailable,
         ),
       );
       return;
@@ -286,9 +286,9 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
           draft,
           spendable: spendable,
           problem: spendable == null
-              ? 'Available balance is still loading. Try again after wallet sync.'
+              ? context.l10n.paymentLinkBatchQuoteNotReady
               : draft.quote.totalDeductedZatoshi > spendable
-              ? _kBatchOverBalanceText
+              ? context.l10n.paymentLinkBatchOverBalance
               : null,
         ),
       );
@@ -296,9 +296,9 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       if (!mounted || generation != _batchPreparationGeneration) return;
       setState(
         () => _batchQuote = error is PaymentLinkBatchRejected
-            ? _BatchQuoteFailed(error.message)
-            : const _BatchQuoteFailed(
-                'These cards could not be prepared.',
+            ? _BatchQuoteFailed(error.text(context.l10n))
+            : _BatchQuoteFailed(
+                context.l10n.paymentLinkBatchPrepareFailed,
                 retryable: true,
               ),
       );
@@ -312,7 +312,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       return;
     }
     if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
-      _showError(kNetworkUpgradeHoldMessage);
+      _showError(networkUpgradeHoldText(context.l10n));
       return;
     }
     final draft = quote.draft;
@@ -332,16 +332,18 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       if (!mounted) return;
       _applyBatchFundingResult(result);
     } on PaymentLinkBatchQuoteChanged {
-      _requoteBatch(_kBatchFeeChangedText);
+      _requoteBatch(context.l10n.paymentLinkBatchFeeChanged);
     } on PaymentLinkBatchPreSubmissionFailure catch (failure) {
       _requoteBatch(
-        failure.message ??
-            'No cards were funded. Review the amount and try again.',
+        failure.hold?.message(context.l10n) ??
+            context.l10n.paymentLinkBatchNoneFunded,
       );
     } on PaymentLinkBatchRejected catch (rejected) {
       // Rejected while proposing: nothing reached the network.
       if (!mounted) return;
-      setState(() => _batchQuote = _BatchQuoteFailed(rejected.message));
+      setState(
+        () => _batchQuote = _BatchQuoteFailed(rejected.text(context.l10n)),
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -409,9 +411,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
           : PaymentLinksLocalPage.home;
     });
     if (!sourceStillActive) {
-      _showError(
-        'Cards were created under the previous account. Switch back to view them.',
-      );
+      _showError(context.l10n.paymentLinkBatchPreviousAccount);
     }
   }
 
@@ -431,7 +431,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _batchSubmission = _BatchUnsaved(result));
-      _showError('Card details could not be saved. Try again.');
+      _showError(context.l10n.paymentLinkBatchDetailsNotSaved);
     }
   }
 
@@ -489,7 +489,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     if (!mounted || _hardwareBatchSigning != draft) return;
     setState(() {
       _batchQuote = refusal is PaymentLinkBatchRejected
-          ? _BatchQuoteFailed(refusal.message)
+          ? _BatchQuoteFailed(refusal.text(context.l10n))
           : const _BatchQuoteEmpty();
       _batchSubmission = uncertain
           ? const _BatchUncertain()
@@ -497,7 +497,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       _operationInProgress = false;
     });
     if (refusal is PaymentLinkBatchQuoteChanged) {
-      _showError(_kBatchFeeChangedText);
+      _showError(context.l10n.paymentLinkBatchFeeChanged);
     }
     await _loadRecoveries(showError: false);
     if (!uncertain &&
@@ -575,6 +575,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
         _batchPresentationDirty = true;
       }),
       spendable: spendable,
+      privacyModeEnabled: ref.watch(privacyModeProvider),
       quote: quote,
       preparing: batchQuote is _BatchQuotePreparing,
       waitingForSync: batchQuote is _BatchQuoteWaitingForSync,
@@ -582,7 +583,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       submitting: _batchBusy,
       retrySaving: submission is _BatchUnsaved,
       error: _messageExceedsByteLimit
-          ? kPaymentLinkMessageTooLargeText
+          ? context.l10n.paymentLinkMessageTooLarge
           : _batchErrorText,
       onCountChanged: _setBatchCount,
       onAmountChanged: (_) => _scheduleBatchQuote(),
@@ -624,11 +625,6 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     );
   }
 }
-
-const _kBatchFeeChangedText = 'The network fee changed. Review the new total.';
-
-const _kBatchOverBalanceText =
-    'Reduce the amount or number of cards to fit your available balance.';
 
 /// Where a group's quote stands.
 sealed class _BatchQuote {

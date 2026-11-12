@@ -162,7 +162,11 @@ class WalletPirServerState {
     final base = selectedBaseUrl;
     if (base == null) return null;
     if (customServer != null) {
-      return WalletPirServerOption(label: 'Custom server', baseUrl: base);
+      return WalletPirServerOption(
+        label:
+            'Custom server', // l10n-ignore: not displayed; the custom row uses settingsPirCustomServer
+        baseUrl: base,
+      ); // l10n-ignore: not displayed; the custom row uses settingsPirCustomServer
     }
     for (final server in servers) {
       if (server.baseUrl == base) return server;
@@ -479,7 +483,8 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
     } catch (_) {
       return WalletPirCustomServer(
         baseUrl,
-        error: 'Choose a valid HTTPS server.',
+        error:
+            'Choose a valid HTTPS server.', // l10n-ignore: only isValid is read; never shown
       );
     }
   }

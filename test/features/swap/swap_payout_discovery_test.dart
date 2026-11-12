@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import '../../support/test_l10n.dart';
 
 final _now = DateTime.utc(2026, 10, 27, 12);
 const _state = SwapState(
@@ -345,21 +346,26 @@ void main() {
       privateAddress: true,
     );
     final finding = swapActivityStatusPresentationForIntent(
+      testL10n,
       _state,
       intent,
       findingPayout: true,
     );
-    expect(finding.statusLabel, kSwapFindingPayoutLabel);
+    expect(finding.statusLabel, testL10n.swapFindingPayout);
     expect(finding.title, 'Swap in progress...');
     // The progress tab, not the completed summary.
     expect(finding.showTabs, isTrue);
     expect(finding.badgeKind, SwapStatusBadgeKind.liveQuote);
-    expect(finding.steps.last.activeTitle, kSwapFindingPayoutLabel);
+    expect(finding.steps.last.activeTitle, testL10n.swapFindingPayout);
     expect(finding.steps.last.lastCheckedLabel, isNull);
     // Same steps as an ordinary swap, so the page doesn't grow.
-    final found = swapActivityStatusPresentationForIntent(_state, intent);
+    final found = swapActivityStatusPresentationForIntent(
+      testL10n,
+      _state,
+      intent,
+    );
     expect(finding.steps, hasLength(found.steps.length));
-    expect(found.statusLabel, isNot(kSwapFindingPayoutLabel));
+    expect(found.statusLabel, isNot(testL10n.swapFindingPayout));
     expect(found.showTabs, isFalse);
   });
 
@@ -392,7 +398,7 @@ void main() {
         ),
       ),
     );
-    expect(row!.statusText, kSwapFindingPayoutLabel);
+    expect(row!.statusText, testL10n.swapFindingPayout);
     // The label alone, as in-progress rows carry no status icon.
     expect(row!.statusIconName, isNull);
     // Not settled yet: an in-progress title and no "Received ZEC" leg.

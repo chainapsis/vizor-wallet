@@ -19,8 +19,10 @@ import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
+import 'support/test_l10n.dart';
 
 // A `zcash:` link parked while the wallet is locked must disappear quietly
 // when the user resets the wallet from the locked screens — no "Set up or
@@ -86,6 +88,7 @@ void main() {
             builder: (context, ref, _) {
               container = ProviderScope.containerOf(context, listen: false);
               return MaterialApp.router(
+                localizationsDelegates: appLocalizationsDelegates,
                 routerConfig: router,
                 // AppTheme, because the host's notices render as app toasts.
                 builder: (context, child) => AppTheme(
@@ -131,7 +134,7 @@ void main() {
         reason: 'the card must be dropped by the reset too',
       );
       expect(
-        find.text(kPaymentUriNoWalletMessage),
+        find.text(PaymentUriNotice.noWallet.text(testL10n)),
         findsNothing,
         reason: 'the wipe must not be followed by a no-wallet snackbar',
       );
@@ -184,6 +187,7 @@ void main() {
             builder: (context, ref, _) {
               container = ProviderScope.containerOf(context, listen: false);
               return MaterialApp.router(
+                localizationsDelegates: appLocalizationsDelegates,
                 routerConfig: router,
                 // AppTheme, because the host's notices render as app toasts.
                 builder: (context, child) => AppTheme(
@@ -212,7 +216,7 @@ void main() {
         reason: 'latest wins: the second link must be the parked one',
       );
       expect(
-        find.text(kPaymentUriReplacedMessage),
+        find.text(PaymentUriNotice.replaced.text(testL10n)),
         findsOneWidget,
         reason: 'the dropped first link must be visible to the user',
       );
@@ -256,6 +260,7 @@ void main() {
           builder: (context, ref, _) {
             container = ProviderScope.containerOf(context, listen: false);
             return MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: router,
               // AppTheme, because the host's notices render as app toasts.
               builder: (context, child) => AppTheme(
@@ -319,6 +324,7 @@ void main() {
             builder: (context, ref, _) {
               container = ProviderScope.containerOf(context, listen: false);
               return MaterialApp.router(
+                localizationsDelegates: appLocalizationsDelegates,
                 routerConfig: router,
                 // AppTheme, because the host's notices render as app toasts.
                 builder: (context, child) => AppTheme(
@@ -415,6 +421,7 @@ void main() {
           builder: (context, ref, _) {
             container = ProviderScope.containerOf(context, listen: false);
             return MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: router,
               // AppTheme, because the host's notices render as app toasts.
               builder: (context, child) => AppTheme(

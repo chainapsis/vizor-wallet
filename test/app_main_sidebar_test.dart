@@ -14,7 +14,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -30,6 +29,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   setUpAll(() async {
@@ -56,7 +57,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text('75% checking'), findsOneWidget);
-    expect(find.text('99% Syncing...'), findsNothing);
+    expect(find.text('99% Syncing…'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -71,12 +72,16 @@ void main() {
   };
 
   testWidgets('sidebar shows in-progress sync percentage', (tester) async {
+    final semantics = tester.ensureSemantics();
     await tester.pumpWidget(
       _sidebarHarness(SyncState(isSyncing: true, percentage: 1)),
     );
     await tester.pump();
 
-    expect(find.text('99% Syncing...'), findsOneWidget);
+    expect(find.text('99% Syncing\u2026'), findsOneWidget);
+    // Announced once, as the words shown.
+    expect(find.bySemanticsLabel('99% Syncing'), findsOneWidget);
+    semantics.dispose();
     expect(find.text('Synced'), findsNothing);
     expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
@@ -95,7 +100,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(kSyncStatusConnectingToTorLabel), findsOneWidget);
+    expect(find.text(testL10n.syncConnectingToTor), findsOneWidget);
     expect(find.text('Vizor is synced'), findsNothing);
   });
 
@@ -259,7 +264,6 @@ void main() {
         failure: const SyncFailure(
           kind: SyncFailureKind.endpoint,
           rawMessage: 'offline',
-          userMessage: 'Endpoint unavailable.',
         ),
       ),
       '— ZEC',
@@ -1287,6 +1291,81 @@ void main() {
     _expectSyncIndicatorGlow(tester, blurRadius: 12);
   });
 
+  testWidgets(
+    'sidebar shows a short catch-up as syncing without a percentage',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _sidebarHarness(
+          SyncState(
+            isSyncComplete: true,
+            percentage: 1,
+            scannedHeight: 3_428_143,
+            chainTipHeight: 3_428_143,
+          ),
+        ),
+      );
+      await tester.pump();
+      final sync =
+          ProviderScope.containerOf(
+                tester.element(find.byType(AppMainSidebar)),
+              ).read(syncProvider.notifier)
+              as _FakeSyncNotifier;
+      final startedAt = DateTime.now();
+      SyncState catchUp({required int remainingScanBlocks}) => SyncState(
+        isSyncing: true,
+        phase: 'scan',
+        scannedHeight: 3_428_144,
+        chainTipHeight: 3_428_143 + remainingScanBlocks,
+        remainingScanBlocks: remainingScanBlocks,
+        lastSyncStartedAt: startedAt,
+        startedFromCompletedSync: true,
+      );
+
+      sync.emit(catchUp(remainingScanBlocks: 3));
+      await tester.pump();
+
+      expect(find.text('Syncing\u2026'), findsOneWidget);
+      expect(find.text('Synced'), findsNothing);
+      expect(find.textContaining('% Syncing'), findsNothing);
+      // The synced look stays: color, bar, no shimmer, and the block height,
+      // which follows the scan.
+      final colors = AppThemeData.light.colors;
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('sidebar_sync_text')))
+            .style
+            ?.color,
+        colors.sync.text,
+      );
+      expect(_syncIndicatorColor(tester), colors.sync.lightSuccess);
+      expect(
+        find.descendant(
+          of: find.byType(AppMainSidebar),
+          matching: find.byType(ShaderMask),
+        ),
+        findsNothing,
+      );
+      expect(find.text('3,428,144'), findsOneWidget);
+      expect(
+        tester
+            .getSemantics(find.byKey(const ValueKey('sidebar_sync_text')))
+            .label,
+        'Syncing at block 3,428,144',
+      );
+
+      // The catch-up turns out large: its progress shows, as syncing.
+      sync.emit(catchUp(remainingScanBlocks: 5000));
+      await tester.pump();
+
+      expect(find.text('Syncing\u2026'), findsNothing);
+      expect(find.textContaining('% Syncing\u2026'), findsOneWidget);
+      expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
+      expect(_syncIndicatorColor(tester), colors.text.muted);
+      semantics.dispose();
+    },
+  );
+
   testWidgets('sidebar omits block height until sync completion is confirmed', (
     tester,
   ) async {
@@ -1322,7 +1401,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Synced'), findsOneWidget);
-    expect(find.text('99% Syncing...'), findsNothing);
+    expect(find.text('99% Syncing…'), findsNothing);
     expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
 
@@ -1333,7 +1412,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
       ),
@@ -1446,7 +1524,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
         themeData: AppThemeData.dark,
@@ -1462,11 +1539,7 @@ void main() {
       await tester.pumpWidget(
         _sidebarHarness(
           SyncState(
-            failure: SyncFailure(
-              kind: entry.key,
-              rawMessage: 'failure',
-              userMessage: 'Sync failed.',
-            ),
+            failure: SyncFailure(kind: entry.key, rawMessage: 'failure'),
           ),
         ),
       );
@@ -1683,6 +1756,7 @@ Widget _sidebarHarness(
         linuxKeyringCoordinatorProvider.overrideWithValue(keyringCoordinator),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         // The syncing sidebar's shimmer and glow animate forever. Tests default
@@ -1717,7 +1791,6 @@ SyncState _networkFailureSyncState() {
     failure: const SyncFailure(
       kind: SyncFailureKind.network,
       rawMessage: 'network failed',
-      userMessage: 'Network connection lost.',
     ),
   );
 }
@@ -1954,6 +2027,8 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+
+  void emit(SyncState next) => state = AsyncData(next);
 
   @override
   Future<void> refreshAfterAccountSwitch() async {}

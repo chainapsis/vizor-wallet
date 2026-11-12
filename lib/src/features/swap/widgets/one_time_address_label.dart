@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart' show TooltipState;
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../models/one_time_address_role.dart';
 
 export '../models/one_time_address_role.dart';
-
-/// Why the composer waits while a one-time address's history is checked.
-const kOneTimeAddressPreparingExplanation =
-    "Vizor is checking this address's history before using it. This can take "
-    'a few minutes.';
 
 /// The one-time address on a review or status row, where an ordinary row has
 /// its Copy action. Explains itself on tap. Names a refund address in full
@@ -30,9 +26,9 @@ class OneTimeAddressLabel extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) => _build(
         context,
-        _fits(context, role.detailLabel, constraints.maxWidth)
-            ? role.detailLabel
-            : role.label,
+        _fits(context, role.detailLabel(context.l10n), constraints.maxWidth)
+            ? role.detailLabel(context.l10n)
+            : role.label(context.l10n),
         bounded: constraints.hasBoundedWidth,
       ),
     );
@@ -60,8 +56,8 @@ class OneTimeAddressLabel extends StatelessWidget {
       style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
     );
     return _Explained(
-      message: role.explanation,
-      semanticsLabel: role.detailLabel,
+      message: role.explanation(context.l10n),
+      semanticsLabel: role.detailLabel(context.l10n),
       child: Padding(
         // The row's ghost button geometry (outer 4, label 4), so the text
         // ends where "Copy" does on the other row.
@@ -113,13 +109,17 @@ class OneTimeAddressSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final text = preparing ? 'Preparing address…' : role.label;
+    final text = preparing
+        ? context.l10n.swapOneTimeAddressPreparing
+        : role.label(context.l10n);
     return _Explained(
       message: preparing
-          ? kOneTimeAddressPreparingExplanation
-          : role.explanation,
+          ? context.l10n.swapOneTimeAddressPreparingExplanation
+          : role.explanation(context.l10n),
       liveRegion: preparing,
-      semanticsLabel: preparing ? 'Preparing one-time address' : text,
+      semanticsLabel: preparing
+          ? context.l10n.swapOneTimeAddressPreparingSemantics
+          : text,
       child: Container(
         key: ValueKey('swap_one_time_address_${role.name}'),
         // As wide as the address chip on the other card can grow.

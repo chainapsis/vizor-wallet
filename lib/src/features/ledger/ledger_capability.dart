@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/l10n/l10n.dart' show AppLocalizations;
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../core/config/network_config.dart';
 import '../../rust/wallet/ledger.dart' show LedgerAppSupport;
@@ -32,7 +33,7 @@ const kLedgerMemoHashAppVersion = '3.9.4';
 /// `LEDGER_MEMO_HASH_UNSUPPORTED` in `rust/src/wallet/ledger/parse.rs`, which is
 /// the error Rust returns and `ledgerFailureGuidance` matches on.
 const ledgerMemoHashUnsupportedError =
-    'Update the Ledger Zcash app to sign non-English memos';
+    'Update the Ledger Zcash app to sign non-English memos'; // l10n-ignore: matches the Rust error; shown via ledgerFailureMsgMemoHashUnsupported
 
 /// Before this version the app rejects the NU7 consensus branch and an Orchard
 /// spend into Ironwood, and Ledger Wallet offers it only on each device's
@@ -42,7 +43,7 @@ const kLedgerNu7AppVersion = '3.10.0';
 /// Shown when Rust refuses either for an older app. Keep this identical to
 /// `LEDGER_APP_UPDATE_REQUIRED` in `rust/src/wallet/ledger/parse.rs`.
 const ledgerAppUpdateRequiredError =
-    'Update your Ledger and its Zcash app to $kLedgerNu7AppVersion or newer '
+    'Update your Ledger and its Zcash app to $kLedgerNu7AppVersion or newer ' // l10n-ignore: matches the Rust error; shown via ledgerFailureMsgAppUpdateRequired
     'in Ledger Wallet.';
 
 /// Shown when Rust refuses a transaction that keeps change in Orchard: the app
@@ -50,7 +51,7 @@ const ledgerAppUpdateRequiredError =
 /// identical to `LEDGER_ORCHARD_CHANGE_UNSUPPORTED` in
 /// `rust/src/wallet/ledger/parse.rs`.
 const ledgerOrchardChangeUnsupportedError =
-    "Ledger can't sign a transaction that keeps change in Orchard. Migrate "
+    "Ledger can't sign a transaction that keeps change in Orchard. Migrate " // l10n-ignore: matches the Rust error; shown via ledgerFailureMsgOrchardChange
     'your Orchard balance to Ironwood first.';
 
 /// Accounts connected from now on start without the 3.9.3 memo limit; those
@@ -129,8 +130,10 @@ LedgerBluetoothCapability ledgerBluetoothTransportCapabilityForModel({
   return LedgerBluetoothCapability.supported;
 }
 
-String ledgerBluetoothSupportedModels(TargetPlatform platform) =>
-    'Nano X, Flex, Stax, and Nano Gen5';
+String ledgerBluetoothSupportedModels(
+  AppLocalizations l10n,
+  TargetPlatform platform,
+) => l10n.ledgerBluetoothModelsList;
 
 class LedgerCapability {
   const LedgerCapability._({required this.supported, this.reason});
@@ -146,7 +149,8 @@ class LedgerCapability {
   void requireSupported() {
     if (!supported) {
       throw UnsupportedError(
-        reason ?? 'Ledger is not supported in this build.',
+        reason ??
+            'Ledger is not supported in this build.', // l10n-ignore: exception text
       );
     }
   }
@@ -158,12 +162,12 @@ LedgerCapability ledgerStaticCapability({
 }) {
   if (!ledgerSupportsUsb(platform) && !isLedgerMobilePlatform(platform)) {
     return const LedgerCapability.unsupported(
-      'Ledger is supported on Vizor for macOS, Windows, Linux, iOS, and Android.',
+      'Ledger is supported on Vizor for macOS, Windows, Linux, iOS, and Android.', // l10n-ignore: exception text
     );
   }
   if (zcashNetworkFromName(networkName) != ZcashNetwork.mainnet) {
     return const LedgerCapability.unsupported(
-      'Ledger is currently supported only for Zcash mainnet.',
+      'Ledger is currently supported only for Zcash mainnet.', // l10n-ignore: exception text
     );
   }
   return const LedgerCapability.supported();
@@ -183,7 +187,7 @@ bool isLedgerMobilePlatform(TargetPlatform platform) =>
 void requireSupportedLedgerAppVersion(String version) {
   if (!_atLeast(version, kMinimumLedgerZcashAppVersion)) {
     throw UnsupportedError(
-      'Update the Ledger Zcash app to version '
+      'Update the Ledger Zcash app to version ' // l10n-ignore: exception text
       '$kMinimumLedgerZcashAppVersion or newer.',
     );
   }

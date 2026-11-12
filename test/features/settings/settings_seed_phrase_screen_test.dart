@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart' show buildIncomingLinkHostForTest;
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
@@ -37,6 +38,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -875,6 +877,34 @@ void main() {
     );
   });
 
+  testWidgets(
+    'explains in the shown language why a hardware account has none',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async => tester.binding.setSurfaceSize(null));
+      final privacyController = SensitivePrivacyOverlayController(
+        initiallySafe: true,
+      );
+      addTearDown(privacyController.dispose);
+
+      await tester.pumpWidget(
+        _harness(
+          privacyController: privacyController,
+          accountNotifier: () => _FakeAccountNotifier(hardware: true),
+          locale: const Locale('ko'),
+        ),
+      );
+      await tester.pump();
+      await tester.enterText(find.byType(EditableText), 'Correct123!');
+      await tester.pump();
+      final ko = lookupAppLocalizations(const Locale('ko'));
+      await tester.tap(find.bySemanticsLabel(ko.passwordConfirmLabel));
+      await tester.pump();
+
+      expect(find.text(ko.settingsSeedUnavailableHardware), findsOneWidget);
+    },
+  );
+
   testWidgets('Linux does not reveal a delayed secret after lock and unlock', (
     tester,
   ) async {
@@ -961,6 +991,7 @@ Widget _harness({
   bool startAtHome = false,
   _FakeSwapNotifier? swapNotifier,
   _FakeIncomingUriService? incomingUris,
+  Locale? locale,
 }) {
   final router = GoRouter(
     initialLocation: startAtHome
@@ -1017,6 +1048,9 @@ Widget _harness({
       ],
     ],
     child: MaterialApp.router(
+      locale: locale,
+      supportedLocales: appSupportedLocales(preview: true),
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,
@@ -1049,9 +1083,11 @@ class _FakeAccountNotifier extends AccountNotifier {
     this.bip39Passphrase = _bip39Passphrase,
     this.pendingSecret,
     this.backupPending = false,
+    this.hardware = false,
   });
 
   final Completer<SoftwareWalletSecret?>? pendingSecret;
+  final bool hardware;
 
   final String bip39Passphrase;
   final bool backupPending;
@@ -1068,7 +1104,14 @@ class _FakeAccountNotifier extends AccountNotifier {
   FutureOr<AccountState> build() => _accountState.copyWith(
     accounts: [
       _accountState.accounts.first,
-      _accountState.accounts.last.copyWith(setupPending: backupPending),
+      hardware
+          ? const AccountInfo(
+              uuid: 'account-2',
+              name: 'Other',
+              order: 1,
+              isHardware: true,
+            )
+          : _accountState.accounts.last.copyWith(setupPending: backupPending),
     ],
   );
 

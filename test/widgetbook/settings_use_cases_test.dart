@@ -5,8 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/viewing_key_content.dart';
-import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   // Render with the real app fonts instead of the square-glyph test font.
@@ -132,8 +135,8 @@ void main() {
     _expectNoCrash(errors);
     expect(find.text('Viewing key'), findsOneWidget);
     expect(find.text('Full viewing key'), findsOneWidget);
-    expect(find.text(viewingKeyExplanation), findsOneWidget);
-    expect(find.text(viewingKeyWarningTitle), findsOneWidget);
+    expect(find.text(_en.settingsViewingKeyExplanation), findsOneWidget);
+    expect(find.text(_en.settingsViewingKeyWarningTitle), findsOneWidget);
   });
 
   testWidgets('viewing key choice shows scope before revealing a key', (
@@ -145,7 +148,10 @@ void main() {
       viewport: const Size(1080, 720),
     );
     _expectNoCrash(errors);
-    expect(find.text(viewingKeyChoiceSharingWarning), findsOneWidget);
+    expect(
+      find.text(_en.settingsViewingKeyChoiceSharingWarning),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('viewing_key_choose_incoming')),
       findsOneWidget,
@@ -352,6 +358,7 @@ Future<List<FlutterErrorDetails>> _pumpSettingsUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       key: UniqueKey(),
       home: AppTheme(
         data: AppThemeData.light,

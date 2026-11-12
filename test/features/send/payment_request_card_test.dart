@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _address =
     'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
@@ -62,6 +63,20 @@ void main() {
       amountZecText: '0.5 ZEC',
       linkDifferences: differences,
     );
+
+    test('masking the spendable balance keeps the link check', () {
+      const differences = {PaymentRequestLinkDifference.amount};
+      final view = PaymentRequestView(
+        source: PaymentRequestSource.qrCode,
+        address: _address,
+        amountZecText: '0.5 ZEC',
+        spendableText: '0.21 ZEC',
+        linkDifferences: differences,
+      ).withSpendableText('****** ZEC');
+
+      expect(view.spendableText, '****** ZEC');
+      expect(view.linkDifferences, differences);
+    });
 
     testWidgets('a matching QR says so', (tester) async {
       await _pump(tester, scanned(const {}));
@@ -210,6 +225,7 @@ Future<void> _pump(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: PaymentRequestCard(

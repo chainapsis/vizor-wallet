@@ -72,6 +72,24 @@ import UIKit
     FlutterMethodChannel(name: "com.zcash.wallet/modal_corners", binaryMessenger: messenger)
       .setMethodCallHandler { call, result in modalCorners.handle(call, result: result) }
 
+    // Background work posts notifications after Dart is gone, so the app
+    // language is stored for it rather than passed per call.
+    FlutterMethodChannel(name: "com.zcash.wallet/native_strings", binaryMessenger: messenger)
+      .setMethodCallHandler { call, result in
+        guard call.method == "setLanguage" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        guard let arguments = call.arguments as? [String: Any],
+          let tag = arguments["tag"] as? String, !tag.isEmpty
+        else {
+          result(FlutterError(code: "invalid_arguments", message: "Expected tag argument.", details: nil))
+          return
+        }
+        NativeStrings.setLanguage(tag)
+        result(nil)
+      }
+
     ledgerMobileHandler?.close()
     let ledgerMobileHandler = LedgerMobileHandler()
     self.ledgerMobileHandler = ledgerMobileHandler
@@ -668,6 +686,14 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+
+    // EventChannel for the thermal state and Low Power Mode: sync scans with
+    // less of the CPU as the device warms.
+    let devicePowerChannel = FlutterEventChannel(
+      name: "com.zcash.wallet/device_power",
+      binaryMessenger: messenger
+    )
+    devicePowerChannel.setStreamHandler(DevicePowerStreamHandler())
 
     let incomingUriChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/payment_uri",
@@ -1346,6 +1372,44 @@ private enum WindowAppearanceHandler {
       window.overrideUserInterfaceStyle = style
       window.rootViewController?.overrideUserInterfaceStyle = style
     }
+  }
+}
+
+/// Emits `{thermal, lowPower}` on listen and whenever either changes.
+/// `thermal` is the `ProcessInfo.ThermalState` raw value (0 nominal through
+/// 3 critical).
+class DevicePowerStreamHandler: NSObject, FlutterStreamHandler {
+  private var observers: [NSObjectProtocol] = []
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    let send = {
+      let info = ProcessInfo.processInfo
+      events([
+        "thermal": info.thermalState.rawValue,
+        "lowPower": info.isLowPowerModeEnabled,
+      ])
+    }
+    send()
+    for name in [
+      ProcessInfo.thermalStateDidChangeNotification,
+      Notification.Name.NSProcessInfoPowerStateDidChange,
+    ] {
+      observers.append(
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+          send()
+        }
+      )
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    observers.forEach { NotificationCenter.default.removeObserver($0) }
+    observers = []
+    return nil
   }
 }
 

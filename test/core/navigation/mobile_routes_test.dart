@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/core/navigation/mobile_destinations.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
+import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
@@ -54,10 +55,12 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/go_route_descendants.dart';
 import '../../features/swap/support/static_near_intents_swap_provider.dart';
+import '../../support/test_l10n.dart';
 
 class _NativeGeometryFixture extends NativeMobileNavigationGeometry {
   _NativeGeometryFixture(this.value);
@@ -134,6 +137,7 @@ Widget _app(
     ...overrides,
   ],
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: theme, child: child!),
   ),
@@ -189,6 +193,91 @@ List<({Color? fill, Color? label})> _sidebarPaints(WidgetTester tester) => [
 ];
 
 void main() {
+  testWidgets('the wide layout sidebar shows a short catch-up without a '
+      'percentage', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 720);
+    addTearDown(tester.view.reset);
+    final router = GoRouter(
+      initialLocation: '/activity',
+      routes: [
+        ShellRoute(
+          builder: (context, state, child) =>
+              MobileAdaptiveFrame(router: GoRouter.of(context), child: child),
+          routes: [
+            GoRoute(
+              path: '/activity',
+              builder: (_, _) => const Scaffold(body: Text('Activity pane')),
+            ),
+          ],
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      _app(
+        router,
+        initialSyncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          phase: 'scan',
+          scannedHeight: 3000000,
+          chainTipHeight: 3000003,
+          remainingScanBlocks: 3,
+          lastSyncStartedAt: DateTime.now(),
+          startedFromCompletedSync: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final sidebar = tester.widget<MobileWalletSidebar>(
+      find.byType(MobileWalletSidebar),
+    );
+    expect(sidebar.status.label, testL10n.syncCatchingUp);
+    expect(
+      find.descendant(
+        of: find.byType(MobileWalletSidebar),
+        matching: find.textContaining('% Syncing'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'account removal passcode covers the tab shell and cancels on back',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.reset);
+      final router = _router();
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_app(router));
+      await tester.pumpAndSettle();
+      final result = router.push<bool>(
+        '/accounts/confirm-removal',
+        extra: true,
+      );
+      await tester.pumpAndSettle();
+      final screen = find.byType(MobileAccountRemovalPasscodeScreen);
+      expect(screen, findsOneWidget);
+      expect(tester.getSize(screen), const Size(393, 852));
+      expect(find.byType(AppMobileShell), findsNothing);
+      expect(find.text('Enter your passcode to reset Vizor.'), findsOneWidget);
+      expect(
+        ModalRoute.of(tester.element(screen)),
+        isA<CupertinoRouteTransitionMixin<dynamic>>(),
+      );
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+      expect(await result, false);
+      expect(find.byType(AppMobileShell), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final network in ['main', 'test', 'regtest']) {
     testWidgets('mobile donation route checks its network: $network', (
       tester,

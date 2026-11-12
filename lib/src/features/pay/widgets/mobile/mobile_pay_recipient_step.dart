@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart' show TextInputAction;
 
@@ -122,7 +123,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
         profilePictureId: contact?.profilePictureId,
         addressText: _compactAddress(recent.address),
         amountText: _outgoingAmountText(recent.amountText),
-        timeLabel: payRecentTimeLabel(recent.lastUsedAt),
+        timeLabel: payRecentTimeLabel(context.l10n, recent.lastUsedAt),
         selected:
             selection.contactId != null &&
             selection.contactId == widget.selectedContactId,
@@ -162,7 +163,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                             key: const ValueKey(
                               'mobile_pay_recent_recipients_section',
                             ),
-                            title: 'Recents',
+                            title: context.l10n.payRecents,
                             children: [
                               for (final recent in suggestions.recents)
                                 buildRecentRow(recent),
@@ -173,7 +174,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                           const SizedBox(height: AppSpacing.md),
                           MobileRecipientSection(
                             key: const ValueKey('mobile_pay_contacts_section'),
-                            title: 'Contacts',
+                            title: context.l10n.commonContacts,
                             children: [
                               for (final contact in suggestions.contacts)
                                 MobileRecipientRow(
@@ -249,7 +250,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                     variant: AppButtonVariant.ghost,
                     expand: true,
                     onPressed: widget.busy ? null : widget.onAddToContacts,
-                    child: const Text('Add to contacts'),
+                    child: Text(context.l10n.payAddToContacts),
                   ),
                   const SizedBox(height: AppSpacing.s),
                 ],
@@ -264,8 +265,8 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                       : widget.onSelectRecipient,
                   child: Text(
                     widget.busy
-                        ? 'Fetching quote'
-                        : widget.waitLabel ?? 'Continue',
+                        ? context.l10n.payFetchingQuote
+                        : widget.waitLabel ?? context.l10n.commonContinue,
                   ),
                 ),
               ],
@@ -309,7 +310,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
-                            'New address detected.',
+                            context.l10n.payNewAddressDetected,
                             textAlign: TextAlign.center,
                             style: AppTypography.bodyMediumStrong.copyWith(
                               color: colors.text.primary,
@@ -317,7 +318,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
-                            "You haven't interacted with this address before.",
+                            context.l10n.payNewAddressWarning,
                             textAlign: TextAlign.center,
                             style: AppTypography.bodyMedium.copyWith(
                               color: colors.text.secondary,
@@ -351,7 +352,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
             controller: widget.controller,
             focusNode: _focusNode,
             enabled: !widget.busy,
-            hintText: '${widget.externalAsset.chainLabel} address',
+            hintText: context.l10n.commonAddressForChain(
+              widget.externalAsset.chainLabel,
+            ),
             keyboardType: TextInputType.text,
             textInputAction: TextInputAction.next,
             textStyle: AppTypography.labelLarge.copyWith(
@@ -450,14 +453,14 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Scan a QR code',
+                      context.l10n.payScanQrTitle,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'Scan an address using camera',
+                      context.l10n.payScanQrSubtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(

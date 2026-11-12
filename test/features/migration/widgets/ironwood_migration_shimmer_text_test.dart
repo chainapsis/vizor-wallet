@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/migration/widgets/ironwood_migration_shimmer_text.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('animates unless reduced motion is enabled', (tester) async {
     Widget app({required bool disableAnimations}) {
       return MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,

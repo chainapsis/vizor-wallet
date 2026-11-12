@@ -1,3 +1,4 @@
+import '../src/core/l10n/l10n.dart';
 import '../src/providers/sync_provider.dart';
 import 'send_use_cases.dart';
 import '../src/features/ledger/services/ledger_signing_progress.dart';
@@ -563,7 +564,7 @@ Widget buildLedgerInlineConnectionHelpUseCase(BuildContext context) {
     child: MobileShieldScene(
       phase: MobileShieldPhase.hardware,
       amount: '0.9912331',
-      title: 'Shield with Ledger',
+      title: context.l10n.homeLedgerShieldTitle,
       animateHardware: true,
       onClose: () {},
       onPrevious: navigation.previous,
@@ -602,6 +603,9 @@ Widget _buildDevicePicker(LedgerMobileBleService service, {required Key key}) {
   );
 }
 
+// Preview helpers without a BuildContext use the English strings.
+final _previewL10n = lookupAppLocalizations(const Locale('en'));
+
 LedgerSigningFailurePresentation _failurePresentation(
   LedgerSigningPlaygroundFailure mode,
 ) {
@@ -610,6 +614,7 @@ LedgerSigningFailurePresentation _failurePresentation(
       const LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Signature not received',
+        actionNeeded: false,
         message: 'Check your Ledger, then try signing again.',
         showDeviceAppPrompt: false,
         actionLabel: 'Try again',
@@ -618,17 +623,21 @@ LedgerSigningFailurePresentation _failurePresentation(
       const LedgerSigningFailurePresentation(
         title: 'Open the Zcash app',
         statusLabel: 'Zcash app is not ready',
+        actionNeeded: false,
         message: 'Open the Zcash app on your Ledger, then try again.',
         showDeviceAppPrompt: true,
         actionLabel: 'Try again',
       ),
     LedgerSigningPlaygroundFailure.memoHashUpdate =>
-      ledgerMemoHashUpdateFailure,
-    LedgerSigningPlaygroundFailure.appUpdate => ledgerAppUpdateFailure,
+      ledgerMemoHashUpdateFailure(_previewL10n),
+    LedgerSigningPlaygroundFailure.appUpdate => ledgerAppUpdateFailure(
+      _previewL10n,
+    ),
     LedgerSigningPlaygroundFailure.reconnect =>
       const LedgerSigningFailurePresentation(
         title: 'Ledger needs attention',
         statusLabel: 'Action needed',
+        actionNeeded: true,
         message: 'Reconnect your Ledger and open the Zcash app.',
         showDeviceAppPrompt: false,
         actionLabel: 'Reconnect',
@@ -655,7 +664,10 @@ LedgerAppReadinessState _readinessState(
     LedgerSigningPlaygroundReadiness.failed =>
       const LedgerAppReadinessState.failed(
         failure: LedgerAppReadinessFailure.disconnected,
-        message: 'Reconnect your Ledger and open the Zcash app.',
+        error: LedgerAppReadinessException(
+          LedgerAppReadinessFailure.disconnected,
+          'Reconnect your Ledger and open the Zcash app.',
+        ),
       ),
   };
 }

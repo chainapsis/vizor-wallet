@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../providers/sync_provider.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
@@ -38,6 +39,7 @@ final swapFundingBalanceProvider = Provider.autoDispose
 /// [privacyModeEnabled]. Show it without a line limit, so large text can't
 /// hide the balance.
 String? swapIronwoodOnlyShortfallMessage(
+  AppLocalizations l10n,
   SwapFundingBalance balance,
   bool Function(BigInt available) exceeds, {
   required bool payment,
@@ -51,6 +53,7 @@ String? swapIronwoodOnlyShortfallMessage(
     amount,
     privacyModeEnabled: privacyModeEnabled,
   ).replaceAll(' ', ' ');
-  final subject = payment ? 'Private payments' : 'Private swaps';
-  return '$subject use Ironwood ZEC only. You have $shown there.';
+  return payment
+      ? l10n.payIronwoodOnlyShortfall(shown)
+      : l10n.swapIronwoodOnlyShortfall(shown);
 }
