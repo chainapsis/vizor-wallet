@@ -132,7 +132,7 @@ impl From<ReservationPolicy> for ReceiveError {
                 ReceiveErrorKind::Other,
             ),
             ReservationPolicy::Disabled => (
-                "Enable NEAR swap privacy to use private swap addresses.",
+                "Turn on Enhance swap privacy to use private swap addresses.",
                 ReceiveErrorKind::Other,
             ),
         };
