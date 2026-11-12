@@ -199,7 +199,8 @@ Widget buildSwapSlippageModalUseCase(BuildContext context) {
   return _SwapPageModalFrame(
     child: SwapSlippageModal(
       slippageBps: 50,
-      onSubmitted: (_) {},
+      confidential: false,
+      onSubmitted: (_, _) {},
       onCancel: () {},
     ),
   );
@@ -209,7 +210,8 @@ Widget buildSwapSlippageModalCustomUseCase(BuildContext context) {
   return _SwapPageModalFrame(
     child: SwapSlippageModal(
       slippageBps: 125,
-      onSubmitted: (_) {},
+      confidential: false,
+      onSubmitted: (_, _) {},
       onCancel: () {},
     ),
   );
@@ -220,7 +222,8 @@ Widget buildSwapSlippageModalInvalidUseCase(BuildContext context) {
     child: SwapSlippageModal(
       slippageBps: 50,
       initialCustomText: '15',
-      onSubmitted: (_) {},
+      confidential: false,
+      onSubmitted: (_, _) {},
       onCancel: () {},
     ),
   );

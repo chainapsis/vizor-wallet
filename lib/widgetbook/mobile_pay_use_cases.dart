@@ -331,6 +331,7 @@ class _MobilePayAmountPreviewState extends State<_MobilePayAmountPreview> {
                 onToggleFiatInputMode: _toggleAmountMode,
                 onOpenAssetSelector: _noop,
                 slippageLabel: '0.5%',
+                confidentialReveal: 0,
                 onOpenSlippage: _noop,
                 onContinue: _noop,
               ),

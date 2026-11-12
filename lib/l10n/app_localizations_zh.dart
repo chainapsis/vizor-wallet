@@ -10558,13 +10558,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapSlippageDecrease => '降低滑点';
 
   @override
-  String get swapSlippageDescriptionPay =>
-      '报价波动时最多可多付的 ZEC 数量，超出则执行失败。网络手续费另计。';
-
-  @override
-  String get swapSlippageDescriptionSwap => '设置你可接受的最大汇率变动。网络手续费另计。';
-
-  @override
   String get swapSlippageIncrease => '提高滑点';
 
   @override

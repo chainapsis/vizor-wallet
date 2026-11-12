@@ -11268,14 +11268,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapSlippageDecrease => '슬‍리‍피‍지 줄‍이‍기';
 
   @override
-  String get swapSlippageDescriptionPay =>
-      '견‍적‍이 변‍동‍돼‍도 실‍패‍하‍지 않‍도‍록 이‍만‍큼‍의 ZEC‍를 더 허‍용‍해‍요. 네‍트‍워‍크 수‍수‍료‍는 별‍도‍예‍요.';
-
-  @override
-  String get swapSlippageDescriptionSwap =>
-      '허‍용‍할 최‍대 환‍율 변‍동‍폭‍을 설‍정‍해‍요. 네‍트‍워‍크 수‍수‍료‍는 별‍도‍예‍요.';
-
-  @override
   String get swapSlippageIncrease => '슬‍리‍피‍지 늘‍리‍기';
 
   @override

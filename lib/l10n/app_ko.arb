@@ -3094,8 +3094,6 @@
   "swapSlippageCustom": "직‍접 입‍력",
   "swapSlippageCustomValueSemantics": "직‍접 입‍력‍한 슬‍리‍피‍지 허‍용 범‍위(%)",
   "swapSlippageDecrease": "슬‍리‍피‍지 줄‍이‍기",
-  "swapSlippageDescriptionPay": "견‍적‍이 변‍동‍돼‍도 실‍패‍하‍지 않‍도‍록 이‍만‍큼‍의 ZEC‍를 더 허‍용‍해‍요. 네‍트‍워‍크 수‍수‍료‍는 별‍도‍예‍요.",
-  "swapSlippageDescriptionSwap": "허‍용‍할 최‍대 환‍율 변‍동‍폭‍을 설‍정‍해‍요. 네‍트‍워‍크 수‍수‍료‍는 별‍도‍예‍요.",
   "swapSlippageIncrease": "슬‍리‍피‍지 늘‍리‍기",
   "swapSlippagePresetSemantics": "슬‍리‍피‍지 {value}",
   "swapSlippageRangeError": "슬‍리‍피‍지‍는 0.1 - 5%여‍야 해‍요",

@@ -11444,14 +11444,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapSlippageDecrease => 'Decrease slippage';
 
   @override
-  String get swapSlippageDescriptionPay =>
-      'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.';
-
-  @override
-  String get swapSlippageDescriptionSwap =>
-      'Sets the maximum rate change you\'ll accept. Network fees are separate.';
-
-  @override
   String get swapSlippageIncrease => 'Increase slippage';
 
   @override
