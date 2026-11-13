@@ -51,6 +51,33 @@ Covered routes, popups, navigation guards, and the keyboard disable or hide the
 native bar; its native lifecycle does not grant navigation around a Flutter
 access gate.
 
+## Visibility transitions
+
+Flutter continues to decide when the bar is needed. UIKit independently slides
+it up into its fixed slot when shown and down out of the slot when hidden;
+this animation does not follow a Flutter route or modal's transition progress.
+The entrance uses 240 ms ease-out and the exit uses 200 ms ease-in. The native
+bar's material and selection lens retain their system behavior.
+
+A hide request immediately blocks touch, accessibility, and selection
+callbacks. The existing native view finishes its exit using the last displayed
+items, titles, and selection. New configuration received during the exit or
+while hidden is retained and applied before the next entrance. No screenshot
+of wallet content is taken. Input becomes available only after UIKit confirms
+that the entrance has completed.
+
+The Flutter slot keeps its native fitting height throughout. Only an inner
+native container moves, with safe-area geometry anchored to the stationary
+host. Reversals resume from the current presented position. A visibility epoch
+and native presentation revision reject old readiness acknowledgements and
+selection callbacks, including a rapid hide/show cycle while a channel update
+is in flight. There are no per-frame Flutter channel messages.
+
+Reduce Motion skips the slide. Removing the shell or disposing its platform
+view cancels the animation and releases it immediately rather than retaining
+navigation above a new access screen. Existing popup dismissal and route
+coverage rules still determine when the next entrance begins.
+
 ## Background and performance validation
 
 Native material and native background sampling are separate claims. A lens
@@ -68,6 +95,10 @@ fvm flutter run -d <ios-simulator-id> -t lib/figma_compare.dart \
   --dart-define=FIGMA_COMPARE_SCENARIO=mobile-native-tab-bar \
   --dart-define=FIGMA_COMPARE_OUTPUT=
 ```
+
+The fixture's `Hide tabs` / `Show tabs` control exercises a complete exit and
+entrance. `Reverse after 80 ms` interrupts an exit with an entrance so its
+continuity and input gate can be checked without production wallet state.
 
 Use a dedicated simulator/install for native checks. The normal Runner still
 has native startup hooks even when its Dart entry point omits wallet startup.
