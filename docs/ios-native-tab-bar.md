@@ -12,8 +12,9 @@ material, item layout, selection lens, touch handling, and accessibility.
   refraction, springs, item spacing and title typography use UIKit defaults.
   Icons remain template images; no `UITabBarAppearance` recipe or hand-drawn
   glass layer is installed.
-- The existing SVG icons are rasterized as small template images and cached.
-  This is icon preparation, not capture of the app's background.
+- Native icons are compiled from SVGs in Xcode's asset catalog and loaded by
+  name in Swift as cached 25-point template images. Flutter sends only the icon
+  name, not PNG data. This is icon preparation, not capture of the background.
 - The native height includes its bottom safe-area clearance. The floating
   Flutter bar's 64-pixel height and surrounding margins do not wrap this lane.
 - The resolved app theme and text direction are passed to UIKit. Item titles
@@ -23,6 +24,55 @@ material, item layout, selection lens, touch handling, and accessibility.
 
 This implementation is independent of `liquid_glass_widgets`. The earlier
 experiment remains on `codex/ios-liquid-glass-tabs`.
+
+## Icon assets and synchronization
+
+`assets/icons/` is the source of truth for the tab artwork. The native catalog
+intentionally contains byte-identical SVG copies so UIKit can load its own
+images without Flutter's SVG parser, PNG encoder or asset bundle. Xcode compiles
+these SVGs into native assets; no runtime SVG library is added to Swift.
+
+| Flutter source | Native image set |
+| --- | --- |
+| `assets/icons/home.svg` | `VizorTab_home.imageset` |
+| `assets/icons/swap_arrows.svg` | `VizorTab_swap_arrows.imageset` |
+| `assets/icons/history.svg` | `VizorTab_history.imageset` |
+| `assets/icons/cog.svg` | `VizorTab_cog.imageset` |
+
+All four sets live in `ios/Runner/Assets.xcassets/`. Keep their SVG contents
+unchanged from the Flutter originals. Swift normalizes their intrinsic sizes
+(20 points for Swap, 24 for the others) to the existing 25-point tab icon size.
+The catalog preserves vector data and marks the images as templates; selected
+icons and labels continue to share the app tint.
+
+After editing a source SVG, refresh and verify the committed native copies:
+
+```bash
+scripts/sync-ios-native-tab-icons.py --apply
+scripts/sync-ios-native-tab-icons.py --check
+fvm flutter test test/core/ios_native_tab_icon_asset_contract_test.dart
+```
+
+The default script invocation is also read-only. Commit both copies and any
+catalog metadata changes together. When adding or renaming a tab icon, update
+the source, `mobileDestinations`, the script's icon list and Swift's native
+catalog mapping. The contract test checks exact SVG equality, template/vector
+metadata, and coverage against the actual mobile destinations. Native tests
+also load every mapped image from the built application bundle and check its
+size and rendering mode.
+
+The native capability response reports only icon names that actually load.
+Flutter checks all requested names before creating the platform view. An
+unsupported OS or unavailable icon selects the original Flutter bar, whose
+SVG cache has not been touched by native preparation. Invalid native updates
+are rejected atomically without partially replacing the displayed items.
+
+Do not reintroduce Flutter-side SVG-to-PNG preparation for this lane. The old
+`SvgAssetLoader(assetBundle: ...)` path could capture a cached `Future` through
+the bundle when the release parser spawned an isolate. That failed before the
+native bar was created, and `flutter_svg` 2.2.4 retained the failed load under
+the same cache key used by fallback icons. Debug parsing did not spawn this
+isolate, so debug simulator checks alone did not exercise the failure.
 
 ## Ownership and updates
 
@@ -46,7 +96,7 @@ generating another user-selection callback. Removing Swap does not change the
 identity of Activity or Settings.
 
 The platform view persists across normal builds. Small state updates replace
-neither the platform view nor unchanged native items. Icon work and native
+neither the platform view nor unchanged native items. Native
 messages must not publish stale state after a destination update or disposal.
 The platform view claims its pointer sequences immediately with an
 `EagerGestureRecognizer`. Without this, the app-wide tap-to-unfocus recognizer
@@ -66,9 +116,9 @@ painting immediately instead of waiting for an exit animation.
 
 ## First presentation
 
-On a native-eligible iOS host, capability and icon preparation initially occupy
+On a native-eligible iOS host, capability and native icon availability checks occupy
 a transparent slot rather than briefly showing the Flutter fallback bar. An
-unsupported capability or preparation failure selects the original bar;
+unsupported capability or unavailable native icon selects the original bar;
 other platforms keep their existing path. Preparation does not unmount the
 shell body or router.
 
@@ -250,3 +300,11 @@ native suite passed 30 tab-bar tests, including explicit entrances,
 settled-hidden acknowledgements and immediate suppression. These checks cover
 the native bridge and compositor behavior, not production wallet lifecycle or
 real-device performance.
+
+The native-asset revision passed 33 native tab-bar tests in the isolated iOS
+26.5 simulator host. The capability response reported all four actual bundled
+icons; each loaded as a 25-by-25-point template image. An interaction check
+selected Swap, Activity, Settings and Home and confirmed visible icons and the
+existing selected icon/title tint. The Dart mobile regression set passed 165
+tests, and the source/native asset contracts passed 16 tests. These native
+runtime checks were simulator-based.
