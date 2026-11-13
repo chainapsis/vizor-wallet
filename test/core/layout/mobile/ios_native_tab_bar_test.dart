@@ -141,6 +141,24 @@ void main() {
     expect(native.latest['selectedId'], '/home');
   });
 
+  _testWidgets('selected item tint follows the existing app theme token', (
+    tester,
+  ) async {
+    await pump(tester, config());
+    final view = tester.state(find.byType(UiKitView));
+    expect(
+      native.latest['selectedTintColor'],
+      AppThemeData.light.colors.navPanel.activeIcon.toARGB32(),
+    );
+    await pump(tester, config(), brightness: Brightness.dark);
+    expect(
+      native.latest['selectedTintColor'],
+      AppThemeData.dark.colors.navPanel.activeIcon.toARGB32(),
+    );
+    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(native.created, hasLength(1));
+  });
+
   _testWidgets(
     'stationary touch reaches UIKit before the global tap detector',
     (tester) async {

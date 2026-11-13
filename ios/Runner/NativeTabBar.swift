@@ -1,3 +1,4 @@
+import CoreFoundation
 import Flutter
 import UIKit
 
@@ -63,6 +64,7 @@ struct NativeTabBarSnapshot {
   let style: UIUserInterfaceStyle
   let direction: UIUserInterfaceLayoutDirection
   let hidden: Bool
+  let selectedTintColor: UInt32?
 
   init(arguments: Any?) throws {
     guard let args = arguments as? [String: Any],
@@ -74,6 +76,16 @@ struct NativeTabBarSnapshot {
     else { throw NativeTabBarError.invalidSnapshot }
     guard args["hidden"] == nil || args["hidden"] is Bool else {
       throw NativeTabBarError.invalidSnapshot
+    }
+    if let rawColor = args["selectedTintColor"] {
+      guard let number = rawColor as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(),
+        let argb = UInt32(exactly: number.int64Value),
+        number.doubleValue == Double(argb)
+      else { throw NativeTabBarError.invalidSnapshot }
+      selectedTintColor = argb
+    } else {
+      selectedTintColor = nil
     }
 
     var ids = Set<String>()
@@ -101,8 +113,8 @@ enum NativeTabBarError: Error {
   case invalidIcon
 }
 
-/// Transparent placement only. No tab-bar appearance, tint, clipping or gesture
-/// customizations: the system is responsible for the glass and selection lens.
+/// Transparent placement only. Item tint comes from the app; UIKit remains
+/// responsible for the material, clipping and selection-lens interaction.
 final class NativeTabBarHostView: UIView {
   let tabBar = UITabBar()
   var onHeightChanged: ((CGFloat) -> Void)?
@@ -163,6 +175,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   private var configurations: [String: NativeTabBarItemConfiguration] = [:]
   private var itemsById: [String: UITabBarItem] = [:]
   private var orderedIds: [String] = []
+  private var selectedTintColor: UInt32?
   private var pendingHeight: CGFloat?
   private var heightDeliveryScheduled = false
 
@@ -237,6 +250,19 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     configurations = Dictionary(uniqueKeysWithValues: snapshot.items.map { ($0.id, $0) })
     itemsById = nextItems
     orderedIds = nextIds
+    if selectedTintColor != snapshot.selectedTintColor {
+      if let argb = snapshot.selectedTintColor {
+        host.tabBar.tintColor = UIColor(
+          red: CGFloat((argb >> 16) & 0xFF) / 255,
+          green: CGFloat((argb >> 8) & 0xFF) / 255,
+          blue: CGFloat(argb & 0xFF) / 255,
+          alpha: CGFloat((argb >> 24) & 0xFF) / 255
+        )
+      } else {
+        host.tabBar.tintColor = nil
+      }
+      selectedTintColor = snapshot.selectedTintColor
+    }
     if itemsChanged {
       host.tabBar.setItems(nextIds.compactMap { nextItems[$0] }, animated: false)
     }

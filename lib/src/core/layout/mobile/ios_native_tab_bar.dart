@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../app_form_factor.dart';
+import '../../theme/app_theme.dart';
 
 /// A destination's identity is independent of its position or translated title.
 class IosNativeTabBarItem {
@@ -242,6 +243,7 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
       items: widget._items,
       selectedId: selected,
       brightness: Theme.of(context).brightness,
+      selectedTintColor: context.colors.navPanel.activeIcon.toARGB32(),
       direction: Directionality.of(context),
       hidden:
           widget.configuration.hidden ||
@@ -381,12 +383,14 @@ class _Snapshot {
     required this.items,
     required this.selectedId,
     required this.brightness,
+    required this.selectedTintColor,
     required this.direction,
     required this.hidden,
   });
   final List<_PreparedItem> items;
   final String selectedId;
   final Brightness brightness;
+  final int selectedTintColor;
   final TextDirection direction;
   final bool hidden;
 
@@ -394,6 +398,7 @@ class _Snapshot {
     'items': [for (final item in items) item.toMap()],
     'selectedId': selectedId,
     'brightness': brightness.name,
+    'selectedTintColor': selectedTintColor,
     'direction': direction.name,
     'hidden': hidden,
   };
@@ -401,6 +406,7 @@ class _Snapshot {
   bool sameAs(_Snapshot other) =>
       selectedId == other.selectedId &&
       brightness == other.brightness &&
+      selectedTintColor == other.selectedTintColor &&
       direction == other.direction &&
       hidden == other.hidden &&
       items.length == other.items.length &&

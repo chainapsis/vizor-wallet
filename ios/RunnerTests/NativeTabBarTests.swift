@@ -121,6 +121,53 @@ struct NativeTabBarTests {
     #expect(fixture.messenger.call("getHeight") as? Double == reported)
   }
 
+  @Test("Selected icons and titles share the app tint without changing native material")
+  func selectedItemTint() throws {
+    let fixture = NativeTabBarFixture()
+    let item = try #require(fixture.bar.items?.first)
+    let originalImage = try #require(item.image)
+    let originalTint = fixture.bar.tintColor
+    var args = fixture.snapshot()
+    args["selectedTintColor"] = 0xFFA83861
+    #expect(fixture.update(args) == nil)
+    #expect(fixture.bar.tintColor == UIColor(
+      red: 168.0 / 255, green: 56.0 / 255, blue: 97.0 / 255, alpha: 1
+    ))
+    #expect(item.image === originalImage)
+    #expect(item.selectedImage?.renderingMode == .alwaysTemplate)
+    #expect(item.image?.renderingMode == .alwaysTemplate)
+    #expect(fixture.bar.unselectedItemTintColor == nil)
+    #expect(fixture.bar.backgroundImage == nil)
+    #expect(fixture.bar.shadowImage == nil)
+    #expect(fixture.bar.barTintColor == nil)
+
+    args["selectedId"] = "settings"
+    #expect(fixture.update(args) == nil)
+    #expect(item.image === originalImage)
+    args["selectedTintColor"] = 0xFF123456
+    #expect(fixture.update(args) == nil)
+    #expect(fixture.bar.tintColor == UIColor(
+      red: 18.0 / 255, green: 52.0 / 255, blue: 86.0 / 255, alpha: 1
+    ))
+    args.removeValue(forKey: "selectedTintColor")
+    #expect(fixture.update(args) == nil)
+    #expect(fixture.bar.tintColor == originalTint)
+  }
+
+  @Test("Malformed selected tints preserve the existing native color")
+  func invalidSelectedTint() throws {
+    let fixture = NativeTabBarFixture()
+    var args = fixture.snapshot()
+    args["selectedTintColor"] = 0xFFA83861
+    #expect(fixture.update(args) == nil)
+    let tint = fixture.bar.tintColor
+    for invalid: Any in [-1, 0x1_0000_0000, 1.5, true, "red"] {
+      args["selectedTintColor"] = invalid
+      #expect(fixture.update(args) is FlutterError)
+      #expect(fixture.bar.tintColor == tint)
+    }
+  }
+
   @Test("Platform-view destruction removes the channel and pending callback owner")
   func disposal() {
     let fixture = NativeTabBarFixture()

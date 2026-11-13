@@ -7,9 +7,11 @@ material, item layout, selection lens, touch handling, and accessibility.
 
 ## Appearance and scope
 
-- Native appearance, tint, blur, refraction, springs, item spacing, and title
-  typography use UIKit defaults. There is no `UITabBarAppearance` recipe or
-  hand-drawn glass layer.
+- Selected icons and titles use the existing `colors.navPanel.activeIcon`
+  accent through `UITabBar.tintColor`. Native material, background, blur,
+  refraction, springs, item spacing and title typography use UIKit defaults.
+  Icons remain template images; no `UITabBarAppearance` recipe or hand-drawn
+  glass layer is installed.
 - The existing SVG icons are rasterized as small template images and cached.
   This is icon preparation, not capture of the app's background.
 - The native height includes its bottom safe-area clearance. The floating
