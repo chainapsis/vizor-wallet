@@ -67,6 +67,8 @@ dependencies:
   # `AppIcon` so a single single-fill SVG tints to any theme color
   # without re-exporting.
   flutter_svg: ^2.0.10+1
+  # Exact version: source/dependency review in docs/liquid-glass-dependency-review.md.
+  liquid_glass_widgets: 1.17.2
   pretty_qr_code: ^3.6.0
   # Platform share sheet for the receive screen's share action.
   share_plus: ^12.0.1

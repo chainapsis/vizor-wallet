@@ -7,6 +7,8 @@ PODS:
     - FlutterMacOS
   - integration_test (0.0.1):
     - Flutter
+  - liquid_glass_widgets (0.0.1):
+    - Flutter
   - mobile_scanner (7.0.0):
     - Flutter
     - FlutterMacOS
@@ -28,6 +30,7 @@ DEPENDENCIES:
   - Flutter (from `Flutter`)
   - flutter_secure_storage_darwin (from `.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
+  - liquid_glass_widgets (from `.symlinks/plugins/liquid_glass_widgets/ios`)
   - mobile_scanner (from `.symlinks/plugins/mobile_scanner/darwin`)
   - rust_lib_zcash_wallet (from `.symlinks/plugins/rust_lib_zcash_wallet/ios`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
@@ -44,6 +47,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_secure_storage_darwin/darwin"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
+  liquid_glass_widgets:
+    :path: ".symlinks/plugins/liquid_glass_widgets/ios"
   mobile_scanner:
     :path: ".symlinks/plugins/mobile_scanner/darwin"
   rust_lib_zcash_wallet:
@@ -62,6 +67,7 @@ SPEC CHECKSUMS:
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
+  liquid_glass_widgets: b18ae3ebb4ddb3c58b0b8552566362fcc9791e22
   mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
   rust_lib_zcash_wallet: 3544b462af18928e519ead4091e5768afdc5170d
   share_plus: 50da8cb520a8f0f65671c6c6a99b3617ed10a58a

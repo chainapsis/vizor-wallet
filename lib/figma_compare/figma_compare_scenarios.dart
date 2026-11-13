@@ -4,6 +4,7 @@ import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
 import 'mobile_passcode_capture.dart';
 import 'mobile_receive_capture.dart';
+import 'mobile_liquid_tabs_capture.dart';
 import '../src/features/ledger/services/ledger_failure_guidance.dart';
 import 'desktop_welcome_capture.dart';
 import 'language_settings_capture.dart';
@@ -2904,6 +2905,15 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildMobileHomeDefaultUseCase,
     desktop: false,
     mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ios-liquid-tabs',
+    description: 'iOS Liquid Glass bottom tabs over deterministic home content',
+    builder: buildMobileLiquidTabsCapture,
+    desktop: false,
+    mobile: true,
+    platform: TargetPlatform.iOS,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-home-checking',

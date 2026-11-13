@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/widgets.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../feedback/app_haptics.dart';
 import '../../theme/app_theme.dart';
@@ -38,6 +41,11 @@ class AppMobileTabItem {
 /// the newly active icon does a one-shot pop, and pressing an item
 /// scales its icon down with a light haptic. All of it collapses to
 /// instant switches under reduced motion.
+///
+/// On iOS, horizontal bottom tabs use Liquid Glass with the same geometry,
+/// assets and semantic color tokens. Side tabs and other platforms retain the
+/// original surface. Reduced motion also retains the instant-switch surface,
+/// avoiding the package's draggable indicator springs.
 class AppMobileTabBar extends StatelessWidget {
   const AppMobileTabBar({
     required this.items,
@@ -71,8 +79,22 @@ class AppMobileTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final radius = BorderRadius.circular(AppRadii.full);
-    final motion = !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
     final vertical = axis == Axis.vertical;
+    final iosBottomTabs =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS && !vertical;
+    final motion =
+        !(MediaQuery.maybeDisableAnimationsOf(context) ?? false) &&
+        !(iosBottomTabs &&
+            View.of(
+              context,
+            ).platformDispatcher.accessibilityFeatures.reduceMotion);
+    if (iosBottomTabs && motion) {
+      return _IosLiquidTabBar(
+        items: items,
+        currentIndex: currentIndex,
+        onSelect: onSelect,
+      );
+    }
     final selection = items.length > 1
         ? -1 + 2 * currentIndex / (items.length - 1)
         : 0.0;
@@ -155,6 +177,66 @@ class AppMobileTabBar extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _IosLiquidTabBar extends StatelessWidget {
+  const _IosLiquidTabBar({
+    required this.items,
+    required this.currentIndex,
+    required this.onSelect,
+  });
+
+  final List<AppMobileTabItem> items;
+  final int currentIndex;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    // AppTheme is authoritative even when the user's choice differs from the
+    // OS appearance. Scope this to the bar; no global package configuration.
+    final brightness = context.appTheme == AppThemeData.dark
+        ? Brightness.dark
+        : Brightness.light;
+    final settings = brightness == Brightness.dark
+        ? LiquidGlassSettings.ios26Dark
+        : LiquidGlassSettings.ios26Light;
+
+    return GlassTheme(
+      data: GlassThemeData.ios26(brightness: brightness),
+      child: GlassTabBar.bottom(
+        tabs: [
+          for (final item in items)
+            GlassTab(
+              icon: AppIcon(item.iconName, size: AppMobileTabBar._iconSize),
+              semanticLabel: item.label,
+            ),
+        ],
+        selectedIndex: currentIndex,
+        onTabSelected: (index) {
+          unawaited(AppHaptics.auxiliaryKey());
+          onSelect(index);
+        },
+        // The shell already owns the outer margins and home-indicator inset.
+        horizontalPadding: 0,
+        verticalPadding: 0,
+        barHeight: kMobileTabBarHeight,
+        barBorderRadius: kMobileTabBarHeight / 2,
+        tabPadding: const EdgeInsets.all(AppSpacing.xxs),
+        iconSize: AppMobileTabBar._iconSize,
+        selectedIconColor: colors.navPanel.activeIcon,
+        unselectedIconColor: colors.icon.muted,
+        indicatorColor: colors.navPanel.activeBg,
+        settings: settings.copyWith(glassColor: colors.macosUtility.navPanel),
+        quality: GlassQuality.premium,
+        // Keep the lens and press response restrained around the existing UI.
+        magnification: 1.05,
+        pressScale: 1.02,
+        indicatorExpansion: const EdgeInsets.all(AppSpacing.xxs),
+        interactionGlowColor: colors.navPanel.activeIcon,
       ),
     );
   }
