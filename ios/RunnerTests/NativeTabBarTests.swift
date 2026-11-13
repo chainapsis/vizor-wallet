@@ -191,8 +191,9 @@ struct NativeTabBarTests {
     let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
     #expect(animator.animations.count == 1)
     let entrance = try #require(animator.animations.last)
-    #expect(entrance.duration == 0.240)
-    #expect(entrance.curve == .easeOut)
+    #expect(entrance.duration == 0.180)
+    #expect(entrance.timing.controlPoint1 == CGPoint(x: 0.2, y: 0.8))
+    #expect(entrance.timing.controlPoint2 == CGPoint(x: 0.2, y: 1))
     #expect(entrance.start.ty > 0)
     #expect(entrance.target == .identity)
     #expect(!fixture.host.slidingView.isHidden)
@@ -223,8 +224,9 @@ struct NativeTabBarTests {
     fixture.platformView?.tabBar(fixture.bar, didSelect: item)
     #expect(fixture.selectionEvents.count == 1)
     let exit = try #require(animator.animations.last)
-    #expect(exit.duration == 0.200)
-    #expect(exit.curve == .easeIn)
+    #expect(exit.duration == 0.140)
+    #expect(exit.timing.controlPoint1 == CGPoint(x: 0.3, y: 0))
+    #expect(exit.timing.controlPoint2 == CGPoint(x: 0.8, y: 0.7))
     #expect(exit.target.ty >= fixture.host.bounds.height)
     exit.finish()
     #expect(fixture.host.slidingView.isHidden)
@@ -290,6 +292,7 @@ struct NativeTabBarTests {
     let entrance = try #require(animator.animations.last)
     #expect(exit.cancelled)
     #expect(entrance.start == current)
+    #expect(abs(entrance.duration - 0.180 * 0.4) < 0.000001)
     let revision = fixture.presentation["revision"] as? Int64
     exit.completeEvenIfCancelled()
     #expect(!fixture.host.slidingView.isHidden)
@@ -298,6 +301,50 @@ struct NativeTabBarTests {
     entrance.finish()
     #expect(fixture.presentation["interactive"] as? Bool == true)
     #expect(fixture.host.slidingView.transform == .identity)
+  }
+
+  @Test("Reversing an entrance shortens the exit by its remaining distance")
+  func partialExitDuration() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    let entrance = try #require(animator.animations.last)
+    entrance.progress(to: 0.75)
+    var args = fixture.snapshot()
+    args["hidden"] = true
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    let exit = try #require(animator.animations.last)
+    #expect(entrance.cancelled)
+    #expect(abs(exit.duration - 0.140 * 0.75) < 0.000001)
+    #expect(!fixture.host.isUserInteractionEnabled)
+    exit.finish()
+    #expect(fixture.host.slidingView.isHidden)
+    entrance.completeEvenIfCancelled()
+    #expect(fixture.host.slidingView.isHidden)
+  }
+
+  @Test("A nearly completed reversal settles immediately without an input-blocking tail")
+  func negligibleRemainingDistance() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    let entrance = try #require(animator.animations.last)
+    entrance.finish()
+    var args = fixture.snapshot()
+    args["hidden"] = true
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    let exit = try #require(animator.animations.last)
+    exit.progress(to: 0.001)
+    args["hidden"] = false
+    args["visibilityEpoch"] = 2
+    #expect(fixture.update(args) == nil)
+    #expect(exit.cancelled)
+    #expect(animator.animations.count == 2)
+    #expect(fixture.host.slidingView.transform == .identity)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    exit.completeEvenIfCancelled()
+    #expect(!fixture.host.slidingView.isHidden)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
   }
 
   @Test("Initial visibility waits for attachment and a hidden creation never flashes")
@@ -488,10 +535,10 @@ private final class NativeTabBarTestAnimator {
 
   func animate(
     view: UIView, target: CGAffineTransform, duration: TimeInterval,
-    curve: UIView.AnimationCurve, completion: @escaping () -> Void
+    timing: UICubicTimingParameters, completion: @escaping () -> Void
   ) -> NativeTabBarAnimation {
     let animation = NativeTabBarTestAnimation(
-      view: view, target: target, duration: duration, curve: curve, completion: completion
+      view: view, target: target, duration: duration, timing: timing, completion: completion
     )
     animations.append(animation)
     return animation
@@ -503,19 +550,19 @@ private final class NativeTabBarTestAnimation: NativeTabBarAnimation {
   let start: CGAffineTransform
   let target: CGAffineTransform
   let duration: TimeInterval
-  let curve: UIView.AnimationCurve
+  let timing: UICubicTimingParameters
   private let completion: () -> Void
   private(set) var cancelled = false
 
   init(
     view: UIView, target: CGAffineTransform, duration: TimeInterval,
-    curve: UIView.AnimationCurve, completion: @escaping () -> Void
+    timing: UICubicTimingParameters, completion: @escaping () -> Void
   ) {
     self.view = view
     start = view.transform
     self.target = target
     self.duration = duration
-    self.curve = curve
+    self.timing = timing
     self.completion = completion
   }
 

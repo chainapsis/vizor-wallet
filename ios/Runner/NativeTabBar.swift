@@ -211,7 +211,7 @@ protocol NativeTabBarAnimation: AnyObject {
 }
 
 typealias NativeTabBarAnimator = (
-  UIView, CGAffineTransform, TimeInterval, UIView.AnimationCurve, @escaping () -> Void
+  UIView, CGAffineTransform, TimeInterval, UICubicTimingParameters, @escaping () -> Void
 ) -> NativeTabBarAnimation
 
 private final class NativeTabBarUIKitAnimation: NativeTabBarAnimation {
@@ -221,11 +221,11 @@ private final class NativeTabBarUIKitAnimation: NativeTabBarAnimation {
 
   init(
     view: UIView, target: CGAffineTransform, duration: TimeInterval,
-    curve: UIView.AnimationCurve, completion: @escaping () -> Void
+    timing: UICubicTimingParameters, completion: @escaping () -> Void
   ) {
     self.view = view
     startTransform = view.transform
-    animator = UIViewPropertyAnimator(duration: duration, curve: curve)
+    animator = UIViewPropertyAnimator(duration: duration, timingParameters: timing)
     animator.addAnimations { [weak view] in view?.transform = target }
     animator.addCompletion { position in if position == .end { completion() } }
     animator.startAnimation()
@@ -278,9 +278,9 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
       name: "\(NativeTabBarPlugin.channelName)/\(viewId)", binaryMessenger: messenger
     )
     host = NativeTabBarHostView(frame: frame)
-    animate = animator ?? { view, transform, duration, curve, completion in
+    animate = animator ?? { view, transform, duration, timing, completion in
       NativeTabBarUIKitAnimation(
-        view: view, target: transform, duration: duration, curve: curve, completion: completion
+        view: view, target: transform, duration: duration, timing: timing, completion: completion
       )
     }
     self.reduceMotion = reduceMotion
@@ -506,6 +506,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     }
     setPhase(hidden ? .exiting : .entering)
     let target = hidden ? hiddenTransform : .identity
+    let remainingDistance = abs(target.ty - host.slidingView.transform.ty)
     let generation = animationGeneration
     let completion = { [weak self] in
       guard let self, self.animationGeneration == generation,
@@ -514,13 +515,21 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
       self.host.slidingView.isHidden = hidden
       self.setPhase(hidden ? .hidden : .visible)
     }
-    if reduceMotion() {
+    if reduceMotion() || remainingDistance <= 0.5 {
       UIView.performWithoutAnimation { host.slidingView.transform = target }
       completion()
     } else {
+      // A reversal/resize has only part of the original trip left. Use its
+      // presented position (captured by cancel), rather than restarting a full
+      // duration and making a nearly settled bar linger with input disabled.
+      let fraction = min(remainingDistance / max(hiddenTransform.ty, 1), 1)
+      let timing = UICubicTimingParameters(
+        controlPoint1: hidden ? CGPoint(x: 0.3, y: 0) : CGPoint(x: 0.2, y: 0.8),
+        controlPoint2: hidden ? CGPoint(x: 0.8, y: 0.7) : CGPoint(x: 0.2, y: 1)
+      )
       animation = animate(
-        host.slidingView, target, hidden ? 0.200 : 0.240,
-        hidden ? .easeIn : .easeOut, completion
+        host.slidingView, target, (hidden ? 0.140 : 0.180) * Double(fraction),
+        timing, completion
       )
     }
   }

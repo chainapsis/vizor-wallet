@@ -56,8 +56,10 @@ access gate.
 Flutter continues to decide when the bar is needed. UIKit independently slides
 it up into its fixed slot when shown and down out of the slot when hidden;
 this animation does not follow a Flutter route or modal's transition progress.
-The entrance uses 240 ms ease-out and the exit uses 200 ms ease-in. The native
-bar's material and selection lens retain their system behavior.
+The entrance uses 180 ms with cubic Bézier control points `(0.2, 0.8, 0.2, 1)`:
+it moves promptly and settles gently. The exit uses 140 ms with control points
+`(0.3, 0, 0.8, 0.7)` for a short accelerating departure. The native bar's
+material and selection lens retain their system behavior.
 
 A hide request immediately blocks touch, accessibility, and selection
 callbacks. The existing native view finishes its exit using the last displayed
@@ -68,10 +70,13 @@ that the entrance has completed.
 
 The Flutter slot keeps its native fitting height throughout. Only an inner
 native container moves, with safe-area geometry anchored to the stationary
-host. Reversals resume from the current presented position. A visibility epoch
-and native presentation revision reject old readiness acknowledgements and
-selection callbacks, including a rapid hide/show cycle while a channel update
-is in flight. There are no per-frame Flutter channel messages.
+host. Reversals resume from the current presented position; reversals and
+geometry changes scale the duration by the remaining fraction of a full trip,
+capped at the normal duration. A remaining distance of at most 0.5 pt settles
+immediately. A visibility epoch and native presentation revision reject old
+readiness acknowledgements and selection callbacks, including a rapid hide/show
+cycle while a channel update is in flight. There are no per-frame Flutter
+channel messages.
 
 Reduce Motion skips the slide. Removing the shell or disposing its platform
 view cancels the animation and releases it immediately rather than retaining
