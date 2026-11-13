@@ -901,11 +901,8 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
               ),
           ],
           selectedId: visibleTabs[tabBarCurrentIndex].path,
-          hidden:
-              routeObserver.hasPopup ||
-              navigationBlocked ||
-              locked ||
-              privacyLocked,
+          hidden: locked || privacyLocked,
+          inputEnabled: !routeObserver.hasPopup && !navigationBlocked,
           onSelect: (path) {
             final lifecycle = WidgetsBinding.instance.lifecycleState;
             if (!mounted ||

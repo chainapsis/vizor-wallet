@@ -183,6 +183,7 @@ struct NativeTabBarTests {
     #expect(fixture.host.onHeightChanged == nil)
     #expect(fixture.host.onGeometryChanged == nil)
     #expect(fixture.host.onAttachmentChanged == nil)
+    #expect(fixture.host.onLayoutCompleted == nil)
   }
 
   @Test("Entrance and exit use native durations and gate input plus accessibility")
@@ -355,7 +356,7 @@ struct NativeTabBarTests {
     )
     #expect(animator.animations.isEmpty)
     #expect(fixture.host.slidingView.isHidden)
-    #expect(fixture.bar.items?.isEmpty ?? true)
+    #expect(fixture.bar.items?.count == 3)
     fixture.setAttached(true)
     #expect(animator.animations.count == 1)
     #expect(!fixture.host.slidingView.isHidden)
@@ -365,8 +366,8 @@ struct NativeTabBarTests {
     #expect(fixture.host.slidingView.isHidden)
     #expect(fixture.presentation["interactive"] as? Bool == false)
     fixture.setAttached(true)
-    #expect(animator.animations.count == 2)
-    #expect(fixture.presentation["interactive"] as? Bool == false)
+    #expect(animator.animations.count == 1)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
 
     let hiddenAnimator = NativeTabBarTestAnimator()
     let hidden = NativeTabBarFixture(
@@ -448,6 +449,187 @@ struct NativeTabBarTests {
     #expect(fixture.host.slidingView.isHidden)
   }
 
+  @Test("Cold zero geometry waits for the final native-height handshake and preparation layout")
+  func coldZeroGeometryHandshake() throws {
+    let animator = NativeTabBarTestAnimator()
+    let preparation = NativeTabBarTestPreparationScheduler()
+    let fixture = NativeTabBarFixture(
+      animator: animator.animate, reducedMotion: false, attached: false,
+      initialLayoutReady: false, initialFrame: .zero, automaticLayout: false,
+      fittingHeight: 49, schedulePreparation: preparation.schedule
+    )
+    fixture.setAttached(true)
+    #expect(animator.animations.isEmpty)
+    #expect(preparation.pending.isEmpty)
+    #expect(fixture.host.slidingView.isHidden)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+
+    fixture.host.frame.size = CGSize(width: 393, height: 49)
+    fixture.host.setNeedsLayout()
+    fixture.host.layoutIfNeeded()
+    #expect(preparation.pending.isEmpty)
+    fixture.environment.fittingHeight = 83
+    fixture.host.setNeedsLayout()
+    fixture.host.layoutIfNeeded()
+    var args = fixture.snapshot(selected: "settings")
+    args["brightness"] = "dark"
+    #expect(fixture.update(args) == nil)
+    #expect(preparation.pending.isEmpty)
+    #expect(fixture.host.slidingView.isHidden)
+
+    fixture.host.frame.size.height = 83
+    fixture.host.setNeedsLayout()
+    fixture.host.layoutIfNeeded()
+    #expect(preparation.pending.count == 1)
+    #expect(animator.animations.isEmpty)
+    #expect(fixture.host.slidingView.transform.ty == 83)
+    #expect(!fixture.host.isUserInteractionEnabled)
+    #expect(fixture.host.accessibilityElementsHidden)
+    preparation.runNext()
+    let entrance = try #require(animator.animations.last)
+    #expect(entrance.start.ty == 83)
+    #expect(entrance.duration == 0.180)
+    #expect(fixture.bar.selectedItem?.accessibilityIdentifier == "settings")
+    #expect(fixture.host.overrideUserInterfaceStyle == .dark)
+    #expect(fixture.bar.bounds.size == fixture.host.bounds.size)
+    entrance.finish()
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+  }
+
+  @Test("Preparation revalidates changed geometry and uses the newest queued content")
+  func preparationInvalidationAndLatestContent() throws {
+    let animator = NativeTabBarTestAnimator()
+    let preparation = NativeTabBarTestPreparationScheduler()
+    let fixture = NativeTabBarFixture(
+      animator: animator.animate, reducedMotion: false, fittingHeight: 83,
+      schedulePreparation: preparation.schedule
+    )
+    #expect(preparation.pending.count == 1)
+    var args = fixture.snapshot(selected: "settings")
+    args["brightness"] = "dark"
+    #expect(fixture.update(args) == nil)
+    #expect(preparation.pending.count == 2)
+    preparation.runNext()
+    #expect(animator.animations.isEmpty)
+    fixture.host.frame.size.height = 49
+    preparation.runNext()
+    #expect(animator.animations.isEmpty)
+    #expect(fixture.host.slidingView.isHidden)
+    fixture.host.frame.size.height = 83
+    fixture.host.setNeedsLayout()
+    fixture.host.layoutIfNeeded()
+    preparation.runNext()
+    #expect(animator.animations.count == 1)
+    #expect(fixture.bar.selectedItem?.accessibilityIdentifier == "settings")
+    #expect(fixture.host.overrideUserInterfaceStyle == .dark)
+  }
+
+  @Test("Coverage changes input and accessibility without moving the visible material")
+  func inputOnlyCoverageGate() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    animator.animations.last?.finish()
+    let selected = try #require(fixture.bar.selectedItem)
+    let originalTransform = fixture.host.slidingView.transform
+    let initialRevision = try #require(fixture.presentation["revision"] as? Int64)
+    var args = fixture.snapshot()
+    args["inputEnabled"] = false
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    let coveredRevision = try #require(fixture.presentation["revision"] as? Int64)
+    #expect(coveredRevision > initialRevision)
+    #expect(animator.animations.count == 1)
+    #expect(fixture.host.slidingView.transform == originalTransform)
+    #expect(!fixture.host.slidingView.isHidden)
+    #expect(!fixture.host.isUserInteractionEnabled)
+    #expect(!fixture.bar.isUserInteractionEnabled)
+    #expect(fixture.host.accessibilityElementsHidden)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
+    #expect(fixture.selectionEvents.isEmpty)
+    args["inputEnabled"] = true
+    args["visibilityEpoch"] = 2
+    #expect(fixture.update(args) == nil)
+    #expect(animator.animations.count == 1)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    #expect(try #require(fixture.presentation["revision"] as? Int64) > coveredRevision)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
+    let event = try #require(fixture.selectionEvents.last?.arguments as? [String: Any])
+    #expect(event["visibilityEpoch"] as? Int64 == 2)
+    #expect(event["revision"] as? Int64 == fixture.presentation["revision"] as? Int64)
+  }
+
+  @Test("A first reveal can finish behind a modal while its input remains disabled")
+  func firstRevealWhileCovered() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(
+      animator: animator.animate, reducedMotion: false, initialInputEnabled: false
+    )
+    #expect(animator.animations.count == 1)
+    animator.animations.last?.finish()
+    #expect(!fixture.host.slidingView.isHidden)
+    #expect(fixture.host.slidingView.transform == .identity)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    #expect(fixture.host.accessibilityElementsHidden)
+    var args = fixture.snapshot()
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    #expect(animator.animations.count == 1)
+  }
+
+  @Test("Initial pending preparation survives a hierarchy move but does not replay a settled entrance")
+  func firstRevealVersusReattachment() throws {
+    let animator = NativeTabBarTestAnimator()
+    let preparation = NativeTabBarTestPreparationScheduler()
+    let fixture = NativeTabBarFixture(
+      animator: animator.animate, reducedMotion: false,
+      schedulePreparation: preparation.schedule
+    )
+    fixture.setAttached(false)
+    preparation.runNext()
+    #expect(animator.animations.isEmpty)
+    fixture.setAttached(true)
+    preparation.runNext()
+    #expect(animator.animations.count == 1)
+    let entrance = try #require(animator.animations.last)
+    entrance.finish()
+    let revision = try #require(fixture.presentation["revision"] as? Int64)
+    fixture.setAttached(false)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    fixture.setAttached(true)
+    #expect(animator.animations.count == 1)
+    #expect(preparation.pending.isEmpty)
+    #expect(fixture.host.slidingView.transform == .identity)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    #expect(try #require(fixture.presentation["revision"] as? Int64) > revision)
+  }
+
+  @Test("Hide and disposal invalidate a queued first reveal before it can show")
+  func cancelledPreparationCannotReveal() {
+    let animator = NativeTabBarTestAnimator()
+    let preparation = NativeTabBarTestPreparationScheduler()
+    let fixture = NativeTabBarFixture(
+      animator: animator.animate, reducedMotion: false,
+      schedulePreparation: preparation.schedule
+    )
+    var args = fixture.snapshot()
+    args["hidden"] = true
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    preparation.runNext()
+    #expect(animator.animations.isEmpty)
+    #expect(fixture.host.slidingView.isHidden)
+    args["hidden"] = false
+    args["visibilityEpoch"] = 2
+    #expect(fixture.update(args) == nil)
+    #expect(preparation.pending.count == 1)
+    fixture.platformView = nil
+    preparation.runNext()
+    #expect(animator.animations.isEmpty)
+    #expect(fixture.host.slidingView.isHidden)
+    #expect(!fixture.messenger.hasHandler)
+  }
+
   private func drainMainQueue() async {
     await withCheckedContinuation { continuation in
       DispatchQueue.main.async { continuation.resume() }
@@ -471,11 +653,16 @@ private final class NativeTabBarFixture {
 
   init(
     animator: NativeTabBarAnimator? = nil, reducedMotion: Bool = true,
-    attached: Bool = true, initiallyHidden: Bool = false
+    attached: Bool = true, initiallyHidden: Bool = false,
+    initialLayoutReady: Bool = true, initialInputEnabled: Bool = true,
+    initialFrame: CGRect = CGRect(x: 0, y: 0, width: 393, height: 100),
+    automaticLayout: Bool = true, fittingHeight: CGFloat? = nil,
+    schedulePreparation: @escaping (@escaping () -> Void) -> Void = { $0() }
   ) {
     let environment = NativeTabBarTestEnvironment()
     environment.reducedMotion = reducedMotion
     environment.attached = attached
+    environment.fittingHeight = fittingHeight
     self.environment = environment
     let format = UIGraphicsImageRendererFormat()
     format.scale = 3
@@ -486,14 +673,23 @@ private final class NativeTabBarFixture {
       }
     var args = Self.snapshot(png: png, ids: ["home", "activity", "settings"], selected: "home")
     args["hidden"] = initiallyHidden
+    args["layoutReady"] = initialLayoutReady
+    args["inputEnabled"] = initialInputEnabled
     let platformView = NativeTabBarPlatformView(
-      frame: CGRect(x: 0, y: 0, width: 393, height: 100),
+      frame: initialFrame,
       viewId: 1, args: args, messenger: messenger, animator: animator,
       reduceMotion: { environment.reducedMotion }, attachmentProvider: { environment.attached },
-      notificationCenter: notifications
+      notificationCenter: notifications,
+      fittingHeight: fittingHeight == nil ? nil : { _, _ in environment.fittingHeight! },
+      schedulePreparation: schedulePreparation
     )
     self.platformView = platformView
     host = platformView.view() as! NativeTabBarHostView
+    if automaticLayout {
+      host.frame.size.height = host.preferredHeight
+      host.setNeedsLayout()
+      host.layoutIfNeeded()
+    }
     messenger.outgoing.removeAll()
   }
 
@@ -521,6 +717,8 @@ private final class NativeTabBarFixture {
       "brightness": "light",
       "direction": "ltr",
       "visibilityEpoch": 0,
+      "inputEnabled": true,
+      "layoutReady": true,
     ]
   }
 }
@@ -528,6 +726,16 @@ private final class NativeTabBarFixture {
 private final class NativeTabBarTestEnvironment {
   var reducedMotion = true
   var attached = true
+  var fittingHeight: CGFloat?
+}
+
+private final class NativeTabBarTestPreparationScheduler {
+  var pending: [() -> Void] = []
+  func schedule(_ completion: @escaping () -> Void) { pending.append(completion) }
+  func runNext() {
+    guard !pending.isEmpty else { return }
+    pending.removeFirst()()
+  }
 }
 
 private final class NativeTabBarTestAnimator {

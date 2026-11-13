@@ -386,13 +386,15 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(shell().nativeTabBar!.hidden, true);
+    expect(shell().nativeTabBar!.hidden, false);
+    expect(shell().nativeTabBar!.inputEnabled, false);
     queuedSelect('/settings');
     await tester.pump();
     expect(router.routeInformationProvider.value.uri.path, '/home');
     rootKey.currentState!.pop();
     await tester.pumpAndSettle();
     expect(shell().nativeTabBar!.hidden, false);
+    expect(shell().nativeTabBar!.inputEnabled, true);
 
     final container = ProviderScope.containerOf(
       tester.element(find.byType(AppMobileShell)),
@@ -404,7 +406,8 @@ void main() {
     queuedSelect('/settings');
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/home');
-    expect(shell().nativeTabBar!.hidden, true);
+    expect(shell().nativeTabBar!.hidden, false);
+    expect(shell().nativeTabBar!.inputEnabled, false);
     lease.release();
     await tester.pumpAndSettle();
     shell().nativeTabBar!.onSelect('/settings');

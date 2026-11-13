@@ -37,11 +37,13 @@ void main() {
     List<IosNativeTabBarItem> items = _items,
     ValueChanged<String>? onSelect,
     bool hidden = false,
+    bool inputEnabled = true,
   }) => IosNativeTabBarConfiguration(
     items: items,
     selectedId: selected,
     onSelect: onSelect ?? (_) {},
     hidden: hidden,
+    inputEnabled: inputEnabled,
   );
 
   Future<void> pump(
@@ -85,6 +87,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
+    await tester.pump();
   }
 
   bool ignoresNativePointers(WidgetTester tester) => tester
@@ -108,6 +111,237 @@ void main() {
             .first,
       )
       .excluding;
+
+  _testWidgets('coalesced layout invalidation recovers readiness and rejects '
+      'acknowledgements or selections from the old layout', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(402, 874);
+    addTearDown(tester.view.reset);
+    final selected = <String>[];
+    await pump(tester, config(onSelect: selected.add));
+    expect(ignoresNativePointers(tester), false);
+    final oldStatus = Map.of(native.presentations.values.last);
+    final oldHeight = tester.getSize(find.byType(UiKitView)).height;
+    final view = tester.state(find.byType(UiKitView));
+
+    // Hold an unrelated update while a resize invalidates and reapplies the
+    // same fitting height. Only the final layoutReady=true reaches UIKit.
+    native.updateDelay = Completer<void>();
+    await pump(
+      tester,
+      config(onSelect: selected.add),
+      brightness: Brightness.dark,
+    );
+    final updateCount = native.updates.length;
+    tester.view.physicalSize = const Size(430, 874);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(native.updates, hasLength(updateCount));
+    expect(ignoresNativePointers(tester), true);
+    await native.send('presentation', {...oldStatus, 'revision': 1000});
+    await native.send('select', {...oldStatus, 'id': '/settings'});
+    expect(selected, isEmpty);
+    expect(ignoresNativePointers(tester), true);
+
+    native.updateDelay!.complete();
+    native.updateDelay = null;
+    await tester.pumpAndSettle();
+    expect(native.latest['layoutReady'], true);
+    expect(
+      native.latest['visibilityEpoch'],
+      (oldStatus['visibilityEpoch'] as int) + 2,
+    );
+    expect(ignoresNativePointers(tester), false);
+    expect(excludesNativeSemantics(tester), false);
+    expect(tester.getSize(find.byType(UiKitView)).height, oldHeight);
+    expect(tester.state(find.byType(UiKitView)), same(view));
+
+    await native.send('presentation', {...oldStatus, 'revision': 2000});
+    await native.send('select', {...oldStatus, 'id': '/settings'});
+    await tester.pump();
+    expect(ignoresNativePointers(tester), false);
+    expect(selected, isEmpty);
+    await native.send('select', {'id': '/settings'});
+    expect(selected, ['/settings']);
+  });
+
+  _testWidgets(
+    'pending capability reserves a transparent native slot and never '
+    'mounts the Flutter fallback',
+    (tester) async {
+      final capability = Completer<Map>();
+      native.capabilityResponse = capability.future;
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewPadding = FakeViewPadding(bottom: 34);
+      addTearDown(tester.view.reset);
+      await pump(tester, config());
+      final pending = find.byKey(const ValueKey('ios_native_tab_bar_pending'));
+      expect(pending, findsOneWidget);
+      expect(tester.getSize(pending).height, 83);
+      expect(find.byKey(const ValueKey('fallback')), findsNothing);
+      expect(find.byType(UiKitView), findsNothing);
+      final body = tester.element(find.text('Body'));
+      capability.complete({'supported': true});
+      await tester.pumpAndSettle();
+      expect(find.byType(UiKitView), findsOneWidget);
+      expect(find.byKey(const ValueKey('fallback')), findsNothing);
+      expect(tester.element(find.text('Body')), same(body));
+    },
+  );
+
+  _testWidgets('unsupported capability replaces the pending slot with the real '
+      'fallback without remounting the body', (tester) async {
+    final capability = Completer<Map>();
+    native.capabilityResponse = capability.future;
+    await pump(tester, config());
+    final body = tester.element(find.text('Body'));
+    expect(find.byKey(const ValueKey('fallback')), findsNothing);
+    capability.complete({'supported': false});
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
+    expect(find.byType(UiKitView), findsNothing);
+    expect(tester.element(find.text('Body')), same(body));
+  });
+
+  _testWidgets('failed icon preparation uses the real fallback', (
+    tester,
+  ) async {
+    final icons = Completer<Uint8List>();
+    await pump(tester, config(), loader: (_, _, _) => icons.future);
+    final body = tester.element(find.text('Body'));
+    expect(find.byKey(const ValueKey('fallback')), findsNothing);
+    icons.completeError(StateError('Failed icon'));
+    await tester.pump();
+    expect(tester.takeException(), isA<StateError>());
+    await tester.pump();
+    expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
+    expect(tester.element(find.text('Body')), same(body));
+  });
+
+  _testWidgets(
+    'first reveal waits for a measured height applied to the Flutter '
+    'slot',
+    (tester) async {
+      final height = Completer<num>();
+      native.heightResponse = height.future;
+      await pump(tester, config());
+      expect(native.created.values.single['layoutReady'], false);
+      expect(
+        native.updates.every((snapshot) => snapshot['layoutReady'] == false),
+        true,
+      );
+      expect(ignoresNativePointers(tester), true);
+      height.complete(101.0);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(UiKitView)).height, 101);
+      expect(native.latest['layoutReady'], true);
+      expect(ignoresNativePointers(tester), false);
+    },
+  );
+
+  _testWidgets('a slot smaller than native fitting height cannot acknowledge '
+      'layout readiness', (tester) async {
+    Future<void> constrained(double height) async {
+      await tester.pumpWidget(
+        _app(
+          Center(
+            child: SizedBox(
+              width: 200,
+              height: height,
+              child: IosNativeTabBarHost(
+                configuration: config(),
+                iconLoader: _fakeIcon,
+                builder: (_, bar) => Align(
+                  alignment: Alignment.bottomCenter,
+                  child: bar ?? const SizedBox(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await constrained(20);
+    expect(native.latest['layoutReady'], false);
+    expect(tester.getSize(find.byType(UiKitView)).height, 20);
+    expect(ignoresNativePointers(tester), true);
+    await constrained(160);
+    expect(native.latest['layoutReady'], true);
+    expect(tester.getSize(find.byType(UiKitView)).height, native.height);
+    expect(ignoresNativePointers(tester), false);
+    expect(native.created, hasLength(1));
+  });
+
+  _testWidgets('cover then uncover leaves the bar visible and rejects old '
+      'presentation or selection epochs', (tester) async {
+    final selected = <String>[];
+    await pump(tester, config(onSelect: selected.add));
+    final view = tester.state(find.byType(UiKitView));
+    final status = Map.of(native.presentations.values.last);
+    native.automaticallyPresent = false;
+    await pump(tester, config(onSelect: selected.add, inputEnabled: false));
+    expect(native.latest['hidden'], false);
+    expect(native.latest['inputEnabled'], false);
+    expect(ignoresNativePointers(tester), true);
+    await pump(tester, config(onSelect: selected.add));
+    expect(native.latest['hidden'], false);
+    expect(
+      native.latest['visibilityEpoch'],
+      (status['visibilityEpoch'] as int) + 2,
+    );
+    await native.send('presentation', {
+      ...status,
+      'revision': 100,
+      'interactive': true,
+    });
+    await native.send('select', {...status, 'id': '/settings'});
+    await tester.pump();
+    expect(ignoresNativePointers(tester), true);
+    expect(selected, isEmpty);
+    await native.present(interactive: true);
+    await tester.pump();
+    await native.send('select', {'id': '/settings'});
+    expect(selected, ['/settings']);
+    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(
+      native.updates.every((snapshot) => snapshot['hidden'] == false),
+      true,
+    );
+  });
+
+  _testWidgets('TickerMode suspension disables input without physically hiding '
+      'the native bar', (tester) async {
+    Future<void> tickers(bool enabled) async {
+      await tester.pumpWidget(
+        _app(
+          TickerMode(
+            enabled: enabled,
+            child: IosNativeTabBarHost(
+              configuration: config(),
+              iconLoader: _fakeIcon,
+              builder: (_, bar) => Scaffold(bottomNavigationBar: bar),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await tickers(true);
+    final view = tester.state(find.byType(UiKitView));
+    final epoch = native.latest['visibilityEpoch'] as int;
+    await tickers(false);
+    expect(native.latest['hidden'], false);
+    expect(native.latest['inputEnabled'], false);
+    expect(ignoresNativePointers(tester), true);
+    await tickers(true);
+    expect(native.latest['inputEnabled'], true);
+    expect(native.latest['visibilityEpoch'], epoch + 2);
+    expect(tester.state(find.byType(UiKitView)), same(view));
+  });
 
   _testWidgets('entrance waits for native readiness before claiming pointers, '
       'exposing semantics or accepting selection', (tester) async {
@@ -172,7 +406,10 @@ void main() {
       native.automaticallyPresent = false;
       await pump(tester, config(onSelect: selected.add, hidden: true));
       await pump(tester, config(onSelect: selected.add));
-      expect(native.latest['visibilityEpoch'], 2);
+      expect(
+        native.latest['visibilityEpoch'],
+        (oldStatus['visibilityEpoch'] as int) + 2,
+      );
       expect(ignoresNativePointers(tester), true);
       await native.send('presentation', {
         ...oldStatus,
@@ -200,7 +437,7 @@ void main() {
     await pump(tester, config(onSelect: selected.add));
     await native.present(interactive: true, revision: 5);
     await native.send('presentation', {
-      'visibilityEpoch': 0,
+      'visibilityEpoch': native.latest['visibilityEpoch'],
       'revision': 4,
       'interactive': false,
     });
@@ -223,7 +460,7 @@ void main() {
       await tester.pump();
       expect(ignoresNativePointers(tester), false);
       query.complete({
-        'visibilityEpoch': 0,
+        'visibilityEpoch': native.latest['visibilityEpoch'],
         'revision': 0,
         'interactive': false,
       });
@@ -241,10 +478,11 @@ void main() {
       native.automaticallyPresent = false;
       final selected = <String>[];
       await pump(tester, config(onSelect: selected.add));
+      final epoch = native.latest['visibilityEpoch'];
       await pump(tester, config(onSelect: selected.add, hidden: true));
       await pump(tester, config(onSelect: selected.add));
       query.complete({
-        'visibilityEpoch': 0,
+        'visibilityEpoch': epoch,
         'revision': 100,
         'interactive': true,
       });
@@ -265,6 +503,7 @@ void main() {
     native.presentationResponse = oldQuery.future;
     native.automaticallyPresent = false;
     await pump(tester, config(), hostKey: const ValueKey('old'));
+    final oldEpoch = native.latest['visibilityEpoch'];
     await native.present(interactive: true, revision: 5);
     await tester.pump();
     expect(ignoresNativePointers(tester), false);
@@ -273,7 +512,7 @@ void main() {
     expect(native.created, hasLength(2));
     expect(ignoresNativePointers(tester), true);
     oldQuery.complete({
-      'visibilityEpoch': 0,
+      'visibilityEpoch': oldEpoch,
       'revision': 100,
       'interactive': true,
     });
@@ -284,20 +523,22 @@ void main() {
   _testWidgets('coalesced hide-show updates preserve the visibility epoch', (
     tester,
   ) async {
-    native.updateDelay = Completer<void>();
     final selected = <String>[];
     await pump(tester, config(onSelect: selected.add));
     expect(ignoresNativePointers(tester), false);
+    final epoch = native.latest['visibilityEpoch'] as int;
+    native.updateDelay = Completer<void>();
     await pump(tester, config(onSelect: selected.add, hidden: true));
+    final updateCount = native.updates.length;
     await pump(tester, config(onSelect: selected.add));
-    expect(native.updates, hasLength(1));
+    expect(native.updates, hasLength(updateCount));
     expect(ignoresNativePointers(tester), true);
     await native.send('select', {'id': '/settings'});
     expect(selected, isEmpty);
     native.updateDelay!.complete();
     await tester.pump();
     await tester.pump();
-    expect(native.updates.last['visibilityEpoch'], 2);
+    expect(native.updates.last['visibilityEpoch'], epoch + 2);
     expect(native.updates.last['hidden'], false);
     expect(ignoresNativePointers(tester), false);
   });
@@ -307,6 +548,7 @@ void main() {
     native.automaticallyPresent = false;
     final selected = <String>[];
     await pump(tester, config(onSelect: selected.add));
+    final epoch = native.latest['visibilityEpoch'];
     await pump(
       tester,
       config(
@@ -323,7 +565,7 @@ void main() {
       ),
       brightness: Brightness.dark,
     );
-    expect(native.latest['visibilityEpoch'], 0);
+    expect(native.latest['visibilityEpoch'], epoch);
     expect(native.latest['selectedId'], '/settings');
     expect(native.latest['brightness'], 'dark');
     expect((native.latest['items'] as List).map((item) => item['label']), [
@@ -371,7 +613,10 @@ void main() {
   ) async {
     final icon = Completer<Uint8List>();
     await pump(tester, config(), loader: (_, _, _) => icon.future);
-    expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ios_native_tab_bar_pending')),
+      findsOneWidget,
+    );
     final body = tester.element(find.text('Body'));
     icon.complete(Uint8List(4));
     await tester.pump();
@@ -554,6 +799,7 @@ void main() {
     final selected = <String>[];
     await pump(tester, config(onSelect: selected.add, hidden: true));
     expect(native.latest['hidden'], true);
+    expect(native.latest['inputEnabled'], false);
     await native.send('select', {'id': '/settings'});
     expect(selected, isEmpty);
     await pump(tester, config(onSelect: selected.add), keyboard: 300);
@@ -562,42 +808,48 @@ void main() {
     expect(selected, isEmpty);
     await pump(tester, config(onSelect: selected.add));
     expect(native.latest['hidden'], false);
+    expect(native.latest['inputEnabled'], true);
     expect(native.created, hasLength(1));
   });
 
-  _testWidgets('a route pushed over the shell hides and disables native tabs', (
-    tester,
-  ) async {
-    final key = GlobalKey<NavigatorState>();
-    final selected = <String>[];
-    await tester.pumpWidget(
-      _app(
-        IosNativeTabBarHost(
-          configuration: config(onSelect: selected.add),
-          iconLoader: _fakeIcon,
-          builder: (_, bar) =>
-              Scaffold(body: const Text('Shell'), bottomNavigationBar: bar),
+  _testWidgets(
+    'a route pushed over the shell blocks input without hiding native tabs',
+    (tester) async {
+      final key = GlobalKey<NavigatorState>();
+      final selected = <String>[];
+      await tester.pumpWidget(
+        _app(
+          IosNativeTabBarHost(
+            configuration: config(onSelect: selected.add),
+            iconLoader: _fakeIcon,
+            builder: (_, bar) =>
+                Scaffold(body: const Text('Shell'), bottomNavigationBar: bar),
+          ),
+          navigatorKey: key,
         ),
-        navigatorKey: key,
-      ),
-    );
-    await tester.pumpAndSettle();
-    unawaited(
-      key.currentState!.push<void>(
-        MaterialPageRoute(builder: (_) => const Scaffold(body: Text('Detail'))),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-    expect(native.latest['hidden'], true);
-    await native.send('select', {'id': '/settings'});
-    expect(selected, isEmpty);
-    await tester.pumpAndSettle();
-    key.currentState!.pop();
-    await tester.pumpAndSettle();
-    expect(native.latest['hidden'], false);
-    expect(native.created, hasLength(1));
-  });
+      );
+      await tester.pumpAndSettle();
+      unawaited(
+        key.currentState!.push<void>(
+          MaterialPageRoute(
+            builder: (_) => const Scaffold(body: Text('Detail')),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(native.latest['hidden'], false);
+      expect(native.latest['inputEnabled'], false);
+      await native.send('select', {'id': '/settings'});
+      expect(selected, isEmpty);
+      await tester.pumpAndSettle();
+      key.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(native.latest['hidden'], false);
+      expect(native.latest['inputEnabled'], true);
+      expect(native.created, hasLength(1));
+    },
+  );
 
   _testWidgets(
     'native height updates resize the platform view without padding',
@@ -718,7 +970,7 @@ class _NativeFixture {
       call,
     ) async {
       capabilityReads++;
-      return {'supported': supported};
+      return capabilityResponse ?? {'supported': supported};
     });
     messenger.setMockMethodCallHandler(SystemChannels.platform_views, (
       call,
@@ -739,7 +991,7 @@ class _NativeFixture {
         presentations[id] = {
           'visibilityEpoch': latest['visibilityEpoch'],
           'revision': 0,
-          'interactive': automaticallyPresent && latest['hidden'] != true,
+          'interactive': _readyFor(latest),
         };
         final channel = MethodChannel('com.zcash.wallet/native_tab_bar/$id');
         channels[id] = channel;
@@ -748,17 +1000,19 @@ class _NativeFixture {
             latest = call.arguments as Map;
             updates.add(Map.of(latest));
             final previous = presentations[id]!;
-            if (previous['visibilityEpoch'] != latest['visibilityEpoch']) {
+            final ready = _readyFor(latest, previous: previous);
+            if (previous['visibilityEpoch'] != latest['visibilityEpoch'] ||
+                previous['interactive'] != ready) {
               presentations[id] = {
                 'visibilityEpoch': latest['visibilityEpoch'],
                 'revision': (previous['revision'] as int) + 1,
-                'interactive': automaticallyPresent && latest['hidden'] != true,
+                'interactive': ready,
               };
               unawaited(send('presentation', presentations[id]!));
             }
             await updateDelay?.future;
           } else if (call.method == 'getHeight') {
-            return height;
+            return heightResponse ?? height;
           } else if (call.method == 'getPresentation') {
             return presentationResponse ?? presentations[id];
           }
@@ -772,8 +1026,10 @@ class _NativeFixture {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   bool supported = true;
+  Future<Map>? capabilityResponse;
   int capabilityReads = 0;
   double height = 83;
+  Future<num>? heightResponse;
   bool automaticallyPresent = true;
   Future<Map>? presentationResponse;
   Completer<void>? updateDelay;
@@ -783,6 +1039,14 @@ class _NativeFixture {
   final gestureCalls = <String>[];
   final channels = <int, MethodChannel>{};
   Map latest = {};
+
+  bool _readyFor(Map snapshot, {Map? previous}) =>
+      (automaticallyPresent ||
+          (previous?['visibilityEpoch'] == snapshot['visibilityEpoch'] &&
+              previous?['interactive'] == true)) &&
+      snapshot['hidden'] != true &&
+      snapshot['inputEnabled'] == true &&
+      snapshot['layoutReady'] == true;
 
   Future<void> send(String method, Object? arguments) async {
     final channel = channels.values.last;

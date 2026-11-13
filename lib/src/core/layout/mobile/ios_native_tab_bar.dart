@@ -30,14 +30,18 @@ class IosNativeTabBarConfiguration {
     required this.selectedId,
     required this.onSelect,
     this.hidden = false,
+    this.inputEnabled = true,
   });
 
   final List<IosNativeTabBarItem> items;
   final String selectedId;
   final ValueChanged<String> onSelect;
 
-  /// Keep the native view mounted while a popup or access gate covers the app.
+  /// Physically slide the bar away for a privacy gate or keyboard.
   final bool hidden;
+
+  /// Route coverage and popups block input without moving the underlying bar.
+  final bool inputEnabled;
 }
 
 typedef IosNativeTabBarIconLoader =
@@ -47,7 +51,8 @@ typedef IosNativeTabBarIconLoader =
       double pixelRatio,
     );
 
-/// Chooses the original bar until the native capability and icons are ready.
+/// Keeps the native slot transparent until capability and icons are ready.
+/// Unsupported hosts and preparation failures use the original Flutter bar.
 /// The builder keeps the shell and its router mounted when this choice changes.
 class IosNativeTabBarHost extends StatefulWidget {
   const IosNativeTabBarHost({
@@ -73,6 +78,8 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
   Future<bool>? _capability;
   ({AssetBundle bundle, double scale, String icons})? _request;
   List<_PreparedItem>? _items;
+  bool? _supported;
+  bool _preparationFailed = false;
   int _generation = 0;
 
   bool get _eligible =>
@@ -122,11 +129,18 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
     );
     if (_request == request) return;
     _request = request;
+    _preparationFailed = false;
     final generation = ++_generation;
     final destinations = List.of(widget.configuration.items);
     final loader = widget.iconLoader;
     unawaited(() async {
-      if (!await (_capability ??= _readCapability())) return;
+      final supported = await (_capability ??= _readCapability());
+      if (!mounted || generation != _generation) return;
+      if (!supported) {
+        setState(() => _supported = false);
+        return;
+      }
+      _supported = true;
       try {
         final icons = await Future.wait([
           for (final item in destinations)
@@ -142,7 +156,10 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
       } catch (error, stack) {
         if (!mounted || generation != _generation) return;
         // The original Flutter bar remains usable if a bundled icon fails.
-        setState(() => _items = null);
+        setState(() {
+          _items = null;
+          _preparationFailed = true;
+        });
         FlutterError.reportError(
           FlutterErrorDetails(
             exception: error,
@@ -164,8 +181,17 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
   @override
   Widget build(BuildContext context) {
     final prepared = _items;
-    if (!_eligible || prepared == null || prepared.isEmpty) {
+    if (!_eligible || _supported == false || _preparationFailed) {
       return widget.builder(context, null);
+    }
+    if (prepared == null || prepared.isEmpty) {
+      return widget.builder(
+        context,
+        SizedBox(
+          key: const ValueKey('ios_native_tab_bar_pending'),
+          height: 49 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
+      );
     }
     // Translated labels/selection do not rerasterize icons. New destinations
     // keep the previous native view alive until their icons have arrived.
@@ -234,8 +260,16 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   int _presentationRevision = -1;
   bool _interactive = false;
   bool _sending = false;
+  bool _layoutReady = false;
+  BoxConstraints? _slotConstraints;
+  final _slotKey = GlobalKey();
+  int _layoutGeneration = 0;
+  bool _layoutAcknowledgementScheduled = false;
 
   _Snapshot get _currentSnapshot {
+    final hidden =
+        widget.configuration.hidden ||
+        MediaQuery.viewInsetsOf(context).bottom > 0;
     final selected =
         widget._items.any(
           (item) => item.item.id == widget.configuration.selectedId,
@@ -248,11 +282,13 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
       brightness: Theme.of(context).brightness,
       selectedTintColor: context.colors.navPanel.activeIcon.toARGB32(),
       direction: Directionality.of(context),
-      hidden:
-          widget.configuration.hidden ||
-          MediaQuery.viewInsetsOf(context).bottom > 0 ||
-          ModalRoute.isCurrentOf(context) == false ||
-          !TickerMode.valuesOf(context).enabled,
+      hidden: hidden,
+      inputEnabled:
+          !hidden &&
+          widget.configuration.inputEnabled &&
+          ModalRoute.isCurrentOf(context) != false &&
+          TickerMode.valuesOf(context).enabled,
+      layoutReady: _layoutReady,
       visibilityEpoch: _visibilityEpoch,
     );
   }
@@ -271,10 +307,14 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
 
   void _updateSnapshot({bool force = false}) {
     var snapshot = _currentSnapshot;
-    if (_snapshot != null && _snapshot!.hidden != snapshot.hidden) {
-      // Keep every visibility transition even when an in-flight update causes
-      // intermediate snapshots to coalesce. An old visible acknowledgement
-      // must not re-enable a newer hide -> show cycle.
+    if (_snapshot != null &&
+        (_snapshot!.hidden != snapshot.hidden ||
+            _snapshot!.inputEnabled != snapshot.inputEnabled ||
+            _snapshot!.layoutReady != snapshot.layoutReady)) {
+      // Keep every readiness transition even when an in-flight update causes
+      // intermediate snapshots to coalesce. The final ready snapshot must
+      // receive a new native acknowledgement after hide/show, cover/uncover
+      // or layout invalidation, even if its booleans match the previous one.
       _visibilityEpoch++;
       _interactive = false;
       snapshot = _currentSnapshot;
@@ -317,6 +357,9 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     _channel = channel;
     _sentRevision = -1;
     _presentationRevision = -1;
+    _layoutReady = false;
+    _layoutGeneration++;
+    _updateSnapshot();
     if (_interactive) setState(() => _interactive = false);
     channel.setMethodCallHandler((call) async {
       if (!mounted || !identical(_channel, channel)) return;
@@ -330,7 +373,8 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
             values['revision'] is int &&
             values['visibilityEpoch'] == _visibilityEpoch &&
             values['revision'] == _presentationRevision &&
-            !_currentSnapshot.hidden &&
+            _currentSnapshot.inputEnabled &&
+            _layoutReady &&
             widget.configuration.items.any((item) => item.id == id)) {
           widget.configuration.onSelect(id);
         }
@@ -391,19 +435,51 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
       return;
     }
     _presentationRevision = revision;
-    final ready = interactive && !_currentSnapshot.hidden;
+    final ready = interactive && _currentSnapshot.inputEnabled && _layoutReady;
     if (_interactive != ready) setState(() => _interactive = ready);
   }
 
   void _acceptHeight(Object? value) {
     if (value is! num) return;
     final height = value.toDouble();
-    if (!height.isFinite ||
-        height <= 0 ||
-        (_height != null && (height - _height!).abs() < 0.5)) {
+    if (!height.isFinite || height <= 0) return;
+    if (_height == null || (height - _height!).abs() >= 0.5) {
+      setState(() {
+        _height = height;
+        _layoutReady = false;
+        _interactive = false;
+        _layoutGeneration++;
+      });
+      _updateSnapshot();
+    }
+    _acknowledgeSlotLayout();
+  }
+
+  void _acknowledgeSlotLayout() {
+    if (_layoutAcknowledgementScheduled || _height == null || _layoutReady) {
       return;
     }
-    setState(() => _height = height);
+    _layoutAcknowledgementScheduled = true;
+    final generation = _layoutGeneration;
+    final channel = _channel;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _layoutAcknowledgementScheduled = false;
+      if (!mounted || !identical(channel, _channel)) return;
+      if (generation != _layoutGeneration) {
+        _acknowledgeSlotLayout();
+        return;
+      }
+      final slot = _slotKey.currentContext?.findRenderObject();
+      if (slot is! RenderBox ||
+          !slot.hasSize ||
+          slot.size.width <= 0 ||
+          (slot.size.height - _height!).abs() >= 0.5) {
+        return;
+      }
+      setState(() => _layoutReady = true);
+      _updateSnapshot();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
@@ -419,31 +495,44 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     // Only a bootstrap estimate. UIKit reports its actual fitting height,
     // including the safe area, after attachment and on subsequent changes.
     final height = _height ?? 49 + MediaQuery.viewPaddingOf(context).bottom;
-    final ready = _interactive && !_snapshot!.hidden;
-    return SizedBox(
-      height: height,
-      child: IgnorePointer(
-        ignoring: !ready,
-        child: ExcludeSemantics(
-          excluding: !ready,
-          child: UiKitView(
-            viewType: 'com.zcash.wallet/native_tab_bar',
-            layoutDirection: Directionality.of(context),
-            creationParams: _snapshot!.toMap(),
-            creationParamsCodec: const StandardMessageCodec(),
-            onPlatformViewCreated: _created,
-            // The app's global tap-to-unfocus recognizer must not hold UIKit's
-            // press interaction until a drag cancels that ancestor's tap.
-            gestureRecognizers: ready
-                ? <Factory<OneSequenceGestureRecognizer>>{
-                    Factory<OneSequenceGestureRecognizer>(
-                      EagerGestureRecognizer.new,
-                    ),
-                  }
-                : const <Factory<OneSequenceGestureRecognizer>>{},
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (_slotConstraints != constraints) {
+          _slotConstraints = constraints;
+          _layoutGeneration++;
+          _layoutReady = false;
+          _interactive = false;
+          _updateSnapshot();
+          _acknowledgeSlotLayout();
+        }
+        final ready = _interactive && _snapshot!.inputEnabled && _layoutReady;
+        return SizedBox(
+          key: _slotKey,
+          height: height,
+          child: IgnorePointer(
+            ignoring: !ready,
+            child: ExcludeSemantics(
+              excluding: !ready,
+              child: UiKitView(
+                viewType: 'com.zcash.wallet/native_tab_bar',
+                layoutDirection: Directionality.of(context),
+                creationParams: _snapshot!.toMap(),
+                creationParamsCodec: const StandardMessageCodec(),
+                onPlatformViewCreated: _created,
+                // The app's global tap-to-unfocus recognizer must not hold UIKit's
+                // press interaction until a drag cancels that ancestor's tap.
+                gestureRecognizers: ready
+                    ? <Factory<OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(
+                          EagerGestureRecognizer.new,
+                        ),
+                      }
+                    : const <Factory<OneSequenceGestureRecognizer>>{},
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -456,6 +545,8 @@ class _Snapshot {
     required this.selectedTintColor,
     required this.direction,
     required this.hidden,
+    required this.inputEnabled,
+    required this.layoutReady,
     required this.visibilityEpoch,
   });
   final List<_PreparedItem> items;
@@ -464,6 +555,8 @@ class _Snapshot {
   final int selectedTintColor;
   final TextDirection direction;
   final bool hidden;
+  final bool inputEnabled;
+  final bool layoutReady;
   final int visibilityEpoch;
 
   Map<String, Object> toMap() => {
@@ -473,6 +566,8 @@ class _Snapshot {
     'selectedTintColor': selectedTintColor,
     'direction': direction.name,
     'hidden': hidden,
+    'inputEnabled': inputEnabled,
+    'layoutReady': layoutReady,
     'visibilityEpoch': visibilityEpoch,
   };
 
@@ -482,6 +577,8 @@ class _Snapshot {
       selectedTintColor == other.selectedTintColor &&
       direction == other.direction &&
       hidden == other.hidden &&
+      inputEnabled == other.inputEnabled &&
+      layoutReady == other.layoutReady &&
       visibilityEpoch == other.visibilityEpoch &&
       items.length == other.items.length &&
       Iterable.generate(
