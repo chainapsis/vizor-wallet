@@ -9,6 +9,7 @@ import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../swap/models/swap_models.dart';
 import '../../../swap/widgets/swap_asset_icon.dart';
+import '../../../swap/widgets/swap_quote_error_text.dart';
 import '../../models/pay_amount_input.dart';
 
 const _amountCardHeight = 240.0;
@@ -52,7 +53,6 @@ class MobilePayAmountStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final precisionError = state.quoteAmountPrecisionError(context.l10n);
     final balanceExceeded = payAmountExceedsAvailableZec(
       state,
@@ -92,17 +92,12 @@ class MobilePayAmountStep extends StatelessWidget {
                 _EstimatedZecRow(state: state),
                 if (errorText != null || balanceExceeded) ...[
                   const SizedBox(height: AppSpacing.s),
-                  Text(
-                    balanceExceeded
+                  SwapQuoteErrorText(
+                    message: balanceExceeded
                         ? context.l10n.commonNotEnoughZec
                         : errorText!,
-                    key: const ValueKey('mobile_pay_amount_error'),
+                    textKey: const ValueKey('mobile_pay_amount_error'),
                     maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.destructive,
-                    ),
                   ),
                 ],
               ],

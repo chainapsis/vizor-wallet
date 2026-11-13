@@ -3245,6 +3245,12 @@ abstract class AppLocalizations {
   /// **'Welcome Back'**
   String get commonWelcomeBack;
 
+  /// Title of a short explanation, and the label of the info icon that opens it, next to a setting.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s this?'**
+  String get commonWhatsThis;
+
   /// Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings.
   ///
   /// In en, this message translates to:
@@ -10181,6 +10187,12 @@ abstract class AppLocalizations {
   /// **'Vote'**
   String get navVote;
 
+  /// Status line under the Enhance swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save this choice. It applies until you close Vizor.'**
+  String get nearSwapPrivacyUnsaved;
+
   /// Toast when the user turns off Tor while a software update is in progress.
   ///
   /// In en, this message translates to:
@@ -15776,6 +15788,78 @@ abstract class AppLocalizations {
   /// **'Couldn\'t update language.'**
   String get settingsLanguageUpdateFailed;
 
+  /// Subtitle under the Enhance swap privacy setting while a hardware wallet account is active.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.'**
+  String get settingsNearSwapPrivacyHardware;
+
+  /// [security] First paragraph of the Enhance swap privacy explanation: what the setting does. NEAR Intents is a brand name.
+  ///
+  /// In en, this message translates to:
+  /// **'When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With Enhance swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can\'t tie them to your wallet.'**
+  String get settingsNearSwapPrivacyInfoOneTime;
+
+  /// [security] Third paragraph of the Enhance swap privacy explanation: what the setting does not protect. Ethereum is a brand name.
+  ///
+  /// In en, this message translates to:
+  /// **'Addresses you enter yourself, like an Ethereum address you reuse for several swaps, are still shared with NEAR and can link those swaps. Hardware wallet accounts don\'t use one-time addresses.'**
+  String get settingsNearSwapPrivacyInfoOwnAddresses;
+
+  /// [security] Fourth paragraph of the Enhance swap privacy explanation: restoring from the recovery phrase still finds swap payments.
+  ///
+  /// In en, this message translates to:
+  /// **'Your recovery phrase still recovers everything. After a restore, your wallet finds these payments privately on its own.'**
+  String get settingsNearSwapPrivacyInfoRestore;
+
+  /// [security] Second paragraph of the Enhance swap privacy explanation: when a one-time address can be used more than once.
+  ///
+  /// In en, this message translates to:
+  /// **'A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.'**
+  String get settingsNearSwapPrivacyInfoReuse;
+
+  /// Last paragraph of the Enhance swap privacy explanation: what turning the setting off changes.
+  ///
+  /// In en, this message translates to:
+  /// **'Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.'**
+  String get settingsNearSwapPrivacyInfoTurnOff;
+
+  /// Name of the setting that gives NEAR Intents swaps one-time Zcash addresses. NEAR is a brand name.
+  ///
+  /// In en, this message translates to:
+  /// **'Enhance swap privacy'**
+  String get settingsNearSwapPrivacyLabel;
+
+  /// Subtitle under the Enhance swap privacy setting while it is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Swaps use regular Zcash addresses.'**
+  String get settingsNearSwapPrivacyOff;
+
+  /// Subtitle under the Enhance swap privacy setting while it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Swaps use one-time Zcash addresses.'**
+  String get settingsNearSwapPrivacyOn;
+
+  /// Explains the swap history check above its button. Ironwood and Private queries are names: Ironwood is a Zcash pool, Private queries is a setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor finds swap payments and refunds automatically. If one is missing after a swap finished, this check looks at every private swap address and refund key this wallet has used. It starts from the beginning of Ironwood history and runs over Private queries. It can take a few minutes.'**
+  String get settingsNearSwapPrivacyTroubleshootingBody;
+
+  /// Heading of the section at the end of the Enhance swap privacy explanation that offers the swap history check.
+  ///
+  /// In en, this message translates to:
+  /// **'Troubleshooting'**
+  String get settingsNearSwapPrivacyTroubleshootingTitle;
+
+  /// Subtitle under the Enhance swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t read your saved choice. Set it again to swap.'**
+  String get settingsNearSwapPrivacyUnknown;
+
   /// Small pill next to a Settings row label that flags a recently added feature (gift cards).
   ///
   /// In en, this message translates to:
@@ -16249,6 +16333,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On'**
   String get settingsStatusOn;
+
+  /// Button that starts the swap history check.
+  ///
+  /// In en, this message translates to:
+  /// **'Check swap history'**
+  String get settingsSwapHistoryCheckButton;
+
+  /// Status under the swap history check button while it runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking swap history…'**
+  String get settingsSwapHistoryChecking;
+
+  /// Status under the swap history check button when the check takes longer and continues in later rounds while the app is open.
+  ///
+  /// In en, this message translates to:
+  /// **'The check will keep going while Vizor is open.'**
+  String get settingsSwapHistoryContinuing;
+
+  /// Status under the swap history check button when it finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap history check complete.'**
+  String get settingsSwapHistoryDone;
+
+  /// Caption above the swap history check button saying when to use it.
+  ///
+  /// In en, this message translates to:
+  /// **'Only needed if a swap payment or refund is missing.'**
+  String get settingsSwapHistoryExplanation;
+
+  /// Status under the swap history check button when a round could not finish, such as when the service can't be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap history can\'t be checked right now. Try again later.'**
+  String get settingsSwapHistoryFailed;
+
+  /// Status under the swap history check button before it has run.
+  ///
+  /// In en, this message translates to:
+  /// **'Check older addresses for repeat payments.'**
+  String get settingsSwapHistoryIdle;
+
+  /// Status under the swap history check button when another change was running or the wallet was locked.
+  ///
+  /// In en, this message translates to:
+  /// **'The check couldn\'t start. Try again in a moment.'**
+  String get settingsSwapHistoryNotStarted;
+
+  /// Button that pauses a running swap history check.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause check'**
+  String get settingsSwapHistoryPauseButton;
+
+  /// Status under the swap history check button when pausing did not reach the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t pause the check. Try again.'**
+  String get settingsSwapHistoryPauseFailed;
+
+  /// Status under the swap history check button after the user paused it.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused. Check again to resume.'**
+  String get settingsSwapHistoryPaused;
+
+  /// Status under the swap history check button while the server that finds swap payments has not reached this wallet's start height yet.
+  ///
+  /// In en, this message translates to:
+  /// **'The swap recovery service hasn\'t caught up with this wallet yet. Try again in a few minutes.'**
+  String get settingsSwapHistoryWaitingForService;
+
+  /// Status under the swap history check button while the wallet must sync first.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for wallet sync. Try again in a few minutes.'**
+  String get settingsSwapHistoryWaitingForSync;
+
+  /// Status under the swap history check button when an account or wallet change interrupted it.
+  ///
+  /// In en, this message translates to:
+  /// **'The check stopped because the wallet changed. Try again.'**
+  String get settingsSwapHistoryWalletChanged;
 
   /// Dark color theme option and row value.
   ///
@@ -17862,6 +18030,12 @@ abstract class AppLocalizations {
   /// **'Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.'**
   String get swapFailureZecDepositFunding;
 
+  /// [security] Swap error when preparing a private swap's ZEC deposit: the Ironwood balance alone cannot cover the amount plus the network fee. The line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Private swaps are funded from your Ironwood balance, which cannot cover this swap and its network fee.\nMove funds to Ironwood first or try a smaller amount.'**
+  String get swapFailureZecDepositIronwoodFunding;
+
   /// Swap error: the wallet could not build the ZEC deposit transaction before starting the swap.
   ///
   /// In en, this message translates to:
@@ -18102,6 +18276,12 @@ abstract class AppLocalizations {
   /// **'Maintenance window: {networks}'**
   String swapNoticeMaintenanceWindow(String networks);
 
+  /// Swap quote error when the saved Enhance swap privacy setting could not be read. Enhance swap privacy is the name of the setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t read your Enhance swap privacy setting. Choose it again in Settings to swap.'**
+  String get swapNoticeNearSwapPrivacyUnknown;
+
   /// Button that dismisses the NEAR Intents service notice.
   ///
   /// In en, this message translates to:
@@ -18113,6 +18293,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Payments may not work right now.'**
   String get swapNoticePaymentsMayFail;
+
+  /// Swap quote error with Enhance swap privacy on: the wallet could not reserve a one-time receive address for the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare a fresh wallet receive address. Try again after wallet sync.'**
+  String get swapNoticePrivateReceiveAddressPreparationFailed;
+
+  /// Swap quote error with Enhance swap privacy on: no one-time receive address is available even after the wallet checked its swap history. Enhance swap privacy is the name of the setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Private swap addresses are unavailable right now. Try again later, or turn off Enhance swap privacy to swap now.'**
+  String get swapNoticePrivateReceiveAddressUnavailable;
 
   /// Swap or Pay quote error: the wallet could not reserve a new receive address for the swap.
   ///
@@ -18131,6 +18323,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Start: {time}'**
   String swapNoticeStart(String time);
+
+  /// Shown for a swap whose wallet start never finished, in place of its funding instructions and as its activity status. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This swap didn\'t finish starting. Start a new swap if you still want one.'**
+  String get swapNoticeStartNotFinished;
 
   /// Button that opens the NEAR Intents status web page.
   ///
@@ -18221,6 +18419,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Rate pending'**
   String get swapQuoteRatePending;
+
+  /// Shown in the swap history check and as a swap quote error when the swap recovery service needs a newer app version.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Vizor to keep checking private swap addresses. Your saved progress is kept.'**
+  String get swapRecoveryUpdateRequired;
 
   /// Back link label on the review screen that returns to the Pay composer.
   ///
@@ -18353,6 +18557,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Slippage'**
   String get swapSlippageTitle;
+
+  /// Shown in place of a swap's funding instructions, and as its activity status, while the wallet is still reserving its private address.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting swap…'**
+  String get swapStartPending;
 
   /// Status text on the mobile status screen when the operation needs user action.
   ///

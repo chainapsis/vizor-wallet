@@ -33,6 +33,7 @@ class SwapActivityRowItem {
     this.depositedAmountText,
     this.refundedAmountText,
     this.payMode = false,
+    this.startPending = false,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
@@ -78,6 +79,7 @@ class SwapActivityRowItem {
       depositedAmountText: depositedAmountText,
       refundedAmountText: record.providerRefundInfo?.refundedAmountText,
       payMode: record.payMode,
+      startPending: record.startPending,
     );
   }
 
@@ -116,6 +118,9 @@ class SwapActivityRowItem {
   final String? refundedAmountText;
 
   final bool payMode;
+
+  /// See [SwapIntent.startPending].
+  final bool startPending;
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -143,6 +148,7 @@ ActivityRowData buildSwapActivityRow({
   final sellAsset = _swapActivitySellAsset(item);
   final receiveAsset = _swapActivityReceiveAsset(item);
   final progress = _swapActivityProgress(item);
+  final starting = item.startPending && !item.status.isTerminal;
   final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
 
   return ActivityRowData(
@@ -161,6 +167,7 @@ ActivityRowData buildSwapActivityRow({
       payMode
           ? _payActivityAmountText(item, privacyModeEnabled: privacyModeEnabled)
           : _swapActivityAmountText(
+              l10n,
               item,
               includeSign: !(returnsFunds || timedOut),
               privacyModeEnabled: privacyModeEnabled,
@@ -170,8 +177,11 @@ ActivityRowData buildSwapActivityRow({
     amountSubtitle: timedOut ? l10n.activitySwapTimeout : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
-    statusText: _swapActivityStatusText(l10n, item.status, progress),
-    statusIsRoutine: _swapActivityStatusIsRoutine(item.status),
+    statusText: starting
+        ? l10n.swapStartPending
+        : _swapActivityStatusText(l10n, item.status, progress),
+    // The feed shows a starting swap's status, not its timestamp.
+    statusIsRoutine: !starting && _swapActivityStatusIsRoutine(item.status),
     statusIconName: failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
@@ -233,6 +243,7 @@ List<ActivityRowData> _swapActivityChildRows({
           privacyModeEnabled: privacyModeEnabled,
         )
       : _swapActivityReceiveAmountText(
+          l10n,
           item,
           privacyModeEnabled: privacyModeEnabled,
         );
@@ -271,6 +282,7 @@ String _swapActivityAmountTextForPrivacy(
 }
 
 String _swapActivityAmountText(
+  AppLocalizations l10n,
   SwapActivityRowItem item, {
   required bool includeSign,
   required bool privacyModeEnabled,
@@ -283,6 +295,7 @@ String _swapActivityAmountText(
       ? refundedAmount!
       : item.sellAmountText;
   if (amount.trim().isEmpty) return '--';
+  if (amount == kSwapNotReportedToken) return l10n.swapActivityNotReported;
   return _swapActivityAmountTextForPrivacy(
     includeSign ? '-$amount' : amount,
     privacyModeEnabled: privacyModeEnabled,
@@ -290,11 +303,13 @@ String _swapActivityAmountText(
 }
 
 String _swapActivityReceiveAmountText(
+  AppLocalizations l10n,
   SwapActivityRowItem item, {
   required bool privacyModeEnabled,
 }) {
   final amount = item.receiveEstimateText.trim();
   if (amount.isEmpty) return '--';
+  if (amount == kSwapNotReportedToken) return l10n.swapActivityNotReported;
   return _swapActivityAmountTextForPrivacy(
     amount.startsWith('+') ? amount : '+$amount',
     privacyModeEnabled: privacyModeEnabled,

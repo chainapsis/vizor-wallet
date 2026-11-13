@@ -33,6 +33,7 @@ enum SwapFailureCategory {
   unverifiedResponse,
   retryLater,
   zecDepositFunding,
+  zecDepositIronwoodFunding,
   walletPreflight,
   depositNotFound,
   depositRejected,
@@ -46,6 +47,8 @@ enum SwapNoticeKind {
   maxAmountUnavailable,
   activeAccountChanged,
   receiveAddressUnavailable,
+  privateReceiveAddressPreparationFailed,
+  privateReceiveAddressUnavailable,
   depositIntentMissing,
   broadcastPartial,
   broadcastPending,
@@ -54,6 +57,9 @@ enum SwapNoticeKind {
   broadcastUncertain,
   networkUpgradeHold,
   networkUpgradeScheduleChanged,
+  startNotFinished,
+  nearSwapPrivacyUnknown,
+  recoveryUpdateRequired,
 }
 
 /// A message that swap state or a persisted swap record keeps. It records
@@ -111,6 +117,10 @@ final class SwapNotice extends SwapMessage {
     SwapNoticeKind.activeAccountChanged => l10n.swapNoticeAccountChanged,
     SwapNoticeKind.receiveAddressUnavailable =>
       l10n.swapNoticeReceiveAddressUnavailable,
+    SwapNoticeKind.privateReceiveAddressPreparationFailed =>
+      l10n.swapNoticePrivateReceiveAddressPreparationFailed,
+    SwapNoticeKind.privateReceiveAddressUnavailable =>
+      l10n.swapNoticePrivateReceiveAddressUnavailable,
     SwapNoticeKind.depositIntentMissing => l10n.swapNoticeDepositIntentMissing,
     SwapNoticeKind.broadcastPartial => l10n.swapNoticeBroadcastPartial,
     SwapNoticeKind.broadcastPending => l10n.swapNoticeBroadcastPending,
@@ -121,6 +131,10 @@ final class SwapNotice extends SwapMessage {
       l10n.sendPaymentRequestCheckUpgradeHold,
     SwapNoticeKind.networkUpgradeScheduleChanged =>
       l10n.sendPaymentRequestCheckUpgradeScheduleChanged,
+    SwapNoticeKind.startNotFinished => l10n.swapNoticeStartNotFinished,
+    SwapNoticeKind.nearSwapPrivacyUnknown =>
+      l10n.swapNoticeNearSwapPrivacyUnknown,
+    SwapNoticeKind.recoveryUpdateRequired => l10n.swapRecoveryUpdateRequired,
   };
 
   @override
@@ -222,6 +236,8 @@ String swapFailureText(
           ? l10n.swapFailureStatusAutoRefresh
           : l10n.swapFailureStillProcessing,
     SwapFailureCategory.zecDepositFunding => l10n.swapFailureZecDepositFunding,
+    SwapFailureCategory.zecDepositIronwoodFunding =>
+      l10n.swapFailureZecDepositIronwoodFunding,
     SwapFailureCategory.walletPreflight => l10n.swapFailureZecDepositPreflight,
     SwapFailureCategory.depositNotFound => l10n.swapFailureDepositNotIndexed,
     SwapFailureCategory.depositRejected => l10n.swapFailureDepositRejected,

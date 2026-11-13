@@ -729,6 +729,19 @@ class _SwapActivityFlowContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Nothing that could fund the swap shows before the wallet locks its
+    // reservation (see [SwapIntent.startPending]).
+    if (intent.startPending) {
+      final message = intent.status.isTerminal
+          ? context.l10n.swapNoticeStartNotFinished
+          : context.l10n.swapStartPending;
+      final mobile = layout == SwapActivityDetailLayout.mobile;
+      return SizedBox(
+        key: const ValueKey('swap_activity_start_pending'),
+        width: mobile ? null : 400,
+        child: _ActivityStatusErrorPanel(message: message),
+      );
+    }
     final depositInstruction = SwapActivityDepositInstruction.fromIntent(
       context.l10n,
       intent,

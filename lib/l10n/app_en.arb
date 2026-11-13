@@ -2474,6 +2474,10 @@
   "@commonWelcomeBack": {
     "description": "Title of the unlock screen."
   },
+  "commonWhatsThis": "What's this?",
+  "@commonWhatsThis": {
+    "description": "Title of a short explanation, and the label of the info icon that opens it, next to a setting."
+  },
   "commonWizard": "Wizard",
   "@commonWizard": {
     "description": "Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings."
@@ -7991,6 +7995,10 @@
   "@navVote": {
     "description": "Sidebar destination: coinholder voting."
   },
+  "nearSwapPrivacyUnsaved": "Couldn't save this choice. It applies until you close Vizor.",
+  "@nearSwapPrivacyUnsaved": {
+    "description": "Status line under the Enhance swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved."
+  },
   "networkPrivacyFinishUpdateBeforeTorOff": "Finish the current software update before turning off Tor.",
   "@networkPrivacyFinishUpdateBeforeTorOff": {
     "description": "Toast when the user turns off Tor while a software update is in progress."
@@ -12248,6 +12256,54 @@
   "@settingsLanguageUpdateFailed": {
     "description": "Error under the language options when saving the choice failed. The modal stays open."
   },
+  "settingsNearSwapPrivacyHardware": "Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.",
+  "@settingsNearSwapPrivacyHardware": {
+    "description": "Subtitle under the Enhance swap privacy setting while a hardware wallet account is active."
+  },
+  "settingsNearSwapPrivacyInfoOneTime": "When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With Enhance swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can't tie them to your wallet.",
+  "@settingsNearSwapPrivacyInfoOneTime": {
+    "description": "[security] First paragraph of the Enhance swap privacy explanation: what the setting does. NEAR Intents is a brand name."
+  },
+  "settingsNearSwapPrivacyInfoOwnAddresses": "Addresses you enter yourself, like an Ethereum address you reuse for several swaps, are still shared with NEAR and can link those swaps. Hardware wallet accounts don't use one-time addresses.",
+  "@settingsNearSwapPrivacyInfoOwnAddresses": {
+    "description": "[security] Third paragraph of the Enhance swap privacy explanation: what the setting does not protect. Ethereum is a brand name."
+  },
+  "settingsNearSwapPrivacyInfoRestore": "Your recovery phrase still recovers everything. After a restore, your wallet finds these payments privately on its own.",
+  "@settingsNearSwapPrivacyInfoRestore": {
+    "description": "[security] Fourth paragraph of the Enhance swap privacy explanation: restoring from the recovery phrase still finds swap payments."
+  },
+  "settingsNearSwapPrivacyInfoReuse": "A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.",
+  "@settingsNearSwapPrivacyInfoReuse": {
+    "description": "[security] Second paragraph of the Enhance swap privacy explanation: when a one-time address can be used more than once."
+  },
+  "settingsNearSwapPrivacyInfoTurnOff": "Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.",
+  "@settingsNearSwapPrivacyInfoTurnOff": {
+    "description": "Last paragraph of the Enhance swap privacy explanation: what turning the setting off changes."
+  },
+  "settingsNearSwapPrivacyLabel": "Enhance swap privacy",
+  "@settingsNearSwapPrivacyLabel": {
+    "description": "Name of the setting that gives NEAR Intents swaps one-time Zcash addresses. NEAR is a brand name."
+  },
+  "settingsNearSwapPrivacyOff": "Swaps use regular Zcash addresses.",
+  "@settingsNearSwapPrivacyOff": {
+    "description": "Subtitle under the Enhance swap privacy setting while it is off."
+  },
+  "settingsNearSwapPrivacyOn": "Swaps use one-time Zcash addresses.",
+  "@settingsNearSwapPrivacyOn": {
+    "description": "Subtitle under the Enhance swap privacy setting while it is on."
+  },
+  "settingsNearSwapPrivacyTroubleshootingBody": "Vizor finds swap payments and refunds automatically. If one is missing after a swap finished, this check looks at every private swap address and refund key this wallet has used. It starts from the beginning of Ironwood history and runs over Private queries. It can take a few minutes.",
+  "@settingsNearSwapPrivacyTroubleshootingBody": {
+    "description": "Explains the swap history check above its button. Ironwood and Private queries are names: Ironwood is a Zcash pool, Private queries is a setting."
+  },
+  "settingsNearSwapPrivacyTroubleshootingTitle": "Troubleshooting",
+  "@settingsNearSwapPrivacyTroubleshootingTitle": {
+    "description": "Heading of the section at the end of the Enhance swap privacy explanation that offers the swap history check."
+  },
+  "settingsNearSwapPrivacyUnknown": "Vizor couldn't read your saved choice. Set it again to swap.",
+  "@settingsNearSwapPrivacyUnknown": {
+    "description": "Subtitle under the Enhance swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again."
+  },
   "settingsNewBadge": "New",
   "@settingsNewBadge": {
     "description": "Small pill next to a Settings row label that flags a recently added feature (gift cards)."
@@ -12568,6 +12624,62 @@
   "settingsStatusOn": "On",
   "@settingsStatusOn": {
     "description": "Status text shown under a Settings row when the feature is turned on."
+  },
+  "settingsSwapHistoryCheckButton": "Check swap history",
+  "@settingsSwapHistoryCheckButton": {
+    "description": "Button that starts the swap history check."
+  },
+  "settingsSwapHistoryChecking": "Checking swap history…",
+  "@settingsSwapHistoryChecking": {
+    "description": "Status under the swap history check button while it runs."
+  },
+  "settingsSwapHistoryContinuing": "The check will keep going while Vizor is open.",
+  "@settingsSwapHistoryContinuing": {
+    "description": "Status under the swap history check button when the check takes longer and continues in later rounds while the app is open."
+  },
+  "settingsSwapHistoryDone": "Swap history check complete.",
+  "@settingsSwapHistoryDone": {
+    "description": "Status under the swap history check button when it finished."
+  },
+  "settingsSwapHistoryExplanation": "Only needed if a swap payment or refund is missing.",
+  "@settingsSwapHistoryExplanation": {
+    "description": "Caption above the swap history check button saying when to use it."
+  },
+  "settingsSwapHistoryFailed": "Swap history can't be checked right now. Try again later.",
+  "@settingsSwapHistoryFailed": {
+    "description": "Status under the swap history check button when a round could not finish, such as when the service can't be reached."
+  },
+  "settingsSwapHistoryIdle": "Check older addresses for repeat payments.",
+  "@settingsSwapHistoryIdle": {
+    "description": "Status under the swap history check button before it has run."
+  },
+  "settingsSwapHistoryNotStarted": "The check couldn't start. Try again in a moment.",
+  "@settingsSwapHistoryNotStarted": {
+    "description": "Status under the swap history check button when another change was running or the wallet was locked."
+  },
+  "settingsSwapHistoryPauseButton": "Pause check",
+  "@settingsSwapHistoryPauseButton": {
+    "description": "Button that pauses a running swap history check."
+  },
+  "settingsSwapHistoryPauseFailed": "Couldn't pause the check. Try again.",
+  "@settingsSwapHistoryPauseFailed": {
+    "description": "Status under the swap history check button when pausing did not reach the wallet."
+  },
+  "settingsSwapHistoryPaused": "Paused. Check again to resume.",
+  "@settingsSwapHistoryPaused": {
+    "description": "Status under the swap history check button after the user paused it."
+  },
+  "settingsSwapHistoryWaitingForService": "The swap recovery service hasn't caught up with this wallet yet. Try again in a few minutes.",
+  "@settingsSwapHistoryWaitingForService": {
+    "description": "Status under the swap history check button while the server that finds swap payments has not reached this wallet's start height yet."
+  },
+  "settingsSwapHistoryWaitingForSync": "Waiting for wallet sync. Try again in a few minutes.",
+  "@settingsSwapHistoryWaitingForSync": {
+    "description": "Status under the swap history check button while the wallet must sync first."
+  },
+  "settingsSwapHistoryWalletChanged": "The check stopped because the wallet changed. Try again.",
+  "@settingsSwapHistoryWalletChanged": {
+    "description": "Status under the swap history check button when an account or wallet change interrupted it."
   },
   "settingsThemeDark": "Dark",
   "@settingsThemeDark": {
@@ -13919,6 +14031,10 @@
   "@swapFailureZecDepositFunding": {
     "description": "Swap error when preparing the ZEC deposit: the spendable balance cannot cover the amount plus the network fee. Max is the button that fills the largest amount."
   },
+  "swapFailureZecDepositIronwoodFunding": "Private swaps are funded from your Ironwood balance, which cannot cover this swap and its network fee.\nMove funds to Ironwood first or try a smaller amount.",
+  "@swapFailureZecDepositIronwoodFunding": {
+    "description": "[security] Swap error when preparing a private swap's ZEC deposit: the Ironwood balance alone cannot cover the amount plus the network fee. The line break is intentional."
+  },
   "swapFailureZecDepositPreflight": "ZEC deposit could not be prepared.\nCheck your balance and try again.",
   "@swapFailureZecDepositPreflight": {
     "description": "Swap error: the wallet could not build the ZEC deposit transaction before starting the swap."
@@ -14089,6 +14205,10 @@
       }
     }
   },
+  "swapNoticeNearSwapPrivacyUnknown": "Vizor couldn't read your Enhance swap privacy setting. Choose it again in Settings to swap.",
+  "@swapNoticeNearSwapPrivacyUnknown": {
+    "description": "Swap quote error when the saved Enhance swap privacy setting could not be read. Enhance swap privacy is the name of the setting."
+  },
   "swapNoticeOk": "Ok",
   "@swapNoticeOk": {
     "description": "Button that dismisses the NEAR Intents service notice."
@@ -14096,6 +14216,14 @@
   "swapNoticePaymentsMayFail": "Payments may not work right now.",
   "@swapNoticePaymentsMayFail": {
     "description": "Service notice line shown in pay mode explaining that payments may fail."
+  },
+  "swapNoticePrivateReceiveAddressPreparationFailed": "Could not prepare a fresh wallet receive address. Try again after wallet sync.",
+  "@swapNoticePrivateReceiveAddressPreparationFailed": {
+    "description": "Swap quote error with Enhance swap privacy on: the wallet could not reserve a one-time receive address for the swap."
+  },
+  "swapNoticePrivateReceiveAddressUnavailable": "Private swap addresses are unavailable right now. Try again later, or turn off Enhance swap privacy to swap now.",
+  "@swapNoticePrivateReceiveAddressUnavailable": {
+    "description": "Swap quote error with Enhance swap privacy on: no one-time receive address is available even after the wallet checked its swap history. Enhance swap privacy is the name of the setting."
   },
   "swapNoticeReceiveAddressUnavailable": "Could not prepare a fresh wallet receive address. Retry after wallet sync or close older pending swaps before requesting a new quote.",
   "@swapNoticeReceiveAddressUnavailable": {
@@ -14113,6 +14241,10 @@
         "type": "String"
       }
     }
+  },
+  "swapNoticeStartNotFinished": "This swap didn't finish starting. Start a new swap if you still want one.",
+  "@swapNoticeStartNotFinished": {
+    "description": "Shown for a swap whose wallet start never finished, in place of its funding instructions and as its activity status. Nothing was sent."
   },
   "swapNoticeStatusPage": "NEAR Intents status page",
   "@swapNoticeStatusPage": {
@@ -14184,6 +14316,10 @@
   "swapQuoteRatePending": "Rate pending",
   "@swapQuoteRatePending": {
     "description": "Swap review, value of the exchange rate row when the provider quote has no usable rate yet."
+  },
+  "swapRecoveryUpdateRequired": "Update Vizor to keep checking private swap addresses. Your saved progress is kept.",
+  "@swapRecoveryUpdateRequired": {
+    "description": "Shown in the swap history check and as a swap quote error when the swap recovery service needs a newer app version."
   },
   "swapReviewBackPay": "Pay",
   "@swapReviewBackPay": {
@@ -14287,6 +14423,10 @@
   "swapSlippageTitle": "Slippage",
   "@swapSlippageTitle": {
     "description": "Title of the slippage settings modal and field label for the allowed price movement."
+  },
+  "swapStartPending": "Starting swap…",
+  "@swapStartPending": {
+    "description": "Shown in place of a swap's funding instructions, and as its activity status, while the wallet is still reserving its private address."
   },
   "swapStatusBadgeNeedsAttention": "Needs attention",
   "@swapStatusBadgeNeedsAttention": {

@@ -1790,6 +1790,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonWelcomeBack => '欢迎回来';
 
   @override
+  String get commonWhatsThis => '这是什么？';
+
+  @override
   String get commonWizard => '巫师';
 
   @override
@@ -5775,6 +5778,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navVote => '投票';
 
   @override
+  String get nearSwapPrivacyUnsaved => '无法保存此选择。它会一直生效，直到你关闭 Vizor。';
+
+  @override
   String get networkPrivacyFinishUpdateBeforeTorOff => '关闭 Tor 之前，请先完成当前的软件更新。';
 
   @override
@@ -8899,6 +8905,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsLanguageUpdateFailed => '无法更改语言。';
 
   @override
+  String get settingsNearSwapPrivacyHardware =>
+      '硬件钱包账户不支持此功能。其兑换使用普通 Zcash 地址。';
+
+  @override
+  String get settingsNearSwapPrivacyInfoOneTime =>
+      '使用 NEAR Intents 兑换时，你的钱包会向 NEAR 提供一个用于收款的 Zcash 地址，以及另一个用于退款的地址。开启增强兑换隐私后，这些地址是专为兑换生成的一次性地址，因此未来的量子攻击者也无法将它们与你的钱包关联起来。';
+
+  @override
+  String get settingsNearSwapPrivacyInfoOwnAddresses =>
+      '你自行输入的地址（例如在多次兑换中重复使用的 Ethereum 地址）仍会提供给 NEAR，并可能将这些兑换关联起来。硬件钱包账户不使用一次性地址。';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestore =>
+      '你的助记词仍可恢复所有资产。恢复后，钱包会自行以隐私方式找到这些付款。';
+
+  @override
+  String get settingsNearSwapPrivacyInfoReuse =>
+      '报价未付款就过期时，其收款地址可能会用于之后的报价。在极少数情况下，同一钱包的两台设备若在同一时刻获取报价，会得到相同的地址。NEAR 能看出这些报价使用了同一个地址，但仍无法得知该地址属于哪个钱包。';
+
+  @override
+  String get settingsNearSwapPrivacyInfoTurnOff =>
+      '关闭此设置后，只有新的兑换会使用普通地址。发送到你已使用过的一次性地址的收款和退款仍会显示。';
+
+  @override
+  String get settingsNearSwapPrivacyLabel => '增强兑换隐私';
+
+  @override
+  String get settingsNearSwapPrivacyOff => '兑换使用普通 Zcash 地址。';
+
+  @override
+  String get settingsNearSwapPrivacyOn => '兑换使用一次性 Zcash 地址。';
+
+  @override
+  String get settingsNearSwapPrivacyTroubleshootingBody =>
+      'Vizor 会自动查找兑换付款和退款。如果兑换完成后缺少某笔款项，此检查会查看此钱包用过的每个隐私兑换地址和退款密钥。它从 Ironwood 历史的起点开始，并通过隐私查询运行。可能需要几分钟。';
+
+  @override
+  String get settingsNearSwapPrivacyTroubleshootingTitle => '故障排除';
+
+  @override
+  String get settingsNearSwapPrivacyUnknown => 'Vizor 无法读取你保存的选择。请重新设置后再兑换。';
+
+  @override
   String get settingsNewBadge => '新';
 
   @override
@@ -9141,6 +9190,48 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsStatusOn => '已开启';
+
+  @override
+  String get settingsSwapHistoryCheckButton => '检查兑换历史';
+
+  @override
+  String get settingsSwapHistoryChecking => '正在检查兑换历史…';
+
+  @override
+  String get settingsSwapHistoryContinuing => 'Vizor 保持打开期间，检查会继续进行。';
+
+  @override
+  String get settingsSwapHistoryDone => '兑换历史检查已完成。';
+
+  @override
+  String get settingsSwapHistoryExplanation => '仅在缺少兑换付款或退款时需要。';
+
+  @override
+  String get settingsSwapHistoryFailed => '目前无法检查兑换历史。请稍后重试。';
+
+  @override
+  String get settingsSwapHistoryIdle => '检查旧地址是否收到重复付款。';
+
+  @override
+  String get settingsSwapHistoryNotStarted => '检查未能开始。请稍后重试。';
+
+  @override
+  String get settingsSwapHistoryPauseButton => '暂停检查';
+
+  @override
+  String get settingsSwapHistoryPauseFailed => '无法暂停检查。请重试。';
+
+  @override
+  String get settingsSwapHistoryPaused => '已暂停。再次检查即可继续。';
+
+  @override
+  String get settingsSwapHistoryWaitingForService => '兑换恢复服务尚未同步到此钱包。请几分钟后重试。';
+
+  @override
+  String get settingsSwapHistoryWaitingForSync => '正在等待钱包同步。请几分钟后重试。';
+
+  @override
+  String get settingsSwapHistoryWalletChanged => '钱包发生了变化，检查已停止。请重试。';
 
   @override
   String get settingsThemeDark => '深色';
@@ -10080,6 +10171,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '可用 ZEC 不足以支付此笔兑换及其网络手续费。\n请尝试更小的金额，或使用最大值。';
 
   @override
+  String get swapFailureZecDepositIronwoodFunding =>
+      '隐私兑换使用你的 Ironwood 余额支付，但该余额不足以支付此笔兑换及其网络手续费。\n请先将资金转入 Ironwood，或尝试更小的金额。';
+
+  @override
   String get swapFailureZecDepositPreflight => '无法准备 ZEC 存入。\n请检查余额后重试。';
 
   @override
@@ -10206,10 +10301,22 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get swapNoticeNearSwapPrivacyUnknown =>
+      'Vizor 无法读取你的增强兑换隐私设置。请在设置中重新选择后再兑换。';
+
+  @override
   String get swapNoticeOk => '好的';
 
   @override
   String get swapNoticePaymentsMayFail => '支付目前可能无法使用。';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparationFailed =>
+      '无法准备新的钱包接收地址。请在钱包同步后重试。';
+
+  @override
+  String get swapNoticePrivateReceiveAddressUnavailable =>
+      '隐私兑换地址暂时不可用。请稍后重试，或关闭增强兑换隐私以立即兑换。';
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>
@@ -10222,6 +10329,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String swapNoticeStart(String time) {
     return '开始：$time';
   }
+
+  @override
+  String get swapNoticeStartNotFinished => '此兑换未能完成启动。如果仍需兑换，请开始新的兑换。';
 
   @override
   String get swapNoticeStatusPage => 'NEAR Intents 状态页面';
@@ -10271,6 +10381,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapQuoteRatePending => '汇率待定';
+
+  @override
+  String get swapRecoveryUpdateRequired => '请更新 Vizor 以继续检查隐私兑换地址。已保存的进度会保留。';
 
   @override
   String get swapReviewBackPay => '支付';
@@ -10344,6 +10457,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapSlippageTitle => '滑点';
+
+  @override
+  String get swapStartPending => '正在开始兑换…';
 
   @override
   String get swapStatusBadgeNeedsAttention => '需要处理';

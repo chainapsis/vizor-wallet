@@ -38,6 +38,7 @@ import '../../widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
 import '../../widgets/mobile/mobile_swap_composer_ticket.dart';
 import '../../widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
+import '../../widgets/swap_quote_error_text.dart';
 
 enum _SwapModalSurface {
   assetSelector,
@@ -451,15 +452,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                         ),
                         if (quoteError != null) ...[
                           const SizedBox(height: AppSpacing.s),
-                          Text(
-                            quoteError,
-                            key: const ValueKey('swap_quote_error_message'),
+                          SwapQuoteErrorText(
+                            message: quoteError,
+                            textKey: const ValueKey('swap_quote_error_message'),
                             maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: AppTypography.bodySmall.copyWith(
-                              color: context.colors.text.destructive,
-                            ),
                           ),
                         ],
                       ],

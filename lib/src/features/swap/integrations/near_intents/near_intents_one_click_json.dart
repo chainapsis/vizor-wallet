@@ -56,20 +56,20 @@ String? _firstOptionalString(
   return null;
 }
 
-String? _firstChainTxHash(Map<String, dynamic> json, String key) {
+/// Every nonempty transaction hash listed under `key`, in order. Entries are
+/// objects with a hash field or bare strings.
+List<String> _chainTxHashes(Map<String, dynamic> json, String key) {
   final value = json[key];
-  if (value is! List) return null;
+  if (value is! List) return const [];
+  final hashes = <String>[];
   for (final item in value) {
-    if (item is Map) {
-      final raw = item['hash'] ?? item['txHash'] ?? item['tx_hash'];
-      final hash = raw is String ? raw.trim() : raw?.toString().trim();
-      if (hash != null && hash.isNotEmpty) return hash;
-      continue;
-    }
-    final hash = item?.toString().trim();
-    if (hash != null && hash.isNotEmpty) return hash;
+    final raw = item is Map
+        ? item['hash'] ?? item['txHash'] ?? item['tx_hash']
+        : item;
+    final hash = raw is String ? raw.trim() : raw?.toString().trim();
+    if (hash != null && hash.isNotEmpty) hashes.add(hash);
   }
-  return null;
+  return hashes;
 }
 
 SwapQuoteMode _oneClickSwapMode(String? value) {
@@ -251,10 +251,10 @@ String _rateText({
       '${rate.toStringAsFixed(precision)} ${receiveAsset.symbol}';
 }
 
-SwapIntentStatus _statusFromOneClick(String status, SwapQuote quote) {
+SwapIntentStatus _statusFromOneClick(String status, SwapDirection direction) {
   return switch (status) {
     'PENDING_DEPOSIT' =>
-      quote.direction.sendsZec
+      direction.sendsZec
           ? SwapIntentStatus.awaitingDeposit
           : SwapIntentStatus.awaitingExternalDeposit,
     'KNOWN_DEPOSIT_TX' => SwapIntentStatus.depositObserved,
