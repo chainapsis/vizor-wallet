@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show Theme;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -356,12 +357,20 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     final height = _height ?? 49 + MediaQuery.viewPaddingOf(context).bottom;
     return SizedBox(
       height: height,
-      child: UiKitView(
-        viewType: 'com.zcash.wallet/native_tab_bar',
-        layoutDirection: Directionality.of(context),
-        creationParams: _snapshot!.toMap(),
-        creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: _created,
+      child: IgnorePointer(
+        ignoring: _snapshot!.hidden,
+        child: UiKitView(
+          viewType: 'com.zcash.wallet/native_tab_bar',
+          layoutDirection: Directionality.of(context),
+          creationParams: _snapshot!.toMap(),
+          creationParamsCodec: const StandardMessageCodec(),
+          onPlatformViewCreated: _created,
+          // The app's global tap-to-unfocus recognizer must not hold UIKit's
+          // press interaction until a drag cancels that ancestor's tap.
+          gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+            Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+          },
+        ),
       ),
     );
   }

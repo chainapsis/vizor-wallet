@@ -37,6 +37,14 @@ identity of Activity or Settings.
 The platform view persists across normal builds. Small state updates replace
 neither the platform view nor unchanged native items. Icon work and native
 messages must not publish stale state after a destination update or disposal.
+The platform view claims its pointer sequences immediately with an
+`EagerGestureRecognizer`. Without this, the app-wide tap-to-unfocus recognizer
+holds the gesture arena open during a stationary press, suppressing UIKit's
+lens until movement rejects the ancestor tap. UIKit still owns selection
+timing; pointer ownership itself does not navigate. Flutter modal barriers and
+the existing native visibility/callback guards remain in force. Hidden bars
+also ignore Flutter pointers so their empty bounds cannot consume taps meant
+to clear focus or interact with a covering surface.
 Covered routes, popups, navigation guards, and the keyboard disable or hide the
 native bar; its native lifecycle does not grant navigation around a Flutter
 access gate.

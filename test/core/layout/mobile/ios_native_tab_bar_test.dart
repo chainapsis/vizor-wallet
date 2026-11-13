@@ -51,6 +51,8 @@ void main() {
     Brightness brightness = Brightness.light,
     TextDirection direction = TextDirection.ltr,
     double keyboard = 0,
+    GlobalKey<NavigatorState>? navigatorKey,
+    VoidCallback? onGlobalTap,
   }) async {
     await tester.pumpWidget(
       _app(
@@ -75,6 +77,8 @@ void main() {
           ),
         ),
         brightness: brightness,
+        navigatorKey: navigatorKey,
+        onGlobalTap: onGlobalTap,
       ),
     );
     await tester.pump();
@@ -135,6 +139,77 @@ void main() {
     await tester.pump();
     // The owner did not accept navigation; restore its selectedId.
     expect(native.latest['selectedId'], '/home');
+  });
+
+  _testWidgets(
+    'stationary touch reaches UIKit before the global tap detector',
+    (tester) async {
+      final selected = <String>[];
+      var globalTaps = 0;
+      await pump(
+        tester,
+        config(onSelect: selected.add),
+        onGlobalTap: () => globalTaps++,
+      );
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(UiKitView)),
+      );
+      await tester.pump();
+      expect(native.gestureCalls, contains('acceptGesture'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(selected, isEmpty);
+
+      await gesture.up();
+      await tester.pump();
+      expect(globalTaps, 0);
+      expect(selected, isEmpty);
+      // Claiming the pointer starts native interaction, not screen navigation.
+      // Only the native delegate's committed selection changes the destination.
+      await native.send('select', {'id': '/activity'});
+      expect(selected, ['/activity']);
+      await tester.pump();
+    },
+  );
+
+  _testWidgets('a modal barrier still blocks native pointer ownership', (
+    tester,
+  ) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final selected = <String>[];
+    var globalTaps = 0;
+    await pump(
+      tester,
+      config(onSelect: selected.add),
+      navigatorKey: navigatorKey,
+      onGlobalTap: () => globalTaps++,
+    );
+    final position = tester.getCenter(find.byType(UiKitView));
+    unawaited(
+      showDialog<void>(
+        context: navigatorKey.currentContext!,
+        builder: (_) => const AlertDialog(content: Text('Covered')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    native.gestureCalls.clear();
+
+    await tester.tapAt(position);
+    await tester.pumpAndSettle();
+    expect(native.gestureCalls, isNot(contains('acceptGesture')));
+    expect(globalTaps, 0);
+    expect(selected, isEmpty);
+  });
+
+  _testWidgets('hidden native bars do not consume tap-to-unfocus input', (
+    tester,
+  ) async {
+    var globalTaps = 0;
+    await pump(tester, config(hidden: true), onGlobalTap: () => globalTaps++);
+    await tester.tapAt(tester.getCenter(find.byType(UiKitView)));
+    await tester.pump();
+    expect(globalTaps, 1);
+    expect(native.gestureCalls, isNot(contains('acceptGesture')));
   });
 
   _testWidgets(
@@ -342,6 +417,7 @@ Widget _app(
   Widget home, {
   Brightness brightness = Brightness.light,
   GlobalKey<NavigatorState>? navigatorKey,
+  VoidCallback? onGlobalTap,
 }) => MaterialApp(
   navigatorKey: navigatorKey,
   theme: ThemeData(brightness: brightness),
@@ -351,7 +427,13 @@ Widget _app(
     data: brightness == Brightness.dark
         ? AppThemeData.dark
         : AppThemeData.light,
-    child: child!,
+    child: onGlobalTap == null
+        ? child!
+        : GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: onGlobalTap,
+            child: child!,
+          ),
   ),
   home: home,
 );
@@ -367,6 +449,9 @@ class _NativeFixture {
     messenger.setMockMethodCallHandler(SystemChannels.platform_views, (
       call,
     ) async {
+      if (call.method == 'acceptGesture' || call.method == 'rejectGesture') {
+        gestureCalls.add(call.method);
+      }
       if (call.method == 'create') {
         final args = call.arguments as Map;
         final id = args['id'] as int;
@@ -398,6 +483,7 @@ class _NativeFixture {
   int capabilityReads = 0;
   double height = 83;
   final created = <int, Map>{};
+  final gestureCalls = <String>[];
   final channels = <int, MethodChannel>{};
   Map latest = {};
 
