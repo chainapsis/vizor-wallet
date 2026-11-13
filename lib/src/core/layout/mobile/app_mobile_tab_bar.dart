@@ -248,7 +248,10 @@ class _IosLiquidTabBar extends StatelessWidget {
         // Keep the lens and press response restrained around the existing UI.
         magnification: 1.05,
         pressScale: 1.02,
-        indicatorExpansion: const EdgeInsets.all(AppSpacing.xxs),
+        indicatorExpansion: const EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 6,
+        ),
         interactionGlowColor: colors.navPanel.activeIcon,
       ),
     );
