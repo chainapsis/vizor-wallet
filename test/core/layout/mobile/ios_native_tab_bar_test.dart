@@ -53,6 +53,7 @@ void main() {
     double keyboard = 0,
     GlobalKey<NavigatorState>? navigatorKey,
     VoidCallback? onGlobalTap,
+    Key? hostKey,
   }) async {
     await tester.pumpWidget(
       _app(
@@ -64,6 +65,7 @@ void main() {
             child: Directionality(
               textDirection: direction,
               child: IosNativeTabBarHost(
+                key: hostKey,
                 configuration: configuration,
                 iconLoader: loader,
                 builder: (_, bar) => Scaffold(
@@ -84,6 +86,260 @@ void main() {
     await tester.pump();
     await tester.pump();
   }
+
+  bool ignoresNativePointers(WidgetTester tester) => tester
+      .widget<IgnorePointer>(
+        find
+            .ancestor(
+              of: find.byType(UiKitView),
+              matching: find.byType(IgnorePointer),
+            )
+            .first,
+      )
+      .ignoring;
+
+  bool excludesNativeSemantics(WidgetTester tester) => tester
+      .widget<ExcludeSemantics>(
+        find
+            .ancestor(
+              of: find.byType(UiKitView),
+              matching: find.byType(ExcludeSemantics),
+            )
+            .first,
+      )
+      .excluding;
+
+  _testWidgets('entrance waits for native readiness before claiming pointers, '
+      'exposing semantics or accepting selection', (tester) async {
+    native.automaticallyPresent = false;
+    final selected = <String>[];
+    var globalTaps = 0;
+    await pump(
+      tester,
+      config(onSelect: selected.add),
+      onGlobalTap: () => globalTaps++,
+    );
+    final rect = tester.getRect(find.byType(UiKitView));
+    expect(ignoresNativePointers(tester), true);
+    expect(excludesNativeSemantics(tester), true);
+    expect(
+      tester.widget<UiKitView>(find.byType(UiKitView)).gestureRecognizers,
+      isEmpty,
+    );
+    await tester.tapAt(rect.center);
+    await tester.pump();
+    expect(globalTaps, 1);
+    expect(native.gestureCalls, isNot(contains('acceptGesture')));
+    await native.send('select', {'id': '/settings'});
+    expect(selected, isEmpty);
+
+    await native.present(interactive: true);
+    await tester.pump();
+    expect(ignoresNativePointers(tester), false);
+    expect(excludesNativeSemantics(tester), false);
+    expect(tester.getRect(find.byType(UiKitView)), rect);
+    await native.send('select', {'id': '/settings'});
+    expect(selected, ['/settings']);
+  });
+
+  _testWidgets(
+    'hide blocks input immediately and keeps the native layout slot',
+    (tester) async {
+      final selected = <String>[];
+      await pump(tester, config(onSelect: selected.add));
+      final rect = tester.getRect(find.byType(UiKitView));
+      final view = tester.state(find.byType(UiKitView));
+      final oldStatus = Map.of(native.presentations.values.last);
+      native.updateDelay = Completer<void>();
+      await pump(tester, config(onSelect: selected.add, hidden: true));
+      expect(ignoresNativePointers(tester), true);
+      expect(excludesNativeSemantics(tester), true);
+      expect(tester.getRect(find.byType(UiKitView)), rect);
+      expect(tester.state(find.byType(UiKitView)), same(view));
+      await native.send('select', {...oldStatus, 'id': '/settings'});
+      expect(selected, isEmpty);
+      native.updateDelay!.complete();
+      await tester.pump();
+    },
+  );
+
+  _testWidgets(
+    'hide then show rejects old ready acknowledgements and selections',
+    (tester) async {
+      final selected = <String>[];
+      await pump(tester, config(onSelect: selected.add));
+      final oldStatus = Map.of(native.presentations.values.last);
+      native.automaticallyPresent = false;
+      await pump(tester, config(onSelect: selected.add, hidden: true));
+      await pump(tester, config(onSelect: selected.add));
+      expect(native.latest['visibilityEpoch'], 2);
+      expect(ignoresNativePointers(tester), true);
+      await native.send('presentation', {
+        ...oldStatus,
+        'revision': 1000,
+        'interactive': true,
+      });
+      await tester.pump();
+      expect(ignoresNativePointers(tester), true);
+      await native.send('select', {...oldStatus, 'id': '/activity'});
+      expect(selected, isEmpty);
+      await native.present(interactive: true);
+      await tester.pump();
+      expect(ignoresNativePointers(tester), false);
+      await native.send('select', {...oldStatus, 'id': '/activity'});
+      expect(selected, isEmpty);
+      await native.send('select', {'id': '/activity'});
+      expect(selected, ['/activity']);
+    },
+  );
+
+  _testWidgets('out-of-order presentation revisions cannot revoke readiness or '
+      'authorize an old selection', (tester) async {
+    native.automaticallyPresent = false;
+    final selected = <String>[];
+    await pump(tester, config(onSelect: selected.add));
+    await native.present(interactive: true, revision: 5);
+    await native.send('presentation', {
+      'visibilityEpoch': 0,
+      'revision': 4,
+      'interactive': false,
+    });
+    await tester.pump();
+    expect(ignoresNativePointers(tester), false);
+    await native.send('select', {'id': '/activity', 'revision': 4});
+    expect(selected, isEmpty);
+    await native.send('select', {'id': '/activity'});
+    expect(selected, ['/activity']);
+  });
+
+  _testWidgets(
+    'an older getPresentation reply cannot overwrite a newer callback',
+    (tester) async {
+      final query = Completer<Map>();
+      native.presentationResponse = query.future;
+      native.automaticallyPresent = false;
+      await pump(tester, config());
+      await native.present(interactive: true, revision: 5);
+      await tester.pump();
+      expect(ignoresNativePointers(tester), false);
+      query.complete({
+        'visibilityEpoch': 0,
+        'revision': 0,
+        'interactive': false,
+      });
+      await tester.pump();
+      expect(ignoresNativePointers(tester), false);
+    },
+  );
+
+  _testWidgets(
+    'a getPresentation reply from before hide-show cannot enable the '
+    'new entrance',
+    (tester) async {
+      final query = Completer<Map>();
+      native.presentationResponse = query.future;
+      native.automaticallyPresent = false;
+      final selected = <String>[];
+      await pump(tester, config(onSelect: selected.add));
+      await pump(tester, config(onSelect: selected.add, hidden: true));
+      await pump(tester, config(onSelect: selected.add));
+      query.complete({
+        'visibilityEpoch': 0,
+        'revision': 100,
+        'interactive': true,
+      });
+      await tester.pump();
+      expect(ignoresNativePointers(tester), true);
+      await native.send('select', {'id': '/activity'});
+      expect(selected, isEmpty);
+      await native.present(interactive: true);
+      await tester.pump();
+      await native.send('select', {'id': '/activity'});
+      expect(selected, ['/activity']);
+    },
+  );
+
+  _testWidgets('view replacement resets readiness and ignores the previous '
+      'view query', (tester) async {
+    final oldQuery = Completer<Map>();
+    native.presentationResponse = oldQuery.future;
+    native.automaticallyPresent = false;
+    await pump(tester, config(), hostKey: const ValueKey('old'));
+    await native.present(interactive: true, revision: 5);
+    await tester.pump();
+    expect(ignoresNativePointers(tester), false);
+    native.presentationResponse = null;
+    await pump(tester, config(), hostKey: const ValueKey('new'));
+    expect(native.created, hasLength(2));
+    expect(ignoresNativePointers(tester), true);
+    oldQuery.complete({
+      'visibilityEpoch': 0,
+      'revision': 100,
+      'interactive': true,
+    });
+    await tester.pump();
+    expect(ignoresNativePointers(tester), true);
+  });
+
+  _testWidgets('coalesced hide-show updates preserve the visibility epoch', (
+    tester,
+  ) async {
+    native.updateDelay = Completer<void>();
+    final selected = <String>[];
+    await pump(tester, config(onSelect: selected.add));
+    expect(ignoresNativePointers(tester), false);
+    await pump(tester, config(onSelect: selected.add, hidden: true));
+    await pump(tester, config(onSelect: selected.add));
+    expect(native.updates, hasLength(1));
+    expect(ignoresNativePointers(tester), true);
+    await native.send('select', {'id': '/settings'});
+    expect(selected, isEmpty);
+    native.updateDelay!.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(native.updates.last['visibilityEpoch'], 2);
+    expect(native.updates.last['hidden'], false);
+    expect(ignoresNativePointers(tester), false);
+  });
+
+  _testWidgets('latest content updates reach native during an entrance without '
+      'authorizing early selection', (tester) async {
+    native.automaticallyPresent = false;
+    final selected = <String>[];
+    await pump(tester, config(onSelect: selected.add));
+    await pump(
+      tester,
+      config(
+        selected: '/settings',
+        items: [
+          for (final item in _items.where((item) => item.id != '/swap'))
+            IosNativeTabBarItem(
+              id: item.id,
+              iconName: item.iconName,
+              label: '${item.label} latest',
+            ),
+        ],
+        onSelect: selected.add,
+      ),
+      brightness: Brightness.dark,
+    );
+    expect(native.latest['visibilityEpoch'], 0);
+    expect(native.latest['selectedId'], '/settings');
+    expect(native.latest['brightness'], 'dark');
+    expect((native.latest['items'] as List).map((item) => item['label']), [
+      'Home latest',
+      'Activity latest',
+      'Settings latest',
+    ]);
+    expect(ignoresNativePointers(tester), true);
+    await native.send('select', {'id': '/activity'});
+    expect(selected, isEmpty);
+    await native.present(interactive: true);
+    await tester.pump();
+    await native.send('select', {'id': '/activity'});
+    expect(selected, ['/activity']);
+    expect(native.created, hasLength(1));
+  });
 
   _testWidgets('older iOS keeps the original bar and does not prepare icons', (
     tester,
@@ -480,13 +736,31 @@ class _NativeFixture {
                 )
                 as Map;
         latest = created[id]!;
+        presentations[id] = {
+          'visibilityEpoch': latest['visibilityEpoch'],
+          'revision': 0,
+          'interactive': automaticallyPresent && latest['hidden'] != true,
+        };
         final channel = MethodChannel('com.zcash.wallet/native_tab_bar/$id');
         channels[id] = channel;
         messenger.setMockMethodCallHandler(channel, (call) async {
           if (call.method == 'update') {
             latest = call.arguments as Map;
+            updates.add(Map.of(latest));
+            final previous = presentations[id]!;
+            if (previous['visibilityEpoch'] != latest['visibilityEpoch']) {
+              presentations[id] = {
+                'visibilityEpoch': latest['visibilityEpoch'],
+                'revision': (previous['revision'] as int) + 1,
+                'interactive': automaticallyPresent && latest['hidden'] != true,
+              };
+              unawaited(send('presentation', presentations[id]!));
+            }
+            await updateDelay?.future;
           } else if (call.method == 'getHeight') {
             return height;
+          } else if (call.method == 'getPresentation') {
+            return presentationResponse ?? presentations[id];
           }
           return null;
         });
@@ -500,13 +774,21 @@ class _NativeFixture {
   bool supported = true;
   int capabilityReads = 0;
   double height = 83;
+  bool automaticallyPresent = true;
+  Future<Map>? presentationResponse;
+  Completer<void>? updateDelay;
   final created = <int, Map>{};
+  final presentations = <int, Map>{};
+  final updates = <Map>[];
   final gestureCalls = <String>[];
   final channels = <int, MethodChannel>{};
   Map latest = {};
 
   Future<void> send(String method, Object? arguments) async {
     final channel = channels.values.last;
+    if (method == 'select' && arguments is Map) {
+      arguments = {...presentations.values.last, ...arguments};
+    }
     final complete = Completer<void>();
     messenger.handlePlatformMessage(
       channel.name,
@@ -514,6 +796,21 @@ class _NativeFixture {
       (_) => complete.complete(),
     );
     await complete.future;
+  }
+
+  Future<void> present({
+    required bool interactive,
+    int? epoch,
+    int? revision,
+  }) async {
+    final id = channels.keys.last;
+    final status = {
+      'visibilityEpoch': epoch ?? latest['visibilityEpoch'],
+      'revision': revision ?? (presentations[id]!['revision'] as int) + 1,
+      'interactive': interactive,
+    };
+    presentations[id] = status;
+    await send('presentation', status);
   }
 
   void dispose() {

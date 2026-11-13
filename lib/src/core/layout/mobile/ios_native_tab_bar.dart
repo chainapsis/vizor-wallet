@@ -230,6 +230,9 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   double? _height;
   int _revision = 0;
   int _sentRevision = -1;
+  int _visibilityEpoch = 0;
+  int _presentationRevision = -1;
+  bool _interactive = false;
   bool _sending = false;
 
   _Snapshot get _currentSnapshot {
@@ -250,6 +253,7 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
           MediaQuery.viewInsetsOf(context).bottom > 0 ||
           ModalRoute.isCurrentOf(context) == false ||
           !TickerMode.valuesOf(context).enabled,
+      visibilityEpoch: _visibilityEpoch,
     );
   }
 
@@ -266,7 +270,15 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   }
 
   void _updateSnapshot({bool force = false}) {
-    final snapshot = _currentSnapshot;
+    var snapshot = _currentSnapshot;
+    if (_snapshot != null && _snapshot!.hidden != snapshot.hidden) {
+      // Keep every visibility transition even when an in-flight update causes
+      // intermediate snapshots to coalesce. An old visible acknowledgement
+      // must not re-enable a newer hide -> show cycle.
+      _visibilityEpoch++;
+      _interactive = false;
+      snapshot = _currentSnapshot;
+    }
     if (!force && _snapshot?.sameAs(snapshot) == true) return;
     _snapshot = snapshot;
     _revision++;
@@ -293,6 +305,9 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
       // Disposal can race the final native channel call.
     } finally {
       _sending = false;
+      if (mounted && _channel != null && !identical(channel, _channel)) {
+        unawaited(_flush());
+      }
     }
   }
 
@@ -301,11 +316,20 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     _channel?.setMethodCallHandler(null);
     _channel = channel;
     _sentRevision = -1;
+    _presentationRevision = -1;
+    if (_interactive) setState(() => _interactive = false);
     channel.setMethodCallHandler((call) async {
       if (!mounted || !identical(_channel, channel)) return;
       if (call.method == 'select') {
-        final id = (call.arguments as Map?)?['id'];
+        final arguments = call.arguments;
+        final values = arguments is Map ? arguments : const {};
+        final id = values['id'];
         if (id is String &&
+            _interactive &&
+            values['visibilityEpoch'] is int &&
+            values['revision'] is int &&
+            values['visibilityEpoch'] == _visibilityEpoch &&
+            values['revision'] == _presentationRevision &&
             !_currentSnapshot.hidden &&
             widget.configuration.items.any((item) => item.id == id)) {
           widget.configuration.onSelect(id);
@@ -319,9 +343,28 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
         WidgetsBinding.instance.ensureVisualUpdate();
       } else if (call.method == 'layout') {
         _acceptHeight((call.arguments as Map?)?['height']);
+      } else if (call.method == 'presentation') {
+        _acceptPresentation(call.arguments);
       }
     });
     unawaited(_flush());
+    unawaited(() async {
+      try {
+        // UIKit can finish the initial entrance before this handler attaches.
+        // Reconcile with the current state, without trusting an older reply
+        // over a presentation callback received while this query was pending.
+        final presentation = await channel.invokeMapMethod<String, dynamic>(
+          'getPresentation',
+        );
+        if (mounted && identical(_channel, channel)) {
+          _acceptPresentation(presentation);
+        }
+      } on PlatformException {
+        // Keep input blocked until a later native acknowledgement arrives.
+      } on MissingPluginException {
+        // The view may already have been removed by navigation.
+      }
+    }());
     unawaited(() async {
       try {
         final height = await channel.invokeMethod<num>('getHeight');
@@ -332,6 +375,24 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
         // The view may already have been removed by navigation.
       }
     }());
+  }
+
+  void _acceptPresentation(Object? arguments) {
+    if (arguments is! Map) return;
+    final epoch = arguments['visibilityEpoch'];
+    final revision = arguments['revision'];
+    final interactive = arguments['interactive'];
+    if (epoch is! int ||
+        epoch != _visibilityEpoch ||
+        revision is! int ||
+        revision < 0 ||
+        revision <= _presentationRevision ||
+        interactive is! bool) {
+      return;
+    }
+    _presentationRevision = revision;
+    final ready = interactive && !_currentSnapshot.hidden;
+    if (_interactive != ready) setState(() => _interactive = ready);
   }
 
   void _acceptHeight(Object? value) {
@@ -349,6 +410,7 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   void dispose() {
     _channel?.setMethodCallHandler(null);
     _channel = null;
+    _interactive = false;
     super.dispose();
   }
 
@@ -357,21 +419,29 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     // Only a bootstrap estimate. UIKit reports its actual fitting height,
     // including the safe area, after attachment and on subsequent changes.
     final height = _height ?? 49 + MediaQuery.viewPaddingOf(context).bottom;
+    final ready = _interactive && !_snapshot!.hidden;
     return SizedBox(
       height: height,
       child: IgnorePointer(
-        ignoring: _snapshot!.hidden,
-        child: UiKitView(
-          viewType: 'com.zcash.wallet/native_tab_bar',
-          layoutDirection: Directionality.of(context),
-          creationParams: _snapshot!.toMap(),
-          creationParamsCodec: const StandardMessageCodec(),
-          onPlatformViewCreated: _created,
-          // The app's global tap-to-unfocus recognizer must not hold UIKit's
-          // press interaction until a drag cancels that ancestor's tap.
-          gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-            Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
-          },
+        ignoring: !ready,
+        child: ExcludeSemantics(
+          excluding: !ready,
+          child: UiKitView(
+            viewType: 'com.zcash.wallet/native_tab_bar',
+            layoutDirection: Directionality.of(context),
+            creationParams: _snapshot!.toMap(),
+            creationParamsCodec: const StandardMessageCodec(),
+            onPlatformViewCreated: _created,
+            // The app's global tap-to-unfocus recognizer must not hold UIKit's
+            // press interaction until a drag cancels that ancestor's tap.
+            gestureRecognizers: ready
+                ? <Factory<OneSequenceGestureRecognizer>>{
+                    Factory<OneSequenceGestureRecognizer>(
+                      EagerGestureRecognizer.new,
+                    ),
+                  }
+                : const <Factory<OneSequenceGestureRecognizer>>{},
+          ),
         ),
       ),
     );
@@ -386,6 +456,7 @@ class _Snapshot {
     required this.selectedTintColor,
     required this.direction,
     required this.hidden,
+    required this.visibilityEpoch,
   });
   final List<_PreparedItem> items;
   final String selectedId;
@@ -393,6 +464,7 @@ class _Snapshot {
   final int selectedTintColor;
   final TextDirection direction;
   final bool hidden;
+  final int visibilityEpoch;
 
   Map<String, Object> toMap() => {
     'items': [for (final item in items) item.toMap()],
@@ -401,6 +473,7 @@ class _Snapshot {
     'selectedTintColor': selectedTintColor,
     'direction': direction.name,
     'hidden': hidden,
+    'visibilityEpoch': visibilityEpoch,
   };
 
   bool sameAs(_Snapshot other) =>
@@ -409,6 +482,7 @@ class _Snapshot {
       selectedTintColor == other.selectedTintColor &&
       direction == other.direction &&
       hidden == other.hidden &&
+      visibilityEpoch == other.visibilityEpoch &&
       items.length == other.items.length &&
       Iterable.generate(
         items.length,

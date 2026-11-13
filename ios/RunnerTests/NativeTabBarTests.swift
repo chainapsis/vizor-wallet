@@ -60,9 +60,10 @@ struct NativeTabBarTests {
     let selected = try #require(fixture.bar.selectedItem)
     fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
     fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
-    #expect(fixture.messenger.outgoing.map(\.method) == ["select", "select"])
-    #expect(fixture.messenger.outgoing.allSatisfy {
-      ($0.arguments as? [String: String])?["id"] == "settings"
+    let events = fixture.messenger.outgoing.filter { $0.method == "select" }
+    #expect(events.count == 2)
+    #expect(events.allSatisfy {
+      ($0.arguments as? [String: Any])?["id"] as? String == "settings"
     })
     fixture.platformView?.tabBar(UITabBar(), didSelect: selected)
     fixture.platformView?.tabBar(fixture.bar, didSelect: UITabBarItem())
@@ -78,15 +79,17 @@ struct NativeTabBarTests {
     args["direction"] = "rtl"
     args["hidden"] = true
     #expect(fixture.update(args) == nil)
-    #expect(fixture.host.overrideUserInterfaceStyle == .dark)
-    #expect(fixture.bar.effectiveUserInterfaceLayoutDirection == .rightToLeft)
-    #expect(fixture.host.isHidden)
+    #expect(fixture.host.overrideUserInterfaceStyle == .light)
+    #expect(fixture.bar.effectiveUserInterfaceLayoutDirection == .leftToRight)
+    #expect(fixture.host.slidingView.isHidden)
     #expect(!fixture.host.isUserInteractionEnabled)
     #expect(fixture.bar.items?.first === originalItem)
     #expect(fixture.host.preferredHeight > 0)
     args["hidden"] = false
     #expect(fixture.update(args) == nil)
-    #expect(!fixture.host.isHidden)
+    #expect(!fixture.host.slidingView.isHidden)
+    #expect(fixture.host.overrideUserInterfaceStyle == .dark)
+    #expect(fixture.bar.effectiveUserInterfaceLayoutDirection == .rightToLeft)
     #expect(fixture.host.isUserInteractionEnabled)
   }
 
@@ -178,6 +181,224 @@ struct NativeTabBarTests {
     #expect(!fixture.messenger.hasHandler)
     #expect(fixture.host.tabBar.delegate == nil)
     #expect(fixture.host.onHeightChanged == nil)
+    #expect(fixture.host.onGeometryChanged == nil)
+    #expect(fixture.host.onAttachmentChanged == nil)
+  }
+
+  @Test("Entrance and exit use native durations and gate input plus accessibility")
+  func animatedPresentationGate() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    #expect(animator.animations.count == 1)
+    let entrance = try #require(animator.animations.last)
+    #expect(entrance.duration == 0.240)
+    #expect(entrance.curve == .easeOut)
+    #expect(entrance.start.ty > 0)
+    #expect(entrance.target == .identity)
+    #expect(!fixture.host.slidingView.isHidden)
+    #expect(!fixture.host.isUserInteractionEnabled)
+    #expect(!fixture.bar.isUserInteractionEnabled)
+    #expect(fixture.host.accessibilityElementsHidden)
+    let item = try #require(fixture.bar.selectedItem)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: item)
+    #expect(fixture.selectionEvents.isEmpty)
+    entrance.finish()
+    let ready = fixture.presentation
+    #expect(ready["interactive"] as? Bool == true)
+    #expect(fixture.host.isUserInteractionEnabled)
+    #expect(!fixture.host.accessibilityElementsHidden)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: item)
+    let event = try #require(fixture.selectionEvents.last?.arguments as? [String: Any])
+    #expect(event["visibilityEpoch"] as? Int64 == 0)
+    #expect(event["revision"] as? Int64 == ready["revision"] as? Int64)
+
+    var hidden = fixture.snapshot()
+    hidden["hidden"] = true
+    hidden["visibilityEpoch"] = 1
+    #expect(fixture.update(hidden) == nil)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    #expect(!fixture.host.isUserInteractionEnabled)
+    #expect(fixture.host.accessibilityElementsHidden)
+    #expect(!fixture.host.slidingView.isHidden)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: item)
+    #expect(fixture.selectionEvents.count == 1)
+    let exit = try #require(animator.animations.last)
+    #expect(exit.duration == 0.200)
+    #expect(exit.curve == .easeIn)
+    #expect(exit.target.ty >= fixture.host.bounds.height)
+    exit.finish()
+    #expect(fixture.host.slidingView.isHidden)
+    #expect(fixture.presentation["visibilityEpoch"] as? Int64 == 1)
+  }
+
+  @Test("Exit freezes shown content and entrance applies only the latest validated snapshot")
+  func pendingHiddenContent() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    animator.animations.last?.finish()
+    let home = try #require(fixture.bar.items?.first)
+    var pending = fixture.snapshot(selected: "settings")
+    pending["hidden"] = true
+    pending["visibilityEpoch"] = 1
+    pending["brightness"] = "dark"
+    pending["selectedTintColor"] = 0xFF123456
+    #expect(fixture.update(pending) == nil)
+    #expect(fixture.bar.selectedItem === home)
+    #expect(fixture.host.overrideUserInterfaceStyle == .light)
+    animator.animations.last?.finish()
+
+    var items = try #require(pending["items"] as? [[String: Any]])
+    items[0]["label"] = "Newest home"
+    pending["items"] = items
+    pending["selectedId"] = "activity"
+    #expect(fixture.update(pending) == nil)
+    #expect(home.title == "home")
+    #expect(fixture.bar.selectedItem === home)
+    let hiddenRevision = fixture.presentation["revision"] as? Int64
+    var corrupt = pending
+    items[0]["icon"] = FlutterStandardTypedData(bytes: Data([0, 1, 2]))
+    corrupt["items"] = items
+    #expect(fixture.update(corrupt) is FlutterError)
+    #expect(fixture.presentation["revision"] as? Int64 == hiddenRevision)
+
+    pending["hidden"] = false
+    pending["visibilityEpoch"] = 2
+    #expect(fixture.update(pending) == nil)
+    #expect(home.title == "Newest home")
+    #expect(fixture.bar.selectedItem?.accessibilityIdentifier == "activity")
+    #expect(fixture.host.overrideUserInterfaceStyle == .dark)
+    #expect(!fixture.host.isUserInteractionEnabled)
+    animator.animations.last?.finish()
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+  }
+
+  @Test("Rapid reversal starts at the current position and ignores old completions")
+  func rapidReversal() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    animator.animations.last?.finish()
+    var args = fixture.snapshot()
+    args["hidden"] = true
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    let exit = try #require(animator.animations.last)
+    exit.progress(to: 0.4)
+    let current = fixture.host.slidingView.transform
+    args["hidden"] = false
+    args["visibilityEpoch"] = 2
+    #expect(fixture.update(args) == nil)
+    let entrance = try #require(animator.animations.last)
+    #expect(exit.cancelled)
+    #expect(entrance.start == current)
+    let revision = fixture.presentation["revision"] as? Int64
+    exit.completeEvenIfCancelled()
+    #expect(!fixture.host.slidingView.isHidden)
+    #expect(fixture.presentation["revision"] as? Int64 == revision)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    entrance.finish()
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    #expect(fixture.host.slidingView.transform == .identity)
+  }
+
+  @Test("Initial visibility waits for attachment and a hidden creation never flashes")
+  func attachmentAndInitialHidden() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(
+      animator: animator.animate, reducedMotion: false, attached: false
+    )
+    #expect(animator.animations.isEmpty)
+    #expect(fixture.host.slidingView.isHidden)
+    #expect(fixture.bar.items?.isEmpty ?? true)
+    fixture.setAttached(true)
+    #expect(animator.animations.count == 1)
+    #expect(!fixture.host.slidingView.isHidden)
+    animator.animations.last?.finish()
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    fixture.setAttached(false)
+    #expect(fixture.host.slidingView.isHidden)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    fixture.setAttached(true)
+    #expect(animator.animations.count == 2)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+
+    let hiddenAnimator = NativeTabBarTestAnimator()
+    let hidden = NativeTabBarFixture(
+      animator: hiddenAnimator.animate, reducedMotion: false, initiallyHidden: true
+    )
+    #expect(hiddenAnimator.animations.isEmpty)
+    #expect(hidden.host.slidingView.isHidden)
+    #expect(hidden.presentation["interactive"] as? Bool == false)
+  }
+
+  @Test("Reduce Motion settles the current target immediately and invalidates its old completion")
+  func reduceMotionDuringAnimation() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    let entrance = try #require(animator.animations.last)
+    entrance.progress(to: 0.3)
+    fixture.environment.reducedMotion = true
+    fixture.notifications.post(name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
+    #expect(entrance.cancelled)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    #expect(fixture.host.slidingView.transform == .identity)
+    let revision = fixture.presentation["revision"] as? Int64
+    entrance.completeEvenIfCancelled()
+    #expect(fixture.presentation["revision"] as? Int64 == revision)
+    var hidden = fixture.snapshot()
+    hidden["hidden"] = true
+    hidden["visibilityEpoch"] = 1
+    #expect(fixture.update(hidden) == nil)
+    #expect(fixture.host.slidingView.isHidden)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    #expect(animator.animations.count == 1)
+  }
+
+  @Test("Bad visibility epochs cannot change the accepted target or pending content")
+  func visibilityEpochValidation() {
+    let fixture = NativeTabBarFixture()
+    var args = fixture.snapshot()
+    args["visibilityEpoch"] = 3
+    #expect(fixture.update(args) == nil)
+    for invalid: Any in [-1, 1.5, true, "4", 2] {
+      args["visibilityEpoch"] = invalid
+      args["hidden"] = true
+      #expect(fixture.update(args) is FlutterError)
+      #expect(fixture.presentation["visibilityEpoch"] as? Int64 == 3)
+      #expect(fixture.presentation["interactive"] as? Bool == true)
+    }
+  }
+
+  @Test("Animation leaves host geometry and native height stable, and resize retargets safely")
+  func animatedGeometryAndDisposal() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    fixture.host.layoutIfNeeded()
+    animator.animations.last?.finish()
+    let originalFrame = fixture.host.frame
+    let originalHeight = fixture.host.preferredHeight
+    var hidden = fixture.snapshot()
+    hidden["hidden"] = true
+    hidden["visibilityEpoch"] = 1
+    #expect(fixture.update(hidden) == nil)
+    let exit = try #require(animator.animations.last)
+    exit.progress(to: 0.4)
+    fixture.host.setNeedsLayout()
+    fixture.host.layoutIfNeeded()
+    #expect(fixture.host.frame == originalFrame)
+    #expect(fixture.host.preferredHeight == originalHeight)
+    #expect(fixture.bar.frame == CGRect(origin: .zero, size: originalFrame.size))
+    fixture.host.frame.size = CGSize(width: 852, height: 80)
+    fixture.host.setNeedsLayout()
+    fixture.host.layoutIfNeeded()
+    let resizedExit = try #require(animator.animations.last)
+    #expect(exit.cancelled)
+    #expect(resizedExit.target.ty >= 80)
+    fixture.platformView = nil
+    #expect(resizedExit.cancelled)
+    #expect(!fixture.messenger.hasHandler)
+    #expect(fixture.host.slidingView.isHidden)
+    resizedExit.completeEvenIfCancelled()
+    #expect(fixture.host.slidingView.isHidden)
   }
 
   private func drainMainQueue() async {
@@ -190,12 +411,25 @@ struct NativeTabBarTests {
 @MainActor
 private final class NativeTabBarFixture {
   let messenger = NativeTabBarMessenger()
+  let environment: NativeTabBarTestEnvironment
+  let notifications = NotificationCenter()
   private let png: Data
   var platformView: NativeTabBarPlatformView?
   let host: NativeTabBarHostView
   var bar: UITabBar { host.tabBar }
+  var presentation: [String: Any] {
+    messenger.call("getPresentation") as? [String: Any] ?? [:]
+  }
+  var selectionEvents: [FlutterMethodCall] { messenger.outgoing.filter { $0.method == "select" } }
 
-  init() {
+  init(
+    animator: NativeTabBarAnimator? = nil, reducedMotion: Bool = true,
+    attached: Bool = true, initiallyHidden: Bool = false
+  ) {
+    let environment = NativeTabBarTestEnvironment()
+    environment.reducedMotion = reducedMotion
+    environment.attached = attached
+    self.environment = environment
     let format = UIGraphicsImageRendererFormat()
     format.scale = 3
     png = UIGraphicsImageRenderer(size: CGSize(width: 25, height: 25), format: format)
@@ -203,13 +437,22 @@ private final class NativeTabBarFixture {
         UIColor.black.setFill()
         context.fill(CGRect(x: 2, y: 2, width: 21, height: 21))
       }
-    let args = Self.snapshot(png: png, ids: ["home", "activity", "settings"], selected: "home")
+    var args = Self.snapshot(png: png, ids: ["home", "activity", "settings"], selected: "home")
+    args["hidden"] = initiallyHidden
     let platformView = NativeTabBarPlatformView(
       frame: CGRect(x: 0, y: 0, width: 393, height: 100),
-      viewId: 1, args: args, messenger: messenger
+      viewId: 1, args: args, messenger: messenger, animator: animator,
+      reduceMotion: { environment.reducedMotion }, attachmentProvider: { environment.attached },
+      notificationCenter: notifications
     )
     self.platformView = platformView
     host = platformView.view() as! NativeTabBarHostView
+    messenger.outgoing.removeAll()
+  }
+
+  func setAttached(_ attached: Bool) {
+    environment.attached = attached
+    host.didMoveToWindow()
   }
 
   func snapshot(ids: [String] = ["home", "activity", "settings"], selected: String = "home")
@@ -230,8 +473,67 @@ private final class NativeTabBarFixture {
       "selectedId": selected,
       "brightness": "light",
       "direction": "ltr",
+      "visibilityEpoch": 0,
     ]
   }
+}
+
+private final class NativeTabBarTestEnvironment {
+  var reducedMotion = true
+  var attached = true
+}
+
+private final class NativeTabBarTestAnimator {
+  var animations: [NativeTabBarTestAnimation] = []
+
+  func animate(
+    view: UIView, target: CGAffineTransform, duration: TimeInterval,
+    curve: UIView.AnimationCurve, completion: @escaping () -> Void
+  ) -> NativeTabBarAnimation {
+    let animation = NativeTabBarTestAnimation(
+      view: view, target: target, duration: duration, curve: curve, completion: completion
+    )
+    animations.append(animation)
+    return animation
+  }
+}
+
+private final class NativeTabBarTestAnimation: NativeTabBarAnimation {
+  private weak var view: UIView?
+  let start: CGAffineTransform
+  let target: CGAffineTransform
+  let duration: TimeInterval
+  let curve: UIView.AnimationCurve
+  private let completion: () -> Void
+  private(set) var cancelled = false
+
+  init(
+    view: UIView, target: CGAffineTransform, duration: TimeInterval,
+    curve: UIView.AnimationCurve, completion: @escaping () -> Void
+  ) {
+    self.view = view
+    start = view.transform
+    self.target = target
+    self.duration = duration
+    self.curve = curve
+    self.completion = completion
+  }
+
+  func progress(to fraction: CGFloat) {
+    view?.transform = CGAffineTransform(
+      translationX: start.tx + (target.tx - start.tx) * fraction,
+      y: start.ty + (target.ty - start.ty) * fraction
+    )
+  }
+
+  func finish() {
+    guard !cancelled else { return }
+    view?.transform = target
+    completion()
+  }
+
+  func completeEvenIfCancelled() { completion() }
+  func cancel() { cancelled = true }
 }
 
 private final class NativeTabBarMessenger: NSObject, FlutterBinaryMessenger {

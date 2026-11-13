@@ -64,6 +64,7 @@ struct NativeTabBarSnapshot {
   let style: UIUserInterfaceStyle
   let direction: UIUserInterfaceLayoutDirection
   let hidden: Bool
+  let visibilityEpoch: Int64
   let selectedTintColor: UInt32?
 
   init(arguments: Any?) throws {
@@ -76,6 +77,15 @@ struct NativeTabBarSnapshot {
     else { throw NativeTabBarError.invalidSnapshot }
     guard args["hidden"] == nil || args["hidden"] is Bool else {
       throw NativeTabBarError.invalidSnapshot
+    }
+    if let rawEpoch = args["visibilityEpoch"] {
+      guard let number = rawEpoch as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(), number.int64Value >= 0,
+        number.doubleValue == Double(number.int64Value)
+      else { throw NativeTabBarError.invalidSnapshot }
+      visibilityEpoch = number.int64Value
+    } else {
+      visibilityEpoch = 0
     }
     if let rawColor = args["selectedTintColor"] {
       guard let number = rawColor as? NSNumber,
@@ -116,14 +126,23 @@ enum NativeTabBarError: Error {
 /// Transparent placement only. Item tint comes from the app; UIKit remains
 /// responsible for the material, clipping and selection-lens interaction.
 final class NativeTabBarHostView: UIView {
-  let tabBar = UITabBar()
+  let tabBar = NativeSlidingTabBar()
+  let slidingView = UIView()
   var onHeightChanged: ((CGFloat) -> Void)?
+  var onGeometryChanged: (() -> Void)?
+  var onAttachmentChanged: (() -> Void)?
   private var lastHeight: CGFloat?
+  private var lastSize: CGSize?
+  private var lastInsets: UIEdgeInsets?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
     backgroundColor = .clear
-    addSubview(tabBar)
+    slidingView.backgroundColor = .clear
+    slidingView.isHidden = true
+    addSubview(slidingView)
+    slidingView.addSubview(tabBar)
+    tabBar.host = self
   }
 
   required init?(coder: NSCoder) {
@@ -139,11 +158,20 @@ final class NativeTabBarHostView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    tabBar.frame = bounds
+    // The outer platform-view rectangle never moves or collapses. In particular
+    // do not assign frame while the sliding view has a nonidentity transform.
+    slidingView.bounds = CGRect(origin: .zero, size: bounds.size)
+    slidingView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+    tabBar.frame = slidingView.bounds
     let height = preferredHeight
     if height.isFinite, height > 0, lastHeight == nil || abs(height - lastHeight!) > 0.5 {
       lastHeight = height
       onHeightChanged?(height)
+    }
+    if lastSize != bounds.size || lastInsets != safeAreaInsets {
+      lastSize = bounds.size
+      lastInsets = safeAreaInsets
+      onGeometryChanged?()
     }
   }
 
@@ -155,6 +183,7 @@ final class NativeTabBarHostView: UIView {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     setNeedsLayout()
+    onAttachmentChanged?()
   }
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -169,9 +198,68 @@ final class NativeTabBarHostView: UIView {
   }
 }
 
+/// UIKit otherwise recomputes a moving bar's safe area from its animated screen
+/// position, which changes sizeThatFits and can feed back into Flutter's height.
+/// Anchor that geometry to the stationary host while leaving the material alone.
+final class NativeSlidingTabBar: UITabBar {
+  weak var host: NativeTabBarHostView?
+  override var safeAreaInsets: UIEdgeInsets { host?.safeAreaInsets ?? super.safeAreaInsets }
+}
+
+protocol NativeTabBarAnimation: AnyObject {
+  func cancel()
+}
+
+typealias NativeTabBarAnimator = (
+  UIView, CGAffineTransform, TimeInterval, UIView.AnimationCurve, @escaping () -> Void
+) -> NativeTabBarAnimation
+
+private final class NativeTabBarUIKitAnimation: NativeTabBarAnimation {
+  private let animator: UIViewPropertyAnimator
+  private weak var view: UIView?
+  private let startTransform: CGAffineTransform
+
+  init(
+    view: UIView, target: CGAffineTransform, duration: TimeInterval,
+    curve: UIView.AnimationCurve, completion: @escaping () -> Void
+  ) {
+    self.view = view
+    startTransform = view.transform
+    animator = UIViewPropertyAnimator(duration: duration, curve: curve)
+    animator.addAnimations { [weak view] in view?.transform = target }
+    animator.addCompletion { position in if position == .end { completion() } }
+    animator.startAnimation()
+  }
+
+  func cancel() {
+    let current = view?.layer.presentation()?.affineTransform()
+      ?? (animator.state == .active ? startTransform : view?.transform ?? startTransform)
+    animator.stopAnimation(true)
+    if let view { UIView.performWithoutAnimation { view.transform = current } }
+  }
+}
+
+private struct NativeTabBarPreparedSnapshot {
+  let configuration: NativeTabBarSnapshot
+  let images: [String: UIImage]
+}
+
 final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
+  private enum Phase { case detached, hidden, entering, visible, exiting }
   private let channel: FlutterMethodChannel
   private let host: NativeTabBarHostView
+  private let animate: NativeTabBarAnimator
+  private let reduceMotion: () -> Bool
+  private let attachmentProvider: (() -> Bool)?
+  private let notificationCenter: NotificationCenter
+  private var motionObserver: NSObjectProtocol?
+  private var animation: NativeTabBarAnimation?
+  private var animationGeneration: UInt64 = 0
+  private var phase: Phase = .detached
+  private var targetHidden = true
+  private var visibilityEpoch: Int64 = 0
+  private var presentationRevision: Int64 = 0
+  private var pendingSnapshot: NativeTabBarPreparedSnapshot?
   private var configurations: [String: NativeTabBarItemConfiguration] = [:]
   private var itemsById: [String: UITabBarItem] = [:]
   private var orderedIds: [String] = []
@@ -179,14 +267,39 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   private var pendingHeight: CGFloat?
   private var heightDeliveryScheduled = false
 
-  init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
+  init(
+    frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger,
+    animator: NativeTabBarAnimator? = nil,
+    reduceMotion: @escaping () -> Bool = { UIAccessibility.isReduceMotionEnabled },
+    attachmentProvider: (() -> Bool)? = nil,
+    notificationCenter: NotificationCenter = .default
+  ) {
     channel = FlutterMethodChannel(
       name: "\(NativeTabBarPlugin.channelName)/\(viewId)", binaryMessenger: messenger
     )
     host = NativeTabBarHostView(frame: frame)
+    animate = animator ?? { view, transform, duration, curve, completion in
+      NativeTabBarUIKitAnimation(
+        view: view, target: transform, duration: duration, curve: curve, completion: completion
+      )
+    }
+    self.reduceMotion = reduceMotion
+    self.attachmentProvider = attachmentProvider
+    self.notificationCenter = notificationCenter
     super.init()
     host.tabBar.delegate = self
     host.onHeightChanged = { [weak self] height in self?.scheduleHeight(height) }
+    host.onGeometryChanged = { [weak self] in self?.geometryChanged() }
+    host.onAttachmentChanged = { [weak self] in self?.attachmentChanged() }
+    setInputEnabled(false)
+    motionObserver = notificationCenter.addObserver(
+      forName: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      guard let self, self.reduceMotion(), self.phase == .entering || self.phase == .exiting else {
+        return
+      }
+      self.transition(toHidden: self.targetHidden)
+    }
     // The view factory cannot return a FlutterError. An invalid creation stays
     // empty; subsequent updates use the same strict, atomic validation below.
     if let snapshot = try? NativeTabBarSnapshot(arguments: args) {
@@ -206,6 +319,8 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
         }
       case "getHeight":
         result(Double(self.host.preferredHeight))
+      case "getPresentation":
+        result(self.presentation)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -213,27 +328,77 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   }
 
   deinit {
+    animationGeneration &+= 1
+    animation?.cancel()
+    if let motionObserver { notificationCenter.removeObserver(motionObserver) }
     host.tabBar.delegate = nil
     host.onHeightChanged = nil
+    host.onGeometryChanged = nil
+    host.onAttachmentChanged = nil
+    host.slidingView.isHidden = true
+    host.isUserInteractionEnabled = false
+    host.accessibilityElementsHidden = true
     channel.setMethodCallHandler(nil)
   }
 
   func view() -> UIView { host }
 
   private func apply(_ snapshot: NativeTabBarSnapshot) throws {
-    // Decode all new images before touching the displayed state. A bad image
-    // must not partially update the labels or invalidate the selected item.
-    var nextItems: [String: UITabBarItem] = [:]
-    var newImages: [String: UIImage] = [:]
+    guard snapshot.visibilityEpoch >= visibilityEpoch else {
+      throw NativeTabBarError.invalidSnapshot
+    }
+    // Preparing is atomic even while hidden. Only one pending full snapshot is
+    // retained, and none of its state reaches the exiting/hidden native items.
+    var images: [String: UIImage] = [:]
     for config in snapshot.items {
-      nextItems[config.id] = itemsById[config.id] ?? UITabBarItem()
       let previous = configurations[config.id]
-      if previous?.icon != config.icon || previous?.iconScale != config.iconScale {
+      let pending = pendingSnapshot?.configuration.items.first { $0.id == config.id }
+      if pending?.icon == config.icon, pending?.iconScale == config.iconScale,
+        let image = pendingSnapshot?.images[config.id]
+      {
+        images[config.id] = image
+      } else if previous?.icon == config.icon, previous?.iconScale == config.iconScale,
+        let image = itemsById[config.id]?.image
+      {
+        images[config.id] = image
+      } else {
         guard let image = UIImage(data: config.icon, scale: config.iconScale) else {
           throw NativeTabBarError.invalidIcon
         }
-        newImages[config.id] = image.withRenderingMode(.alwaysTemplate)
+        images[config.id] = image.withRenderingMode(.alwaysTemplate)
       }
+    }
+    let epochChanged = visibilityEpoch != snapshot.visibilityEpoch
+    visibilityEpoch = snapshot.visibilityEpoch
+    pendingSnapshot = .init(configuration: snapshot, images: images)
+    targetHidden = snapshot.hidden
+    if !isAttached {
+      interruptAnimation()
+      host.slidingView.isHidden = true
+      setPhase(.detached, force: epochChanged)
+    } else if snapshot.hidden {
+      if phase == .visible || phase == .entering {
+        transition(toHidden: true)
+      } else if phase == .detached {
+        host.slidingView.isHidden = true
+        setPhase(.hidden, force: epochChanged)
+      } else {
+        setPhase(phase, force: epochChanged)
+      }
+    } else if phase == .visible || phase == .entering {
+      applyPendingSnapshot()
+      setPhase(phase, force: epochChanged)
+    } else {
+      transition(toHidden: false)
+    }
+  }
+
+  private func applyPendingSnapshot() {
+    guard let prepared = pendingSnapshot else { return }
+    let snapshot = prepared.configuration
+    var nextItems: [String: UITabBarItem] = [:]
+    for config in snapshot.items {
+      nextItems[config.id] = itemsById[config.id] ?? UITabBarItem()
     }
 
     let nextIds = snapshot.items.map(\.id)
@@ -242,7 +407,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
       let item = nextItems[config.id]!
       if item.title != config.label { item.title = config.label }
       item.accessibilityIdentifier = config.id
-      if let image = newImages[config.id] {
+      if let image = prepared.images[config.id], item.image !== image {
         item.image = image
         item.selectedImage = image
       }
@@ -271,8 +436,6 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
       host.tabBar.selectedItem = nextItems[snapshot.selectedId]
     }
     host.overrideUserInterfaceStyle = snapshot.style
-    host.isHidden = snapshot.hidden
-    host.isUserInteractionEnabled = !snapshot.hidden
     let semantic: UISemanticContentAttribute = snapshot.direction == .rightToLeft
       ? .forceRightToLeft : .forceLeftToRight
     host.semanticContentAttribute = semantic
@@ -285,11 +448,105 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   }
 
   func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
-    guard tabBar === host.tabBar,
+    guard isInteractive, tabBar === host.tabBar,
       let id = orderedIds.first(where: { itemsById[$0] === item })
     else { return }
     // Re-selection is intentional: Flutter may return the branch to its root.
-    channel.invokeMethod("select", arguments: ["id": id])
+    channel.invokeMethod("select", arguments: [
+      "id": id, "visibilityEpoch": visibilityEpoch, "revision": presentationRevision,
+    ])
+  }
+
+  private var isAttached: Bool { attachmentProvider?() ?? (host.window != nil) }
+  private var isInteractive: Bool { phase == .visible && !targetHidden && isAttached }
+  private var presentation: [String: Any] {
+    ["visibilityEpoch": visibilityEpoch, "revision": presentationRevision, "interactive": isInteractive]
+  }
+
+  private var hiddenTransform: CGAffineTransform {
+    let distance = max(host.bounds.height, host.preferredHeight)
+    return CGAffineTransform(translationX: 0, y: distance)
+  }
+
+  private func setInputEnabled(_ enabled: Bool) {
+    host.isUserInteractionEnabled = enabled
+    host.tabBar.isUserInteractionEnabled = enabled
+    host.accessibilityElementsHidden = !enabled
+  }
+
+  private func setPhase(_ next: Phase, force: Bool = false) {
+    let changed = next != phase
+    phase = next
+    setInputEnabled(isInteractive)
+    if changed || force {
+      presentationRevision += 1
+      channel.invokeMethod("presentation", arguments: presentation)
+    }
+  }
+
+  private func interruptAnimation() {
+    animationGeneration &+= 1
+    animation?.cancel()
+    animation = nil
+  }
+
+  private func transition(toHidden hidden: Bool) {
+    interruptAnimation()
+    guard isAttached else {
+      host.slidingView.isHidden = true
+      setPhase(.detached)
+      return
+    }
+    if !hidden {
+      applyPendingSnapshot()
+      if host.slidingView.isHidden {
+        UIView.performWithoutAnimation { host.slidingView.transform = hiddenTransform }
+      }
+      host.slidingView.isHidden = false
+    }
+    setPhase(hidden ? .exiting : .entering)
+    let target = hidden ? hiddenTransform : .identity
+    let generation = animationGeneration
+    let completion = { [weak self] in
+      guard let self, self.animationGeneration == generation,
+        self.targetHidden == hidden, self.isAttached else { return }
+      self.animation = nil
+      self.host.slidingView.isHidden = hidden
+      self.setPhase(hidden ? .hidden : .visible)
+    }
+    if reduceMotion() {
+      UIView.performWithoutAnimation { host.slidingView.transform = target }
+      completion()
+    } else {
+      animation = animate(
+        host.slidingView, target, hidden ? 0.200 : 0.240,
+        hidden ? .easeIn : .easeOut, completion
+      )
+    }
+  }
+
+  private func geometryChanged() {
+    switch phase {
+    case .entering, .exiting:
+      transition(toHidden: targetHidden)
+    case .hidden, .detached:
+      UIView.performWithoutAnimation { host.slidingView.transform = hiddenTransform }
+    case .visible:
+      break
+    }
+  }
+
+  private func attachmentChanged() {
+    if !isAttached {
+      interruptAnimation()
+      host.slidingView.isHidden = true
+      setPhase(.detached)
+    } else if targetHidden {
+      host.slidingView.isHidden = true
+      setPhase(.hidden)
+    } else {
+      transition(toHidden: false)
+    }
   }
 
   private func scheduleHeight(_ height: CGFloat) {
