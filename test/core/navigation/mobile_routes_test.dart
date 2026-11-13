@@ -358,31 +358,42 @@ void main() {
     );
   });
 
-  testWidgets('native callbacks while inactive do not navigate or extend idle '
-      'activity', (tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(393, 852);
-    addTearDown(tester.view.reset);
-    final router = _router();
-    addTearDown(router.dispose);
-    await tester.pumpWidget(_app(router));
-    await tester.pumpAndSettle();
-    final shell = tester.widget<AppMobileShell>(find.byType(AppMobileShell));
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(AppMobileShell)),
-    );
-    final revision = container.read(syncKeepAwakeInteractionProvider).revision;
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    addTearDown(
-      () => tester.binding.handleAppLifecycleStateChanged(
-        AppLifecycleState.resumed,
-      ),
-    );
-    shell.nativeTabBar!.onSelect('/settings');
-    await tester.pumpAndSettle();
-    expect(router.routeInformationProvider.value.uri.path, '/home');
-    expect(container.read(syncKeepAwakeInteractionProvider).revision, revision);
-  });
+  testWidgets(
+    'native selection while inactive navigates and records deliberate '
+    'interaction after biometric unlock',
+    (tester) async {
+      final native = NativeTabBarFixture();
+      addTearDown(native.dispose);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.reset);
+      final router = _router();
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_app(router, nativeRoot: true));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(AppMobileShell)),
+      );
+      final revision = container
+          .read(syncKeepAwakeInteractionProvider)
+          .revision;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      addTearDown(
+        () => tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        ),
+      );
+      await native.send('select', {'id': '/settings'});
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/settings');
+      expect(native.latest['selectedId'], '/settings');
+      expect(
+        container.read(syncKeepAwakeInteractionProvider).revision,
+        revision + 1,
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   testWidgets('desktop-only migration raw lock state does not hide mobile '
       'native tabs', (tester) async {

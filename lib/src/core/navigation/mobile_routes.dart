@@ -925,7 +925,6 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
           inputEnabled: !routeObserver.hasPopup && !navigationBlocked,
           onSelect: (path) {
             if (!mounted) return;
-            final lifecycle = WidgetsBinding.instance.lifecycleState;
             // GoRouter publishes a requested detail route before Navigator
             // changes isCurrent. A queued native callback cannot overtake it.
             final requestedPath = GoRouter.of(
@@ -935,7 +934,6 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
                 requestedPath == '/accounts' ||
                 visibleTabs.any((tab) => tab.path == requestedPath);
             if (!requestedTabScope ||
-                (lifecycle != null && lifecycle != AppLifecycleState.resumed) ||
                 ModalRoute.isCurrentOf(context) == false ||
                 !TickerMode.valuesOf(context).enabled ||
                 routeObserver.hasPopup ||
