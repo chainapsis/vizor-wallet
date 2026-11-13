@@ -52,8 +52,15 @@ for imports and network, filesystem, process, FFI and platform-channel APIs.
   including an app theme that differs from the system theme. No global wrapping,
   brightness sampling, performance monitor or startup initialization is added.
   The package lazily loads its bundled shaders and supplies its renderer fallback.
-- The iOS 26 material uses existing panel tint, active selection and icon tokens,
+- The iOS 27 material uses existing panel tint, active selection and icon tokens,
   icon-only tabs at 28px, 64px bar height and shell-owned margins/safe areas.
+  Backdrop detail is made more visible with frost opacity 0.65 (light) / 0.75
+  (dark), thickness 36 and refractive index 1.30; the preset's blur and frost
+  radii remain unchanged. These optical adjustments need native-device review.
+  Chromatic aberration is 0.08 on the platter and 0.15 on the selection lens,
+  whose remaining settings inherit the iOS 27 indicator preset. The package's
+  frosted/indicator shader paths constrain where dispersion appears; these
+  values do not add a decorative rainbow outline.
 - Reduced motion uses the existing instant-switch bar rather than the package's
   draggable indicator springs. Semantics labels and caller-owned route selection
   are retained, including VoiceOver activation.

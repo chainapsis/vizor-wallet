@@ -202,11 +202,11 @@ class _IosLiquidTabBar extends StatelessWidget {
         ? Brightness.dark
         : Brightness.light;
     final settings = brightness == Brightness.dark
-        ? LiquidGlassSettings.ios26Dark
-        : LiquidGlassSettings.ios26Light;
+        ? LiquidGlassSettings.ios27Dark
+        : LiquidGlassSettings.ios27Light;
 
     return GlassTheme(
-      data: GlassThemeData.ios26(brightness: brightness),
+      data: GlassThemeData.ios27(brightness: brightness),
       child: GlassTabBar.bottom(
         tabs: [
           for (final item in items)
@@ -230,7 +230,20 @@ class _IosLiquidTabBar extends StatelessWidget {
         selectedIconColor: colors.navPanel.activeIcon,
         unselectedIconColor: colors.icon.muted,
         indicatorColor: colors.navPanel.activeBg,
-        settings: settings.copyWith(glassColor: colors.macosUtility.navPanel),
+        settings: settings.copyWith(
+          glassColor: colors.macosUtility.navPanel,
+          // Let more backdrop detail survive the frost so the thicker rim's
+          // refraction remains visible as content scrolls under the bar.
+          frostOpacity: brightness == Brightness.dark ? 0.75 : 0.65,
+          thickness: 36,
+          refractiveIndex: 1.30,
+          chromaticAberration: 0.08,
+        ),
+        // Give the moving lens a little more dispersion than the platter,
+        // retaining the iOS 27 optics and a crisp, unblurred icon layer.
+        indicatorSettings: LiquidGlassSettings.ios27Indicator.copyWith(
+          chromaticAberration: 0.15,
+        ),
         quality: GlassQuality.premium,
         // Keep the lens and press response restrained around the existing UI.
         magnification: 1.05,
