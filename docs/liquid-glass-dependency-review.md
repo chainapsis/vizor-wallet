@@ -54,13 +54,24 @@ for imports and network, filesystem, process, FFI and platform-channel APIs.
   The package lazily loads its bundled shaders and supplies its renderer fallback.
 - The iOS 27 material uses existing panel tint, active selection and icon tokens,
   icon-only tabs at 28px, 64px bar height and shell-owned margins/safe areas.
-  Backdrop detail is made more visible with frost opacity 0.65 (light) / 0.75
-  (dark), thickness 36 and refractive index 1.30; the preset's blur and frost
-  radii remain unchanged. These optical adjustments need native-device review.
-  Chromatic aberration is 0.08 on the platter and 0.15 on the selection lens,
+  Backdrop detail is softened with base blur 1.2, frost radius 24 and frost
+  opacity 0.85 (light) / 0.90 (dark), with thickness 36 and refractive index 1.30.
+  The existing panel tint remains unchanged. These optical
+  adjustments need native-device review.
+  Chromatic aberration is 0.15 on the platter and 0.45 on the selection lens,
   whose remaining settings inherit the iOS 27 indicator preset. The package's
   frosted/indicator shader paths constrain where dispersion appears; these
   values do not add a decorative rainbow outline.
+  Interaction behavior is `scaleOnly`: the touch-following colored glow is
+  disabled while press scaling and selection-lens interactions remain enabled.
+  Selection-lens expansion is 12 horizontally / 8 vertically per edge, increasing
+  the deformation driven by the package's existing spring. Icon magnification
+  and whole-bar press scale remain 1.05 and 1.02; spring timing is unchanged.
+- Pointer selection is adapted locally: package callbacks update only a preview
+  while pressed, then screen selection and haptics commit once after release.
+  Cancellation or external navigation discards the preview; callbacks from the
+  cancelled renderer are ignored. VoiceOver and keyboard activation commit
+  directly. No package source or rendering-mode override is used for this.
 - Reduced motion uses the existing instant-switch bar rather than the package's
   draggable indicator springs. Semantics labels and caller-owned route selection
   are retained, including VoiceOver activation.
@@ -74,10 +85,16 @@ releases add dependencies, native code, build hooks, permissions or network APIs
 ## Validation
 
 - `fvm flutter analyze --no-pub`: no issues.
-- Mobile lane: 19 tests passed across `ios_liquid_tab_bar_test.dart`,
+- Original integration mobile lane: 19 tests passed across `ios_liquid_tab_bar_test.dart`,
   `mobile_shell_components_test.dart`, `mobile_bottom_safe_area_test.dart` and
   `mobile_lane_sanity_test.dart`, using `--tags mobile --run-skipped
   --dart-define=VIZOR_FORM_FACTOR=mobile`.
+- Release-selection update: 100 mobile tests passed across those four files,
+  `mobile_routes_test.dart` and `mobile_wallet_sidebar_test.dart`. Coverage checks
+  that a held/dragged preview never routes, release routes and haptics fire once,
+  cancellations and disposal never route, rejected/external selections reconcile,
+  consecutive and overlapping touches recover, and VoiceOver/keyboard activation
+  does not wait for a pointer release.
 - Desktop lane: 369 tests passed across `platform_asset_contract_test.dart`,
   `app_desktop_shell_test.dart` and `figma_compare_test.dart`.
 - Visually inspected light and dark widget captures from the deterministic

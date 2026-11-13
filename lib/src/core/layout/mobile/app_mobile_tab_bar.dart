@@ -46,6 +46,8 @@ class AppMobileTabItem {
 /// assets and semantic color tokens. Side tabs and other platforms retain the
 /// original surface. Reduced motion also retains the instant-switch surface,
 /// avoiding the package's draggable indicator springs.
+/// Liquid Glass touch interactions preview the lens locally and select the
+/// destination only on release; cancellation keeps the original destination.
 class AppMobileTabBar extends StatelessWidget {
   const AppMobileTabBar({
     required this.items,
@@ -182,7 +184,7 @@ class AppMobileTabBar extends StatelessWidget {
   }
 }
 
-class _IosLiquidTabBar extends StatelessWidget {
+class _IosLiquidTabBar extends StatefulWidget {
   const _IosLiquidTabBar({
     required this.items,
     required this.currentIndex,
@@ -192,6 +194,120 @@ class _IosLiquidTabBar extends StatelessWidget {
   final List<AppMobileTabItem> items;
   final int currentIndex;
   final ValueChanged<int> onSelect;
+
+  @override
+  State<_IosLiquidTabBar> createState() => _IosLiquidTabBarState();
+}
+
+class _IosLiquidTabBarState extends State<_IosLiquidTabBar> {
+  final _touches = <int>{};
+  int? _pointer;
+  int? _previewIndex;
+  int? _lastNotifiedIndex;
+  var _finishing = false;
+  var _interactionId = 0;
+  var _rendererGeneration = 0;
+
+  @override
+  void didUpdateWidget(covariant _IosLiquidTabBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    var destinationsChanged = oldWidget.items.length != widget.items.length;
+    if (!destinationsChanged) {
+      for (var i = 0; i < widget.items.length; i++) {
+        if (oldWidget.items[i].iconName != widget.items[i].iconName ||
+            oldWidget.items[i].label != widget.items[i].label) {
+          destinationsChanged = true;
+          break;
+        }
+      }
+    }
+    final indexChanged = oldWidget.currentIndex != widget.currentIndex;
+    if (destinationsChanged ||
+        (indexChanged && widget.currentIndex != _lastNotifiedIndex)) {
+      _resetInteraction();
+    }
+    if (indexChanged) _lastNotifiedIndex = null;
+  }
+
+  void _resetInteraction() {
+    _pointer = null;
+    _previewIndex = null;
+    _finishing = false;
+    _interactionId++;
+    // Dispose the package's recognizer on cancellation. Its drag-cancel and
+    // recovery callbacks can otherwise select a tab after the touch was lost.
+    _rendererGeneration++;
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    _touches.add(event.pointer);
+    if (_touches.length > 1) {
+      setState(_resetInteraction);
+      return;
+    }
+    // A second tap can begin before the preceding release's frame completes.
+    // Its final callback has already run, so finish it before starting anew.
+    _finishSelection();
+    setState(() {
+      _pointer = event.pointer;
+      _interactionId++;
+    });
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _touches.remove(event.pointer);
+    if (event.pointer != _pointer) return;
+    setState(() {
+      _pointer = null;
+      _finishing = true;
+    });
+    unawaited(_finishAfterFrame(_interactionId));
+  }
+
+  Future<void> _finishAfterFrame(int interactionId) async {
+    // Raw pointer-up precedes the package's tap/drag-end callbacks. Its
+    // recovery can also run post-frame; collect the final target before routing.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || interactionId != _interactionId) return;
+    _finishSelection();
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _touches.remove(event.pointer);
+    if (event.pointer == _pointer) setState(_resetInteraction);
+  }
+
+  void _onTabSelected(int generation, int index) {
+    if (generation != _rendererGeneration) return;
+    if (_pointer != null || _finishing) {
+      setState(() => _previewIndex = index);
+    } else if (_touches.isEmpty) {
+      // VoiceOver and keyboard activation have no pointer lifecycle to await.
+      _select(index);
+    }
+  }
+
+  void _finishSelection() {
+    if (!_finishing) return;
+    final index = _previewIndex;
+    setState(() {
+      _previewIndex = null;
+      _finishing = false;
+      _interactionId++;
+    });
+    if (index != null) _select(index);
+  }
+
+  void _select(int index) {
+    _lastNotifiedIndex = index;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Only recognize an immediate parent echo. A declined selection must not
+      // make an unrelated later navigation look like our own confirmation.
+      if (mounted && _lastNotifiedIndex == index) _lastNotifiedIndex = null;
+    });
+    unawaited(AppHaptics.auxiliaryKey());
+    widget.onSelect(index);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -205,54 +321,62 @@ class _IosLiquidTabBar extends StatelessWidget {
         ? LiquidGlassSettings.ios27Dark
         : LiquidGlassSettings.ios27Light;
 
-    return GlassTheme(
-      data: GlassThemeData.ios27(brightness: brightness),
-      child: GlassTabBar.bottom(
-        tabs: [
-          for (final item in items)
-            GlassTab(
-              icon: AppIcon(item.iconName, size: AppMobileTabBar._iconSize),
-              semanticLabel: item.label,
-            ),
-        ],
-        selectedIndex: currentIndex,
-        onTabSelected: (index) {
-          unawaited(AppHaptics.auxiliaryKey());
-          onSelect(index);
-        },
-        // The shell already owns the outer margins and home-indicator inset.
-        horizontalPadding: 0,
-        verticalPadding: 0,
-        barHeight: kMobileTabBarHeight,
-        barBorderRadius: kMobileTabBarHeight / 2,
-        tabPadding: const EdgeInsets.all(AppSpacing.xxs),
-        iconSize: AppMobileTabBar._iconSize,
-        selectedIconColor: colors.navPanel.activeIcon,
-        unselectedIconColor: colors.icon.muted,
-        indicatorColor: colors.navPanel.activeBg,
-        settings: settings.copyWith(
-          glassColor: colors.macosUtility.navPanel,
-          // Let more backdrop detail survive the frost so the thicker rim's
-          // refraction remains visible as content scrolls under the bar.
-          frostOpacity: brightness == Brightness.dark ? 0.75 : 0.65,
-          thickness: 36,
-          refractiveIndex: 1.30,
-          chromaticAberration: 0.08,
+    final generation = _rendererGeneration;
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _onPointerDown,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: GlassTheme(
+        data: GlassThemeData.ios27(brightness: brightness),
+        child: GlassTabBar.bottom(
+          key: ValueKey(generation),
+          tabs: [
+            for (final item in widget.items)
+              GlassTab(
+                icon: AppIcon(item.iconName, size: AppMobileTabBar._iconSize),
+                semanticLabel: item.label,
+              ),
+          ],
+          selectedIndex: _previewIndex ?? widget.currentIndex,
+          onTabSelected: (index) => _onTabSelected(generation, index),
+          // The shell already owns the outer margins and home-indicator inset.
+          horizontalPadding: 0,
+          verticalPadding: 0,
+          barHeight: kMobileTabBarHeight,
+          barBorderRadius: kMobileTabBarHeight / 2,
+          tabPadding: const EdgeInsets.all(AppSpacing.xxs),
+          iconSize: AppMobileTabBar._iconSize,
+          selectedIconColor: colors.navPanel.activeIcon,
+          unselectedIconColor: colors.icon.muted,
+          indicatorColor: colors.navPanel.activeBg,
+          settings: settings.copyWith(
+            glassColor: colors.macosUtility.navPanel,
+            // Soften background detail with a denser frost while retaining the
+            // rim's refraction as content scrolls under the bar.
+            blur: 1.2,
+            frost: 24,
+            frostOpacity: brightness == Brightness.dark ? 0.90 : 0.85,
+            thickness: 36,
+            refractiveIndex: 1.30,
+            chromaticAberration: 0.15,
+          ),
+          // Make the moving lens's dispersion stronger than the iOS 27 shader's
+          // pinch-driven baseline, retaining its unblurred icon layer.
+          indicatorSettings: LiquidGlassSettings.ios27Indicator.copyWith(
+            chromaticAberration: 0.45,
+          ),
+          quality: GlassQuality.premium,
+          // Keep icon magnification and whole-bar inflation subtle; let the
+          // selection lens bloom more visibly through the package's spring.
+          magnification: 1.05,
+          pressScale: 1.02,
+          indicatorExpansion: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          interactionBehavior: GlassInteractionBehavior.scaleOnly,
         ),
-        // Give the moving lens a little more dispersion than the platter,
-        // retaining the iOS 27 optics and a crisp, unblurred icon layer.
-        indicatorSettings: LiquidGlassSettings.ios27Indicator.copyWith(
-          chromaticAberration: 0.15,
-        ),
-        quality: GlassQuality.premium,
-        // Keep the lens and press response restrained around the existing UI.
-        magnification: 1.05,
-        pressScale: 1.02,
-        indicatorExpansion: const EdgeInsets.symmetric(
-          horizontal: 8,
-          vertical: 6,
-        ),
-        interactionGlowColor: colors.navPanel.activeIcon,
       ),
     );
   }
