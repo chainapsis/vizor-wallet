@@ -108,9 +108,11 @@ also ignore Flutter pointers so their empty bounds cannot consume taps meant
 to clear focus or interact with a covering surface.
 Covered routes, popups, payment cards and navigation holds request a physical
 exit. During the exit the bar draws above the incoming content, with touch and
-accessibility disabled. A return to the eligible tab shell requests another
-entrance once the outgoing cover has finished. Eligibility comes from the
-source shell and all enclosing routes, not the root host's `ModalRoute`.
+accessibility disabled. A page return to the eligible tab shell requests an
+entrance as the return starts, while input remains blocked until navigation
+settles. Closing popups and payment cards retain their coverage until the
+cover has finished. Eligibility comes from the source shell and all enclosing
+routes, not the root host's `ModalRoute`.
 Security/privacy locks, logout and loss of the owning wallet context suppress
 painting immediately instead of waiting for an exit animation.
 
@@ -172,6 +174,29 @@ updates and distinguishes an explicit entrance from a layout/input update.
 Reduce Motion skips the slide. The root host's single view can survive normal
 route coverage; disposing it cancels pending preparation and animations.
 Callbacks are invalidated immediately when the source owner is released.
+
+## Returning to the tab shell
+
+Page return visibility and input readiness are separate decisions. A committed
+page pop can request the tab bar's entrance before the outgoing page finishes
+its reverse animation. A Cupertino back gesture can also preview the bar while
+the finger is still down, but only when its exact previous route is the owning
+tab shell. Returning between two detail pages does not reveal the tab bar.
+
+The bar uses its normal 180 ms entrance rather than following the gesture's
+progress. Even if it finishes entering during a held swipe, Flutter pointers,
+UIKit touch/drag handling, accessibility and committed-selection callbacks
+remain disabled. Input requires both settled navigation (including the end of
+the back gesture) and the native visible/readiness acknowledgement.
+
+Cancelling the swipe requests a hide from the bar's current presentation,
+without first enabling input. Return tracking distinguishes an actual
+cancellation from pointer releases while another finger still controls the
+drag, and releases its pointer subscriptions with the owning registration.
+Popups, payment-card closing, navigation holds, keyboards
+and security/privacy suppression retain their respective coverage gates.
+Route-owned redirects continue to wait for route completion; the early visual
+preview belongs only to the native tab bar.
 
 ## Native shadow containment
 
@@ -308,3 +333,10 @@ selected Swap, Activity, Settings and Home and confirmed visible icons and the
 existing selected icon/title tint. The Dart mobile regression set passed 165
 tests, and the source/native asset contracts passed 16 tests. These native
 runtime checks were simulator-based.
+
+The page-return revision passed 177 mobile regression tests and six
+route-owned redirect tests. Real Cupertino gesture tests cover early visual
+reveal, input blocking while held, cancellation, completion, pointer handoff,
+exact return targets, nested router notifications and pointer-listener cleanup.
+The native suite passed 34 tests, including visible material with touch and
+accessibility disabled and cancellation of an input-disabled entrance.
