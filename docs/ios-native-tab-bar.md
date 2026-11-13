@@ -1,8 +1,8 @@
 # Native iOS tab bar
 
 The iOS 26+ bottom-navigation lane uses an app-owned Swift `UITabBar`, hosted
-through one Flutter platform view. Flutter still owns the destination list,
-localized titles, app theme, routing, and branch history. UIKit owns the glass
+through one Flutter platform view in a root overlay. Flutter still owns the
+destination list, localized titles, app theme, routing, and branch history. UIKit owns the glass
 material, item layout, selection lens, touch handling, and accessibility.
 
 ## Appearance and scope
@@ -30,6 +30,15 @@ The view is registered from `AppDelegate.didInitializeImplicitFlutterEngine`,
 using Flutter's existing scene lifecycle. The app's root controller and its
 Flutter engine are retained; they are not replaced when a tab changes.
 
+`IosNativeTabBarRootHost` wraps the router and ordinary app overlays, including
+the payment-request card. Its native bar is the last child of a fixed root
+Stack, above normal pages, sheets and cards, and below the existing security
+and privacy hosts. A page's Cupertino transition does not move this host.
+The tab shell publishes its item configuration, guarded branch callback,
+navigation mode and viewport through an owned registration. It keeps a
+transparent native-height slot rather than hosting another native view.
+Releasing an old registration cannot clear a newer owner or accept its input.
+
 Each destination has a stable ID derived from its route. UIKit reports only
 committed selections, including re-selection. Flutter maps these back to the
 existing GoRouter branches and synchronizes programmatic changes without
@@ -43,17 +52,17 @@ The platform view claims its pointer sequences immediately with an
 `EagerGestureRecognizer`. Without this, the app-wide tap-to-unfocus recognizer
 holds the gesture arena open during a stationary press, suppressing UIKit's
 lens until movement rejects the ancestor tap. UIKit still owns selection
-timing; pointer ownership itself does not navigate. Flutter modal barriers and
-the existing native visibility/callback guards remain in force. Hidden bars
+timing; pointer ownership itself does not navigate. Explicit route/overlay
+visibility and callback guards block input as soon as coverage starts. Hidden bars
 also ignore Flutter pointers so their empty bounds cannot consume taps meant
 to clear focus or interact with a covering surface.
-Covered routes, popups, and navigation holds block native input and hide its
-accessibility elements without changing its visual target. The existing bar
-stays behind the covering content, including a dimmed modal barrier or a
-translucent page. It is naturally obscured by an opaque page. Removing the
-cover exposes the same bar without another entrance. Keyboard and security or
-privacy locks still request an actual hide; the native lifecycle does not grant
-navigation around a Flutter access gate.
+Covered routes, popups, payment cards and navigation holds request a physical
+exit. During the exit the bar draws above the incoming content, with touch and
+accessibility disabled. A return to the eligible tab shell requests another
+entrance once the outgoing cover has finished. Eligibility comes from the
+source shell and all enclosing routes, not the root host's `ModalRoute`.
+Security/privacy locks, logout and loss of the owning wallet context suppress
+painting immediately instead of waiting for an exit animation.
 
 ## First presentation
 
@@ -70,10 +79,11 @@ from below using the normal entrance curve. This is tied to layout readiness,
 not an arbitrary startup delay. Input remains blocked until both native
 presentation and Flutter's input eligibility allow it.
 
-Flutter may detach a platform view when an opaque route stops painting it.
-Reattaching an already presented bar restores its settled position without
-replaying its first entrance. A genuinely new platform-view instance prepares
-its own first entrance again.
+Reattachment and a requested entrance are separate events. An explicit show
+request after a hidden/offstage period waits for valid attached geometry and
+enters from below, even when the native instance is reused. Reparenting an
+already visible view does not itself request another entrance. A new show
+request that interrupts an exit resumes from its current presented position.
 
 ## Visibility transitions
 
@@ -92,6 +102,12 @@ while hidden is retained and applied before the next entrance. No screenshot
 of wallet content is taken. Input becomes available only after UIKit confirms
 that the entrance has completed.
 
+Native presentation acknowledgements include the phase and settled-hidden
+state. Flutter takes the platform view offstage only after the matching exit
+has actually completed, excluding it and its effects from composition while
+retaining its state. A stale exit acknowledgement cannot offstage a newer show.
+Security suppression excludes painting immediately and cancels native motion.
+
 The Flutter slot keeps its native fitting height throughout. Only an inner
 native container moves, with safe-area geometry anchored to the stationary
 host. Reversals resume from the current presented position; reversals and
@@ -100,12 +116,22 @@ capped at the normal duration. A remaining distance of at most 0.5 pt settles
 immediately. A visibility epoch and native presentation revision reject old
 readiness acknowledgements and selection callbacks, including a rapid hide/show
 cycle while a channel update is in flight. There are no per-frame Flutter
-channel messages.
+channel messages. A separate show-request ID survives coalesced readiness
+updates and distinguishes an explicit entrance from a layout/input update.
 
-Reduce Motion skips the slide. Removing the shell or disposing its platform
-view cancels the animation and releases it immediately rather than retaining
-navigation above a new access screen. Popup dismissal and route coverage only
-release their input gate, without requesting an entrance animation.
+Reduce Motion skips the slide. The root host's single view can survive normal
+route coverage; disposing it cancels pending preparation and animations.
+Callbacks are invalidated immediately when the source owner is released.
+
+## Native shadow containment
+
+A standalone `UITabBar` can draw effects above its platform-view bounds.
+When an opaque Flutter sheet was composited above the old shell-owned view,
+that overflow left a faint shadow stripe on the sheet at the platform-view
+boundary. The root overlay avoids this partial covering: the complete material
+exits above ordinary Flutter content, then leaves composition when hidden.
+The implementation does not clip away the native glass/shadow to hide the
+artifact; that diagnostic workaround changed backdrop composition in the probe.
 
 ## Background and performance validation
 
@@ -129,8 +155,12 @@ The fixture's `Hide tabs` / `Show tabs` control exercises a complete exit and
 entrance. `Reverse after 80 ms` interrupts an exit with an entrance so its
 continuity and input gate can be checked without production wallet state.
 The fixture has its own Navigator for `Open modal`, `Push page`, and
-`Push translucent page`. These check input-only coverage and return without a
-new slide. `Recreate tabs` exercises a fresh native instance's initial reveal.
+`Push translucent page`. These exercise exit-above-cover and return entrances.
+`Recreate shell` replaces the publishing shell to check ownership handoff while
+the root view remains stable. `Account sheet` opens the actual account-edit
+sheet with deterministic local data, including its real surface and cancel row.
+`Hard hide` / `Release hard hide` exercise immediate security-style suppression
+without a wallet, followed by a prepared entrance.
 
 Use a dedicated simulator/install for native checks. The normal Runner still
 has native startup hooks even when its Dart entry point omits wallet startup.
@@ -209,3 +239,14 @@ selection was not counted by Flutter's idle-activity listener. Both were fixed
 and covered by regression tests, including blocked re-selection and inactive
 lifecycle events. The migration privacy overlay is desktop-only, so its raw
 state does not incorrectly disable mobile native tabs.
+
+The root-overlay revision was subsequently checked on a dedicated iOS 26.5
+simulator with the actual Vizor target and the deterministic scenario. The
+real account-edit sheet, a dialog, opaque and translucent routes, immediate
+suppression, shell replacement, interrupted exits and repeated selections all
+passed interaction checks. A cancelled back gesture kept the bar hidden; a
+completed back gesture restored it without changing selection. The isolated
+native suite passed 30 tab-bar tests, including explicit entrances,
+settled-hidden acknowledgements and immediate suppression. These checks cover
+the native bridge and compositor behavior, not production wallet lifecycle or
+real-device performance.

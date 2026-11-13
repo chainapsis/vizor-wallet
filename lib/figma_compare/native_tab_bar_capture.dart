@@ -7,7 +7,11 @@ import '../src/core/l10n/l10n.dart';
 import '../src/core/layout/mobile/app_mobile_shell.dart';
 import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
 import '../src/core/layout/mobile/ios_native_tab_bar.dart';
+import '../src/core/layout/mobile/ios_native_tab_bar_root.dart';
 import '../src/core/navigation/mobile_destinations.dart';
+import '../src/core/navigation/route_owned_redirect.dart';
+import '../src/features/accounts/widgets/mobile/account_edit_sheets.dart';
+import '../src/providers/account_models.dart';
 
 /// Deterministic content behind the real native bar, without wallet services.
 ///
@@ -15,19 +19,41 @@ import '../src/core/navigation/mobile_destinations.dart';
 /// pixels. Changing tabs changes the backdrop, while scrolling moves text and
 /// color boundaries through the glass. A static screenshot alone does not prove
 /// that UIKit samples Flutter's backing surface.
-class NativeTabBarCapture extends StatelessWidget {
+class NativeTabBarCapture extends StatefulWidget {
   const NativeTabBarCapture({super.key});
 
   @override
-  Widget build(BuildContext context) => Navigator(
-    onGenerateRoute: (_) => CupertinoPageRoute<void>(
-      builder: (_) => const _NativeTabBarCapturePage(),
+  State<NativeTabBarCapture> createState() => _NativeTabBarCaptureRootState();
+}
+
+class _NativeTabBarCaptureRootState extends State<NativeTabBarCapture> {
+  final _observer = RouteOwnedNavigationObserver();
+  bool _hardHidden = false;
+
+  @override
+  void dispose() {
+    _observer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IosNativeTabBarRootHost(
+    hideImmediately: _hardHidden,
+    child: Navigator(
+      observers: [_observer],
+      onGenerateRoute: (_) => CupertinoPageRoute<void>(
+        builder: (_) => _NativeTabBarCapturePage(
+          onHardHideChanged: (hidden) => setState(() => _hardHidden = hidden),
+        ),
+      ),
     ),
   );
 }
 
 class _NativeTabBarCapturePage extends StatefulWidget {
-  const _NativeTabBarCapturePage();
+  const _NativeTabBarCapturePage({required this.onHardHideChanged});
+
+  final ValueChanged<bool> onHardHideChanged;
 
   @override
   State<_NativeTabBarCapturePage> createState() => _NativeTabBarCaptureState();
@@ -37,6 +63,7 @@ class _NativeTabBarCaptureState extends State<_NativeTabBarCapturePage> {
   String _selectedId = '/home';
   int _selectionCount = 0;
   bool _hidden = false;
+  bool _hardHidden = false;
   int _barGeneration = 0;
   Timer? _reverseTimer;
 
@@ -66,13 +93,28 @@ class _NativeTabBarCaptureState extends State<_NativeTabBarCapturePage> {
         useRootNavigator: false,
         builder: (context) => AlertDialog(
           title: const Text('Native tab modal'),
-          content: const Text('The tabs stay behind this modal without input.'),
+          content: const Text(
+            'The tabs exit above this modal, then go offstage.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Close modal'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _openAccountSheet() {
+    unawaited(
+      showAccountEditSheet(
+        context,
+        account: const AccountInfo(
+          uuid: 'native-tab-capture',
+          name: 'Capture account',
+          order: 0,
         ),
       ),
     );
@@ -200,7 +242,20 @@ class _NativeTabBarCaptureState extends State<_NativeTabBarCapturePage> {
                     ),
                     TextButton(
                       onPressed: () => setState(() => _barGeneration++),
-                      child: const Text('Recreate tabs'),
+                      child: const Text('Recreate shell'),
+                    ),
+                    TextButton(
+                      onPressed: _openAccountSheet,
+                      child: const Text('Account sheet'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setState(() => _hardHidden = !_hardHidden);
+                        widget.onHardHideChanged(_hardHidden);
+                      },
+                      child: Text(
+                        _hardHidden ? 'Release hard hide' : 'Hard hide',
+                      ),
                     ),
                   ],
                 ),
