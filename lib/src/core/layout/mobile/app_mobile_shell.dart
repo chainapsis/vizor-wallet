@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_toast.dart';
 import 'ios_native_tab_bar.dart';
+import 'ios_native_tab_bar_root.dart';
 import 'mobile_bottom_safe_area.dart';
 import 'mobile_navigation_scope.dart';
 
@@ -37,6 +38,12 @@ class AppMobileShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final native = nativeTabBar;
     if (native == null) return _buildShell(context, null);
+    if (IosNativeTabBarScope.maybeOf(context) != null) {
+      return IosNativeTabBarRegistration(
+        configuration: native,
+        builder: _buildShell,
+      );
+    }
     return IosNativeTabBarHost(
       configuration: native,
       enabled:

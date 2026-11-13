@@ -13,6 +13,8 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/ios_native_tab_bar.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 
+import '../../../support/ios_native_tab_bar_fixture.dart';
+
 const _items = [
   IosNativeTabBarItem(id: '/home', iconName: 'home', label: 'Home'),
   IosNativeTabBarItem(id: '/swap', iconName: 'swap_arrows', label: 'Swap'),
@@ -24,9 +26,9 @@ Future<Uint8List> _fakeIcon(AssetBundle _, String name, double _) async =>
     Uint8List.fromList(name.codeUnits);
 
 void main() {
-  late _NativeFixture native;
+  late NativeTabBarFixture native;
   setUp(() {
-    native = _NativeFixture();
+    native = NativeTabBarFixture();
   });
   tearDown(() {
     native.dispose();
@@ -88,14 +90,16 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump();
+    await tester.pump();
+    await tester.pump();
   }
 
   bool ignoresNativePointers(WidgetTester tester) => tester
       .widget<IgnorePointer>(
         find
             .ancestor(
-              of: find.byType(UiKitView),
-              matching: find.byType(IgnorePointer),
+              of: find.byType(UiKitView, skipOffstage: false),
+              matching: find.byType(IgnorePointer, skipOffstage: false),
             )
             .first,
       )
@@ -105,8 +109,8 @@ void main() {
       .widget<ExcludeSemantics>(
         find
             .ancestor(
-              of: find.byType(UiKitView),
-              matching: find.byType(ExcludeSemantics),
+              of: find.byType(UiKitView, skipOffstage: false),
+              matching: find.byType(ExcludeSemantics, skipOffstage: false),
             )
             .first,
       )
@@ -121,8 +125,10 @@ void main() {
     await pump(tester, config(onSelect: selected.add));
     expect(ignoresNativePointers(tester), false);
     final oldStatus = Map.of(native.presentations.values.last);
-    final oldHeight = tester.getSize(find.byType(UiKitView)).height;
-    final view = tester.state(find.byType(UiKitView));
+    final oldHeight = tester
+        .getSize(find.byType(UiKitView, skipOffstage: false))
+        .height;
+    final view = tester.state(find.byType(UiKitView, skipOffstage: false));
 
     // Hold an unrelated update while a resize invalidates and reapplies the
     // same fitting height. Only the final layoutReady=true reaches UIKit.
@@ -154,8 +160,14 @@ void main() {
     );
     expect(ignoresNativePointers(tester), false);
     expect(excludesNativeSemantics(tester), false);
-    expect(tester.getSize(find.byType(UiKitView)).height, oldHeight);
-    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(
+      tester.getSize(find.byType(UiKitView, skipOffstage: false)).height,
+      oldHeight,
+    );
+    expect(
+      tester.state(find.byType(UiKitView, skipOffstage: false)),
+      same(view),
+    );
 
     await native.send('presentation', {...oldStatus, 'revision': 2000});
     await native.send('select', {...oldStatus, 'id': '/settings'});
@@ -180,11 +192,11 @@ void main() {
       expect(pending, findsOneWidget);
       expect(tester.getSize(pending).height, 83);
       expect(find.byKey(const ValueKey('fallback')), findsNothing);
-      expect(find.byType(UiKitView), findsNothing);
+      expect(find.byType(UiKitView, skipOffstage: false), findsNothing);
       final body = tester.element(find.text('Body'));
       capability.complete({'supported': true});
       await tester.pumpAndSettle();
-      expect(find.byType(UiKitView), findsOneWidget);
+      expect(find.byType(UiKitView, skipOffstage: false), findsOneWidget);
       expect(find.byKey(const ValueKey('fallback')), findsNothing);
       expect(tester.element(find.text('Body')), same(body));
     },
@@ -200,7 +212,7 @@ void main() {
     capability.complete({'supported': false});
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
-    expect(find.byType(UiKitView), findsNothing);
+    expect(find.byType(UiKitView, skipOffstage: false), findsNothing);
     expect(tester.element(find.text('Body')), same(body));
   });
 
@@ -234,7 +246,10 @@ void main() {
       expect(ignoresNativePointers(tester), true);
       height.complete(101.0);
       await tester.pumpAndSettle();
-      expect(tester.getSize(find.byType(UiKitView)).height, 101);
+      expect(
+        tester.getSize(find.byType(UiKitView, skipOffstage: false)).height,
+        101,
+      );
       expect(native.latest['layoutReady'], true);
       expect(ignoresNativePointers(tester), false);
     },
@@ -266,11 +281,17 @@ void main() {
 
     await constrained(20);
     expect(native.latest['layoutReady'], false);
-    expect(tester.getSize(find.byType(UiKitView)).height, 20);
+    expect(
+      tester.getSize(find.byType(UiKitView, skipOffstage: false)).height,
+      20,
+    );
     expect(ignoresNativePointers(tester), true);
     await constrained(160);
     expect(native.latest['layoutReady'], true);
-    expect(tester.getSize(find.byType(UiKitView)).height, native.height);
+    expect(
+      tester.getSize(find.byType(UiKitView, skipOffstage: false)).height,
+      native.height,
+    );
     expect(ignoresNativePointers(tester), false);
     expect(native.created, hasLength(1));
   });
@@ -279,7 +300,7 @@ void main() {
       'presentation or selection epochs', (tester) async {
     final selected = <String>[];
     await pump(tester, config(onSelect: selected.add));
-    final view = tester.state(find.byType(UiKitView));
+    final view = tester.state(find.byType(UiKitView, skipOffstage: false));
     final status = Map.of(native.presentations.values.last);
     native.automaticallyPresent = false;
     await pump(tester, config(onSelect: selected.add, inputEnabled: false));
@@ -305,7 +326,10 @@ void main() {
     await tester.pump();
     await native.send('select', {'id': '/settings'});
     expect(selected, ['/settings']);
-    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(
+      tester.state(find.byType(UiKitView, skipOffstage: false)),
+      same(view),
+    );
     expect(
       native.updates.every((snapshot) => snapshot['hidden'] == false),
       true,
@@ -331,7 +355,7 @@ void main() {
     }
 
     await tickers(true);
-    final view = tester.state(find.byType(UiKitView));
+    final view = tester.state(find.byType(UiKitView, skipOffstage: false));
     final epoch = native.latest['visibilityEpoch'] as int;
     await tickers(false);
     expect(native.latest['hidden'], false);
@@ -340,7 +364,10 @@ void main() {
     await tickers(true);
     expect(native.latest['inputEnabled'], true);
     expect(native.latest['visibilityEpoch'], epoch + 2);
-    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(
+      tester.state(find.byType(UiKitView, skipOffstage: false)),
+      same(view),
+    );
   });
 
   _testWidgets('entrance waits for native readiness before claiming pointers, '
@@ -353,11 +380,13 @@ void main() {
       config(onSelect: selected.add),
       onGlobalTap: () => globalTaps++,
     );
-    final rect = tester.getRect(find.byType(UiKitView));
+    final rect = tester.getRect(find.byType(UiKitView, skipOffstage: false));
     expect(ignoresNativePointers(tester), true);
     expect(excludesNativeSemantics(tester), true);
     expect(
-      tester.widget<UiKitView>(find.byType(UiKitView)).gestureRecognizers,
+      tester
+          .widget<UiKitView>(find.byType(UiKitView, skipOffstage: false))
+          .gestureRecognizers,
       isEmpty,
     );
     await tester.tapAt(rect.center);
@@ -371,7 +400,7 @@ void main() {
     await tester.pump();
     expect(ignoresNativePointers(tester), false);
     expect(excludesNativeSemantics(tester), false);
-    expect(tester.getRect(find.byType(UiKitView)), rect);
+    expect(tester.getRect(find.byType(UiKitView, skipOffstage: false)), rect);
     await native.send('select', {'id': '/settings'});
     expect(selected, ['/settings']);
   });
@@ -381,15 +410,18 @@ void main() {
     (tester) async {
       final selected = <String>[];
       await pump(tester, config(onSelect: selected.add));
-      final rect = tester.getRect(find.byType(UiKitView));
-      final view = tester.state(find.byType(UiKitView));
+      final rect = tester.getRect(find.byType(UiKitView, skipOffstage: false));
+      final view = tester.state(find.byType(UiKitView, skipOffstage: false));
       final oldStatus = Map.of(native.presentations.values.last);
       native.updateDelay = Completer<void>();
       await pump(tester, config(onSelect: selected.add, hidden: true));
       expect(ignoresNativePointers(tester), true);
       expect(excludesNativeSemantics(tester), true);
-      expect(tester.getRect(find.byType(UiKitView)), rect);
-      expect(tester.state(find.byType(UiKitView)), same(view));
+      expect(tester.getRect(find.byType(UiKitView, skipOffstage: false)), rect);
+      expect(
+        tester.state(find.byType(UiKitView, skipOffstage: false)),
+        same(view),
+      );
       await native.send('select', {...oldStatus, 'id': '/settings'});
       expect(selected, isEmpty);
       native.updateDelay!.complete();
@@ -415,6 +447,8 @@ void main() {
         ...oldStatus,
         'revision': 1000,
         'interactive': true,
+        'phase': 'visible',
+        'settledHidden': false,
       });
       await tester.pump();
       expect(ignoresNativePointers(tester), true);
@@ -463,6 +497,8 @@ void main() {
         'visibilityEpoch': native.latest['visibilityEpoch'],
         'revision': 0,
         'interactive': false,
+        'phase': 'preparing',
+        'settledHidden': false,
       });
       await tester.pump();
       expect(ignoresNativePointers(tester), false);
@@ -485,6 +521,8 @@ void main() {
         'visibilityEpoch': epoch,
         'revision': 100,
         'interactive': true,
+        'phase': 'visible',
+        'settledHidden': false,
       });
       await tester.pump();
       expect(ignoresNativePointers(tester), true);
@@ -597,7 +635,7 @@ void main() {
       },
     );
     expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
-    expect(find.byType(UiKitView), findsNothing);
+    expect(find.byType(UiKitView, skipOffstage: false), findsNothing);
     expect(loads, 0);
   });
 
@@ -621,7 +659,7 @@ void main() {
     icon.complete(Uint8List(4));
     await tester.pump();
     await tester.pump();
-    expect(find.byType(UiKitView), findsOneWidget);
+    expect(find.byType(UiKitView, skipOffstage: false), findsOneWidget);
     expect(tester.element(find.text('Body')), same(body));
     expect(native.created, hasLength(1));
   });
@@ -646,7 +684,7 @@ void main() {
     tester,
   ) async {
     await pump(tester, config());
-    final view = tester.state(find.byType(UiKitView));
+    final view = tester.state(find.byType(UiKitView, skipOffstage: false));
     expect(
       native.latest['selectedTintColor'],
       AppThemeData.light.colors.navPanel.activeIcon.toARGB32(),
@@ -656,7 +694,10 @@ void main() {
       native.latest['selectedTintColor'],
       AppThemeData.dark.colors.navPanel.activeIcon.toARGB32(),
     );
-    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(
+      tester.state(find.byType(UiKitView, skipOffstage: false)),
+      same(view),
+    );
     expect(native.created, hasLength(1));
   });
 
@@ -672,7 +713,7 @@ void main() {
       );
 
       final gesture = await tester.startGesture(
-        tester.getCenter(find.byType(UiKitView)),
+        tester.getCenter(find.byType(UiKitView, skipOffstage: false)),
       );
       await tester.pump();
       expect(native.gestureCalls, contains('acceptGesture'));
@@ -703,7 +744,9 @@ void main() {
       navigatorKey: navigatorKey,
       onGlobalTap: () => globalTaps++,
     );
-    final position = tester.getCenter(find.byType(UiKitView));
+    final position = tester.getCenter(
+      find.byType(UiKitView, skipOffstage: false),
+    );
     unawaited(
       showDialog<void>(
         context: navigatorKey.currentContext!,
@@ -725,7 +768,9 @@ void main() {
   ) async {
     var globalTaps = 0;
     await pump(tester, config(hidden: true), onGlobalTap: () => globalTaps++);
-    await tester.tapAt(tester.getCenter(find.byType(UiKitView)));
+    await tester.tapAt(
+      tester.getCenter(find.byType(UiKitView, skipOffstage: false)),
+    );
     await tester.pump();
     expect(globalTaps, 1);
     expect(native.gestureCalls, isNot(contains('acceptGesture')));
@@ -741,7 +786,9 @@ void main() {
       }
 
       await pump(tester, config(), loader: loader);
-      final firstView = tester.state(find.byType(UiKitView));
+      final firstView = tester.state(
+        find.byType(UiKitView, skipOffstage: false),
+      );
       await pump(
         tester,
         config(
@@ -759,7 +806,10 @@ void main() {
         brightness: Brightness.dark,
         direction: TextDirection.rtl,
       );
-      expect(tester.state(find.byType(UiKitView)), same(firstView));
+      expect(
+        tester.state(find.byType(UiKitView, skipOffstage: false)),
+        same(firstView),
+      );
       expect(native.created, hasLength(1));
       expect(loads, _items.length);
       expect(native.latest['selectedId'], '/settings');
@@ -855,13 +905,22 @@ void main() {
     'native height updates resize the platform view without padding',
     (tester) async {
       await pump(tester, config());
-      expect(tester.getSize(find.byType(UiKitView)).height, native.height);
+      expect(
+        tester.getSize(find.byType(UiKitView, skipOffstage: false)).height,
+        native.height,
+      );
       await native.send('layout', {'height': 101.0});
       await tester.pump();
-      expect(tester.getSize(find.byType(UiKitView)).height, 101);
+      expect(
+        tester.getSize(find.byType(UiKitView, skipOffstage: false)).height,
+        101,
+      );
       await native.send('layout', {'height': -1.0});
       await tester.pump();
-      expect(tester.getSize(find.byType(UiKitView)).height, 101);
+      expect(
+        tester.getSize(find.byType(UiKitView, skipOffstage: false)).height,
+        101,
+      );
     },
   );
 
@@ -929,9 +988,9 @@ void main() {
     });
     await tester.pump();
     await tester.pump();
-    expect(find.byType(UiKitView), findsOneWidget);
+    expect(find.byType(UiKitView, skipOffstage: false), findsOneWidget);
     expect(
-      tester.getRect(find.byType(UiKitView)),
+      tester.getRect(find.byType(UiKitView, skipOffstage: false)),
       Rect.fromLTWH(0, 852 - native.height, 393, native.height),
     );
     expect(find.byType(AppMobileTabBar), findsNothing);
@@ -963,128 +1022,6 @@ Widget _app(
   ),
   home: home,
 );
-
-class _NativeFixture {
-  _NativeFixture() {
-    messenger.setMockMethodCallHandler(IosNativeTabBarHost.channel, (
-      call,
-    ) async {
-      capabilityReads++;
-      return capabilityResponse ?? {'supported': supported};
-    });
-    messenger.setMockMethodCallHandler(SystemChannels.platform_views, (
-      call,
-    ) async {
-      if (call.method == 'acceptGesture' || call.method == 'rejectGesture') {
-        gestureCalls.add(call.method);
-      }
-      if (call.method == 'create') {
-        final args = call.arguments as Map;
-        final id = args['id'] as int;
-        final bytes = args['params'] as Uint8List;
-        created[id] =
-            const StandardMessageCodec().decodeMessage(
-                  ByteData.sublistView(bytes),
-                )
-                as Map;
-        latest = created[id]!;
-        presentations[id] = {
-          'visibilityEpoch': latest['visibilityEpoch'],
-          'revision': 0,
-          'interactive': _readyFor(latest),
-        };
-        final channel = MethodChannel('com.zcash.wallet/native_tab_bar/$id');
-        channels[id] = channel;
-        messenger.setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'update') {
-            latest = call.arguments as Map;
-            updates.add(Map.of(latest));
-            final previous = presentations[id]!;
-            final ready = _readyFor(latest, previous: previous);
-            if (previous['visibilityEpoch'] != latest['visibilityEpoch'] ||
-                previous['interactive'] != ready) {
-              presentations[id] = {
-                'visibilityEpoch': latest['visibilityEpoch'],
-                'revision': (previous['revision'] as int) + 1,
-                'interactive': ready,
-              };
-              unawaited(send('presentation', presentations[id]!));
-            }
-            await updateDelay?.future;
-          } else if (call.method == 'getHeight') {
-            return heightResponse ?? height;
-          } else if (call.method == 'getPresentation') {
-            return presentationResponse ?? presentations[id];
-          }
-          return null;
-        });
-      }
-      return null;
-    });
-  }
-
-  final messenger =
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-  bool supported = true;
-  Future<Map>? capabilityResponse;
-  int capabilityReads = 0;
-  double height = 83;
-  Future<num>? heightResponse;
-  bool automaticallyPresent = true;
-  Future<Map>? presentationResponse;
-  Completer<void>? updateDelay;
-  final created = <int, Map>{};
-  final presentations = <int, Map>{};
-  final updates = <Map>[];
-  final gestureCalls = <String>[];
-  final channels = <int, MethodChannel>{};
-  Map latest = {};
-
-  bool _readyFor(Map snapshot, {Map? previous}) =>
-      (automaticallyPresent ||
-          (previous?['visibilityEpoch'] == snapshot['visibilityEpoch'] &&
-              previous?['interactive'] == true)) &&
-      snapshot['hidden'] != true &&
-      snapshot['inputEnabled'] == true &&
-      snapshot['layoutReady'] == true;
-
-  Future<void> send(String method, Object? arguments) async {
-    final channel = channels.values.last;
-    if (method == 'select' && arguments is Map) {
-      arguments = {...presentations.values.last, ...arguments};
-    }
-    final complete = Completer<void>();
-    messenger.handlePlatformMessage(
-      channel.name,
-      channel.codec.encodeMethodCall(MethodCall(method, arguments)),
-      (_) => complete.complete(),
-    );
-    await complete.future;
-  }
-
-  Future<void> present({
-    required bool interactive,
-    int? epoch,
-    int? revision,
-  }) async {
-    final id = channels.keys.last;
-    final status = {
-      'visibilityEpoch': epoch ?? latest['visibilityEpoch'],
-      'revision': revision ?? (presentations[id]!['revision'] as int) + 1,
-      'interactive': interactive,
-    };
-    presentations[id] = status;
-    await send('presentation', status);
-  }
-
-  void dispose() {
-    messenger.setMockMethodCallHandler(IosNativeTabBarHost.channel, null);
-    messenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
-    for (final channel in channels.values) {
-      messenger.setMockMethodCallHandler(channel, null);
-    }
-  }
-}
 
 void _testWidgets(String name, WidgetTesterCallback callback) => testWidgets(
   name,

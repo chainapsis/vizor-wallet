@@ -855,6 +855,25 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
     );
   }
 
+  String _nativeSelectedPath() {
+    final visible = [
+      for (final tab in widget.tabs)
+        if (ref.read(swapFeatureEnabledProvider) || tab.path != '/swap') tab,
+    ];
+    final requested = GoRouter.of(
+      context,
+    ).routeInformationProvider.value.uri.path;
+    if (requested == '/accounts') return '/home';
+    if (visible.any((tab) => tab.path == requested)) return requested;
+    final index = widget.navigationShell.currentIndex;
+    final current = index >= 0 && index < widget.tabs.length
+        ? widget.tabs[index].path
+        : visible.first.path;
+    return visible.any((tab) => tab.path == current)
+        ? current
+        : visible.first.path;
+  }
+
   @override
   void dispose() {
     _navigation?.detach(this);
@@ -901,11 +920,21 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
               ),
           ],
           selectedId: visibleTabs[tabBarCurrentIndex].path,
+          readSelectedId: _nativeSelectedPath,
           hidden: locked || privacyLocked,
           inputEnabled: !routeObserver.hasPopup && !navigationBlocked,
           onSelect: (path) {
+            if (!mounted) return;
             final lifecycle = WidgetsBinding.instance.lifecycleState;
-            if (!mounted ||
+            // GoRouter publishes a requested detail route before Navigator
+            // changes isCurrent. A queued native callback cannot overtake it.
+            final requestedPath = GoRouter.of(
+              context,
+            ).routeInformationProvider.value.uri.path;
+            final requestedTabScope =
+                requestedPath == '/accounts' ||
+                visibleTabs.any((tab) => tab.path == requestedPath);
+            if (!requestedTabScope ||
                 (lifecycle != null && lifecycle != AppLifecycleState.resumed) ||
                 ModalRoute.isCurrentOf(context) == false ||
                 !TickerMode.valuesOf(context).enabled ||

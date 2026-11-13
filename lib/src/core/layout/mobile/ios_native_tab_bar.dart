@@ -31,6 +31,8 @@ class IosNativeTabBarConfiguration {
     required this.onSelect,
     this.hidden = false,
     this.inputEnabled = true,
+    this.hideImmediately = false,
+    this.readSelectedId,
   });
 
   final List<IosNativeTabBarItem> items;
@@ -42,6 +44,12 @@ class IosNativeTabBarConfiguration {
 
   /// Route coverage and popups block input without moving the underlying bar.
   final bool inputEnabled;
+
+  /// Security coverage removes the native surface without an exit animation.
+  final bool hideImmediately;
+
+  /// Live authority for app-level hosts whose visual publication is deferred.
+  final String Function()? readSelectedId;
 }
 
 typedef IosNativeTabBarIconLoader =
@@ -60,6 +68,7 @@ class IosNativeTabBarHost extends StatefulWidget {
     required this.builder,
     this.enabled = true,
     this.iconLoader = _loadNativeIcon,
+    this.onHeightChanged,
     super.key,
   });
 
@@ -67,8 +76,15 @@ class IosNativeTabBarHost extends StatefulWidget {
   final Widget Function(BuildContext context, Widget? nativeBar) builder;
   final bool enabled;
   final IosNativeTabBarIconLoader iconLoader;
+  final ValueChanged<double>? onHeightChanged;
 
   static const channel = MethodChannel('com.zcash.wallet/native_tab_bar');
+
+  static Future<Uint8List> loadIcon(
+    AssetBundle bundle,
+    String name,
+    double scale,
+  ) => _loadNativeIcon(bundle, name, scale);
 
   @override
   State<IosNativeTabBarHost> createState() => _IosNativeTabBarHostState();
@@ -211,7 +227,11 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
         : prepared;
     return widget.builder(
       context,
-      IosNativeTabBar._(configuration: widget.configuration, items: items),
+      IosNativeTabBar._(
+        configuration: widget.configuration,
+        items: items,
+        onHeightChanged: widget.onHeightChanged,
+      ),
     );
   }
 }
@@ -241,10 +261,12 @@ class IosNativeTabBar extends StatefulWidget {
   const IosNativeTabBar._({
     required this.configuration,
     required List<_PreparedItem> items,
+    this.onHeightChanged,
   }) : _items = items;
 
   final IosNativeTabBarConfiguration configuration;
   final List<_PreparedItem> _items;
+  final ValueChanged<double>? onHeightChanged;
 
   @override
   State<IosNativeTabBar> createState() => _IosNativeTabBarState();
@@ -265,16 +287,18 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   final _slotKey = GlobalKey();
   int _layoutGeneration = 0;
   bool _layoutAcknowledgementScheduled = false;
+  int _showRequestId = 0;
+  int? _settledHiddenEpoch;
 
   _Snapshot get _currentSnapshot {
     final hidden =
         widget.configuration.hidden ||
         MediaQuery.viewInsetsOf(context).bottom > 0;
-    final selected =
-        widget._items.any(
-          (item) => item.item.id == widget.configuration.selectedId,
-        )
-        ? widget.configuration.selectedId
+    final selectedId =
+        widget.configuration.readSelectedId?.call() ??
+        widget.configuration.selectedId;
+    final selected = widget._items.any((item) => item.item.id == selectedId)
+        ? selectedId
         : widget._items.first.item.id;
     return _Snapshot(
       items: widget._items,
@@ -283,6 +307,8 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
       selectedTintColor: context.colors.navPanel.activeIcon.toARGB32(),
       direction: Directionality.of(context),
       hidden: hidden,
+      hideImmediately: hidden && widget.configuration.hideImmediately,
+      showRequestId: _showRequestId,
       inputEnabled:
           !hidden &&
           widget.configuration.inputEnabled &&
@@ -307,10 +333,15 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
 
   void _updateSnapshot({bool force = false}) {
     var snapshot = _currentSnapshot;
+    if (_snapshot?.hidden == true && !snapshot.hidden) {
+      _showRequestId++;
+      snapshot = _currentSnapshot;
+    }
     if (_snapshot != null &&
         (_snapshot!.hidden != snapshot.hidden ||
             _snapshot!.inputEnabled != snapshot.inputEnabled ||
-            _snapshot!.layoutReady != snapshot.layoutReady)) {
+            _snapshot!.layoutReady != snapshot.layoutReady ||
+            _snapshot!.hideImmediately != snapshot.hideImmediately)) {
       // Keep every readiness transition even when an in-flight update causes
       // intermediate snapshots to coalesce. The final ready snapshot must
       // receive a new native acknowledgement after hide/show, cover/uncover
@@ -357,6 +388,7 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     _channel = channel;
     _sentRevision = -1;
     _presentationRevision = -1;
+    _settledHiddenEpoch = null;
     _layoutReady = false;
     _layoutGeneration++;
     _updateSnapshot();
@@ -426,17 +458,27 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     final epoch = arguments['visibilityEpoch'];
     final revision = arguments['revision'];
     final interactive = arguments['interactive'];
+    final settledHidden = arguments['settledHidden'];
+    final phase = arguments['phase'];
     if (epoch is! int ||
         epoch != _visibilityEpoch ||
         revision is! int ||
         revision < 0 ||
         revision <= _presentationRevision ||
-        interactive is! bool) {
+        interactive is! bool ||
+        settledHidden is! bool ||
+        phase is! String) {
       return;
     }
     _presentationRevision = revision;
     final ready = interactive && _currentSnapshot.inputEnabled && _layoutReady;
-    if (_interactive != ready) setState(() => _interactive = ready);
+    final hiddenEpoch = settledHidden && phase == 'hidden' ? epoch : null;
+    if (_interactive != ready || _settledHiddenEpoch != hiddenEpoch) {
+      setState(() {
+        _interactive = ready;
+        _settledHiddenEpoch = hiddenEpoch;
+      });
+    }
   }
 
   void _acceptHeight(Object? value) {
@@ -451,6 +493,7 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
         _layoutGeneration++;
       });
       _updateSnapshot();
+      widget.onHeightChanged?.call(height);
     }
     _acknowledgeSlotLayout();
   }
@@ -495,44 +538,54 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     // Only a bootstrap estimate. UIKit reports its actual fitting height,
     // including the safe area, after attachment and on subsequent changes.
     final height = _height ?? 49 + MediaQuery.viewPaddingOf(context).bottom;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (_slotConstraints != constraints) {
-          _slotConstraints = constraints;
-          _layoutGeneration++;
-          _layoutReady = false;
-          _interactive = false;
-          _updateSnapshot();
-          _acknowledgeSlotLayout();
-        }
-        final ready = _interactive && _snapshot!.inputEnabled && _layoutReady;
-        return SizedBox(
-          key: _slotKey,
-          height: height,
-          child: IgnorePointer(
-            ignoring: !ready,
-            child: ExcludeSemantics(
-              excluding: !ready,
-              child: UiKitView(
-                viewType: 'com.zcash.wallet/native_tab_bar',
-                layoutDirection: Directionality.of(context),
-                creationParams: _snapshot!.toMap(),
-                creationParamsCodec: const StandardMessageCodec(),
-                onPlatformViewCreated: _created,
-                // The app's global tap-to-unfocus recognizer must not hold UIKit's
-                // press interaction until a drag cancels that ancestor's tap.
-                gestureRecognizers: ready
-                    ? <Factory<OneSequenceGestureRecognizer>>{
-                        Factory<OneSequenceGestureRecognizer>(
-                          EagerGestureRecognizer.new,
-                        ),
-                      }
-                    : const <Factory<OneSequenceGestureRecognizer>>{},
+    final offstage =
+        _snapshot!.hideImmediately ||
+        (_snapshot!.hidden && _settledHiddenEpoch == _visibilityEpoch);
+    return SizedBox(
+      height: height,
+      child: Offstage(
+        offstage: offstage,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (_slotConstraints != constraints) {
+              _slotConstraints = constraints;
+              _layoutGeneration++;
+              _layoutReady = false;
+              _interactive = false;
+              _updateSnapshot();
+              _acknowledgeSlotLayout();
+            }
+            final ready =
+                _interactive && _snapshot!.inputEnabled && _layoutReady;
+            return SizedBox(
+              key: _slotKey,
+              height: height,
+              child: IgnorePointer(
+                ignoring: !ready,
+                child: ExcludeSemantics(
+                  excluding: !ready,
+                  child: UiKitView(
+                    viewType: 'com.zcash.wallet/native_tab_bar',
+                    layoutDirection: Directionality.of(context),
+                    creationParams: _snapshot!.toMap(),
+                    creationParamsCodec: const StandardMessageCodec(),
+                    onPlatformViewCreated: _created,
+                    // The app's global tap-to-unfocus recognizer must not hold UIKit's
+                    // press interaction until a drag cancels that ancestor's tap.
+                    gestureRecognizers: ready
+                        ? <Factory<OneSequenceGestureRecognizer>>{
+                            Factory<OneSequenceGestureRecognizer>(
+                              EagerGestureRecognizer.new,
+                            ),
+                          }
+                        : const <Factory<OneSequenceGestureRecognizer>>{},
+                  ),
+                ),
               ),
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -545,6 +598,8 @@ class _Snapshot {
     required this.selectedTintColor,
     required this.direction,
     required this.hidden,
+    required this.hideImmediately,
+    required this.showRequestId,
     required this.inputEnabled,
     required this.layoutReady,
     required this.visibilityEpoch,
@@ -555,6 +610,8 @@ class _Snapshot {
   final int selectedTintColor;
   final TextDirection direction;
   final bool hidden;
+  final bool hideImmediately;
+  final int showRequestId;
   final bool inputEnabled;
   final bool layoutReady;
   final int visibilityEpoch;
@@ -566,6 +623,8 @@ class _Snapshot {
     'selectedTintColor': selectedTintColor,
     'direction': direction.name,
     'hidden': hidden,
+    'hideImmediately': hideImmediately,
+    'showRequestId': showRequestId,
     'inputEnabled': inputEnabled,
     'layoutReady': layoutReady,
     'visibilityEpoch': visibilityEpoch,
@@ -577,6 +636,8 @@ class _Snapshot {
       selectedTintColor == other.selectedTintColor &&
       direction == other.direction &&
       hidden == other.hidden &&
+      hideImmediately == other.hideImmediately &&
+      showRequestId == other.showRequestId &&
       inputEnabled == other.inputEnabled &&
       layoutReady == other.layoutReady &&
       visibilityEpoch == other.visibilityEpoch &&

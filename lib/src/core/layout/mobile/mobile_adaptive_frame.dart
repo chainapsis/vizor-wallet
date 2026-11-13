@@ -233,6 +233,7 @@ class _MobileAdaptiveFrameState extends ConsumerState<MobileAdaptiveFrame>
         child: MobileNavigationScope(
           mode: layout.mode,
           railRect: layout.rail,
+          viewportRect: layout.viewport,
           contentRect: wide
               ? layout.body.shift(-layout.viewport.topLeft)
               : null,

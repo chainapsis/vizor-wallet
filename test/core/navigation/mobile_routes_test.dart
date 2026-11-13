@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart' show CupertinoRouteTransitionMixin;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,8 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/ios_native_tab_bar_root.dart';
+import 'package:zcash_wallet/src/core/navigation/route_owned_redirect.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_adaptive_frame.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_sidebar_exit.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
@@ -63,6 +66,10 @@ import '../../fakes/fake_sync_notifier.dart';
 import '../../support/go_route_descendants.dart';
 import '../../features/swap/support/static_near_intents_swap_provider.dart';
 import '../../support/test_l10n.dart';
+import '../../support/ios_native_tab_bar_fixture.dart';
+
+Future<Uint8List> _nativeIcon(AssetBundle _, String name, double _) async =>
+    Uint8List.fromList(name.codeUnits);
 
 class _NativeGeometryFixture extends NativeMobileNavigationGeometry {
   _NativeGeometryFixture(this.value);
@@ -118,6 +125,7 @@ Widget _app(
   SyncState? initialSyncState,
   String network = 'main',
   List<Override> overrides = const [],
+  bool nativeRoot = false,
 }) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap(network: network)),
@@ -141,7 +149,12 @@ Widget _app(
   child: MaterialApp.router(
     localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
-    builder: (_, child) => AppTheme(data: theme, child: child!),
+    builder: (_, child) => AppTheme(
+      data: theme,
+      child: nativeRoot
+          ? IosNativeTabBarRootHost(iconLoader: _nativeIcon, child: child!)
+          : child!,
+    ),
   ),
 );
 
@@ -195,6 +208,73 @@ List<({Color? fill, Color? label})> _sidebarPaints(WidgetTester tester) => [
 ];
 
 void main() {
+  testWidgets('root native delegate preserves actual router reselect, deep links '
+      'and tab identity while details cover the shell', (tester) async {
+    final native = NativeTabBarFixture();
+    addTearDown(native.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.reset);
+    final observer = RouteOwnedNavigationObserver();
+    addTearDown(observer.dispose);
+    final router = GoRouter(
+      initialLocation: '/accounts',
+      observers: [observer],
+      routes: buildMobileRoutes(entryRoutes: const []),
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      _app(router, swapFeatureEnabled: false, nativeRoot: true),
+    );
+    await tester.pumpAndSettle();
+    final view = tester.state(find.byType(UiKitView));
+    expect(native.latest['selectedId'], '/home');
+    expect((native.latest['items'] as List).map((item) => item['id']), [
+      '/home',
+      '/activity',
+      '/settings',
+    ]);
+    expect(find.byType(AppMobileTabBar), findsNothing);
+    await native.send('select', {'id': '/home'});
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/home');
+    final beforeSelection = native.updates.length;
+    await native.send('select', {'id': '/activity'});
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/activity');
+    expect(native.updates.skip(beforeSelection), isNotEmpty);
+    expect(
+      native.updates
+          .skip(beforeSelection)
+          .map((snapshot) => snapshot['selectedId']),
+      everyElement('/activity'),
+      reason:
+          'Deferred root publication cannot restore the previous tab after an accepted selection',
+    );
+    router.go('/settings');
+    await tester.pumpAndSettle();
+    expect(native.latest['selectedId'], '/settings');
+    final covered = router.push<void>('/about');
+    await native.send('select', {'id': '/home'});
+    await tester.pumpAndSettle();
+    expect(mobileVisiblePath(router), '/about');
+    expect(native.latest['hidden'], true);
+    expect(find.byType(UiKitView), findsNothing);
+    router.pop();
+    await tester.pumpAndSettle();
+    await covered;
+    expect(native.latest['hidden'], false);
+    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(native.created, hasLength(1));
+    final disposedCallback = tester
+        .widget<AppMobileShell>(find.byType(AppMobileShell))
+        .nativeTabBar!
+        .onSelect;
+    await tester.pumpWidget(const SizedBox());
+    disposedCallback('/home');
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   for (final destination in ['/home', '/settings']) {
     testWidgets('native $destination activation queued before the sync privacy '
         'lock neither navigates nor records interaction', (tester) async {
