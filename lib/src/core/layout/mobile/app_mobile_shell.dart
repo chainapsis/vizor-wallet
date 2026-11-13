@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
 import '../../widgets/app_toast.dart';
+import 'ios_native_tab_bar.dart';
 import 'mobile_bottom_safe_area.dart';
 import 'mobile_navigation_scope.dart';
 
@@ -18,14 +19,35 @@ import 'mobile_navigation_scope.dart';
 /// iOS the home indicator floats inside the gap instead, which is
 /// widened to 16px so all three margins around the bar match (see
 /// [MobileBottomSafeArea]).
+/// The iOS native lane instead uses UIKit's full-width fitting height and
+/// safe area, without these Flutter bar margins.
 class AppMobileShell extends StatelessWidget {
-  const AppMobileShell({required this.body, required this.tabBar, super.key});
+  const AppMobileShell({
+    required this.body,
+    required this.tabBar,
+    this.nativeTabBar,
+    super.key,
+  });
 
   final Widget body;
   final Widget tabBar;
+  final IosNativeTabBarConfiguration? nativeTabBar;
 
   @override
   Widget build(BuildContext context) {
+    final native = nativeTabBar;
+    if (native == null) return _buildShell(context, null);
+    return IosNativeTabBarHost(
+      configuration: native,
+      enabled:
+          (MobileNavigationScope.maybeOf(context)?.mode ??
+              MobileNavigationMode.bottomTabs) ==
+          MobileNavigationMode.bottomTabs,
+      builder: _buildShell,
+    );
+  }
+
+  Widget _buildShell(BuildContext context, Widget? nativeBar) {
     final bottomGap = defaultTargetPlatform == TargetPlatform.iOS
         ? AppSpacing.sm
         : AppSpacing.s;
@@ -55,18 +77,19 @@ class AppMobileShell extends StatelessWidget {
       ),
       bottomNavigationBar: mode != MobileNavigationMode.bottomTabs
           ? null
-          : MobileBottomSafeArea(
-              bottomPadding: bottomGap,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
-                  0,
-                  AppSpacing.sm,
-                  bottomGap,
+          : nativeBar ??
+                MobileBottomSafeArea(
+                  bottomPadding: bottomGap,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.sm,
+                      0,
+                      AppSpacing.sm,
+                      bottomGap,
+                    ),
+                    child: tabBar,
+                  ),
                 ),
-                child: tabBar,
-              ),
-            ),
     );
   }
 }

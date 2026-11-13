@@ -8,6 +8,8 @@ import '../../features/donation/donation_config.dart';
 import '../../features/donation/screens/donation_screen.dart';
 import '../../features/donation/screens/mobile/mobile_donation_review_screen.dart';
 import '../../providers/rpc_endpoint_provider.dart';
+import '../../providers/app_security_provider.dart';
+import '../../providers/sync_keep_awake_provider.dart';
 
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
@@ -68,9 +70,12 @@ import '../l10n/l10n.dart';
 import '../layout/mobile/app_mobile_shell.dart';
 import '../layout/mobile/mobile_adaptive_frame.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
+import '../layout/mobile/ios_native_tab_bar.dart';
 import '../layout/mobile/mobile_navigation_scope.dart';
 import '../layout/mobile/mobile_page_viewport.dart';
 import 'mobile_destinations.dart';
+import 'external_action_guard_provider.dart';
+import 'mobile_sidebar_route_observer.dart';
 import 'route_owned_redirect.dart';
 import 'payload_page_key.dart';
 import 'mobile_shield_page.dart';
@@ -876,25 +881,71 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
         ? 0
         : currentVisibleIndex;
 
-    return AppMobileShell(
-      body: navigationShell,
-      tabBar: AppMobileTabBar(
-        axis:
-            MobileNavigationScope.maybeOf(context)?.mode ==
-                MobileNavigationMode.systemSideTabs
-            ? Axis.vertical
-            : Axis.horizontal,
-        items: [
-          for (final tab in visibleTabs)
-            AppMobileTabItem(
-              iconName: tab.iconName,
-              label: mobileDestinationLabel(context.l10n, tab.path),
-            ),
-        ],
-        currentIndex: tabBarCurrentIndex,
-        onSelect: (index) {
-          _selectPath(visibleTabs[index].path);
-        },
+    final routeObserver = ref.watch(mobileSidebarRouteObserverProvider);
+    final navigationBlocked = ref
+        .watch(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation);
+    final locked = ref.watch(appSecurityProvider).requiresUnlock;
+    final privacyLocked = ref.watch(syncKeepAwakePrivacyLockVisibleProvider);
+    return AnimatedBuilder(
+      animation: routeObserver,
+      builder: (context, _) => AppMobileShell(
+        body: navigationShell,
+        nativeTabBar: IosNativeTabBarConfiguration(
+          items: [
+            for (final tab in visibleTabs)
+              IosNativeTabBarItem(
+                id: tab.path,
+                iconName: tab.iconName,
+                label: mobileDestinationLabel(context.l10n, tab.path),
+              ),
+          ],
+          selectedId: visibleTabs[tabBarCurrentIndex].path,
+          hidden:
+              routeObserver.hasPopup ||
+              navigationBlocked ||
+              locked ||
+              privacyLocked,
+          onSelect: (path) {
+            final lifecycle = WidgetsBinding.instance.lifecycleState;
+            if (!mounted ||
+                (lifecycle != null && lifecycle != AppLifecycleState.resumed) ||
+                ModalRoute.isCurrentOf(context) == false ||
+                !TickerMode.valuesOf(context).enabled ||
+                routeObserver.hasPopup ||
+                ref.read(appSecurityProvider).requiresUnlock ||
+                ref.read(syncKeepAwakePrivacyLockVisibleProvider) ||
+                ref
+                    .read(externalActionGuardProvider)
+                    .blocks(ExternalAction.navigation)) {
+              return;
+            }
+            // UIKit accessibility activation does not emit a Flutter pointer
+            // event or SemanticsAction, so record the deliberate action here.
+            ref
+                .read(syncKeepAwakeInteractionProvider.notifier)
+                .markInteraction();
+            _selectPath(path);
+          },
+        ),
+        tabBar: AppMobileTabBar(
+          axis:
+              MobileNavigationScope.maybeOf(context)?.mode ==
+                  MobileNavigationMode.systemSideTabs
+              ? Axis.vertical
+              : Axis.horizontal,
+          items: [
+            for (final tab in visibleTabs)
+              AppMobileTabItem(
+                iconName: tab.iconName,
+                label: mobileDestinationLabel(context.l10n, tab.path),
+              ),
+          ],
+          currentIndex: tabBarCurrentIndex,
+          onSelect: (index) {
+            _selectPath(visibleTabs[index].path);
+          },
+        ),
       ),
     );
   }
