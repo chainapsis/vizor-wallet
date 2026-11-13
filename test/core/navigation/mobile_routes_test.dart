@@ -5,7 +5,6 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart' show CupertinoRouteTransitionMixin;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -67,9 +66,6 @@ import '../../support/go_route_descendants.dart';
 import '../../features/swap/support/static_near_intents_swap_provider.dart';
 import '../../support/test_l10n.dart';
 import '../../support/ios_native_tab_bar_fixture.dart';
-
-Future<Uint8List> _nativeIcon(AssetBundle _, String name, double _) async =>
-    Uint8List.fromList(name.codeUnits);
 
 class _NativeGeometryFixture extends NativeMobileNavigationGeometry {
   _NativeGeometryFixture(this.value);
@@ -151,9 +147,7 @@ Widget _app(
     routerConfig: router,
     builder: (_, child) => AppTheme(
       data: theme,
-      child: nativeRoot
-          ? IosNativeTabBarRootHost(iconLoader: _nativeIcon, child: child!)
-          : child!,
+      child: nativeRoot ? IosNativeTabBarRootHost(child: child!) : child!,
     ),
   ),
 );

@@ -2,13 +2,53 @@ import CoreFoundation
 import Flutter
 import UIKit
 
+/// Native assets are the only icon source for this bridge. The fixed mapping
+/// keeps channel input from selecting arbitrary bundle resources.
+final class NativeTabBarIconCatalog {
+  static let shared = NativeTabBarIconCatalog()
+  static let names = ["home", "swap_arrows", "history", "cog"]
+  private static let assets = [
+    "home": "VizorTab_home", "swap_arrows": "VizorTab_swap_arrows",
+    "history": "VizorTab_history", "cog": "VizorTab_cog",
+  ]
+  private let load: (String) -> UIImage?
+  private var images: [String: UIImage] = [:]
+
+  init(load: @escaping (String) -> UIImage? = {
+    UIImage(named: $0, in: .main, compatibleWith: nil)
+  }) {
+    self.load = load
+  }
+
+  var availableNames: [String] { Self.names.filter { image(named: $0) != nil } }
+
+  func capabilities(supported: Bool) -> [String: Any] {
+    ["supported": supported, "iconNames": availableNames]
+  }
+
+  func image(named name: String) -> UIImage? {
+    guard let asset = Self.assets[name] else { return nil }
+    if let image = images[name] { return image }
+    guard let source = load(asset), source.size.width.isFinite, source.size.height.isFinite,
+      source.size.width > 0, source.size.height > 0 else { return nil }
+    // The canonical SVGs have 20pt or 24pt intrinsic sizes. Normalize once in
+    // UIKit to the existing 25pt tab size; selection tint still uses the alpha.
+    let size = CGSize(width: 25, height: 25)
+    let image = UIGraphicsImageRenderer(size: size).image { _ in
+      source.draw(in: CGRect(origin: .zero, size: size))
+    }.withRenderingMode(.alwaysTemplate)
+    images[name] = image
+    return image
+  }
+}
+
 /// An app-owned bridge to the system tab bar. UIKit owns its material and motion;
 /// Flutter remains the owner of destinations and navigation history.
 final class NativeTabBarPlugin {
   static let channelName = "com.zcash.wallet/native_tab_bar"
   private let channel: FlutterMethodChannel
 
-  init(registrar: FlutterPluginRegistrar) {
+  init(registrar: FlutterPluginRegistrar, icons: NativeTabBarIconCatalog = .shared) {
     let messenger = registrar.messenger()
     channel = FlutterMethodChannel(name: Self.channelName, binaryMessenger: messenger)
     channel.setMethodCallHandler { call, result in
@@ -17,13 +57,13 @@ final class NativeTabBarPlugin {
         return
       }
       if #available(iOS 26.0, *) {
-        result(["supported": true])
+        result(icons.capabilities(supported: true))
       } else {
-        result(["supported": false])
+        result(icons.capabilities(supported: false))
       }
     }
     registrar.register(
-      NativeTabBarFactory(messenger: messenger), withId: Self.channelName
+      NativeTabBarFactory(messenger: messenger, icons: icons), withId: Self.channelName
     )
   }
 
@@ -34,9 +74,11 @@ final class NativeTabBarPlugin {
 
 private final class NativeTabBarFactory: NSObject, FlutterPlatformViewFactory {
   private let messenger: FlutterBinaryMessenger
+  private let icons: NativeTabBarIconCatalog
 
-  init(messenger: FlutterBinaryMessenger) {
+  init(messenger: FlutterBinaryMessenger, icons: NativeTabBarIconCatalog) {
     self.messenger = messenger
+    self.icons = icons
     super.init()
   }
 
@@ -47,15 +89,16 @@ private final class NativeTabBarFactory: NSObject, FlutterPlatformViewFactory {
   func create(
     withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?
   ) -> FlutterPlatformView {
-    NativeTabBarPlatformView(frame: frame, viewId: viewId, args: args, messenger: messenger)
+    NativeTabBarPlatformView(
+      frame: frame, viewId: viewId, args: args, messenger: messenger, icons: icons
+    )
   }
 }
 
 struct NativeTabBarItemConfiguration: Equatable {
   let id: String
   let label: String
-  let icon: Data
-  let iconScale: Double
+  let iconName: String
 }
 
 struct NativeTabBarSnapshot {
@@ -121,11 +164,9 @@ struct NativeTabBarSnapshot {
     for raw in rawItems {
       guard let id = raw["id"] as? String, !id.isEmpty, ids.insert(id).inserted,
         let label = raw["label"] as? String, !label.isEmpty,
-        let icon = raw["icon"] as? FlutterStandardTypedData, !icon.data.isEmpty,
-        let scale = raw["iconScale"] as? NSNumber,
-        scale.doubleValue.isFinite, scale.doubleValue > 0
+        let iconName = raw["iconName"] as? String, !iconName.isEmpty
       else { throw NativeTabBarError.invalidSnapshot }
-      items.append(.init(id: id, label: label, icon: icon.data, iconScale: scale.doubleValue))
+      items.append(.init(id: id, label: label, iconName: iconName))
     }
     guard ids.contains(selectedId) else { throw NativeTabBarError.invalidSnapshot }
     self.items = items
@@ -282,6 +323,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   private enum Phase: String { case detached, hidden, preparing, entering, visible, exiting }
   private let channel: FlutterMethodChannel
   private let host: NativeTabBarHostView
+  private let icons: NativeTabBarIconCatalog
   private let animate: NativeTabBarAnimator
   private let reduceMotion: () -> Bool
   private let attachmentProvider: (() -> Bool)?
@@ -304,7 +346,6 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   private var showRequestId: Int64 = 0
   private var presentationRevision: Int64 = 0
   private var pendingSnapshot: NativeTabBarPreparedSnapshot?
-  private var configurations: [String: NativeTabBarItemConfiguration] = [:]
   private var itemsById: [String: UITabBarItem] = [:]
   private var orderedIds: [String] = []
   private var selectedTintColor: UInt32?
@@ -314,6 +355,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
 
   init(
     frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger,
+    icons: NativeTabBarIconCatalog = .shared,
     animator: NativeTabBarAnimator? = nil,
     reduceMotion: @escaping () -> Bool = { UIAccessibility.isReduceMotionEnabled },
     attachmentProvider: (() -> Bool)? = nil,
@@ -327,6 +369,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
       name: "\(NativeTabBarPlugin.channelName)/\(viewId)", binaryMessenger: messenger
     )
     host = NativeTabBarHostView(frame: frame, fittingHeight: fittingHeight)
+    self.icons = icons
     animate = animator ?? { view, transform, duration, timing, completion in
       NativeTabBarUIKitAnimation(
         view: view, target: transform, duration: duration, timing: timing, completion: completion
@@ -404,22 +447,10 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     // retained, and none of its state reaches the exiting/hidden native items.
     var images: [String: UIImage] = [:]
     for config in snapshot.items {
-      let previous = configurations[config.id]
-      let pending = pendingSnapshot?.configuration.items.first { $0.id == config.id }
-      if pending?.icon == config.icon, pending?.iconScale == config.iconScale,
-        let image = pendingSnapshot?.images[config.id]
-      {
-        images[config.id] = image
-      } else if previous?.icon == config.icon, previous?.iconScale == config.iconScale,
-        let image = itemsById[config.id]?.image
-      {
-        images[config.id] = image
-      } else {
-        guard let image = UIImage(data: config.icon, scale: config.iconScale) else {
-          throw NativeTabBarError.invalidIcon
-        }
-        images[config.id] = image.withRenderingMode(.alwaysTemplate)
+      guard let image = icons.image(named: config.iconName) else {
+        throw NativeTabBarError.invalidIcon
       }
+      images[config.id] = image
     }
     let epochChanged = visibilityEpoch != snapshot.visibilityEpoch
     let inputChanged = targetInputEnabled != snapshot.inputEnabled
@@ -502,7 +533,6 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
         item.selectedImage = image
       }
     }
-    configurations = Dictionary(uniqueKeysWithValues: snapshot.items.map { ($0.id, $0) })
     itemsById = nextItems
     orderedIds = nextIds
     if selectedTintColor != snapshot.selectedTintColor {

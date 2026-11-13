@@ -1,9 +1,7 @@
 @Tags(['mobile'])
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
@@ -19,9 +17,6 @@ const _items = [
   IosNativeTabBarItem(id: '/home', iconName: 'home', label: 'Home'),
   IosNativeTabBarItem(id: '/settings', iconName: 'cog', label: 'Settings'),
 ];
-Future<Uint8List> _icon(AssetBundle _, String name, double _) async =>
-    Uint8List.fromList(name.codeUnits);
-
 IosNativeTabBarConfiguration _config(ValueChanged<String> select) =>
     IosNativeTabBarConfiguration(
       items: _items,
@@ -67,7 +62,6 @@ void main() {
             covered: covered,
             hideImmediately: hard,
             sessionIdentity: sessionIdentity,
-            iconLoader: _icon,
             child: navigator!,
           ),
         ),

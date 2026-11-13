@@ -23,15 +23,15 @@ struct NativeTabBarTests {
 
     var corrupt = fixture.snapshot()
     var items = try #require(corrupt["items"] as? [[String: Any]])
-    items[0]["label"] = "Changed before a corrupt icon"
-    items[1]["icon"] = FlutterStandardTypedData(bytes: Data([0, 1, 2]))
+    items[0]["label"] = "Changed before an unknown icon"
+    items[1]["iconName"] = "missing"
     corrupt["items"] = items
     #expect(fixture.update(corrupt) is FlutterError)
     #expect(fixture.bar.items?.first?.title == "home")
     #expect(fixture.bar.selectedItem === originalSelection)
   }
 
-  @Test("Tab identities and decoded images survive label updates, filtering and reordering")
+  @Test("Tab identities and native images survive label updates, filtering and reordering")
   func stableItemsAndImages() throws {
     let fixture = NativeTabBarFixture()
     let original = try #require(fixture.bar.items)
@@ -259,7 +259,7 @@ struct NativeTabBarTests {
     #expect(fixture.bar.selectedItem === home)
     let hiddenRevision = fixture.presentation["revision"] as? Int64
     var corrupt = pending
-    items[0]["icon"] = FlutterStandardTypedData(bytes: Data([0, 1, 2]))
+    items[0]["iconName"] = "missing"
     corrupt["items"] = items
     #expect(fixture.update(corrupt) is FlutterError)
     #expect(fixture.presentation["revision"] as? Int64 == hiddenRevision)
@@ -829,6 +829,72 @@ struct NativeTabBarTests {
     #expect(fixture.messenger.call("getHeight") as? Double == 83)
   }
 
+  @Test("All four tab images load from the real app bundle as cached 25pt templates")
+  func mainBundleIconAssets() throws {
+    let names = ["home", "swap_arrows", "history", "cog"]
+    let catalog = NativeTabBarIconCatalog()
+    #expect(catalog.availableNames == names)
+    #expect(catalog.capabilities(supported: true)["iconNames"] as? [String] == names)
+    #expect(catalog.capabilities(supported: true)["supported"] as? Bool == true)
+    #expect(catalog.capabilities(supported: false)["supported"] as? Bool == false)
+    for name in names {
+      #expect(UIImage(named: "VizorTab_\(name)", in: .main, compatibleWith: nil) != nil)
+      let image = try #require(catalog.image(named: name))
+      #expect(image.size == CGSize(width: 25, height: 25))
+      #expect(image.renderingMode == .alwaysTemplate)
+      #expect(catalog.image(named: name) === image)
+    }
+    #expect(catalog.image(named: "VizorTab_home") == nil)
+    #expect(catalog.image(named: "../home") == nil)
+  }
+
+  @Test("Capability preflight excludes missing catalog assets and updates remain atomic")
+  func missingAssetCapabilityAndAtomicity() throws {
+    var loads: [String] = []
+    let catalog = NativeTabBarIconCatalog { asset in
+      loads.append(asset)
+      guard asset != "VizorTab_swap_arrows" else { return nil }
+      return UIImage(named: asset, in: .main, compatibleWith: nil)
+    }
+    let capabilities = catalog.capabilities(supported: true)
+    #expect(capabilities["iconNames"] as? [String] == ["home", "history", "cog"])
+    #expect(loads.contains("VizorTab_swap_arrows"))
+    let fixture = NativeTabBarFixture(icons: catalog)
+    let originalItem = try #require(fixture.bar.items?.first)
+    let originalSelection = fixture.bar.selectedItem
+    let originalRevision = fixture.presentation["revision"] as? Int64
+    var args = fixture.snapshot(ids: ["home", "swap", "settings"], selected: "swap")
+    var items = try #require(args["items"] as? [[String: Any]])
+    items[0]["label"] = "Must not partially apply"
+    args["items"] = items
+    args["hidden"] = true
+    #expect(fixture.update(args) is FlutterError)
+    #expect(fixture.bar.items?.first === originalItem)
+    #expect(originalItem.title == "home")
+    #expect(fixture.bar.selectedItem === originalSelection)
+    #expect(fixture.presentation["revision"] as? Int64 == originalRevision)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    #expect(loads.filter { $0 == "VizorTab_home" }.count == 1)
+    #expect(loads.filter { $0 == "VizorTab_history" }.count == 1)
+    #expect(loads.filter { $0 == "VizorTab_cog" }.count == 1)
+  }
+
+  @Test("Missing, malformed and unknown icon names never erase a displayed icon")
+  func invalidIconNames() throws {
+    let fixture = NativeTabBarFixture()
+    let item = try #require(fixture.bar.items?.first)
+    let image = try #require(item.image)
+    for invalid: Any? in [nil, "", "unknown", 7] {
+      var args = fixture.snapshot()
+      var items = try #require(args["items"] as? [[String: Any]])
+      items[0]["iconName"] = invalid
+      args["items"] = items
+      #expect(fixture.update(args) is FlutterError)
+      #expect(fixture.bar.items?.first === item)
+      #expect(item.image === image)
+    }
+  }
+
   private func drainMainQueue() async {
     await withCheckedContinuation { continuation in
       DispatchQueue.main.async { continuation.resume() }
@@ -841,7 +907,6 @@ private final class NativeTabBarFixture {
   let messenger = NativeTabBarMessenger()
   let environment: NativeTabBarTestEnvironment
   let notifications = NotificationCenter()
-  private let png: Data
   var platformView: NativeTabBarPlatformView?
   let host: NativeTabBarHostView
   var bar: UITabBar { host.tabBar }
@@ -852,6 +917,7 @@ private final class NativeTabBarFixture {
 
   init(
     animator: NativeTabBarAnimator? = nil, reducedMotion: Bool = true,
+    icons: NativeTabBarIconCatalog = .shared,
     attached: Bool = true, initiallyHidden: Bool = false,
     initialLayoutReady: Bool = true, initialInputEnabled: Bool = true,
     initialFrame: CGRect = CGRect(x: 0, y: 0, width: 393, height: 100),
@@ -863,20 +929,13 @@ private final class NativeTabBarFixture {
     environment.attached = attached
     environment.fittingHeight = fittingHeight
     self.environment = environment
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = 3
-    png = UIGraphicsImageRenderer(size: CGSize(width: 25, height: 25), format: format)
-      .pngData { context in
-        UIColor.black.setFill()
-        context.fill(CGRect(x: 2, y: 2, width: 21, height: 21))
-      }
-    var args = Self.snapshot(png: png, ids: ["home", "activity", "settings"], selected: "home")
+    var args = Self.snapshot(ids: ["home", "activity", "settings"], selected: "home")
     args["hidden"] = initiallyHidden
     args["layoutReady"] = initialLayoutReady
     args["inputEnabled"] = initialInputEnabled
     let platformView = NativeTabBarPlatformView(
       frame: initialFrame,
-      viewId: 1, args: args, messenger: messenger, animator: animator,
+      viewId: 1, args: args, messenger: messenger, icons: icons, animator: animator,
       reduceMotion: { environment.reducedMotion }, attachmentProvider: { environment.attached },
       notificationCenter: notifications,
       fittingHeight: fittingHeight == nil ? nil : { _, _ in environment.fittingHeight! },
@@ -900,17 +959,23 @@ private final class NativeTabBarFixture {
   func snapshot(ids: [String] = ["home", "activity", "settings"], selected: String = "home")
     -> [String: Any]
   {
-    Self.snapshot(png: png, ids: ids, selected: selected)
+    Self.snapshot(ids: ids, selected: selected)
   }
 
   func update(_ args: [String: Any]) -> Any? {
     messenger.call("update", arguments: args)
   }
 
-  private static func snapshot(png: Data, ids: [String], selected: String) -> [String: Any] {
+  private static func snapshot(ids: [String], selected: String) -> [String: Any] {
     [
       "items": ids.map {
-        ["id": $0, "label": $0, "icon": FlutterStandardTypedData(bytes: png), "iconScale": 3]
+        let iconName = switch $0 {
+        case "swap": "swap_arrows"
+        case "activity": "history"
+        case "settings": "cog"
+        default: "home"
+        }
+        return ["id": $0, "label": $0, "iconName": iconName]
       },
       "selectedId": selected,
       "brightness": "light",

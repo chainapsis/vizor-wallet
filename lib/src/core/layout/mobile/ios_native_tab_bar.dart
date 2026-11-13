@@ -1,12 +1,10 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show Theme;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../app_form_factor.dart';
 import '../../theme/app_theme.dart';
@@ -52,22 +50,14 @@ class IosNativeTabBarConfiguration {
   final String Function()? readSelectedId;
 }
 
-typedef IosNativeTabBarIconLoader =
-    Future<Uint8List> Function(
-      AssetBundle bundle,
-      String iconName,
-      double pixelRatio,
-    );
-
-/// Keeps the native slot transparent until capability and icons are ready.
-/// Unsupported hosts and preparation failures use the original Flutter bar.
-/// The builder keeps the shell and its router mounted when this choice changes.
+/// Keeps the native slot transparent until the native catalog is checked.
+/// Unsupported hosts or missing catalog images use the original Flutter bar.
+/// No Flutter asset decoding occurs while preparing this native lane.
 class IosNativeTabBarHost extends StatefulWidget {
   const IosNativeTabBarHost({
     required this.configuration,
     required this.builder,
     this.enabled = true,
-    this.iconLoader = _loadNativeIcon,
     this.onHeightChanged,
     super.key,
   });
@@ -75,27 +65,27 @@ class IosNativeTabBarHost extends StatefulWidget {
   final IosNativeTabBarConfiguration configuration;
   final Widget Function(BuildContext context, Widget? nativeBar) builder;
   final bool enabled;
-  final IosNativeTabBarIconLoader iconLoader;
   final ValueChanged<double>? onHeightChanged;
 
   static const channel = MethodChannel('com.zcash.wallet/native_tab_bar');
-
-  static Future<Uint8List> loadIcon(
-    AssetBundle bundle,
-    String name,
-    double scale,
-  ) => _loadNativeIcon(bundle, name, scale);
 
   @override
   State<IosNativeTabBarHost> createState() => _IosNativeTabBarHostState();
 }
 
+class _NativeTabBarCapabilities {
+  const _NativeTabBarCapabilities({
+    required this.supported,
+    this.iconNames = const {},
+  });
+  final bool supported;
+  final Set<String> iconNames;
+}
+
 class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
-  Future<bool>? _capability;
-  ({AssetBundle bundle, double scale, String icons})? _request;
-  List<_PreparedItem>? _items;
-  bool? _supported;
-  bool _preparationFailed = false;
+  Future<_NativeTabBarCapabilities>? _request;
+  _NativeTabBarCapabilities? _capabilities;
+  bool _reading = false;
   int _generation = 0;
 
   bool get _eligible =>
@@ -113,78 +103,43 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
   @override
   void didUpdateWidget(covariant IosNativeTabBarHost oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.iconLoader != widget.iconLoader) _request = null;
     _prepare();
   }
 
-  Future<bool> _readCapability() async {
+  Future<_NativeTabBarCapabilities> _readCapabilities() async {
     try {
       final value = await IosNativeTabBarHost.channel
           .invokeMapMethod<String, dynamic>('getCapabilities');
-      return value?['supported'] == true;
+      final names = value?['iconNames'];
+      return _NativeTabBarCapabilities(
+        supported: value?['supported'] == true,
+        iconNames: names is List
+            ? Set.unmodifiable(names.whereType<String>())
+            : const {},
+      );
     } on MissingPluginException {
-      return false;
+      return const _NativeTabBarCapabilities(supported: false);
     } on PlatformException {
-      return false;
+      return const _NativeTabBarCapabilities(supported: false);
     }
   }
 
   void _prepare() {
     if (!_eligible) {
       _generation++;
-      _request = null;
-      _items = null;
+      _reading = false;
       return;
     }
-    final request = (
-      bundle: DefaultAssetBundle.of(context),
-      scale: MediaQuery.devicePixelRatioOf(context),
-      icons: widget.configuration.items
-          .map((item) => item.iconName)
-          .join('\u0000'),
-    );
-    if (_request == request) return;
-    _request = request;
-    _preparationFailed = false;
+    if (_capabilities != null || _reading) return;
+    _reading = true;
     final generation = ++_generation;
-    final destinations = List.of(widget.configuration.items);
-    final loader = widget.iconLoader;
     unawaited(() async {
-      final supported = await (_capability ??= _readCapability());
-      if (!mounted || generation != _generation) return;
-      if (!supported) {
-        setState(() => _supported = false);
-        return;
-      }
-      _supported = true;
-      try {
-        final icons = await Future.wait([
-          for (final item in destinations)
-            loader(request.bundle, item.iconName, request.scale),
-        ]);
-        if (!mounted || generation != _generation) return;
-        setState(() {
-          _items = [
-            for (var i = 0; i < destinations.length; i++)
-              _PreparedItem(destinations[i], icons[i], request.scale),
-          ];
-        });
-      } catch (error, stack) {
-        if (!mounted || generation != _generation) return;
-        // The original Flutter bar remains usable if a bundled icon fails.
-        setState(() {
-          _items = null;
-          _preparationFailed = true;
-        });
-        FlutterError.reportError(
-          FlutterErrorDetails(
-            exception: error,
-            stack: stack,
-            library: 'native tab bar',
-            context: ErrorDescription('while preparing native tab icons'),
-          ),
-        );
-      }
+      final capabilities = await (_request ??= _readCapabilities());
+      if (!mounted || !_eligible || generation != _generation) return;
+      setState(() {
+        _capabilities = capabilities;
+        _reading = false;
+      });
     }());
   }
 
@@ -196,11 +151,18 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
 
   @override
   Widget build(BuildContext context) {
-    final prepared = _items;
-    if (!_eligible || _supported == false || _preparationFailed) {
+    final capabilities = _capabilities;
+    final items = widget.configuration.items;
+    if (!_eligible ||
+        items.isEmpty ||
+        (capabilities != null &&
+            (!capabilities.supported ||
+                items.any(
+                  (item) => !capabilities.iconNames.contains(item.iconName),
+                )))) {
       return widget.builder(context, null);
     }
-    if (prepared == null || prepared.isEmpty) {
+    if (capabilities == null) {
       return widget.builder(
         context,
         SizedBox(
@@ -209,63 +171,27 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
         ),
       );
     }
-    // Translated labels/selection do not rerasterize icons. New destinations
-    // keep the previous native view alive until their icons have arrived.
-    final icons = {for (final item in prepared) item.item.iconName: item};
-    final current = widget.configuration.items;
-    if (current.isEmpty) return widget.builder(context, null);
-    final canUpdate = current.every((item) => icons.containsKey(item.iconName));
-    final items = canUpdate
-        ? [
-            for (final item in current)
-              _PreparedItem(
-                item,
-                icons[item.iconName]!.icon,
-                icons[item.iconName]!.scale,
-              ),
-          ]
-        : prepared;
     return widget.builder(
       context,
       IosNativeTabBar._(
         configuration: widget.configuration,
-        items: items,
+        items: List.unmodifiable(items),
         onHeightChanged: widget.onHeightChanged,
       ),
     );
   }
 }
 
-class _PreparedItem {
-  const _PreparedItem(this.item, this.icon, this.scale);
-  final IosNativeTabBarItem item;
-  final Uint8List icon;
-  final double scale;
-
-  Map<String, Object> toMap() => {
-    'id': item.id,
-    'label': item.label,
-    'icon': icon,
-    'iconScale': scale,
-  };
-
-  bool sameAs(_PreparedItem other) =>
-      item.id == other.item.id &&
-      item.label == other.item.label &&
-      identical(icon, other.icon) &&
-      scale == other.scale;
-}
-
 /// One persistent UIKit tab bar; all material and interaction styling is native.
 class IosNativeTabBar extends StatefulWidget {
   const IosNativeTabBar._({
     required this.configuration,
-    required List<_PreparedItem> items,
+    required List<IosNativeTabBarItem> items,
     this.onHeightChanged,
   }) : _items = items;
 
   final IosNativeTabBarConfiguration configuration;
-  final List<_PreparedItem> _items;
+  final List<IosNativeTabBarItem> _items;
   final ValueChanged<double>? onHeightChanged;
 
   @override
@@ -297,9 +223,9 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     final selectedId =
         widget.configuration.readSelectedId?.call() ??
         widget.configuration.selectedId;
-    final selected = widget._items.any((item) => item.item.id == selectedId)
+    final selected = widget._items.any((item) => item.id == selectedId)
         ? selectedId
-        : widget._items.first.item.id;
+        : widget._items.first.id;
     return _Snapshot(
       items: widget._items,
       selectedId: selected,
@@ -604,7 +530,7 @@ class _Snapshot {
     required this.layoutReady,
     required this.visibilityEpoch,
   });
-  final List<_PreparedItem> items;
+  final List<IosNativeTabBarItem> items;
   final String selectedId;
   final Brightness brightness;
   final int selectedTintColor;
@@ -617,7 +543,10 @@ class _Snapshot {
   final int visibilityEpoch;
 
   Map<String, Object> toMap() => {
-    'items': [for (final item in items) item.toMap()],
+    'items': [
+      for (final item in items)
+        {'id': item.id, 'label': item.label, 'iconName': item.iconName},
+    ],
     'selectedId': selectedId,
     'brightness': brightness.name,
     'selectedTintColor': selectedTintColor,
@@ -642,61 +571,10 @@ class _Snapshot {
       layoutReady == other.layoutReady &&
       visibilityEpoch == other.visibilityEpoch &&
       items.length == other.items.length &&
-      Iterable.generate(
-        items.length,
-      ).every((i) => items[i].sameAs(other.items[i]));
-}
-
-final _iconCache =
-    <({AssetBundle bundle, String name, double scale}), Future<Uint8List>>{};
-
-Future<Uint8List> _loadNativeIcon(
-  AssetBundle bundle,
-  String name,
-  double scale,
-) async {
-  final key = (bundle: bundle, name: name, scale: scale);
-  final existing = _iconCache[key];
-  if (existing != null) return existing;
-  final future = _rasterizeNativeIcon(bundle, name, scale);
-  _iconCache[key] = future;
-  // There are currently four tab icons. Bound cached copies across bundles
-  // and DPR changes without retaining decoded ui.Image/picture resources.
-  if (_iconCache.length > 32) _iconCache.remove(_iconCache.keys.first);
-  try {
-    return await future;
-  } catch (_) {
-    if (identical(_iconCache[key], future)) _iconCache.remove(key);
-    rethrow;
-  }
-}
-
-Future<Uint8List> _rasterizeNativeIcon(
-  AssetBundle bundle,
-  String name,
-  double scale,
-) async {
-  final info = await vg.loadPicture(
-    SvgAssetLoader('assets/icons/$name.svg', assetBundle: bundle),
-    null,
-  );
-  ui.Image? image;
-  ui.Picture? picture;
-  try {
-    const side = 25.0;
-    final pixels = (side * scale).round();
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    canvas.scale(pixels / info.size.width, pixels / info.size.height);
-    canvas.drawPicture(info.picture);
-    picture = recorder.endRecording();
-    image = await picture.toImage(pixels, pixels);
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (data == null) throw StateError('Native icon PNG encoding failed');
-    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-  } finally {
-    image?.dispose();
-    picture?.dispose();
-    info.picture.dispose();
-  }
+      Iterable.generate(items.length).every(
+        (i) =>
+            (items[i].id == other.items[i].id &&
+            items[i].label == other.items[i].label &&
+            items[i].iconName == other.items[i].iconName),
+      );
 }

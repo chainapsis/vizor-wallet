@@ -22,7 +22,6 @@ class IosNativeTabBarRootHost extends StatefulWidget {
     this.covered = false,
     this.sessionIdentity,
     this.canInteract,
-    this.iconLoader = IosNativeTabBarHost.loadIcon,
     super.key,
   });
 
@@ -31,7 +30,6 @@ class IosNativeTabBarRootHost extends StatefulWidget {
   final bool covered;
   final Object? sessionIdentity;
   final bool Function()? canInteract;
-  final IosNativeTabBarIconLoader iconLoader;
 
   @override
   State<IosNativeTabBarRootHost> createState() =>
@@ -94,7 +92,6 @@ class _IosNativeTabBarRootHostState extends State<IosNativeTabBarRootHost> {
                       viewInsets: MediaQuery.viewInsetsOf(context),
                     ),
                     child: IosNativeTabBarHost(
-                      iconLoader: widget.iconLoader,
                       configuration: IosNativeTabBarConfiguration(
                         items: visual.configuration.items,
                         selectedId: visual.configuration.selectedId,

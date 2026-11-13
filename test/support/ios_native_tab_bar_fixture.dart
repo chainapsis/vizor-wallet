@@ -10,7 +10,8 @@ class NativeTabBarFixture {
       call,
     ) async {
       capabilityReads++;
-      return capabilityResponse ?? {'supported': supported};
+      return capabilityResponse ??
+          {'supported': supported, 'iconNames': iconNames};
     });
     messenger.setMockMethodCallHandler(SystemChannels.platform_views, (
       call,
@@ -82,6 +83,7 @@ class NativeTabBarFixture {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   bool supported = true;
+  List<String> iconNames = ['home', 'swap_arrows', 'history', 'cog'];
   Future<Map>? capabilityResponse;
   int capabilityReads = 0;
   double height = 83;

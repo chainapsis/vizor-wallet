@@ -22,9 +22,6 @@ const _items = [
   IosNativeTabBarItem(id: '/settings', iconName: 'cog', label: 'Settings'),
 ];
 
-Future<Uint8List> _fakeIcon(AssetBundle _, String name, double _) async =>
-    Uint8List.fromList(name.codeUnits);
-
 void main() {
   late NativeTabBarFixture native;
   setUp(() {
@@ -51,13 +48,14 @@ void main() {
   Future<void> pump(
     WidgetTester tester,
     IosNativeTabBarConfiguration configuration, {
-    IosNativeTabBarIconLoader loader = _fakeIcon,
     Brightness brightness = Brightness.light,
     TextDirection direction = TextDirection.ltr,
     double keyboard = 0,
     GlobalKey<NavigatorState>? navigatorKey,
     VoidCallback? onGlobalTap,
     Key? hostKey,
+    bool enabled = true,
+    AssetBundle? bundle,
   }) async {
     await tester.pumpWidget(
       _app(
@@ -70,8 +68,8 @@ void main() {
               textDirection: direction,
               child: IosNativeTabBarHost(
                 key: hostKey,
+                enabled: enabled,
                 configuration: configuration,
-                iconLoader: loader,
                 builder: (_, bar) => Scaffold(
                   body: const Text('Body'),
                   bottomNavigationBar:
@@ -85,6 +83,7 @@ void main() {
         brightness: brightness,
         navigatorKey: navigatorKey,
         onGlobalTap: onGlobalTap,
+        bundle: bundle,
       ),
     );
     await tester.pump();
@@ -115,6 +114,122 @@ void main() {
             .first,
       )
       .excluding;
+
+  _testWidgets('native icon catalog preparation never decodes Flutter assets', (
+    tester,
+  ) async {
+    final bundle = _TrackingAssetBundle();
+    await pump(tester, config(), bundle: bundle);
+    expect(find.byType(UiKitView), findsOneWidget);
+    expect(bundle.svgLoads, isEmpty);
+    expect(
+      (native.created.values.single['items'] as List).map(
+        (item) => item['iconName'],
+      ),
+      ['home', 'swap_arrows', 'history', 'cog'],
+    );
+    expect(
+      (native.latest['items'] as List).every(
+        (item) => (item as Map).keys.toSet().difference({
+          'id',
+          'label',
+          'iconName',
+        }).isEmpty,
+      ),
+      true,
+    );
+  });
+
+  for (final reason in [
+    'missing catalog entry',
+    'unsupported OS',
+    'unknown native name',
+  ]) {
+    _testWidgets('$reason preserves the real Flutter SVG fallback', (
+      tester,
+    ) async {
+      final bundle = _TrackingAssetBundle();
+      final capability = Completer<Map>();
+      native.capabilityResponse = capability.future;
+      final secondName = reason == 'unknown native name' ? 'book' : 'cog';
+      await tester.pumpWidget(
+        _app(
+          AppMobileShell(
+            body: const Text('Body'),
+            tabBar: AppMobileTabBar(
+              items: [
+                const AppMobileTabItem(iconName: 'home', label: 'Home'),
+                AppMobileTabItem(iconName: secondName, label: 'Other'),
+              ],
+              currentIndex: 0,
+              onSelect: (_) {},
+            ),
+            nativeTabBar: config(
+              items: [
+                _items.first,
+                IosNativeTabBarItem(
+                  id: '/other',
+                  iconName: secondName,
+                  label: 'Other',
+                ),
+              ],
+            ),
+          ),
+          bundle: bundle,
+        ),
+      );
+      await tester.pump();
+      final body = tester.element(find.text('Body'));
+      expect(bundle.svgLoads, isEmpty);
+      expect(find.byType(AppMobileTabBar), findsNothing);
+      capability.complete({
+        'supported': reason != 'unsupported OS',
+        'iconNames': reason == 'missing catalog entry'
+            ? ['home', 'swap_arrows', 'history']
+            : native.iconNames,
+      });
+      await tester.pumpAndSettle();
+      expect(native.created, isEmpty);
+      expect(find.byType(AppMobileTabBar), findsOneWidget);
+      expect(
+        bundle.svgLoads,
+        containsAll(['assets/icons/home.svg', 'assets/icons/$secondName.svg']),
+      );
+      expect(tester.element(find.text('Body')), same(body));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  _testWidgets('dynamic supported destination filtering, reordering and labels '
+      'reuse one native view and capability result', (tester) async {
+    await pump(tester, config());
+    final view = tester.state(find.byType(UiKitView));
+    await pump(
+      tester,
+      config(
+        items: [
+          const IosNativeTabBarItem(
+            id: '/settings',
+            iconName: 'cog',
+            label: 'Preferences',
+          ),
+          _items.first,
+          _items[2],
+        ],
+        selected: '/settings',
+      ),
+    );
+    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(native.created, hasLength(1));
+    expect(native.capabilityReads, 1);
+    expect(native.latest['selectedId'], '/settings');
+    expect((native.latest['items'] as List).map((item) => item['iconName']), [
+      'cog',
+      'home',
+      'history',
+    ]);
+    expect((native.latest['items'] as List).first['label'], 'Preferences');
+  });
 
   _testWidgets('coalesced layout invalidation recovers readiness and rejects '
       'acknowledgements or selections from the old layout', (tester) async {
@@ -194,7 +309,7 @@ void main() {
       expect(find.byKey(const ValueKey('fallback')), findsNothing);
       expect(find.byType(UiKitView, skipOffstage: false), findsNothing);
       final body = tester.element(find.text('Body'));
-      capability.complete({'supported': true});
+      capability.complete({'supported': true, 'iconNames': native.iconNames});
       await tester.pumpAndSettle();
       expect(find.byType(UiKitView, skipOffstage: false), findsOneWidget);
       expect(find.byKey(const ValueKey('fallback')), findsNothing);
@@ -216,20 +331,16 @@ void main() {
     expect(tester.element(find.text('Body')), same(body));
   });
 
-  _testWidgets('failed icon preparation uses the real fallback', (
-    tester,
-  ) async {
-    final icons = Completer<Uint8List>();
-    await pump(tester, config(), loader: (_, _, _) => icons.future);
-    final body = tester.element(find.text('Body'));
-    expect(find.byKey(const ValueKey('fallback')), findsNothing);
-    icons.completeError(StateError('Failed icon'));
-    await tester.pump();
-    expect(tester.takeException(), isA<StateError>());
-    await tester.pump();
-    expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
-    expect(tester.element(find.text('Body')), same(body));
-  });
+  _testWidgets(
+    'a missing native catalog image selects the real fallback before '
+    'creating a platform view',
+    (tester) async {
+      native.iconNames.remove('cog');
+      await pump(tester, config());
+      expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
+      expect(native.created, isEmpty);
+    },
+  );
 
   _testWidgets(
     'first reveal waits for a measured height applied to the Flutter '
@@ -266,7 +377,6 @@ void main() {
               height: height,
               child: IosNativeTabBarHost(
                 configuration: config(),
-                iconLoader: _fakeIcon,
                 builder: (_, bar) => Align(
                   alignment: Alignment.bottomCenter,
                   child: bar ?? const SizedBox(),
@@ -345,7 +455,6 @@ void main() {
             enabled: enabled,
             child: IosNativeTabBarHost(
               configuration: config(),
-              iconLoader: _fakeIcon,
               builder: (_, bar) => Scaffold(bottomNavigationBar: bar),
             ),
           ),
@@ -621,22 +730,14 @@ void main() {
     expect(native.created, hasLength(1));
   });
 
-  _testWidgets('older iOS keeps the original bar and does not prepare icons', (
+  _testWidgets('older iOS keeps the original bar without native preparation', (
     tester,
   ) async {
     native.supported = false;
-    var loads = 0;
-    await pump(
-      tester,
-      config(),
-      loader: (bundle, name, scale) {
-        loads++;
-        return _fakeIcon(bundle, name, scale);
-      },
-    );
+    await pump(tester, config());
     expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
     expect(find.byType(UiKitView, skipOffstage: false), findsNothing);
-    expect(loads, 0);
+    expect(native.created, isEmpty);
   });
 
   _testWidgets('Android does not query native capability', (tester) async {
@@ -646,22 +747,29 @@ void main() {
     expect(find.byKey(const ValueKey('fallback')), findsOneWidget);
   });
 
-  _testWidgets('waits for icon preparation without losing the shell body', (
-    tester,
-  ) async {
-    final icon = Completer<Uint8List>();
-    await pump(tester, config(), loader: (_, _, _) => icon.future);
+  _testWidgets('pending catalog validation uses the latest destination list '
+      'without losing the shell body', (tester) async {
+    final capability = Completer<Map>();
+    native.capabilityResponse = capability.future;
+    await pump(tester, config(items: [_items.first]));
+    final body = tester.element(find.text('Body'));
     expect(
       find.byKey(const ValueKey('ios_native_tab_bar_pending')),
       findsOneWidget,
     );
-    final body = tester.element(find.text('Body'));
-    icon.complete(Uint8List(4));
-    await tester.pump();
-    await tester.pump();
-    expect(find.byType(UiKitView, skipOffstage: false), findsOneWidget);
-    expect(tester.element(find.text('Body')), same(body));
+    await pump(tester, config(items: [_items.last], selected: '/settings'));
+    capability.complete({
+      'supported': true,
+      'iconNames': ['cog'],
+    });
+    await tester.pumpAndSettle();
     expect(native.created, hasLength(1));
+    expect((native.latest['items'] as List).single, {
+      'id': '/settings',
+      'label': 'Settings',
+      'iconName': 'cog',
+    });
+    expect(tester.element(find.text('Body')), same(body));
   });
 
   _testWidgets('UIKit selection commits once per event and supports reselect', (
@@ -779,13 +887,7 @@ void main() {
   _testWidgets(
     'selection, labels, theme and RTL preserve the same native view',
     (tester) async {
-      var loads = 0;
-      Future<Uint8List> loader(AssetBundle bundle, String name, double scale) {
-        loads++;
-        return _fakeIcon(bundle, name, scale);
-      }
-
-      await pump(tester, config(), loader: loader);
+      await pump(tester, config());
       final firstView = tester.state(
         find.byType(UiKitView, skipOffstage: false),
       );
@@ -802,7 +904,6 @@ void main() {
               ),
           ],
         ),
-        loader: loader,
         brightness: Brightness.dark,
         direction: TextDirection.rtl,
       );
@@ -811,7 +912,11 @@ void main() {
         same(firstView),
       );
       expect(native.created, hasLength(1));
-      expect(loads, _items.length);
+      expect(native.capabilityReads, 1);
+      expect(
+        (native.latest['items'] as List).first.keys,
+        unorderedEquals(['id', 'label', 'iconName']),
+      );
       expect(native.latest['selectedId'], '/settings');
       expect(native.latest['brightness'], 'dark');
       expect(native.latest['direction'], 'rtl');
@@ -871,7 +976,6 @@ void main() {
         _app(
           IosNativeTabBarHost(
             configuration: config(onSelect: selected.add),
-            iconLoader: _fakeIcon,
             builder: (_, bar) =>
                 Scaffold(body: const Text('Shell'), bottomNavigationBar: bar),
           ),
@@ -924,39 +1028,40 @@ void main() {
     },
   );
 
-  _testWidgets('disposing while icons load does not mount a late native view', (
-    tester,
-  ) async {
-    final icon = Completer<Uint8List>();
-    await pump(tester, config(), loader: (_, _, _) => icon.future);
+  _testWidgets('disposing during capability validation cannot mount a late '
+      'native view', (tester) async {
+    final capability = Completer<Map>();
+    native.capabilityResponse = capability.future;
+    await pump(tester, config());
     await tester.pumpWidget(const SizedBox());
-    icon.complete(Uint8List(4));
+    capability.complete({'supported': true, 'iconNames': native.iconNames});
     await tester.pump();
     expect(native.created, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
-  _testWidgets('obsolete icon loads cannot restore removed destinations', (
+  _testWidgets('stale capability completion cannot activate a disabled host', (
     tester,
   ) async {
-    final oldIcon = Completer<Uint8List>();
-    final newIcon = Completer<Uint8List>();
-    Future<Uint8List> loader(AssetBundle _, String name, double _) =>
-        name == 'home' ? oldIcon.future : newIcon.future;
-    await pump(tester, config(items: [_items.first]), loader: loader);
+    final capability = Completer<Map>();
+    native.capabilityResponse = capability.future;
+    await pump(tester, config());
     await pump(
       tester,
       config(items: [_items.last], selected: '/settings'),
-      loader: loader,
+      enabled: false,
     );
-    newIcon.complete(Uint8List(4));
+    capability.complete({
+      'supported': true,
+      'iconNames': ['cog'],
+    });
     await tester.pump();
-    await tester.pump();
-    oldIcon.complete(Uint8List(8));
-    await tester.pump();
-    expect(native.latest['selectedId'], '/settings');
-    expect((native.latest['items'] as List).single['id'], '/settings');
+    expect(native.created, isEmpty);
+    await pump(tester, config(items: [_items.last], selected: '/settings'));
+    await tester.pumpAndSettle();
     expect(native.created, hasLength(1));
+    expect(native.latest['selectedId'], '/settings');
+    expect((native.latest['items'] as List).single['iconName'], 'cog');
   });
 
   _testWidgets('AppMobileShell uses native total height at the screen edges', (
@@ -982,12 +1087,7 @@ void main() {
         ),
       ),
     );
-    // Real SVG decoding/rasterization runs outside the fake async clock.
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    });
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byType(UiKitView, skipOffstage: false), findsOneWidget);
     expect(
       tester.getRect(find.byType(UiKitView, skipOffstage: false)),
@@ -1003,6 +1103,7 @@ Widget _app(
   Brightness brightness = Brightness.light,
   GlobalKey<NavigatorState>? navigatorKey,
   VoidCallback? onGlobalTap,
+  AssetBundle? bundle,
 }) => MaterialApp(
   navigatorKey: navigatorKey,
   theme: ThemeData(brightness: brightness),
@@ -1012,16 +1113,32 @@ Widget _app(
     data: brightness == Brightness.dark
         ? AppThemeData.dark
         : AppThemeData.light,
-    child: onGlobalTap == null
-        ? child!
-        : GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: onGlobalTap,
-            child: child!,
-          ),
+    child: DefaultAssetBundle(
+      bundle: bundle ?? rootBundle,
+      child: onGlobalTap == null
+          ? child!
+          : GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: onGlobalTap,
+              child: child!,
+            ),
+    ),
   ),
   home: home,
 );
+
+class _TrackingAssetBundle extends CachingAssetBundle {
+  // A cached bundle can own unsendable asynchronous state. Native catalog
+  // preparation must never hand this object to a Flutter SVG parser isolate.
+  final pending = Completer<void>();
+  final svgLoads = <String>[];
+
+  @override
+  Future<ByteData> load(String key) {
+    if (key.endsWith('.svg')) svgLoads.add(key);
+    return rootBundle.load(key);
+  }
+}
 
 void _testWidgets(String name, WidgetTesterCallback callback) => testWidgets(
   name,
