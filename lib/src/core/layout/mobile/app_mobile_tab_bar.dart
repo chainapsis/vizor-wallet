@@ -345,6 +345,9 @@ class _IosLiquidTabBarState extends State<_IosLiquidTabBar> {
           verticalPadding: 0,
           barHeight: kMobileTabBarHeight,
           barBorderRadius: kMobileTabBarHeight / 2,
+          // Keep a capsule even as the spring expands the lens past its
+          // resting height; the bar's fixed radius would leave square corners.
+          indicatorBorderRadius: GlassDefaults.capsuleRadius,
           tabPadding: const EdgeInsets.all(AppSpacing.xxs),
           iconSize: AppMobileTabBar._iconSize,
           selectedIconColor: colors.navPanel.activeIcon,
@@ -372,8 +375,8 @@ class _IosLiquidTabBarState extends State<_IosLiquidTabBar> {
           magnification: 1.05,
           pressScale: 1.02,
           indicatorExpansion: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 8,
+            horizontal: 10,
+            vertical: 7,
           ),
           interactionBehavior: GlassInteractionBehavior.scaleOnly,
         ),

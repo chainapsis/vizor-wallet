@@ -64,9 +64,11 @@ for imports and network, filesystem, process, FFI and platform-channel APIs.
   values do not add a decorative rainbow outline.
   Interaction behavior is `scaleOnly`: the touch-following colored glow is
   disabled while press scaling and selection-lens interactions remain enabled.
-  Selection-lens expansion is 12 horizontally / 8 vertically per edge, increasing
+  Selection-lens expansion is 10 horizontally / 7 vertically per edge, increasing
   the deformation driven by the package's existing spring. Icon magnification
   and whole-bar press scale remain 1.05 and 1.02; spring timing is unchanged.
+  The indicator uses `GlassDefaults.capsuleRadius` so its rounded ends track
+  the expanded lens height instead of retaining the resting 28px corner radius.
 - Pointer selection is adapted locally: package callbacks update only a preview
   while pressed, then screen selection and haptics commit once after release.
   Cancellation or external navigation discards the preview; callbacks from the
