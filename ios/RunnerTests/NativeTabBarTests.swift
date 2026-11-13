@@ -957,6 +957,122 @@ struct NativeTabBarTests {
     }
   }
 
+  @Test("Press feedback starts on touch-down, including the selected tab, never on selection")
+  func pressFeedbackOnTouchDown() throws {
+    let feedback = NativeTabBarFeedbackSpy()
+    let fixture = NativeTabBarFixture(pressFeedback: feedback)
+    let observer = try #require(fixture.pressObserver)
+    let first = NativeTabBarTestTouch(view: try #require(fixture.bar.hitTest(
+      CGPoint(x: fixture.bar.bounds.width / 6, y: 20), with: nil)))
+    let event = UIEvent()
+    observer.touchesBegan([first], with: event)
+    #expect(feedback.impacts == 1)
+    #expect(fixture.selectionEvents.isEmpty)
+    #expect(observer.state == .possible)
+    observer.touchesMoved([first], with: event)
+    observer.touchesEnded([first], with: event)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: try #require(fixture.bar.selectedItem))
+    #expect(feedback.impacts == 1)
+    observer.touchesBegan([first], with: event)
+    #expect(feedback.impacts == 2)
+    observer.touchesEnded([first], with: event)
+    let last = NativeTabBarTestTouch(view: try #require(fixture.bar.hitTest(
+      CGPoint(x: fixture.bar.bounds.width * 5 / 6, y: 20), with: nil)))
+    observer.touchesBegan([last], with: event)
+    #expect(feedback.impacts == 3)
+    observer.touchesCancelled([last], with: event)
+    #expect(feedback.impacts == 3)
+  }
+
+  @Test("Only direct item contacts emit press feedback, not background, safe area or foreign views")
+  func pressFeedbackContactScope() throws {
+    let feedback = NativeTabBarFeedbackSpy()
+    let fixture = NativeTabBarFixture(pressFeedback: feedback)
+    let observer = try #require(fixture.pressObserver)
+    let event = UIEvent()
+    let item = try #require(fixture.bar.hitTest(
+      CGPoint(x: fixture.bar.bounds.width / 6, y: 20), with: nil))
+    for touch in [
+      NativeTabBarTestTouch(view: fixture.bar),
+      NativeTabBarTestTouch(view: fixture.host),
+      NativeTabBarTestTouch(view: UIControl()),
+      NativeTabBarTestTouch(view: item, type: .indirectPointer),
+      NativeTabBarTestTouch(view: item, type: .pencil),
+    ] {
+      observer.touchesBegan([touch], with: event)
+      observer.touchesEnded([touch], with: event)
+    }
+    #expect(feedback.impacts == 0)
+    observer.touchesBegan([NativeTabBarTestTouch(view: item)], with: event)
+    #expect(feedback.impacts == 1)
+  }
+
+  @Test("Visible but disabled, hidden and unprepared tabs cannot emit press feedback")
+  func pressFeedbackRespectsInputGate() throws {
+    let feedback = NativeTabBarFeedbackSpy()
+    let fixture = NativeTabBarFixture(pressFeedback: feedback)
+    let observer = try #require(fixture.pressObserver)
+    let touch = NativeTabBarTestTouch(view: try #require(fixture.bar.hitTest(
+      CGPoint(x: fixture.bar.bounds.width / 6, y: 20), with: nil)))
+    let event = UIEvent()
+    for field in ["inputEnabled", "hidden", "layoutReady"] {
+      var args = fixture.snapshot()
+      args[field] = field == "hidden"
+      #expect(fixture.update(args) == nil)
+      #expect(fixture.presentation["interactive"] as? Bool == false)
+      #expect(!observer.isEnabled)
+      observer.touchesBegan([touch], with: event)
+      #expect(feedback.impacts == 0)
+      #expect(fixture.update(fixture.snapshot()) == nil)
+    }
+    observer.touchesBegan([touch], with: event)
+    #expect(feedback.impacts == 1)
+    #expect(feedback.preparations > 0)
+  }
+
+  @Test("A multi-finger drag or cancellation emits at most one pulse and cannot arbitrate UIKit gestures")
+  func pressFeedbackSequenceAndGestureIsolation() throws {
+    let feedback = NativeTabBarFeedbackSpy()
+    let fixture = NativeTabBarFixture(pressFeedback: feedback)
+    let observer = try #require(fixture.pressObserver)
+    let view = try #require(fixture.bar.hitTest(
+      CGPoint(x: fixture.bar.bounds.width / 6, y: 20), with: nil))
+    let first = NativeTabBarTestTouch(view: view)
+    let second = NativeTabBarTestTouch(view: view)
+    let event = UIEvent()
+    observer.touchesBegan([first], with: event)
+    observer.touchesBegan([second], with: event)
+    observer.touchesEnded([first], with: event)
+    observer.touchesMoved([second], with: event)
+    #expect(observer.state == .possible)
+    #expect(feedback.impacts == 1)
+    observer.touchesCancelled([second], with: event)
+    #expect(feedback.impacts == 1)
+    // UIKit may already have reset a failed observer for the next sequence.
+    #expect(observer.state == .possible || observer.state == .failed)
+    #expect(!observer.cancelsTouchesInView)
+    #expect(!observer.delaysTouchesBegan)
+    #expect(!observer.delaysTouchesEnded)
+    let systemGesture = UIPanGestureRecognizer()
+    #expect(!observer.canPrevent(systemGesture))
+    #expect(!observer.canBePrevented(by: systemGesture))
+    observer.touchesBegan([first], with: event)
+    #expect(feedback.impacts == 2)
+  }
+
+  @Test("Disposal removes the press observer and invalidates its callbacks")
+  func pressFeedbackDisposal() throws {
+    let feedback = NativeTabBarFeedbackSpy()
+    let fixture = NativeTabBarFixture(pressFeedback: feedback)
+    let observer = try #require(fixture.pressObserver)
+    let touch = NativeTabBarTestTouch(view: try #require(fixture.bar.hitTest(
+      CGPoint(x: fixture.bar.bounds.width / 6, y: 20), with: nil)))
+    fixture.platformView = nil
+    #expect(!(fixture.bar.gestureRecognizers ?? []).contains(observer))
+    observer.touchesBegan([touch], with: UIEvent())
+    #expect(feedback.impacts == 0)
+  }
+
   private func drainMainQueue() async {
     await withCheckedContinuation { continuation in
       DispatchQueue.main.async { continuation.resume() }
@@ -976,6 +1092,9 @@ private final class NativeTabBarFixture {
     messenger.call("getPresentation") as? [String: Any] ?? [:]
   }
   var selectionEvents: [FlutterMethodCall] { messenger.outgoing.filter { $0.method == "select" } }
+  var pressObserver: NativeTabBarPressObserver? {
+    bar.gestureRecognizers?.compactMap { $0 as? NativeTabBarPressObserver }.first
+  }
 
   init(
     animator: NativeTabBarAnimator? = nil, reducedMotion: Bool = true,
@@ -984,6 +1103,7 @@ private final class NativeTabBarFixture {
     initialLayoutReady: Bool = true, initialInputEnabled: Bool = true,
     initialFrame: CGRect = CGRect(x: 0, y: 0, width: 393, height: 100),
     automaticLayout: Bool = true, fittingHeight: CGFloat? = nil,
+    pressFeedback: NativeTabBarPressFeedback? = nil,
     schedulePreparation: @escaping (@escaping () -> Void) -> Void = { $0() }
   ) {
     let environment = NativeTabBarTestEnvironment()
@@ -1001,6 +1121,7 @@ private final class NativeTabBarFixture {
       reduceMotion: { environment.reducedMotion }, attachmentProvider: { environment.attached },
       notificationCenter: notifications,
       fittingHeight: fittingHeight == nil ? nil : { _, _ in environment.fittingHeight! },
+      pressFeedback: pressFeedback,
       schedulePreparation: schedulePreparation
     )
     self.platformView = platformView
@@ -1049,6 +1170,25 @@ private final class NativeTabBarFixture {
       "layoutReady": true,
     ]
   }
+}
+
+private final class NativeTabBarFeedbackSpy: NativeTabBarPressFeedback {
+  var preparations = 0
+  var impacts = 0
+  func prepare() { preparations += 1 }
+  func impactOccurred() { impacts += 1 }
+}
+
+private final class NativeTabBarTestTouch: UITouch {
+  private let target: UIView
+  private let touchType: UITouch.TouchType
+  init(view: UIView, type: UITouch.TouchType = .direct) {
+    target = view
+    touchType = type
+    super.init()
+  }
+  override var view: UIView? { target }
+  override var type: UITouch.TouchType { touchType }
 }
 
 private final class NativeTabBarTestEnvironment {

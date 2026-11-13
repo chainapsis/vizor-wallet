@@ -116,6 +116,27 @@ routes, not the root host's `ModalRoute`.
 Security/privacy locks, logout and loss of the owning wallet context suppress
 painting immediately instead of waiting for an exit animation.
 
+## Press haptics
+
+An enabled native tab item emits one system `.soft` impact when a direct
+finger contact begins, including repeated presses of the selected item. This
+acknowledges the press rather than a destination change: dragging or cancelling
+does not add another pulse, and selection/re-selection callbacks never emit a
+second one. Programmatic selection and accessibility activation do not use this
+touch-only path.
+
+A passive native gesture observer sees item contacts without recognizing a
+gesture, cancelling touches or delaying delivery. It cannot prevent or be
+prevented by UIKit's recognizers. Public control hit-testing excludes the bare
+tab background, transparent wrapper, home-indicator area and foreign views;
+no private tab-button class names or inferred item rectangles are used.
+
+The existing native `isInteractive` gate also controls the observer. Hidden,
+entering, exiting, unprepared and visible-but-input-disabled bars cannot emit
+press feedback, including a bar previewed during a back gesture. The feedback
+generator is retained with the native view and prepared when input is enabled
+and after a pulse. Disposing the native view removes the observer.
+
 ## First presentation
 
 On a native-eligible iOS host, capability and native icon availability checks occupy
@@ -340,3 +361,11 @@ reveal, input blocking while held, cancellation, completion, pointer handoff,
 exact return targets, nested router notifications and pointer-listener cleanup.
 The native suite passed 34 tests, including visible material with touch and
 accessibility disabled and cancellation of an input-disabled entrance.
+
+The press-haptic revision passed 39 native tests. A dedicated iOS 26.5
+simulator interaction check observed the impact call at touch-down, three
+seconds before selection during a stationary long press. Repeated presses of
+the current tab each emitted one call, a drag emitted only one, and background
+and home-indicator taps emitted none. A held-touch capture confirmed UIKit's
+lens still responded before destination selection. These checks validate call
+timing and gesture behavior; tactile strength requires a physical device.

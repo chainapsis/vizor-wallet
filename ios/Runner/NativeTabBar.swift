@@ -1,6 +1,72 @@
 import CoreFoundation
 import Flutter
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
+
+protocol NativeTabBarPressFeedback: AnyObject {
+  func prepare()
+  func impactOccurred()
+}
+
+private final class NativeTabBarSoftPressFeedback: NativeTabBarPressFeedback {
+  private let generator = UIImpactFeedbackGenerator(style: .soft)
+  func prepare() { generator.prepare() }
+  func impactOccurred() { generator.impactOccurred() }
+}
+
+/// Observes touch-down without recognizing, delaying or cancelling UIKit's
+/// own tab gestures. One contact sequence produces at most one press pulse.
+final class NativeTabBarPressObserver: UIGestureRecognizer {
+  private let canPress: (UITouch) -> Bool
+  private let onPress: () -> Void
+  private var contacts = Set<ObjectIdentifier>()
+  private var emitted = false
+
+  init(canPress: @escaping (UITouch) -> Bool, onPress: @escaping () -> Void) {
+    self.canPress = canPress
+    self.onPress = onPress
+    super.init(target: nil, action: nil)
+    cancelsTouchesInView = false
+    delaysTouchesBegan = false
+    delaysTouchesEnded = false
+    allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+  }
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard isEnabled else { return }
+    for touch in touches { contacts.insert(ObjectIdentifier(touch)) }
+    guard !emitted, touches.contains(where: canPress) else { return }
+    emitted = true
+    onPress()
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {}
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    finish(touches)
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    finish(touches)
+  }
+
+  private func finish(_ touches: Set<UITouch>) {
+    for touch in touches { contacts.remove(ObjectIdentifier(touch)) }
+    if contacts.isEmpty {
+      emitted = false
+      state = .failed
+    }
+  }
+
+  override func reset() {
+    super.reset()
+    contacts.removeAll()
+    emitted = false
+  }
+
+  override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+  override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+}
 
 /// Native assets are the only icon source for this bridge. The fixed mapping
 /// keeps channel input from selecting arbitrary bundle resources.
@@ -329,6 +395,8 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   private let attachmentProvider: (() -> Bool)?
   private let notificationCenter: NotificationCenter
   private let schedulePreparation: (@escaping () -> Void) -> Void
+  private let pressFeedback: NativeTabBarPressFeedback
+  private var pressObserver: NativeTabBarPressObserver?
   private var motionObserver: NSObjectProtocol?
   private var animation: NativeTabBarAnimation?
   private var animationGeneration: UInt64 = 0
@@ -361,6 +429,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     attachmentProvider: (() -> Bool)? = nil,
     notificationCenter: NotificationCenter = .default,
     fittingHeight: ((UITabBar, CGSize) -> CGFloat)? = nil,
+    pressFeedback: NativeTabBarPressFeedback? = nil,
     schedulePreparation: @escaping (@escaping () -> Void) -> Void = {
       DispatchQueue.main.async(execute: $0)
     }
@@ -379,7 +448,18 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     self.attachmentProvider = attachmentProvider
     self.notificationCenter = notificationCenter
     self.schedulePreparation = schedulePreparation
+    self.pressFeedback = pressFeedback ?? NativeTabBarSoftPressFeedback()
     super.init()
+    let pressObserver = NativeTabBarPressObserver(
+      canPress: { [weak self] touch in self?.acceptsPress(touch) ?? false },
+      onPress: { [weak self] in
+        guard let self, self.isInteractive else { return }
+        self.pressFeedback.impactOccurred()
+        self.pressFeedback.prepare()
+      }
+    )
+    self.pressObserver = pressObserver
+    host.tabBar.addGestureRecognizer(pressObserver)
     host.tabBar.delegate = self
     host.onHeightChanged = { [weak self] height in self?.scheduleHeight(height) }
     host.onGeometryChanged = { [weak self] in self?.geometryChanged() }
@@ -426,6 +506,10 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     animationGeneration &+= 1
     animation?.cancel()
     if let motionObserver { notificationCenter.removeObserver(motionObserver) }
+    if let pressObserver {
+      pressObserver.isEnabled = false
+      host.tabBar.removeGestureRecognizer(pressObserver)
+    }
     host.tabBar.delegate = nil
     host.onHeightChanged = nil
     host.onGeometryChanged = nil
@@ -597,6 +681,21 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   private var isInteractive: Bool {
     phase == .visible && !targetHidden && targetInputEnabled && isAttached && hasUsableLayout
   }
+
+  private func acceptsPress(_ touch: UITouch) -> Bool {
+    guard isInteractive, touch.type == .direct,
+      let touchedView = touch.view, touchedView.isDescendant(of: host.tabBar)
+    else { return false }
+    // Use public control hit-testing, without private tab-button class names
+    // or inferred item rectangles. Bare background and safe-area hits are not
+    // item presses, even when they fall inside the platform-view rectangle.
+    var view: UIView? = touchedView
+    while let candidate = view, candidate !== host.tabBar {
+      if candidate is UIControl { return true }
+      view = candidate.superview
+    }
+    return false
+  }
   private var presentation: [String: Any] {
     [
       "visibilityEpoch": visibilityEpoch, "revision": presentationRevision,
@@ -612,9 +711,12 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   }
 
   private func setInputEnabled(_ enabled: Bool) {
+    let wasEnabled = host.isUserInteractionEnabled
     host.isUserInteractionEnabled = enabled
     host.tabBar.isUserInteractionEnabled = enabled
     host.accessibilityElementsHidden = !enabled
+    if pressObserver?.isEnabled != enabled { pressObserver?.isEnabled = enabled }
+    if enabled && !wasEnabled { pressFeedback.prepare() }
   }
 
   private func setPhase(_ next: Phase, force: Bool = false) {
