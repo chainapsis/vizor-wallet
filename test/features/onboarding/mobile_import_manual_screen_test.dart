@@ -186,6 +186,18 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
+  testWidgets('seed field asks the keyboard not to learn words', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('mobile_import_manual_field')),
+    );
+    expect(field.enableIMEPersonalizedLearning, isFalse);
+  });
+
   testWidgets('typing a prefix offers suggestions and accepts a word', (
     tester,
   ) async {
