@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter/material.dart';
 
 import '../src/core/l10n/l10n.dart';
@@ -14,17 +15,29 @@ import '../src/core/navigation/mobile_destinations.dart';
 /// pixels. Changing tabs changes the backdrop, while scrolling moves text and
 /// color boundaries through the glass. A static screenshot alone does not prove
 /// that UIKit samples Flutter's backing surface.
-class NativeTabBarCapture extends StatefulWidget {
+class NativeTabBarCapture extends StatelessWidget {
   const NativeTabBarCapture({super.key});
 
   @override
-  State<NativeTabBarCapture> createState() => _NativeTabBarCaptureState();
+  Widget build(BuildContext context) => Navigator(
+    onGenerateRoute: (_) => CupertinoPageRoute<void>(
+      builder: (_) => const _NativeTabBarCapturePage(),
+    ),
+  );
 }
 
-class _NativeTabBarCaptureState extends State<NativeTabBarCapture> {
+class _NativeTabBarCapturePage extends StatefulWidget {
+  const _NativeTabBarCapturePage();
+
+  @override
+  State<_NativeTabBarCapturePage> createState() => _NativeTabBarCaptureState();
+}
+
+class _NativeTabBarCaptureState extends State<_NativeTabBarCapturePage> {
   String _selectedId = '/home';
   int _selectionCount = 0;
   bool _hidden = false;
+  int _barGeneration = 0;
   Timer? _reverseTimer;
 
   @override
@@ -46,6 +59,52 @@ class _NativeTabBarCaptureState extends State<NativeTabBarCapture> {
     });
   }
 
+  void _openModal() {
+    unawaited(
+      showDialog<void>(
+        context: context,
+        useRootNavigator: false,
+        builder: (context) => AlertDialog(
+          title: const Text('Native tab modal'),
+          content: const Text('The tabs stay behind this modal without input.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close modal'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _pushPage({bool translucent = false}) {
+    Widget page(BuildContext context) {
+      final content = Center(
+        child: Material(
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(translucent ? 'Close translucent page' : 'Close page'),
+          ),
+        ),
+      );
+      return translucent
+          ? ColoredBox(color: const Color(0x88333333), child: content)
+          : Scaffold(body: content);
+    }
+
+    unawaited(
+      Navigator.of(context).push<void>(
+        translucent
+            ? PageRouteBuilder<void>(
+                opaque: false,
+                pageBuilder: (context, _, _) => page(context),
+              )
+            : CupertinoPageRoute<void>(builder: page),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = [
@@ -65,6 +124,7 @@ class _NativeTabBarCaptureState extends State<NativeTabBarCapture> {
     }
 
     return AppMobileShell(
+      key: ValueKey(_barGeneration),
       nativeTabBar: IosNativeTabBarConfiguration(
         items: items,
         selectedId: _selectedId,
@@ -125,6 +185,22 @@ class _NativeTabBarCaptureState extends State<NativeTabBarCapture> {
                     TextButton(
                       onPressed: _reverseVisibility,
                       child: const Text('Reverse after 80 ms'),
+                    ),
+                    TextButton(
+                      onPressed: _openModal,
+                      child: const Text('Open modal'),
+                    ),
+                    TextButton(
+                      onPressed: _pushPage,
+                      child: const Text('Push page'),
+                    ),
+                    TextButton(
+                      onPressed: () => _pushPage(translucent: true),
+                      child: const Text('Push translucent page'),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => _barGeneration++),
+                      child: const Text('Recreate tabs'),
                     ),
                   ],
                 ),

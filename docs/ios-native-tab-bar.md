@@ -47,9 +47,33 @@ timing; pointer ownership itself does not navigate. Flutter modal barriers and
 the existing native visibility/callback guards remain in force. Hidden bars
 also ignore Flutter pointers so their empty bounds cannot consume taps meant
 to clear focus or interact with a covering surface.
-Covered routes, popups, navigation guards, and the keyboard disable or hide the
-native bar; its native lifecycle does not grant navigation around a Flutter
-access gate.
+Covered routes, popups, and navigation holds block native input and hide its
+accessibility elements without changing its visual target. The existing bar
+stays behind the covering content, including a dimmed modal barrier or a
+translucent page. It is naturally obscured by an opaque page. Removing the
+cover exposes the same bar without another entrance. Keyboard and security or
+privacy locks still request an actual hide; the native lifecycle does not grant
+navigation around a Flutter access gate.
+
+## First presentation
+
+On a native-eligible iOS host, capability and icon preparation initially occupy
+a transparent slot rather than briefly showing the Flutter fallback bar. An
+unsupported capability or preparation failure selects the original bar;
+other platforms keep their existing path. Preparation does not unmount the
+shell body or router.
+
+The first native entrance waits until the view is attached and its nonzero
+layout, safe area, native fitting height, and Flutter slot agree. Items and
+theme are laid out while the bar is still hidden. Once prepared, the bar enters
+from below using the normal entrance curve. This is tied to layout readiness,
+not an arbitrary startup delay. Input remains blocked until both native
+presentation and Flutter's input eligibility allow it.
+
+Flutter may detach a platform view when an opaque route stops painting it.
+Reattaching an already presented bar restores its settled position without
+replaying its first entrance. A genuinely new platform-view instance prepares
+its own first entrance again.
 
 ## Visibility transitions
 
@@ -80,8 +104,8 @@ channel messages.
 
 Reduce Motion skips the slide. Removing the shell or disposing its platform
 view cancels the animation and releases it immediately rather than retaining
-navigation above a new access screen. Existing popup dismissal and route
-coverage rules still determine when the next entrance begins.
+navigation above a new access screen. Popup dismissal and route coverage only
+release their input gate, without requesting an entrance animation.
 
 ## Background and performance validation
 
@@ -104,6 +128,9 @@ fvm flutter run -d <ios-simulator-id> -t lib/figma_compare.dart \
 The fixture's `Hide tabs` / `Show tabs` control exercises a complete exit and
 entrance. `Reverse after 80 ms` interrupts an exit with an entrance so its
 continuity and input gate can be checked without production wallet state.
+The fixture has its own Navigator for `Open modal`, `Push page`, and
+`Push translucent page`. These check input-only coverage and return without a
+new slide. `Recreate tabs` exercises a fresh native instance's initial reveal.
 
 Use a dedicated simulator/install for native checks. The normal Runner still
 has native startup hooks even when its Dart entry point omits wallet startup.
