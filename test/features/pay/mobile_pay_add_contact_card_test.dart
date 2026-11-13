@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -187,6 +188,26 @@ void main() {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump();
     expect(find.bySemanticsLabel('Clear contact label'), findsNothing);
+  });
+
+  testWidgets('Tab leaves a filled label field instead of bouncing back', (
+    tester,
+  ) async {
+    await pumpCard(tester, onSave: (_, _) async {});
+    final field = find.byKey(const ValueKey('mobile_pay_add_contact_label'));
+    await tester.enterText(field, 'Alice');
+    await tester.pump();
+    bool fieldFocused() => tester
+        .widget<EditableText>(
+          find.descendant(of: field, matching: find.byType(EditableText)),
+        )
+        .focusNode
+        .hasFocus;
+    expect(fieldFocused(), isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(fieldFocused(), isFalse);
   });
 
   testWidgets('scrolls inside the card on a compact keyboard viewport', (

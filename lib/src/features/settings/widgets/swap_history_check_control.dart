@@ -30,10 +30,15 @@ String swapHistoryCheckStatus(AppLocalizations l10n, SwapHistoryCheck check) =>
       SwapHistoryCheck.updateRequired => l10n.swapRecoveryUpdateRequired,
     };
 
-/// The "Check swap history" button and its progress, at the bottom of the
-/// NEAR swap privacy explanation on desktop and mobile.
+/// The "Check swap history" control at the bottom of the NEAR swap privacy
+/// explanation: why to run it, or how it is going, with the one action that
+/// fits. Screen readers hear each change. On desktop it is a row beside a
+/// light button; [stacked] puts the line over a full-width primary button,
+/// where a mobile sheet's buttons go.
 class SwapHistoryCheckControl extends ConsumerWidget {
-  const SwapHistoryCheckControl({super.key});
+  const SwapHistoryCheckControl({this.stacked = false, super.key});
+
+  final bool stacked;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -45,52 +50,59 @@ class SwapHistoryCheckControl extends ConsumerWidget {
             watched != SwapHistoryCheck.checking
         ? SwapHistoryCheck.updateRequired
         : watched;
-    final running = check == SwapHistoryCheck.checking;
     final notifier = ref.read(swapHistoryCheckProvider.notifier);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          context.l10n.settingsSwapHistoryExplanation,
-          key: const ValueKey('settings_swap_history_explanation'),
-          style: AppTypography.labelMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xs,
-          children: [
-            AppButton(
-              key: const ValueKey('settings_check_swap_history'),
-              onPressed: running || check == SwapHistoryCheck.updateRequired
-                  ? null
-                  : () => unawaited(notifier.check()),
-              size: AppButtonSize.medium,
-              child: Text(context.l10n.settingsSwapHistoryCheckButton),
+    // Only a call in flight or a job the wallet still has can be paused.
+    final pausable =
+        check == SwapHistoryCheck.checking ||
+        ref.watch(swapHistoryJobSavedProvider);
+    final status = Semantics(
+      liveRegion: true,
+      child: Text(
+        swapHistoryCheckStatus(context.l10n, check),
+        key: const ValueKey('settings_check_swap_history_status'),
+        textAlign: stacked ? TextAlign.center : TextAlign.start,
+        style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
+      ),
+    );
+    final variant = stacked ? AppButtonVariant.primary : AppButtonVariant.ghost;
+    final size = stacked ? AppButtonSize.large : AppButtonSize.small;
+    final Widget? action = pausable
+        ? AppButton(
+            key: const ValueKey('settings_cancel_swap_history'),
+            onPressed: () => unawaited(notifier.cancel()),
+            variant: variant,
+            size: size,
+            expand: stacked,
+            child: Text(context.l10n.settingsSwapHistoryPauseButton),
+          )
+        : check == SwapHistoryCheck.updateRequired
+        ? null
+        : AppButton(
+            key: const ValueKey('settings_check_swap_history'),
+            onPressed: () => unawaited(notifier.check()),
+            variant: variant,
+            size: size,
+            expand: stacked,
+            child: Text(
+              check == SwapHistoryCheck.idle
+                  ? context.l10n.settingsSwapHistoryCheckButton
+                  : context.l10n.settingsSwapHistoryCheckAgainButton,
             ),
-            // Only a call in flight or a job the wallet still has can be
-            // paused.
-            if (running || ref.watch(swapHistoryJobSavedProvider))
-              AppButton(
-                key: const ValueKey('settings_cancel_swap_history'),
-                onPressed: () => unawaited(notifier.cancel()),
-                variant: AppButtonVariant.ghost,
-                size: AppButtonSize.medium,
-                child: Text(context.l10n.settingsSwapHistoryPauseButton),
-              ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          swapHistoryCheckStatus(context.l10n, check),
-          key: const ValueKey('settings_check_swap_history_status'),
-          style: AppTypography.bodyMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
+          );
+    if (stacked) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          status,
+          if (action != null) ...[const SizedBox(height: AppSpacing.s), action],
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(child: status),
+        if (action != null) ...[const SizedBox(width: AppSpacing.xs), action],
       ],
     );
   }

@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart'
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
@@ -30,6 +31,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/full_text_expectations.dart';
+import '../../support/widget_test_viewport.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -44,14 +47,14 @@ const _accountState = AccountState(
   activeAddress: 'u1payaddress',
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
+AppBootstrapState _bootstrap({bool privacyMode = false}) => AppBootstrapState(
   initialLocation: '/pay',
   initialAccountState: _accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyMode,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
@@ -62,10 +65,16 @@ Widget _app({
   bool preservePreparedComposer = false,
   bool usePreparedComposer = false,
   SyncState? syncState,
+  bool oneTimeZecAddress = false,
+  bool privacyMode = false,
 }) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(privacyMode: privacyMode),
+      ),
+      if (oneTimeZecAddress)
+        swapUsesOneTimeAddressProvider.overrideWithValue(true),
       nearIntentsServiceStatusProvider.overrideWith(
         () => FixtureServiceStatusNotifier(serviceStatus),
       ),
@@ -493,6 +502,72 @@ void main() {
       );
     },
   );
+
+  testWidgets('privacy mode masks the Ironwood balance in a private '
+      'payment shortfall', (tester) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    await tester.pumpWidget(
+      _app(
+        oneTimeZecAddress: true,
+        privacyMode: true,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+          ironwoodBalance: BigInt.from(10_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_pay_amount_input')),
+      '1000',
+    );
+    await tester.pump();
+
+    expect(
+      find.text(
+        'Private payments use Ironwood ZEC only. '
+        'You have ******\u00A0ZEC there.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the Ironwood shortfall wraps in full with large text on a '
+      'narrow screen', (tester) async {
+    await ignoringFlexOverflows(() async {
+      await setWidgetTestViewport(tester, const Size(320, 568));
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        _app(
+          oneTimeZecAddress: true,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            spendableBalance: BigInt.from(14_312_000_000),
+            totalBalance: BigInt.from(14_312_000_000),
+            ironwoodBalance: BigInt.from(10_000_000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+        '1000',
+      );
+      await tester.pumpAndSettle();
+
+      await expectTextFullyShown(
+        tester,
+        'Private payments use Ironwood ZEC only. You have 0.1\u00A0ZEC there.',
+      );
+    });
+  });
 
   testWidgets('mobile pay follows the amount to recipient flow', (
     tester,

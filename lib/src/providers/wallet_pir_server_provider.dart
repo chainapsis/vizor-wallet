@@ -245,7 +245,9 @@ Future<void> _applyWalletPirServer(Ref ref, String? baseUrl) async {
     sync.resumeAfterWalletMutation(pause, forceRestart: true);
   }
   // Swap recovery waits without a server, so a new one owes it a round.
-  if (baseUrl != null) sync.requestSwapRecovery();
+  if (baseUrl == null) return;
+  ref.read(swapRecoveryNeedsServerProvider.notifier).set(false);
+  sync.requestSwapRecovery();
 }
 
 class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {

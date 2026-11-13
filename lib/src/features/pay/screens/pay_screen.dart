@@ -17,7 +17,9 @@ import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../../send/widgets/verify_address_modal.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
+import '../../swap/providers/swap_address_wait_provider.dart';
+import '../../swap/providers/swap_funding_balance_provider.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_intent_presentation_mapper.dart'
     show swapIntentsFromRecords;
@@ -320,14 +322,27 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       contacts,
       effectiveSelection,
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: swapState.reviewAddressPlan?.oneTimeZecAddress ?? false,
+      )),
+    );
+    bool exceeds(BigInt available) =>
+        quote != null && swapReviewQuoteExceedsAvailableZec(quote, available);
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final shortfall = swapIronwoodOnlyShortfallMessage(
+      context.l10n,
+      funding,
+      exceeds,
+      payment: true,
+      privacyModeEnabled: privacyModeEnabled,
     );
     final startBlockedReason =
-        quote != null &&
-            swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
-        ? context.l10n.commonPayInsufficientZec
-        : null;
+        shortfall ??
+        (exceeds(funding.spendable)
+            ? context.l10n.commonPayInsufficientZec
+            : null);
 
     final title = switch (_wizardStep) {
       _PayWizardStep.amount => context.l10n.payTitleAmount(
@@ -341,6 +356,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       _PayWizardStep.recipient => context.l10n.commonAmount,
       _PayWizardStep.review => context.l10n.payStepRecipient,
     };
+    // A payment sends ZEC, so a one-time refund address may wait for sync.
+    final addressWait = ref.watch(swapAddressWaitProvider(true));
     final recipientActions = PayRecipientActions(
       typedAddress: swapState.destinationText,
       addressError: swapState.destinationAddressFormatIssue?.localizedMessage(
@@ -352,6 +369,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       quoteError:
           swapState.externalAssetSupportError(context.l10n) ??
           swapState.quoteError?.text(context.l10n),
+      waitLabel: addressWait == null
+          ? null
+          : swapAddressWaitLabel(context.l10n, addressWait),
       onSelectRecipient: () => unawaited(_reviewRecipient(effectiveSelection)),
       onAddToContacts: network == null
           ? () {}
@@ -373,6 +393,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                 expired: swapState.quoteExpired,
                 starting: _startingIntent || swapState.startSubmitting,
                 startBlockedReason: startBlockedReason,
+                wrapBlockedReason: shortfall != null,
                 onConfirm: _startIntent,
                 onReviewAgain: () => unawaited(_openReview()),
               ),

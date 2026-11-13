@@ -16,7 +16,8 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
+import '../providers/swap_funding_balance_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
@@ -131,17 +132,29 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(
-        swapState.reviewAccountUuid ?? activeAccountUuid,
-      ),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: swapState.reviewAccountUuid ?? activeAccountUuid,
+        oneTimeRefund:
+            addressPlan.oneTimeZecAddress && quote.direction.sendsZec,
+      )),
     );
+    bool exceeds(BigInt available) =>
+        swapReviewQuoteExceedsAvailableZec(quote, available);
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final startBlockedReason =
-        swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
-        ? widget.payMode
-              ? context.l10n.commonPayInsufficientZec
-              : context.l10n.swapReviewInsufficientZecSwap
-        : null;
+        swapIronwoodOnlyShortfallMessage(
+          context.l10n,
+          funding,
+          exceeds,
+          payment: widget.payMode,
+          privacyModeEnabled: privacyModeEnabled,
+        ) ??
+        (exceeds(funding.spendable)
+            ? widget.payMode
+                  ? context.l10n.commonPayInsufficientZec
+                  : context.l10n.swapReviewInsufficientZecSwap
+            : null);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),

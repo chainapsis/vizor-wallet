@@ -711,13 +711,28 @@ class _SettingsList extends ConsumerWidget {
                   label: context.l10n.settingsNearSwapPrivacyLabel,
                   keyPrefix: 'settings_near_swap_privacy',
                   serverSettings: false,
+                  iconName: AppIcons.linkOff,
                   description: nearSwapPrivacy.description.text(context.l10n),
-                  onInfo: () => unawaited(showNearSwapPrivacyInfo(context)),
+                  unavailableLabel: nearSwapPrivacy.available
+                      ? null
+                      : context.l10n.settingsNearSwapPrivacyUnavailable,
+                  footer: [
+                    if (nearSwapPrivacy.checkingPastSwaps)
+                      const Padding(
+                        padding: EdgeInsetsDirectional.only(
+                          start: AppSpacing.xxs,
+                        ),
+                        child: NearSwapPrivacyCheckingPastSwaps(),
+                      ),
+                    const NearSwapPrivacyLearnMore(),
+                  ],
                   enabled: nearSwapPrivacy.enabled,
                   transition: nearSwapPrivacy.transition,
-                  onToggle: () => unawaited(
-                    ref.read(nearSwapPrivacyProvider.notifier).toggle(),
-                  ),
+                  onToggle: nearSwapPrivacy.available
+                      ? () => unawaited(
+                          ref.read(nearSwapPrivacyProvider.notifier).toggle(),
+                        )
+                      : null,
                 ),
               ),
             ],

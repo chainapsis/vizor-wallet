@@ -40,6 +40,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dar
 import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_payout_discovery_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
@@ -1407,6 +1408,47 @@ void main() {
     expect(find.text('Sent'), findsNothing);
   });
 
+  testWidgets('home checks payouts only for the swaps it shows', (
+    tester,
+  ) async {
+    // One more private payout than Home shows, the oldest first.
+    String txid(int i) => i.toRadixString(16).padLeft(64, '0');
+    final checked = <String>{};
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapEnabled: true,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+        ),
+        swapActivityStore: _FakeSwapActivityStore([
+          for (var i = 0; i < 6; i++)
+            _swapActivityRecord(
+              id: 'swap-$i',
+              status: SwapIntentStatus.complete,
+            ).copyWith(
+              direction: SwapDirection.externalToZec,
+              destinationChainTxHash: txid(i),
+              privateAddress: true,
+              createdAt: DateTime.utc(2026, 5, 22, i),
+            ),
+        ]),
+        payoutRowsLoader: (_, txids) async {
+          checked.addAll(txids);
+          return const [];
+        },
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Swapping...'));
+    await tester.pumpAndSettle();
+
+    // Desktop rows title a payout still being found as in progress.
+    expect(find.text('Swapping...'), findsNWidgets(5));
+    expect(checked, hasLength(5));
+    expect(checked, isNot(contains(swapChainTxidToWalletTxidHex(txid(0)))));
+  });
+
   testWidgets('home recent activity keeps the Sent row for refunded swaps', (
     tester,
   ) async {
@@ -2190,6 +2232,7 @@ Widget _appHarness(
   SyncState? syncState,
   FakeSyncNotifier? syncNotifier,
   SwapActivityStore? swapActivityStore,
+  SwapPayoutRowsLoader? payoutRowsLoader,
   GiftCardActivityIndex? giftCardActivityIndex,
   Future<GiftCardActivityIndex>? giftCardActivityFuture,
   ThemeMode themeMode = ThemeMode.system,
@@ -2250,6 +2293,8 @@ Widget _appHarness(
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
+      if (payoutRowsLoader != null)
+        swapPayoutRowsLoaderProvider.overrideWithValue(payoutRowsLoader),
       giftCardActivityIndexProvider.overrideWith(
         (ref, accountUuid) async =>
             giftCardActivityFuture ??

@@ -16,6 +16,7 @@ import '../models/swap_detail_tooltips.dart';
 import '../models/swap_fiat_value_formatting.dart';
 import '../models/swap_quote_text.dart';
 import 'swap_amount_text.dart';
+import 'one_time_address_label.dart';
 import 'swap_review_info.dart';
 
 /// Content width inside the 420 content area (Figma ' Review' frame).
@@ -142,6 +143,9 @@ class SwapReviewPageContent extends StatelessWidget {
         detailText: payMode
             ? l10n.commonPrivatelyFromShieldedBalance
             : payFiatTextOverride ?? _payFiatText(quote),
+        oneTimeAddress: addressPlan.oneTimeZecAddress
+            ? OneTimeAddressRole.refund
+            : null,
       );
     }
     final refundAddress = addressPlan.oneClickRefundTo.trim();
@@ -166,6 +170,9 @@ class SwapReviewPageContent extends StatelessWidget {
         label: l10n.commonYoureReceiving,
         amountText: quote.receiveEstimateText,
         detailText: receiveFiatTextOverride ?? _receiveFiatText(quote),
+        oneTimeAddress: addressPlan.oneTimeZecAddress
+            ? OneTimeAddressRole.payout
+            : null,
       );
     }
     final recipientAddress = addressPlan.userExternalAddress.trim();

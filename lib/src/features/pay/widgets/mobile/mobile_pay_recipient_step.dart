@@ -32,6 +32,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.recents,
     required this.busy,
     this.enabled = true,
+    this.waitLabel,
     this.selectedContactId,
     required this.externalAsset,
     required this.onAddressChanged,
@@ -50,6 +51,9 @@ class MobilePayRecipientStep extends StatefulWidget {
   final List<PayRecentRecipient> recents;
   final bool busy;
   final bool enabled;
+
+  /// Why Continue can't fetch a quote yet, as its label.
+  final String? waitLabel;
   final String? selectedContactId;
   final SwapAsset externalAsset;
   final ValueChanged<String> onAddressChanged;
@@ -255,13 +259,14 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                   expand: true,
                   trailing: widget.busy ? const AppIcon(AppIcons.loader) : null,
                   iconGap: AppSpacing.xxs,
-                  onPressed: widget.busy || !widget.enabled
+                  onPressed:
+                      widget.busy || !widget.enabled || widget.waitLabel != null
                       ? null
                       : widget.onSelectRecipient,
                   child: Text(
                     widget.busy
                         ? context.l10n.payFetchingQuote
-                        : context.l10n.commonContinue,
+                        : widget.waitLabel ?? context.l10n.commonContinue,
                   ),
                 ),
               ],

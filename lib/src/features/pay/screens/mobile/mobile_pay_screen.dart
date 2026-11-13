@@ -1,6 +1,5 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
-
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -20,8 +19,11 @@ import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../address_book/providers/address_book_provider.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../swap/providers/swap_address_wait_provider.dart';
+import '../../../swap/providers/swap_funding_balance_provider.dart';
+import '../../../swap/providers/swap_zec_staging_address_service.dart';
 import '../../../swap/models/swap_intent_presentation_mapper.dart'
     show swapIntentsFromRecords;
 import '../../../swap/models/swap_models.dart';
@@ -30,6 +32,7 @@ import '../../../swap/providers/swap_activity_store.dart'
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../../swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
+import '../../models/pay_amount_input.dart';
 import '../../models/pay_recent_recipients.dart';
 import '../../widgets/mobile/mobile_pay_add_contact_card.dart';
 import '../../widgets/mobile/mobile_pay_amount_step.dart';
@@ -345,8 +348,13 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       ),
       _MobilePayStep.recipient => context.l10n.commonSelectRecipient,
     };
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    // A payment sends ZEC, so a one-time refund address may wait for sync.
+    final addressWait = ref.watch(swapAddressWaitProvider(true));
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: ref.watch(swapUsesOneTimeAddressProvider),
+      )),
     );
 
     return MobileSidebarExitScope(
@@ -378,7 +386,17 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                         state: swapState,
                         controller: _amountController,
                         focusNode: _amountFocusNode,
-                        zecAvailableZatoshi: migrationSpendable,
+                        zecAvailableZatoshi: funding.spendable,
+                        balanceMessage: swapIronwoodOnlyShortfallMessage(
+                          context.l10n,
+                          funding,
+                          (available) => payAmountExceedsAvailableZec(
+                            swapState,
+                            available,
+                          ),
+                          payment: true,
+                          privacyModeEnabled: ref.watch(privacyModeProvider),
+                        ),
                         onAmountChanged: swapNotifier.updateReceiveAmount,
                         onFiatAmountChanged:
                             swapNotifier.updateReceiveAmountFiat,
@@ -410,6 +428,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                         enabled:
                             swapState.externalAssetIsAvailable &&
                             !addressBookInitialLoading,
+                        waitLabel: addressWait == null
+                            ? null
+                            : swapAddressWaitLabel(context.l10n, addressWait),
                         selectedContactId: swapState.userExternalContactId,
                         externalAsset: swapState.externalAsset,
                         onAddressChanged: _handleAddressChanged,

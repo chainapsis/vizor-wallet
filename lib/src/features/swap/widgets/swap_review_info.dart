@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_info_row.dart';
 import '../models/swap_models.dart';
+import 'one_time_address_label.dart';
 import 'swap_asset_icon.dart';
 
 /// One side of the [SwapReviewInfo] summary.
@@ -15,6 +16,7 @@ class SwapReviewInfoSideData {
     required this.amountText,
     required this.detailText,
     this.detailCopyText,
+    this.oneTimeAddress,
   });
 
   final SwapAsset asset;
@@ -31,6 +33,10 @@ class SwapReviewInfoSideData {
 
   /// When set, the bottom line shows a Copy affordance copying this value.
   final String? detailCopyText;
+
+  /// Set when this side's ZEC goes to or comes back to a one-time address,
+  /// shown where an address would offer Copy.
+  final OneTimeAddressRole? oneTimeAddress;
 }
 
 /// Figma 'Review Info': the paying/receiving summary block shared by the
@@ -94,6 +100,9 @@ class SwapReviewInfo extends StatelessWidget {
         showChainBadge: data.asset != SwapAsset.zec,
       ),
       bottomLeftText: data.detailText,
+      trailing: !showCopy && data.oneTimeAddress != null
+          ? OneTimeAddressLabel(role: data.oneTimeAddress!)
+          : null,
       trailingActionLabel: showCopy ? context.l10n.commonCopy : null,
       trailingActionIconName: AppIcons.copy,
       trailingActionKey: showCopy ? copyButtonKey : null,

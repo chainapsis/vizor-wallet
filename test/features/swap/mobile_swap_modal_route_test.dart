@@ -21,8 +21,10 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_address_wait_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
@@ -31,10 +33,15 @@ import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_sc
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/providers/wallet_pir_server_provider.dart';
+import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart'
+    show SwapAccountReadiness;
 
 import '../../fakes/fake_sync_notifier.dart';
 
+import '../../support/full_text_expectations.dart';
 import '../../support/leading_decimal_input.dart';
+import '../../support/widget_test_viewport.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -49,14 +56,14 @@ const _accountState = AccountState(
   activeAddress: 'u1swapmodaladdress',
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
+AppBootstrapState _bootstrap({bool privacyMode = false}) => AppBootstrapState(
   initialLocation: '/home',
   initialAccountState: _accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyMode,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
@@ -67,9 +74,17 @@ Widget _app({
   _MobileDelayedQuoteSwapProvider? swapProvider,
   SwapComposerPreferencesStore? composerPreferencesStore,
   List<AddressBookContact> addressBookContacts = const [],
+  bool oneTimeZecAddress = false,
+  int chainTipHeight = 0,
+  int scannedHeight = 0,
+  BigInt? ironwoodBalance,
+  bool privacyMode = false,
+  bool restoring = false,
 }) => ProviderScope(
   overrides: [
-    appBootstrapProvider.overrideWithValue(_bootstrap()),
+    appBootstrapProvider.overrideWithValue(
+      _bootstrap(privacyMode: privacyMode),
+    ),
     nearIntentsServiceStatusProvider.overrideWith(
       () => FixtureServiceStatusNotifier(serviceStatus),
     ),
@@ -89,9 +104,25 @@ Widget _app({
           hasAccountScopedData: true,
           orchardBalance: BigInt.from(100000000),
           spendableBalance: BigInt.from(100000000),
+          chainTipHeight: chainTipHeight,
+          scannedHeight: scannedHeight,
+          ironwoodBalance:
+              ironwoodBalance ??
+              (oneTimeZecAddress ? BigInt.from(100000000) : null),
         ),
       ),
     ),
+    if (oneTimeZecAddress)
+      swapUsesOneTimeAddressProvider.overrideWithValue(true),
+    if (restoring)
+      swapAccountReadinessReaderProvider.overrideWithValue(
+        (_) async => const SwapAccountReadiness(
+          seedWalk: true,
+          lookups: false,
+          awaitingAdmission: false,
+        ),
+      ),
+    walletPirServerProvider.overrideWith(_NoWalletPirServers.new),
   ],
   child: MaterialApp.router(
     localizationsDelegates: appLocalizationsDelegates,
@@ -607,6 +638,153 @@ void main() {
     expect(tester.widget<TextField>(textField).controller?.text, '5.12');
   });
 
+  testWidgets('a one-time refund address waits for sync on the button', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(oneTimeZecAddress: true, chainTipHeight: 1000, scannedHeight: 900),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.5',
+    );
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('mobile_swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Waiting for sync…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+    expect(
+      find.byKey(const ValueKey('swap_one_time_address_refund')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an unfinished history check whose round waits for a server '
+      'asks for one, and the button opens the server picker', (tester) async {
+    await tester.pumpWidget(_app(oneTimeZecAddress: true, restoring: true));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSwapScreen)),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.externalToZec);
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    container.read(swapRecoveryNeedsServerProvider.notifier).set(true);
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('mobile_swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Choose a server')),
+      findsOneWidget,
+    );
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    final title = find.text('Private query server');
+    expect(title, findsOneWidget);
+    Navigator.of(tester.element(title)).pop();
+    await tester.pumpAndSettle();
+
+    // Choosing a server clears it, and the address is prepared as usual.
+    container.read(swapRecoveryNeedsServerProvider.notifier).set(false);
+    // The preparing slot's loader keeps animating, so this never settles.
+    await tester.pump();
+    expect(
+      find.descendant(of: button, matching: find.text('Preparing address…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
+  for (final privacy in [false, true]) {
+    testWidgets('a one-time refund address is funded from Ironwood only'
+        '${privacy ? ', with the balance masked in privacy mode' : ''}', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          oneTimeZecAddress: true,
+          ironwoodBalance: BigInt.from(10000000),
+          privacyMode: privacy,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Swap').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.5',
+      );
+      await tester.tap(find.text('Add recipient address'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('swap_address_update_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_swap_review_button')),
+          matching: find.text('Not enough ZEC'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Private swaps use Ironwood ZEC only. '
+          'You have ${privacy ? '******' : '0.1'}\u00A0ZEC there.',
+        ),
+        findsOneWidget,
+      );
+    });
+  }
+
+  testWidgets('the Ironwood shortfall wraps in full with large text on a '
+      'narrow screen', (tester) async {
+    await ignoringFlexOverflows(() async {
+      await setWidgetTestViewport(tester, const Size(320, 568));
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        _app(oneTimeZecAddress: true, ironwoodBalance: BigInt.from(10000000)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Swap').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.5',
+      );
+      await tester.pumpAndSettle();
+
+      await expectTextFullyShown(
+        tester,
+        'Private swaps use Ironwood ZEC only. You have 0.1\u00A0ZEC there.',
+      );
+    });
+  });
+
   testWidgets(
     'review quote loading shows loader and disables slippage settings',
     (tester) async {
@@ -915,4 +1093,12 @@ class _FakeAddressBookRepository implements AddressBookRepository {
       ..clear()
       ..addAll(contacts);
   }
+}
+
+/// A private query server picker with no servers, which opens without
+/// storage or native calls.
+class _NoWalletPirServers extends WalletPirServerNotifier {
+  @override
+  Future<WalletPirServerState> build() async =>
+      const WalletPirServerState(source: null);
 }

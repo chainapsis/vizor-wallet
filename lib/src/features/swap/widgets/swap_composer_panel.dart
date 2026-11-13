@@ -11,6 +11,7 @@ import '../../address_book/widgets/contact_name_inline.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
+import 'one_time_address_label.dart';
 import 'swap_asset_icon.dart';
 import 'swap_quote_error_text.dart';
 
@@ -33,10 +34,29 @@ class SwapComposerPanel extends StatefulWidget {
     required this.zecAvailableText,
     required this.zecAvailableZatoshi,
     this.destinationContactName,
+    this.oneTimeZecAddress = false,
+    this.preparingOneTimeAddress = false,
+    this.balanceMessage,
+    this.onViewSwaps,
     super.key,
   });
 
   final SwapState state;
+
+  /// Whether the swap's ZEC side uses a one-time address, shown in the empty
+  /// address slot of the ZEC card: the payout when receiving ZEC, the refund
+  /// when sending it.
+  final bool oneTimeZecAddress;
+
+  /// Whether the one-time payout address is still being checked, shown in
+  /// the same slot while receiving ZEC.
+  final bool preparingOneTimeAddress;
+
+  /// Why the ZEC amount can't be funded, shown where quote errors go.
+  final String? balanceMessage;
+
+  /// Opens Activity from a quote error about swaps holding every address.
+  final VoidCallback? onViewSwaps;
 
   /// Address-book label for the current destination address, shown in the
   /// address chip instead of the truncated address when set.
@@ -137,6 +157,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final quoteError =
         state.quoteAmountPrecisionError(context.l10n) ??
         state.externalAssetSupportError(context.l10n) ??
+        widget.balanceMessage ??
         state.quoteError?.text(context.l10n);
     final zecAmountOverAvailable = _zecAmountOverAvailable(
       state,
@@ -202,6 +223,13 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                   onTap: () =>
                       widget.onToggleFiatInputMode(SwapAmountInputSide.pay),
                 ),
+                trailing: widget.oneTimeZecAddress
+                    ? const OneTimeAddressSlot(
+                        role: OneTimeAddressRole.refund,
+                        height: 32,
+                        fontWeight: FontWeight.w600,
+                      )
+                    : null,
               )
             : _SwapCardFooter(
                 leading: _SwapFiatValueText(
@@ -286,6 +314,14 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                   onTap: () =>
                       widget.onToggleFiatInputMode(SwapAmountInputSide.receive),
                 ),
+                trailing: widget.oneTimeZecAddress
+                    ? OneTimeAddressSlot(
+                        role: OneTimeAddressRole.payout,
+                        height: 32,
+                        preparing: widget.preparingOneTimeAddress,
+                        fontWeight: FontWeight.w600,
+                      )
+                    : null,
               ),
       ),
       targetDirection: targetDirection,
@@ -313,7 +349,16 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               SwapQuoteErrorText(
                 message: quoteError,
                 textKey: const ValueKey('swap_quote_error_message'),
-                maxLines: 2,
+                maxLines: quoteError == widget.balanceMessage ? null : 2,
+                action: switch (widget.onViewSwaps) {
+                  final onViewSwaps? => swapQuoteErrorAction(
+                    context.l10n,
+                    state.quoteError,
+                    shown: quoteError,
+                    onViewSwaps: onViewSwaps,
+                  ),
+                  null => null,
+                },
               ),
             ],
           ],

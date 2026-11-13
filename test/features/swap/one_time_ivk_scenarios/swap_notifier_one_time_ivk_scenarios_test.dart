@@ -53,10 +53,7 @@ void main() {
       expect(h.sync.awaited, 0);
       expect(
         h.state.quoteError,
-        const SwapLiteralMessage(
-          'Update Vizor to keep checking private swap addresses. '
-          'Your saved progress is kept.',
-        ),
+        const SwapNotice(SwapNoticeKind.recoveryUpdateRequired),
       );
     },
   );

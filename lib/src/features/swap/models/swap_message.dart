@@ -49,6 +49,7 @@ enum SwapNoticeKind {
   receiveAddressUnavailable,
   privateReceiveAddressPreparationFailed,
   privateReceiveAddressUnavailable,
+  privateReceiveAddressLimit,
   depositIntentMissing,
   broadcastPartial,
   broadcastPending,
@@ -121,6 +122,8 @@ final class SwapNotice extends SwapMessage {
       l10n.swapNoticePrivateReceiveAddressPreparationFailed,
     SwapNoticeKind.privateReceiveAddressUnavailable =>
       l10n.swapNoticePrivateReceiveAddressUnavailable,
+    SwapNoticeKind.privateReceiveAddressLimit =>
+      l10n.swapNoticePrivateReceiveAddressLimit,
     SwapNoticeKind.depositIntentMissing => l10n.swapNoticeDepositIntentMissing,
     SwapNoticeKind.broadcastPartial => l10n.swapNoticeBroadcastPartial,
     SwapNoticeKind.broadcastPending => l10n.swapNoticeBroadcastPending,
@@ -237,7 +240,9 @@ String swapFailureText(
           : l10n.swapFailureStillProcessing,
     SwapFailureCategory.zecDepositFunding => l10n.swapFailureZecDepositFunding,
     SwapFailureCategory.zecDepositIronwoodFunding =>
-      l10n.swapFailureZecDepositIronwoodFunding,
+      pay
+          ? l10n.swapFailureZecDepositIronwoodFundingPay
+          : l10n.swapFailureZecDepositIronwoodFunding,
     SwapFailureCategory.walletPreflight => l10n.swapFailureZecDepositPreflight,
     SwapFailureCategory.depositNotFound => l10n.swapFailureDepositNotIndexed,
     SwapFailureCategory.depositRejected => l10n.swapFailureDepositRejected,

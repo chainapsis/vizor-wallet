@@ -31,9 +31,17 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     BigInt? displaySpendableBalance,
     this.displaySpendableFreshness = SpendableBalanceFreshness.authoritative,
     this.recentTransactions = const [],
+    this.chainTipHeight = 0,
+    this.scannedHeight = 0,
+    this.ironwoodBalance,
   }) : displaySpendableBalance = displaySpendableBalance ?? spendableBalance;
 
   final BigInt spendableBalance;
+  final int chainTipHeight;
+  final int scannedHeight;
+
+  /// Spendable Ironwood value, which one-time refund addresses fund from.
+  final BigInt? ironwoodBalance;
   final BigInt displaySpendableBalance;
   final SpendableBalanceFreshness displaySpendableFreshness;
   final List<rust_sync.TransactionInfo> recentTransactions;
@@ -45,6 +53,21 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
 
   /// What each waited round reports: its failure, or null when it succeeded.
   Object? swapRecoveryFailure;
+
+  /// The wallet's saved swap recovery state, or null for no wallet.
+  SwapRecoveryStatus? swapRecoveryStatusResult;
+
+  @override
+  Future<SwapRecoveryStatus?> swapRecoveryStatus() async =>
+      swapRecoveryStatusResult;
+
+  /// Every account's private swap readiness, or null for no wallet.
+  SwapAccountReadiness? swapAccountReadinessResult;
+
+  @override
+  Future<SwapAccountReadiness?> swapAccountReadiness(
+    String accountUuid,
+  ) async => swapAccountReadinessResult;
 
   /// Counts recovery rounds a swap flow starts without waiting.
   @override
@@ -71,6 +94,9 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     displaySpendableFreshness: displaySpendableFreshness,
     totalBalance: spendableBalance,
     recentTransactions: recentTransactions,
+    chainTipHeight: chainTipHeight,
+    scannedHeight: scannedHeight,
+    ironwoodBalance: ironwoodBalance,
   );
 
   @override
@@ -928,8 +954,21 @@ class _HeldFirstQuoteSwapProvider extends _NewDepositPerQuoteSwapProvider {
   }
 }
 
+/// A private query server picker with no servers, which opens without
+/// storage or native calls.
+class _NoWalletPirServers extends WalletPirServerNotifier {
+  @override
+  Future<WalletPirServerState> build() async =>
+      const WalletPirServerState(source: null);
+}
+
 /// NEAR swap privacy, off at first, that a test sets without the settings
 /// store or native calls.
+class _OnNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
+  @override
+  bool build() => true;
+}
+
 class _FakeNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
   @override
   bool? build() => false;

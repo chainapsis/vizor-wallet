@@ -16,6 +16,7 @@ import 'swap_privacy_mask.dart';
 import 'swap_status_presentation.dart';
 import 'swap_token_amount_formatting.dart';
 import '../../../core/l10n/l10n.dart';
+import 'one_time_address_role.dart';
 
 class SwapActivityAccountDetail {
   const SwapActivityAccountDetail({required this.name, this.profilePictureId});
@@ -108,6 +109,7 @@ class SwapActivityStatusPresentation {
     this.payStatus,
     this.explorerUri,
     required this.showTabs,
+    this.oneTimeAddress,
   });
 
   final String title;
@@ -147,6 +149,10 @@ class SwapActivityStatusPresentation {
   final PayActivityStatusPresentation? payStatus;
   final Uri? explorerUri;
   final bool showTabs;
+
+  /// Set when the swap's ZEC side uses a one-time address: the payout when
+  /// receiving ZEC, the refund when sending it.
+  final OneTimeAddressRole? oneTimeAddress;
 }
 
 SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
@@ -156,6 +162,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   SwapActivityAccountDetail? accountDetail,
   Iterable<AddressBookContact> addressBookContacts = const [],
   BigInt? confirmedDepositFeeZatoshi,
+  bool findingPayout = false,
   bool privacyModeEnabled = false,
 }) {
   final sellAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
@@ -226,10 +233,19 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     }
   }
 
+  // Until the wallet finds the payout, the swap reads as in progress.
+  final labelStatus = findingPayout
+      ? SwapIntentStatus.processing
+      : intent.status;
   return SwapActivityStatusPresentation(
+    oneTimeAddress: intent.privateAddress
+        ? (sendsZec ? OneTimeAddressRole.refund : OneTimeAddressRole.payout)
+        : null,
     // Keep the generic swap presentation stable. Pay surfaces consume the
     // dedicated [payStatus] contract instead of relabelling generic details.
-    title: _swapActivityStatusTitle(l10n, intent),
+    title: findingPayout
+        ? l10n.swapActivitySwapInProgress
+        : _swapActivityStatusTitle(l10n, intent),
     payAsset: sellAsset,
     receiveAsset: receiveAsset,
     payFiatText: payFiatText,
@@ -246,9 +262,9 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
         ? _payIntentShowsPaidCopy(intent)
               ? l10n.swapActivityYouPaid
               : l10n.commonYouPay
-        : _swapShowsTerminalFailureLabels(intent.status)
+        : _swapShowsTerminalFailureLabels(labelStatus)
         ? l10n.swapActivityDepositAmount
-        : intent.status == SwapIntentStatus.complete
+        : labelStatus == SwapIntentStatus.complete
         ? l10n.swapActivityYouPaid
         : l10n.commonYourePaying,
     receiveLabel: payMode
@@ -260,19 +276,27 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
             SwapIntentStatus.incompleteDeposit => l10n.commonAmount,
             _ => l10n.commonRecipientGets,
           }
-        : _swapShowsTerminalFailureLabels(intent.status)
+        : _swapShowsTerminalFailureLabels(labelStatus)
         ? l10n.swapActivityExpectedToReceive
-        : intent.status == SwapIntentStatus.complete
+        : labelStatus == SwapIntentStatus.complete
         ? l10n.swapActivityYouReceived
         : l10n.commonYoureReceiving,
     payDetailText: payDetailText,
     payDetailCopyText: payDetailCopyText,
     receiveDetailText: receiveDetailText,
     receiveDetailCopyText: receiveDetailCopyText,
-    statusLabel: _swapActivityStatusLabel(l10n, intent.status),
-    badgeKind: _swapActivityStatusBadgeKind(intent.status),
+    statusLabel: findingPayout
+        ? l10n.swapFindingPayout
+        : _swapActivityStatusLabel(l10n, intent.status),
+    badgeKind: findingPayout
+        ? SwapStatusBadgeKind.liveQuote
+        : _swapActivityStatusBadgeKind(intent.status),
     progressIndex: _swapActivityStatusProgressIndex(intent),
-    steps: _swapActivityProgressSteps(l10n, intent),
+    steps: _swapActivityProgressSteps(
+      l10n,
+      intent,
+      findingPayout: findingPayout,
+    ),
     details: _swapActivityStatusDetails(
       l10n,
       intent,
@@ -287,7 +311,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     explorerUri: swapActivityExplorerUri(intent),
     // Mobile keeps the shared progress tabs while reading its detail values
     // from [payStatus]; desktop renders its dedicated Pay status content.
-    showTabs: !intent.status.isTerminal,
+    // A payout still being found keeps its steps, like any swap in progress.
+    showTabs: findingPayout || !intent.status.isTerminal,
   );
 }
 
@@ -452,8 +477,9 @@ int _swapActivityStatusProgressIndex(SwapIntent intent) {
 
 List<SwapStatusStepData> _swapActivityProgressSteps(
   AppLocalizations l10n,
-  SwapIntent intent,
-) {
+  SwapIntent intent, {
+  bool findingPayout = false,
+}) {
   final sourceSymbol = swapActivityPairSymbol(l10n, intent.pair, 0);
   final receiveSymbol = swapActivityPairSymbol(l10n, intent.pair, 1);
   if (intent.payMode && intent.direction == SwapDirection.zecToExternal) {
@@ -540,16 +566,25 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
       lastCheckedLabel: lastCheckedLabel,
       description: l10n.swapActivityStepSwapDescription,
     ),
-    SwapStatusStepData(
-      title: deliveryTitle,
-      state: SwapStatusStepState.pending,
-      kind: sendsZecToExternal
-          ? SwapStatusStepKind.other
-          : SwapStatusStepKind.walletDelivery,
-      activeTitle: deliveryActive,
-      lastCheckedLabel: lastCheckedLabel,
-      description: l10n.swapActivityStepDeliverSwapDescription,
-    ),
+    if (findingPayout)
+      SwapStatusStepData(
+        title: deliveryTitle,
+        state: SwapStatusStepState.pending,
+        kind: SwapStatusStepKind.walletDelivery,
+        activeTitle: l10n.swapFindingPayout,
+        description: l10n.swapActivityStepFindingPayoutDescription,
+      )
+    else
+      SwapStatusStepData(
+        title: deliveryTitle,
+        state: SwapStatusStepState.pending,
+        kind: sendsZecToExternal
+            ? SwapStatusStepKind.other
+            : SwapStatusStepKind.walletDelivery,
+        activeTitle: deliveryActive,
+        lastCheckedLabel: lastCheckedLabel,
+        description: l10n.swapActivityStepDeliverSwapDescription,
+      ),
   ];
 }
 

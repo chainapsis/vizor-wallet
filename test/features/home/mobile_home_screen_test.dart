@@ -44,6 +44,7 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_payout_discovery_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -62,6 +63,7 @@ import '../../support/app_test_fonts.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+import '../../support/test_l10n.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
 /// channel in widget tests.
@@ -260,6 +262,7 @@ Widget _app(
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
+  SwapPayoutRowsLoader? payoutRowsLoader,
   GiftCardActivityIndex? giftCardActivityIndex,
   Future<GiftCardActivityIndex>? giftCardActivityFuture,
   AppThemeData theme = AppThemeData.dark,
@@ -453,6 +456,8 @@ Widget _app(
       ),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
+      if (payoutRowsLoader != null)
+        swapPayoutRowsLoaderProvider.overrideWithValue(payoutRowsLoader),
       giftCardActivityIndexProvider.overrideWith(
         (ref, accountUuid) async =>
             giftCardActivityFuture ??
@@ -3852,6 +3857,39 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('activity tx route $receiveWalletOrder'), findsOneWidget);
+  });
+
+  testWidgets('home checks payouts only for the swaps it shows', (
+    tester,
+  ) async {
+    // One more private payout than Home shows, the oldest first.
+    String txid(int i) => i.toRadixString(16).padLeft(64, '0');
+    final checked = <String>{};
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)),
+        swapEnabled: true,
+        swapActivityStore: _FakeSwapActivityStore([
+          for (var i = 0; i < 11; i++)
+            _externalToZecActivityRecord(
+              id: 'swap-$i',
+              destinationChainTxHash: txid(i),
+            ).copyWith(
+              privateAddress: true,
+              createdAt: DateTime.utc(2026, 7, 20, i),
+            ),
+        ]),
+        payoutRowsLoader: (_, txids) async {
+          checked.addAll(txids);
+          return const [];
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(testL10n.swapFindingPayout), findsNWidgets(10));
+    expect(checked, hasLength(10));
+    expect(checked, isNot(contains(swapChainTxidToWalletTxidHex(txid(0)))));
   });
 
   testWidgets('recent activity section uses the Figma inner inset', (

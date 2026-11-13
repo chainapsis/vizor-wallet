@@ -17,6 +17,7 @@ import '../../../rust/api/one_time_ivk.dart'
     show ReceiveError, ReceiveErrorKind;
 import '../../../rust/api/sync.dart' show BroadcastNotice;
 import 'swap_activity_tracker.dart';
+import 'swap_address_wait_provider.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
 import 'swap_max_amount_estimator.dart';
@@ -1011,6 +1012,24 @@ class SwapNotifier extends Notifier<SwapState> {
           retry: false,
           recoveryFailure: recoveryFailure,
         );
+      }
+      // A payout address the wallet is still checking waits for the next
+      // recovery round, which the button shows, rather than an error.
+      if (kind == ReceiveErrorKind.receiveHistory &&
+          !state.payMode &&
+          !state.direction.sendsZec &&
+          ref.read(swapUsesOneTimeAddressProvider) &&
+          _addressRecoveryFailureMessage(recoveryFailure) == null) {
+        ref
+            .read(swapAddressHistoryPendingProvider.notifier)
+            .quoteRefused(accountUuid);
+        state = state.copyWith(
+          reviewVisible: false,
+          quoteLoading: false,
+          clearQuoteError: true,
+          clearReview: true,
+        );
+        return;
       }
       state = state.copyWith(
         reviewVisible: false,
@@ -2678,7 +2697,15 @@ class SwapNotifier extends Notifier<SwapState> {
 
   SwapMessage _friendlyQuoteError(Object error) {
     if (_receiveError(error) case final receiveError?) {
-      return SwapLiteralMessage(receiveError.message);
+      return switch (receiveError.kind) {
+        ReceiveErrorKind.limit => const SwapNotice(
+          SwapNoticeKind.privateReceiveAddressLimit,
+        ),
+        ReceiveErrorKind.upgradeRequired => const SwapNotice(
+          SwapNoticeKind.recoveryUpdateRequired,
+        ),
+        _ => SwapLiteralMessage(receiveError.message),
+      };
     }
     if (error is SwapZecStagingAddressUnavailableException) {
       return SwapNotice(

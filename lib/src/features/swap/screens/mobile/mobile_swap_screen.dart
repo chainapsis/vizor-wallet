@@ -1,7 +1,6 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
-
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -25,14 +24,17 @@ import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
+import '../../../settings/widgets/wallet_pir_server_popup.dart';
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_state_provider.dart';
+import '../../providers/swap_address_wait_provider.dart';
+import '../../providers/swap_funding_balance_provider.dart';
+import '../../providers/swap_zec_staging_address_service.dart';
 import '../../widgets/mobile/mobile_swap_address_edit_modal.dart';
 import '../../widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
@@ -339,15 +341,23 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
+    final oneTimeZecAddress = ref.watch(swapUsesOneTimeAddressProvider);
+    final addressWait = ref.watch(
+      swapAddressWaitProvider(swapState.direction.sendsZec),
+    );
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: oneTimeZecAddress && swapState.direction.sendsZec,
+      )),
     );
+    final zecSpendable = funding.spendable;
     final zecAvailableText = hideAmountIfPrivacyMode(
       ZecAmount.fromZatoshi(
-        migrationSpendable,
+        zecSpendable,
       ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
@@ -366,9 +376,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       }());
     }
 
+    final shortfall = swapIronwoodOnlyShortfallMessage(
+      context.l10n,
+      funding,
+      (available) =>
+          _MobileSwapReviewButton.amountExceeds(swapState, available),
+      payment: false,
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
     final quoteError =
         swapState.quoteAmountPrecisionError(context.l10n) ??
         swapState.externalAssetSupportError(context.l10n) ??
+        shortfall ??
         swapState.quoteError?.text(context.l10n);
 
     return NearIntentsServiceNoticeHost(
@@ -422,6 +441,9 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                             ref.watch(addressBookProvider).value?.contacts ??
                                 const [],
                           )?.label,
+                          oneTimeZecAddress: oneTimeZecAddress,
+                          preparingOneTimeAddress:
+                              addressWait == SwapAddressWait.preparing,
                         ),
                         const SizedBox(height: AppSpacing.md),
                         Row(
@@ -443,7 +465,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                             Expanded(
                               child: _MobileSwapReviewButton(
                                 state: swapState,
-                                zecAvailableZatoshi: migrationSpendable,
+                                addressWait: addressWait,
+                                zecAvailableZatoshi: zecSpendable,
                                 onOpenDestinationAddress: _openAddressEditor,
                                 onReviewQuote: openReview,
                               ),
@@ -455,7 +478,13 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           SwapQuoteErrorText(
                             message: quoteError,
                             textKey: const ValueKey('swap_quote_error_message'),
-                            maxLines: 2,
+                            maxLines: quoteError == shortfall ? null : 2,
+                            action: swapQuoteErrorAction(
+                              context.l10n,
+                              swapState.quoteError,
+                              shown: quoteError,
+                              onViewSwaps: () => context.go('/activity'),
+                            ),
                           ),
                         ],
                       ],
@@ -484,21 +513,24 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
 class _MobileSwapReviewButton extends StatelessWidget {
   const _MobileSwapReviewButton({
     required this.state,
+    required this.addressWait,
     required this.zecAvailableZatoshi,
     required this.onOpenDestinationAddress,
     required this.onReviewQuote,
   });
 
   final SwapState state;
+  final SwapAddressWait? addressWait;
   final BigInt zecAvailableZatoshi;
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
 
-  bool get _balanceExceeded {
+  /// Whether the ZEC amount [state] sends is not below [available].
+  static bool amountExceeds(SwapState state, BigInt available) {
     if (!state.direction.sendsZec) return false;
     final amount = parseZecAmount(state.amountText.trim());
     if (amount == null || amount <= BigInt.zero) return false;
-    return amount >= zecAvailableZatoshi;
+    return amount >= available;
   }
 
   @override
@@ -506,12 +538,20 @@ class _MobileSwapReviewButton extends StatelessWidget {
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
     final destinationFormatError = state.destinationAddressFormatIssue
         ?.localizedMessage(context.l10n);
-    final balanceExceeded = _balanceExceeded;
-    final canReview = state.canReviewQuote && !balanceExceeded;
+    final balanceExceeded = amountExceeds(state, zecAvailableZatoshi);
+    final waiting = addressWait != null && !state.quoteLoading;
+    final canReview = state.canReviewQuote && !balanceExceeded && !waiting;
+    final chooseServer =
+        waiting &&
+        addressWait == SwapAddressWait.server &&
+        destinationFormatError == null &&
+        !balanceExceeded;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
         : canReview
         ? onReviewQuote
+        : chooseServer
+        ? () => unawaited(showWalletPirServerPopup(context))
         : null;
     final label = needsDestinationAddress
         ? (state.direction.sendsZec
@@ -522,6 +562,8 @@ class _MobileSwapReviewButton extends StatelessWidget {
                   ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
                   ? context.l10n.swapActionGettingQuote
+                  : waiting
+                  ? swapAddressWaitLabel(context.l10n, addressWait!)
                   : context.l10n.commonContinueToReview);
 
     return AppButton(
