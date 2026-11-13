@@ -4,6 +4,7 @@ import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
 import 'mobile_passcode_capture.dart';
 import 'mobile_receive_capture.dart';
+import 'native_tab_bar_capture.dart';
 import '../src/features/ledger/services/ledger_failure_guidance.dart';
 import 'desktop_welcome_capture.dart';
 import 'language_settings_capture.dart';
@@ -107,6 +108,15 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'mobile-native-tab-bar',
+    description: 'Native iOS tab bar over scrolling Flutter color bands',
+    builder: buildNativeTabBarCapture,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    outsideScaffold: true,
+  ),
   FigmaCompareScenario(
     id: 'copy-desktop-reset-countdown',
     description: 'Localized reset button before the safety delay expires',
