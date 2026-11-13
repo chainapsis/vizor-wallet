@@ -95,12 +95,7 @@ pub(crate) fn open_existing_wallet_db_with_timeout(
     network: WalletNetwork,
     timeout: Duration,
 ) -> Result<WalletDatabase, String> {
-    let conn = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::default().difference(rusqlite::OpenFlags::SQLITE_OPEN_CREATE),
-    )
-    .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
-    configure_wallet_connection(&conn, timeout, true)?;
+    let conn = open_existing_wallet_raw_conn_with_timeout(db_path, timeout)?;
     ensure_mined_transaction_history(&conn)?;
     Ok(wallet_db(conn, db_path, network))
 }
@@ -237,6 +232,21 @@ pub(crate) fn open_wallet_raw_conn_with_timeout(
 ) -> Result<rusqlite::Connection, String> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    configure_wallet_connection(&conn, timeout, true)?;
+    Ok(conn)
+}
+
+/// [`open_wallet_raw_conn_with_timeout`] for a wallet that must already exist, so a
+/// late writer cannot recreate a database a reset deleted.
+pub(crate) fn open_existing_wallet_raw_conn_with_timeout(
+    db_path: &str,
+    timeout: Duration,
+) -> Result<rusqlite::Connection, String> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::default().difference(rusqlite::OpenFlags::SQLITE_OPEN_CREATE),
+    )
+    .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, true)?;
     Ok(conn)
 }
