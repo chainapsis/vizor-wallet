@@ -558,23 +558,85 @@ struct NativeTabBarTests {
     #expect(event["revision"] as? Int64 == fixture.presentation["revision"] as? Int64)
   }
 
-  @Test("A first reveal can finish behind a modal while its input remains disabled")
+  @Test("Visible native material waits for route input even after its entrance settles")
   func firstRevealWhileCovered() throws {
     let animator = NativeTabBarTestAnimator()
     let fixture = NativeTabBarFixture(
       animator: animator.animate, reducedMotion: false, initialInputEnabled: false
     )
     #expect(animator.animations.count == 1)
+    let selected = try #require(fixture.bar.selectedItem)
+    let touchPoint = CGPoint(x: fixture.host.bounds.midX, y: fixture.host.bounds.midY)
+    #expect(fixture.presentation["phase"] as? String == "entering")
+    #expect(fixture.host.hitTest(touchPoint, with: nil) == nil)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
+    #expect(fixture.selectionEvents.isEmpty)
     animator.animations.last?.finish()
+    #expect(fixture.presentation["phase"] as? String == "visible")
     #expect(!fixture.host.slidingView.isHidden)
     #expect(fixture.host.slidingView.transform == .identity)
     #expect(fixture.presentation["interactive"] as? Bool == false)
+    #expect(!fixture.host.isUserInteractionEnabled)
+    #expect(!fixture.bar.isUserInteractionEnabled)
     #expect(fixture.host.accessibilityElementsHidden)
+    #expect(fixture.host.hitTest(touchPoint, with: nil) == nil)
+    #expect(fixture.bar.hitTest(touchPoint, with: nil) == nil)
+    // A native accessibility action reaches the same delegate as a committed
+    // pointer selection; neither may navigate while the route is unsettled.
+    fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
+    #expect(fixture.selectionEvents.isEmpty)
     var args = fixture.snapshot()
     args["visibilityEpoch"] = 1
     #expect(fixture.update(args) == nil)
+    #expect(fixture.presentation["phase"] as? String == "visible")
     #expect(fixture.presentation["interactive"] as? Bool == true)
+    #expect(fixture.host.isUserInteractionEnabled)
+    #expect(fixture.bar.isUserInteractionEnabled)
+    #expect(!fixture.host.accessibilityElementsHidden)
     #expect(animator.animations.count == 1)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
+    #expect(fixture.selectionEvents.count == 1)
+    let event = try #require(fixture.selectionEvents.first?.arguments as? [String: Any])
+    #expect(event["visibilityEpoch"] as? Int64 == 1)
+    #expect(event["revision"] as? Int64 == fixture.presentation["revision"] as? Int64)
+  }
+
+  @Test("Cancelling a visual return hides the bar before route input was ever enabled")
+  func cancelledReturnRemainsNoninteractive() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(
+      animator: animator.animate, reducedMotion: false, initiallyHidden: true,
+      initialInputEnabled: false
+    )
+    var args = fixture.snapshot()
+    args["inputEnabled"] = false
+    args["showRequestId"] = 1
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    let entrance = try #require(animator.animations.last)
+    let selected = try #require(fixture.bar.selectedItem)
+    entrance.progress(to: 0.6)
+    #expect(!fixture.host.slidingView.isHidden)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
+    #expect(fixture.selectionEvents.isEmpty)
+    args["hidden"] = true
+    args["visibilityEpoch"] = 2
+    #expect(fixture.update(args) == nil)
+    #expect(entrance.cancelled)
+    #expect(fixture.presentation["phase"] as? String == "exiting")
+    #expect(!fixture.host.isUserInteractionEnabled)
+    #expect(!fixture.bar.isUserInteractionEnabled)
+    #expect(fixture.host.accessibilityElementsHidden)
+    let exit = try #require(animator.animations.last)
+    exit.finish()
+    entrance.completeEvenIfCancelled()
+    #expect(fixture.presentation["phase"] as? String == "hidden")
+    #expect(fixture.presentation["settledHidden"] as? Bool == true)
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    #expect(fixture.host.slidingView.isHidden)
+    fixture.platformView?.tabBar(fixture.bar, didSelect: selected)
+    #expect(fixture.selectionEvents.isEmpty)
   }
 
   @Test("Initial pending preparation survives a hierarchy move but does not replay a settled entrance")

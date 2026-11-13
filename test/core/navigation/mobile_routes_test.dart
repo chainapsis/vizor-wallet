@@ -255,6 +255,16 @@ void main() {
     expect(native.latest['hidden'], true);
     expect(find.byType(UiKitView), findsNothing);
     router.pop();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(observer.hasDepartingRoutes, true);
+    expect(native.latest['hidden'], false);
+    expect(native.latest['inputEnabled'], false);
+    // Even an early UIKit entrance completion cannot navigate mid-page-return.
+    await native.present(interactive: true, phase: 'visible');
+    await native.send('select', {'id': '/home'});
+    expect(router.routeInformationProvider.value.uri.path, '/settings');
     await tester.pumpAndSettle();
     await covered;
     expect(native.latest['hidden'], false);

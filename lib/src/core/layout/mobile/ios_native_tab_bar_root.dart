@@ -198,6 +198,7 @@ class IosNativeTabBarCoordinator extends ChangeNotifier {
         publication.sessionIdentity == _sessionIdentity &&
         publication.mode == MobileNavigationMode.bottomTabs &&
         !publication.covered &&
+        publication.inputReady &&
         !publication.configuration.hidden &&
         publication.configuration.inputEnabled &&
         owner._canSelect();
@@ -290,6 +291,7 @@ class IosNativeTabBarOwnerLease {
     required MediaQueryData media,
     required MobileNavigationMode mode,
     bool covered = false,
+    bool inputReady = true,
   }) => _coordinator._publish(
     this,
     _Publication(
@@ -298,6 +300,7 @@ class IosNativeTabBarOwnerLease {
       media: media,
       mode: mode,
       covered: covered,
+      inputReady: inputReady,
       sessionIdentity: _coordinator._sessionIdentity,
     ),
   );
@@ -336,6 +339,7 @@ class _Publication {
     required this.media,
     required this.mode,
     required this.covered,
+    required this.inputReady,
     required this.sessionIdentity,
   });
   final IosNativeTabBarConfiguration configuration;
@@ -343,6 +347,7 @@ class _Publication {
   final MediaQueryData media;
   final MobileNavigationMode mode;
   final bool covered;
+  final bool inputReady;
   final Object? sessionIdentity;
 
   _Publication withoutCallback() => _Publication(
@@ -358,6 +363,7 @@ class _Publication {
     media: media,
     mode: mode,
     covered: covered,
+    inputReady: inputReady,
     sessionIdentity: sessionIdentity,
   );
 
@@ -366,6 +372,7 @@ class _Publication {
       media == other.media &&
       mode == other.mode &&
       covered == other.covered &&
+      inputReady == other.inputReady &&
       sessionIdentity == other.sessionIdentity &&
       configuration.selectedId == other.configuration.selectedId &&
       configuration.hidden == other.configuration.hidden &&
@@ -414,7 +421,33 @@ class _IosNativeTabBarRegistrationState
             route.isCurrent &&
             (route.secondaryAnimation?.value ?? 0) <= 0.0001,
       ) &&
-      _observers.every((observer) => !observer.hasDepartingRoutes);
+      _observers.every(
+        (observer) =>
+            !observer.hasDepartingRoutes && !observer.nativeGestureInProgress,
+      );
+
+  bool get _visualReady {
+    var returning = false;
+    for (final route in _routes) {
+      if (!route.isActive) return false;
+      final observers = route.navigator?.widget.observers
+          .whereType<RouteOwnedNavigationObserver>();
+      final revealing =
+          observers?.any((observer) => observer.revealsNativeTabsFor(route)) ??
+          false;
+      returning |= revealing;
+      if (!revealing &&
+          (!route.isCurrent ||
+              (route.secondaryAnimation?.value ?? 0) > 0.0001 ||
+              (observers?.any(
+                    (observer) => observer.blocksNativeTabRevealFor(_routes),
+                  ) ??
+                  false))) {
+        return false;
+      }
+    }
+    return returning || TickerMode.valuesOf(context).enabled;
+  }
 
   bool _canSelect() =>
       mounted &&
@@ -448,9 +481,11 @@ class _IosNativeTabBarRegistrationState
     };
     for (final observer in _observers.difference(observers)) {
       observer.removeListener(_schedule);
+      observer.unwatchNativeTabReturns();
     }
     for (final observer in observers.difference(_observers)) {
       observer.addListener(_schedule);
+      observer.watchNativeTabReturns();
     }
     _observers
       ..clear()
@@ -494,7 +529,8 @@ class _IosNativeTabBarRegistrationState
         viewport: navigation?.viewportRect ?? Offset.zero & media.size,
         media: media,
         mode: navigation?.mode ?? MobileNavigationMode.bottomTabs,
-        covered: !_routeReady || !TickerMode.valuesOf(context).enabled,
+        covered: !_visualReady,
+        inputReady: _routeReady && TickerMode.valuesOf(context).enabled,
       );
     });
     WidgetsBinding.instance.ensureVisualUpdate();
@@ -505,6 +541,7 @@ class _IosNativeTabBarRegistrationState
     _lease?.release();
     for (final observer in _observers) {
       observer.removeListener(_schedule);
+      observer.unwatchNativeTabReturns();
     }
     for (final animation in _animations) {
       animation.removeStatusListener(_animationChanged);
