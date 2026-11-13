@@ -1,9 +1,11 @@
 # Native iOS tab bar
 
-The iOS 26+ bottom-navigation lane uses an app-owned Swift `UITabBar`, hosted
-through one Flutter platform view in a root overlay. Flutter still owns the
-destination list, localized titles, app theme, routing, and branch history. UIKit owns the glass
-material, item layout, selection lens, touch handling, and accessibility.
+The iOS 26+ navigation lane uses an app-owned Swift `UITabBar` for bottom
+navigation and a child `UITabBarController` for system side tabs on iPhone Duo.
+Both are hosted through one Flutter platform view in a root overlay. Flutter
+still owns the destination list, localized titles, app theme, routing, and branch
+history. UIKit owns the glass material, item layout, selection lens, touch
+handling, and accessibility.
 
 ## Appearance and scope
 
@@ -19,11 +21,44 @@ material, item layout, selection lens, touch handling, and accessibility.
   Flutter bar's 64-pixel height and surrounding margins do not wrap this lane.
 - The resolved app theme and text direction are passed to UIKit. Item titles
   come from the existing Flutter localizations.
-- Other platforms, older iOS versions, and existing vertical/sidebar navigation
-  retain their current implementations.
+- Other platforms, older iOS versions and the expanded wallet sidebar retain
+  their current implementations. Duo system side tabs use the native path.
 
 This implementation is independent of `liquid_glass_widgets`. The earlier
 experiment remains on `codex/ios-liquid-glass-tabs`.
+
+## iPhone Duo system side tabs
+
+The native geometry bridge reads the system's physical vertical-bar edge. A
+right or left system rail selects `NativeSideTabBarPlatformView`; bottom
+navigation retains the standalone bar. The side implementation embeds a real
+`UITabBarController` as a child of the existing Flutter controller, with
+transparent placeholder destinations. UIKit owns vertical placement and glass;
+Flutter still commits destination changes through the guarded routing callback.
+The root controller and Flutter engine are not replaced.
+
+The side controller occupies the full viewport so it can adopt the scene's
+system layout. Flutter's hit-test wrapper claims only the rectangle reported by
+the native bar. Other content continues to receive Flutter taps and scrolling.
+The native host forwards those hits through the controller view: modern UIKit
+can render and handle the vertical glass outside the public `UITabBar` proxy.
+No private view names, rotated bottom bars or extracted native bars are used.
+The passive press observer belongs to the controller and accepts direct hits
+on its native side surface, excluding placeholder content.
+
+Every native geometry change advances a layout revision. Input requires a
+Flutter acknowledgement of that exact revision and a matching laid-out slot,
+as well as the existing visibility epoch, owner, security and route gates.
+Changing between bottom, left and right recreates only the native surface;
+the Flutter router and branch state remain mounted. A delayed callback from a
+previous surface/owner cannot select a destination for its replacement.
+
+Right-side tabs enter from the right and leave to the right. Left-side tabs
+mirror that direction. Durations, easing, Reduce Motion, exit-state freezing,
+interruption handling and input gates match bottom navigation. Only rendered
+controller contents move horizontally; native layout and safe-area registration
+stay stationary. The full platform view goes offstage after the matching exit
+acknowledgement, so no hidden material remains over a modal.
 
 ## Icon assets and synchronization
 
@@ -127,8 +162,8 @@ touch-only path.
 
 A passive native gesture observer sees item contacts without recognizing a
 gesture, cancelling touches or delaying delivery. It cannot prevent or be
-prevented by UIKit's recognizers. Public control hit-testing excludes the bare
-tab background, transparent wrapper, home-indicator area and foreign views;
+prevented by UIKit's recognizers. Bottom-bar control hit-testing excludes the
+bare tab background, transparent wrapper, home-indicator area and foreign views;
 no private tab-button class names or inferred item rectangles are used.
 
 The existing native `isInteractive` gate also controls the observer. Hidden,
@@ -147,21 +182,23 @@ shell body or router.
 
 The first native entrance waits until the view is attached and its nonzero
 layout, safe area, native fitting height, and Flutter slot agree. Items and
-theme are laid out while the bar is still hidden. Once prepared, the bar enters
-from below using the normal entrance curve. This is tied to layout readiness,
+theme are laid out while the bar is still hidden. Once prepared, the bottom bar
+enters from below and side tabs enter from their physical edge using the normal
+curve. This is tied to layout readiness,
 not an arbitrary startup delay. Input remains blocked until both native
 presentation and Flutter's input eligibility allow it.
 
 Reattachment and a requested entrance are separate events. An explicit show
 request after a hidden/offstage period waits for valid attached geometry and
-enters from below, even when the native instance is reused. Reparenting an
-already visible view does not itself request another entrance. A new show
+enters from its placement edge, even when the native instance is reused.
+Reparenting an already visible view does not itself request another entrance. A new show
 request that interrupts an exit resumes from its current presented position.
 
 ## Visibility transitions
 
 Flutter continues to decide when the bar is needed. UIKit independently slides
-it up into its fixed slot when shown and down out of the slot when hidden;
+bottom tabs up into their fixed slot when shown and down when hidden, or
+side tabs horizontally from/to their physical edge;
 this animation does not follow a Flutter route or modal's transition progress.
 The entrance uses 180 ms with cubic Bézier control points `(0.2, 0.8, 0.2, 1)`:
 it moves promptly and settles gently. The exit uses 140 ms with control points
@@ -181,8 +218,9 @@ has actually completed, excluding it and its effects from composition while
 retaining its state. A stale exit acknowledgement cannot offstage a newer show.
 Security suppression excludes painting immediately and cancels native motion.
 
-The Flutter slot keeps its native fitting height throughout. Only an inner
-native container moves, with safe-area geometry anchored to the stationary
+The Flutter slot keeps its native fitting height throughout. For bottom
+navigation, only an inner native container moves, with safe-area geometry
+anchored to the stationary
 host. Reversals resume from the current presented position; reversals and
 geometry changes scale the duration by the remaining fraction of a full trip,
 capped at the normal duration. A remaining distance of at most 0.5 pt settles
@@ -237,8 +275,9 @@ Validate actual moving Flutter pixels under the bar before claiming parity.
 
 The deterministic `mobile-native-tab-bar` scenario contains scrolling color
 bands and large text, without wallet, network, secure-storage, or Rust startup.
-Changing tabs changes the color sequence. Run it on iOS with the mobile token
-define; leave the capture output empty for interaction:
+Changing tabs changes the color sequence. The scenario reads live native
+geometry so Duo folding/rotation can exercise side/bottom handoff. Run it on iOS
+with the mobile token define; leave the capture output empty for interaction:
 
 ```bash
 fvm flutter run -d <ios-simulator-id> -t lib/figma_compare.dart \
@@ -369,3 +408,17 @@ the current tab each emitted one call, a drag emitted only one, and background
 and home-indicator taps emitted none. A held-touch capture confirmed UIKit's
 lens still responded before destination selection. These checks validate call
 timing and gesture behavior; tactile strength requires a physical device.
+
+The Duo side-tab revision was checked on a dedicated closed/open iPhone Duo
+simulator with iOS 27.2 and Xcode 27.2 using the actual Vizor target and the
+deterministic scenario. Native selection and re-selection each delivered one
+Flutter callback; hide/show, an interrupted exit, modal coverage and folding
+preserved the selected destination. The native side tests verify current-layout
+acknowledgement, touch-down feedback, hidden-state freezing, controller disposal,
+and horizontal enter/exit animations with input blocked until completion.
+
+The mobile layout/navigation regression set passed 224 tests and full Flutter
+analysis passed. All 45 bottom/side native tab tests passed. The broader native
+suite also ran, but its unrelated Keychain migration-store test failed with
+`errSecMissingEntitlement` (`-34018`) in the unsigned simulator test host. These
+checks do not establish physical-device haptic feel or performance.

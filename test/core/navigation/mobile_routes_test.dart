@@ -202,6 +202,61 @@ List<({Color? fill, Color? label})> _sidebarPaints(WidgetTester tester) => [
 ];
 
 void main() {
+  testWidgets('native Duo side selection and branch state survive a return to '
+      'bottom placement', (tester) async {
+    final native = NativeTabBarFixture();
+    addTearDown(native.dispose);
+    native.sideLayout = {
+      'height': 678.0,
+      'layoutRevision': 1,
+      'hitRect': {'x': 397.0, 'y': 0.0, 'width': 69.0, 'height': 678.0},
+    };
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(466, 678);
+    addTearDown(tester.view.reset);
+    final geometry = _NativeGeometryFixture(
+      const MobileNavigationGeometry(
+        edge: MobileNavigationEdge.right,
+        viewSize: Size(466, 678),
+        safeRect: Rect.fromLTWH(0, 0, 397, 678),
+        occlusions: [],
+        barRect: Rect.fromLTWH(397, 0, 69, 678),
+      ),
+    );
+    addTearDown(geometry.events.close);
+    final router = _router();
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      _app(
+        router,
+        nativeRoot: true,
+        overrides: [
+          mobileNavigationGeometryServiceProvider.overrideWithValue(geometry),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(native.latest['placement'], 'right');
+    expect(find.byType(AppMobileTabBar), findsNothing);
+    await native.send('select', {'id': '/settings'});
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/settings');
+    expect(native.latest['selectedId'], '/settings');
+    geometry.change(
+      const MobileNavigationGeometry(
+        edge: MobileNavigationEdge.none,
+        viewSize: Size(466, 678),
+        safeRect: Rect.fromLTWH(0, 0, 466, 678),
+        occlusions: [],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(native.latest['placement'], 'bottom');
+    expect(router.routeInformationProvider.value.uri.path, '/settings');
+    expect(native.latest['selectedId'], '/settings');
+    expect(find.byType(AppMobileTabBar), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   testWidgets('root native delegate preserves actual router reselect, deep links '
       'and tab identity while details cover the shell', (tester) async {
     final native = NativeTabBarFixture();

@@ -70,6 +70,8 @@ class NativeTabBarFixture {
             await updateDelay?.future;
           } else if (call.method == 'getHeight') {
             return heightResponse ?? height;
+          } else if (call.method == 'getLayout') {
+            return sideLayout;
           } else if (call.method == 'getPresentation') {
             return presentationResponse ?? presentations[id];
           }
@@ -87,6 +89,11 @@ class NativeTabBarFixture {
   Future<Map>? capabilityResponse;
   int capabilityReads = 0;
   double height = 83;
+  Map<String, Object> sideLayout = {
+    'height': 600.0,
+    'layoutRevision': 1,
+    'hitRect': {'x': 330.0, 'y': 0.0, 'width': 70.0, 'height': 600.0},
+  };
   Future<num>? heightResponse;
   bool automaticallyPresent = true;
   bool automaticallySettleHidden = true;
@@ -105,7 +112,9 @@ class NativeTabBarFixture {
               previous?['interactive'] == true)) &&
       snapshot['hidden'] != true &&
       snapshot['inputEnabled'] == true &&
-      snapshot['layoutReady'] == true;
+      snapshot['layoutReady'] == true &&
+      (snapshot['placement'] == 'bottom' ||
+          snapshot['layoutRevision'] == sideLayout['layoutRevision']);
 
   Future<void> send(String method, Object? arguments) async {
     final channel = channels.values.last;

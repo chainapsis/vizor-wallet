@@ -100,6 +100,97 @@ void main() {
     },
   );
 
+  _test('a queued surface callback cannot select for a replacement owner', (
+    tester,
+  ) async {
+    final original = <String>[];
+    final replacement = <String>[];
+    await pump(tester, select: original.add);
+    final queued = tester
+        .widget<IosNativeTabBarHost>(find.byType(IosNativeTabBarHost))
+        .configuration
+        .onSelect;
+    final scope = tester.element(find.byType(AppMobileShell));
+    final coordinator = IosNativeTabBarScope.maybeOf(scope)!;
+    final lease = coordinator.acquireOwner(canSelect: () => true);
+    lease.publish(
+      configuration: _config(replacement.add),
+      viewport: Offset.zero & MediaQuery.sizeOf(scope),
+      media: MediaQuery.of(scope),
+      mode: MobileNavigationMode.bottomTabs,
+    );
+    queued('/settings');
+    expect(original, isEmpty);
+    expect(replacement, isEmpty);
+    await tester.pumpAndSettle();
+    await native.send('select', {'id': '/settings'});
+    expect(replacement, ['/settings']);
+    lease.release();
+  });
+
+  _test('side tabs use a native controller without blocking Flutter content', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 600);
+    addTearDown(tester.view.reset);
+    var taps = 0;
+    final selected = <String>[];
+    final navigation = MobileBranchNavigation();
+    await pump(
+      tester,
+      home: MobileNavigationScope(
+        mode: MobileNavigationMode.systemSideTabs,
+        navigation: navigation,
+        viewportRect: const Rect.fromLTWH(0, 0, 400, 600),
+        railRect: const Rect.fromLTWH(330, 200, 70, 300),
+        child: AppMobileShell(
+          body: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => taps++,
+            child: const SizedBox.expand(),
+          ),
+          tabBar: const SizedBox(key: ValueKey('legacy')),
+          nativeTabBar: _config(selected.add),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('legacy')), findsNothing);
+    expect(native.latest['placement'], 'right');
+    expect(native.latest['layoutRevision'], 1);
+    expect(native.latest['layoutReady'], true);
+    expect(tester.getSize(find.byType(UiKitView)), const Size(400, 600));
+    await tester.tapAt(const Offset(100, 200));
+    await tester.pump();
+    expect(taps, 1);
+    await tester.tapAt(const Offset(365, 300));
+    await tester.pump();
+    expect(taps, 1);
+    await native.send('select', {'id': '/settings'});
+    expect(selected, ['/settings']);
+
+    // A new native frame must be acknowledged before it can accept input.
+    final previous = Map.of(native.presentations.values.last);
+    native.sideLayout = {
+      'height': 600.0,
+      'layoutRevision': 2,
+      'hitRect': {'x': 325.0, 'y': 0.0, 'width': 75.0, 'height': 600.0},
+    };
+    await native.send('layout', native.sideLayout);
+    await native.send('select', {...previous, 'id': '/home'});
+    expect(selected, ['/settings']);
+    await tester.pumpAndSettle();
+    expect(native.latest['layoutRevision'], 2);
+    await native.send('layout', {
+      'height': 600.0,
+      'layoutRevision': 1,
+      'hitRect': {'x': 330.0, 'y': 0.0, 'width': 70.0, 'height': 600.0},
+    });
+    expect(native.latest['layoutRevision'], 2);
+    await native.send('select', {'id': '/home'});
+    expect(selected, ['/settings', '/home']);
+  });
+
   _test(
     'root owns one native view and the shell retains only a fitting spacer',
     (tester) async {

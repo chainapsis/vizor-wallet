@@ -61,13 +61,20 @@ class _IosNativeTabBarRootHostState extends State<IosNativeTabBarRootHost> {
           final visual = _coordinator._visual;
           final owner = _coordinator._active;
           final hasOwner = owner?._latest != null;
+          final side = visual?.mode == MobileNavigationMode.systemSideTabs;
+          final placement = side && visual?.rail != null
+              ? visual!.rail!.center.dx < visual.viewport.center.dx
+                    ? IosNativeTabBarPlacement.left
+                    : IosNativeTabBarPlacement.right
+              : IosNativeTabBarPlacement.bottom;
           final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
           final hidden =
               widget.hideImmediately ||
               widget.covered ||
               !hasOwner ||
               visual == null ||
-              visual.mode != MobileNavigationMode.bottomTabs ||
+              visual.mode == MobileNavigationMode.sidebar ||
+              (side && visual.rail == null) ||
               visual.covered ||
               visual.configuration.hidden ||
               !visual.configuration.inputEnabled ||
@@ -84,6 +91,7 @@ class _IosNativeTabBarRootHostState extends State<IosNativeTabBarRootHost> {
                 Positioned(
                   left: visual.viewport.left,
                   width: visual.viewport.width,
+                  top: side ? visual.viewport.top : null,
                   bottom:
                       MediaQuery.sizeOf(context).height -
                       visual.viewport.bottom,
@@ -101,8 +109,13 @@ class _IosNativeTabBarRootHostState extends State<IosNativeTabBarRootHost> {
                             (widget.hideImmediately ||
                                 visual.configuration.hideImmediately),
                         inputEnabled: !hidden && _coordinator._maySelect,
-                        onSelect: _coordinator.select,
+                        onSelect: (id) => _coordinator._selectFromSurface(
+                          id,
+                          visual,
+                          owner?._token,
+                        ),
                         readSelectedId: _coordinator._readSelectedId,
+                        placement: placement,
                       ),
                       onHeightChanged: _coordinator._setHeight,
                       builder: (_, nativeBar) {
@@ -196,7 +209,9 @@ class IosNativeTabBarCoordinator extends ChangeNotifier {
         owner._alive &&
         publication != null &&
         publication.sessionIdentity == _sessionIdentity &&
-        publication.mode == MobileNavigationMode.bottomTabs &&
+        publication.mode != MobileNavigationMode.sidebar &&
+        (publication.mode != MobileNavigationMode.systemSideTabs ||
+            publication.rail != null) &&
         !publication.covered &&
         publication.inputReady &&
         !publication.configuration.hidden &&
@@ -209,6 +224,23 @@ class IosNativeTabBarCoordinator extends ChangeNotifier {
     final configuration = _active!._latest!.configuration;
     if (!configuration.items.any((item) => item.id == id)) return;
     configuration.onSelect(id);
+  }
+
+  void _selectFromSurface(
+    String id,
+    _Publication expected,
+    Object? ownerToken,
+  ) {
+    final latest = _active?._latest;
+    if (!identical(ownerToken, _active?._token) ||
+        latest == null ||
+        latest.mode != expected.mode ||
+        latest.rail != expected.rail ||
+        latest.viewport != expected.viewport ||
+        latest.sessionIdentity != expected.sessionIdentity) {
+      return;
+    }
+    select(id);
   }
 
   String _readSelectedId() {
@@ -290,6 +322,7 @@ class IosNativeTabBarOwnerLease {
     required Rect viewport,
     required MediaQueryData media,
     required MobileNavigationMode mode,
+    Rect? rail,
     bool covered = false,
     bool inputReady = true,
   }) => _coordinator._publish(
@@ -299,6 +332,7 @@ class IosNativeTabBarOwnerLease {
       viewport: viewport,
       media: media,
       mode: mode,
+      rail: rail,
       covered: covered,
       inputReady: inputReady,
       sessionIdentity: _coordinator._sessionIdentity,
@@ -338,6 +372,7 @@ class _Publication {
     required this.viewport,
     required this.media,
     required this.mode,
+    this.rail,
     required this.covered,
     required this.inputReady,
     required this.sessionIdentity,
@@ -346,6 +381,7 @@ class _Publication {
   final Rect viewport;
   final MediaQueryData media;
   final MobileNavigationMode mode;
+  final Rect? rail;
   final bool covered;
   final bool inputReady;
   final Object? sessionIdentity;
@@ -362,6 +398,7 @@ class _Publication {
     viewport: viewport,
     media: media,
     mode: mode,
+    rail: rail,
     covered: covered,
     inputReady: inputReady,
     sessionIdentity: sessionIdentity,
@@ -371,6 +408,7 @@ class _Publication {
       viewport == other.viewport &&
       media == other.media &&
       mode == other.mode &&
+      rail == other.rail &&
       covered == other.covered &&
       inputReady == other.inputReady &&
       sessionIdentity == other.sessionIdentity &&
@@ -529,6 +567,7 @@ class _IosNativeTabBarRegistrationState
         viewport: navigation?.viewportRect ?? Offset.zero & media.size,
         media: media,
         mode: navigation?.mode ?? MobileNavigationMode.bottomTabs,
+        rail: navigation?.railRect,
         covered: !_visualReady,
         inputReady: _routeReady && TickerMode.valuesOf(context).enabled,
       );
@@ -558,11 +597,15 @@ class _IosNativeTabBarRegistrationState
         MobileNavigationMode.bottomTabs;
     return widget.builder(
       context,
-      coordinator.usesNativeLayout && mode == MobileNavigationMode.bottomTabs
-          ? SizedBox(
-              key: const ValueKey('ios_native_tab_bar_slot'),
-              height: coordinator.heightFor(MediaQuery.of(context)),
-            )
+      coordinator.usesNativeLayout && mode != MobileNavigationMode.sidebar
+          ? mode == MobileNavigationMode.systemSideTabs
+                ? const SizedBox.shrink(
+                    key: ValueKey('ios_native_tab_bar_side_slot'),
+                  )
+                : SizedBox(
+                    key: const ValueKey('ios_native_tab_bar_slot'),
+                    height: coordinator.heightFor(MediaQuery.of(context)),
+                  )
           : null,
     );
   }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show Theme;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -22,6 +23,8 @@ class IosNativeTabBarItem {
   final String label;
 }
 
+enum IosNativeTabBarPlacement { bottom, left, right }
+
 class IosNativeTabBarConfiguration {
   const IosNativeTabBarConfiguration({
     required this.items,
@@ -31,6 +34,7 @@ class IosNativeTabBarConfiguration {
     this.inputEnabled = true,
     this.hideImmediately = false,
     this.readSelectedId,
+    this.placement = IosNativeTabBarPlacement.bottom,
   });
 
   final List<IosNativeTabBarItem> items;
@@ -48,6 +52,7 @@ class IosNativeTabBarConfiguration {
 
   /// Live authority for app-level hosts whose visual publication is deferred.
   final String Function()? readSelectedId;
+  final IosNativeTabBarPlacement placement;
 }
 
 /// Keeps the native slot transparent until the native catalog is checked.
@@ -174,6 +179,7 @@ class _IosNativeTabBarHostState extends State<IosNativeTabBarHost> {
     return widget.builder(
       context,
       IosNativeTabBar._(
+        key: ValueKey(widget.configuration.placement),
         configuration: widget.configuration,
         items: List.unmodifiable(items),
         onHeightChanged: widget.onHeightChanged,
@@ -188,6 +194,7 @@ class IosNativeTabBar extends StatefulWidget {
     required this.configuration,
     required List<IosNativeTabBarItem> items,
     this.onHeightChanged,
+    super.key,
   }) : _items = items;
 
   final IosNativeTabBarConfiguration configuration;
@@ -215,6 +222,10 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   bool _layoutAcknowledgementScheduled = false;
   int _showRequestId = 0;
   int? _settledHiddenEpoch;
+  Rect? _hitRect;
+  int _nativeLayoutRevision = 0;
+  bool get _side =>
+      widget.configuration.placement != IosNativeTabBarPlacement.bottom;
 
   _Snapshot get _currentSnapshot {
     final hidden =
@@ -242,6 +253,8 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
           TickerMode.valuesOf(context).enabled,
       layoutReady: _layoutReady,
       visibilityEpoch: _visibilityEpoch,
+      placement: widget.configuration.placement,
+      nativeLayoutRevision: _nativeLayoutRevision,
     );
   }
 
@@ -344,7 +357,11 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
         });
         WidgetsBinding.instance.ensureVisualUpdate();
       } else if (call.method == 'layout') {
-        _acceptHeight((call.arguments as Map?)?['height']);
+        if (_side) {
+          _acceptSideLayout(call.arguments);
+        } else {
+          _acceptHeight((call.arguments as Map?)?['height']);
+        }
       } else if (call.method == 'presentation') {
         _acceptPresentation(call.arguments);
       }
@@ -369,8 +386,15 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     }());
     unawaited(() async {
       try {
-        final height = await channel.invokeMethod<num>('getHeight');
-        if (mounted && identical(_channel, channel)) _acceptHeight(height);
+        if (_side) {
+          final layout = await channel.invokeMethod<Object>('getLayout');
+          if (mounted && identical(_channel, channel)) {
+            _acceptSideLayout(layout);
+          }
+        } else {
+          final height = await channel.invokeMethod<num>('getHeight');
+          if (mounted && identical(_channel, channel)) _acceptHeight(height);
+        }
       } on PlatformException {
         // A later layout callback still supplies the native size.
       } on MissingPluginException {
@@ -424,6 +448,45 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     _acknowledgeSlotLayout();
   }
 
+  void _acceptSideLayout(Object? value) {
+    if (value is! Map) return;
+    final revision = value['layoutRevision'];
+    final height = value['height'];
+    final raw = value['hitRect'];
+    if (revision is! int ||
+        revision <= _nativeLayoutRevision ||
+        height is! num ||
+        !height.isFinite ||
+        height <= 0 ||
+        raw is! Map) {
+      return;
+    }
+    final coordinates = [raw['x'], raw['y'], raw['width'], raw['height']];
+    if (coordinates.any((v) => v is! num || !v.isFinite)) return;
+    final rect = Rect.fromLTWH(
+      (coordinates[0] as num).toDouble(),
+      (coordinates[1] as num).toDouble(),
+      (coordinates[2] as num).toDouble(),
+      (coordinates[3] as num).toDouble(),
+    );
+    if (rect.isEmpty ||
+        rect.left < 0 ||
+        rect.top < 0 ||
+        rect.bottom > height + 0.5) {
+      return;
+    }
+    setState(() {
+      _nativeLayoutRevision = revision;
+      _hitRect = rect;
+      _height = height.toDouble();
+      _layoutReady = false;
+      _interactive = false;
+      _layoutGeneration++;
+    });
+    _updateSnapshot();
+    _acknowledgeSlotLayout();
+  }
+
   void _acknowledgeSlotLayout() {
     if (_layoutAcknowledgementScheduled || _height == null || _layoutReady) {
       return;
@@ -463,7 +526,9 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   Widget build(BuildContext context) {
     // Only a bootstrap estimate. UIKit reports its actual fitting height,
     // including the safe area, after attachment and on subsequent changes.
-    final height = _height ?? 49 + MediaQuery.viewPaddingOf(context).bottom;
+    final height = _side
+        ? MediaQuery.sizeOf(context).height
+        : _height ?? 49 + MediaQuery.viewPaddingOf(context).bottom;
     final offstage =
         _snapshot!.hideImmediately ||
         (_snapshot!.hidden && _settledHiddenEpoch == _visibilityEpoch);
@@ -490,21 +555,24 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
                 ignoring: !ready,
                 child: ExcludeSemantics(
                   excluding: !ready,
-                  child: UiKitView(
-                    viewType: 'com.zcash.wallet/native_tab_bar',
-                    layoutDirection: Directionality.of(context),
-                    creationParams: _snapshot!.toMap(),
-                    creationParamsCodec: const StandardMessageCodec(),
-                    onPlatformViewCreated: _created,
-                    // The app's global tap-to-unfocus recognizer must not hold UIKit's
-                    // press interaction until a drag cancels that ancestor's tap.
-                    gestureRecognizers: ready
-                        ? <Factory<OneSequenceGestureRecognizer>>{
-                            Factory<OneSequenceGestureRecognizer>(
-                              EagerGestureRecognizer.new,
-                            ),
-                          }
-                        : const <Factory<OneSequenceGestureRecognizer>>{},
+                  child: _NativeTabHitRegion(
+                    rect: _side ? _hitRect ?? Rect.zero : null,
+                    child: UiKitView(
+                      viewType: 'com.zcash.wallet/native_tab_bar',
+                      layoutDirection: Directionality.of(context),
+                      creationParams: _snapshot!.toMap(),
+                      creationParamsCodec: const StandardMessageCodec(),
+                      onPlatformViewCreated: _created,
+                      // The app's global tap-to-unfocus recognizer must not hold UIKit's
+                      // press interaction until a drag cancels that ancestor's tap.
+                      gestureRecognizers: ready
+                          ? <Factory<OneSequenceGestureRecognizer>>{
+                              Factory<OneSequenceGestureRecognizer>(
+                                EagerGestureRecognizer.new,
+                              ),
+                            }
+                          : const <Factory<OneSequenceGestureRecognizer>>{},
+                    ),
                   ),
                 ),
               ),
@@ -529,6 +597,8 @@ class _Snapshot {
     required this.inputEnabled,
     required this.layoutReady,
     required this.visibilityEpoch,
+    required this.placement,
+    required this.nativeLayoutRevision,
   });
   final List<IosNativeTabBarItem> items;
   final String selectedId;
@@ -541,6 +611,8 @@ class _Snapshot {
   final bool inputEnabled;
   final bool layoutReady;
   final int visibilityEpoch;
+  final IosNativeTabBarPlacement placement;
+  final int nativeLayoutRevision;
 
   Map<String, Object> toMap() => {
     'items': [
@@ -557,6 +629,8 @@ class _Snapshot {
     'inputEnabled': inputEnabled,
     'layoutReady': layoutReady,
     'visibilityEpoch': visibilityEpoch,
+    'placement': placement.name,
+    'layoutRevision': nativeLayoutRevision,
   };
 
   bool sameAs(_Snapshot other) =>
@@ -570,6 +644,8 @@ class _Snapshot {
       inputEnabled == other.inputEnabled &&
       layoutReady == other.layoutReady &&
       visibilityEpoch == other.visibilityEpoch &&
+      placement == other.placement &&
+      nativeLayoutRevision == other.nativeLayoutRevision &&
       items.length == other.items.length &&
       Iterable.generate(items.length).every(
         (i) =>
@@ -577,4 +653,27 @@ class _Snapshot {
             items[i].label == other.items[i].label &&
             items[i].iconName == other.items[i].iconName),
       );
+}
+
+/// The side controller needs the full scene for UIKit's vertical layout.
+/// Only its actual bar rectangle participates in Flutter hit testing.
+class _NativeTabHitRegion extends SingleChildRenderObjectWidget {
+  const _NativeTabHitRegion({required this.rect, required super.child});
+  final Rect? rect;
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _NativeTabHitBox(rect);
+  @override
+  void updateRenderObject(BuildContext context, _NativeTabHitBox renderObject) {
+    renderObject.rect = rect;
+  }
+}
+
+class _NativeTabHitBox extends RenderProxyBox {
+  _NativeTabHitBox(this.rect);
+  Rect? rect;
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) =>
+      (rect == null || rect!.contains(position)) &&
+      super.hitTest(result, position: position);
 }

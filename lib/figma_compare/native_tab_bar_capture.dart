@@ -8,6 +8,8 @@ import '../src/core/layout/mobile/app_mobile_shell.dart';
 import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
 import '../src/core/layout/mobile/ios_native_tab_bar.dart';
 import '../src/core/layout/mobile/ios_native_tab_bar_root.dart';
+import '../src/core/layout/mobile/mobile_navigation_scope.dart';
+import '../src/services/native_mobile_navigation_geometry.dart';
 import '../src/core/navigation/mobile_destinations.dart';
 import '../src/core/navigation/route_owned_redirect.dart';
 import '../src/features/accounts/widgets/mobile/account_edit_sheets.dart';
@@ -26,28 +28,79 @@ class NativeTabBarCapture extends StatefulWidget {
   State<NativeTabBarCapture> createState() => _NativeTabBarCaptureRootState();
 }
 
-class _NativeTabBarCaptureRootState extends State<NativeTabBarCapture> {
+class _NativeTabBarCaptureRootState extends State<NativeTabBarCapture>
+    with WidgetsBindingObserver {
   final _observer = RouteOwnedNavigationObserver();
+  final _navigation = MobileBranchNavigation();
+  final _native = const NativeMobileNavigationGeometry();
+  StreamSubscription<MobileNavigationGeometry?>? _subscription;
+  MobileNavigationGeometry? _geometry;
+  int _geometryRead = 0;
   bool _hardHidden = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (_native.supportedHost) {
+      _subscription = _native.changes.listen((value) {
+        _geometryRead++;
+        if (mounted) setState(() => _geometry = value);
+      }, onError: (Object _) {});
+      WidgetsBinding.instance.addPostFrameCallback((_) => _readGeometry());
+    }
+  }
+
+  Future<void> _readGeometry() async {
+    final revision = ++_geometryRead;
+    final geometry = await _native.read();
+    if (mounted && revision == _geometryRead) {
+      setState(() => _geometry = geometry);
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (_native.supportedHost) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _readGeometry());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _subscription?.cancel();
     _observer.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => IosNativeTabBarRootHost(
-    hideImmediately: _hardHidden,
-    child: Navigator(
-      observers: [_observer],
-      onGenerateRoute: (_) => CupertinoPageRoute<void>(
-        builder: (_) => _NativeTabBarCapturePage(
-          onHardHideChanged: (hidden) => setState(() => _hardHidden = hidden),
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final geometry = _geometry?.matches(media.size) == true ? _geometry : null;
+    final side =
+        geometry?.edge != null && geometry?.edge != MobileNavigationEdge.none;
+    return IosNativeTabBarRootHost(
+      hideImmediately: _hardHidden,
+      child: MobileNavigationScope(
+        mode: side
+            ? MobileNavigationMode.systemSideTabs
+            : MobileNavigationMode.bottomTabs,
+        railRect: side ? geometry?.barRect : null,
+        viewportRect: Offset.zero & media.size,
+        navigation: _navigation,
+        child: Navigator(
+          observers: [_observer],
+          onGenerateRoute: (_) => CupertinoPageRoute<void>(
+            builder: (_) => _NativeTabBarCapturePage(
+              onHardHideChanged: (hidden) =>
+                  setState(() => _hardHidden = hidden),
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _NativeTabBarCapturePage extends StatefulWidget {

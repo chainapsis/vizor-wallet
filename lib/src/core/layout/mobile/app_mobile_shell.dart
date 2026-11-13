@@ -74,7 +74,9 @@ class AppMobileShell extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             body,
-            if (mode == MobileNavigationMode.systemSideTabs && rail != null)
+            if (mode == MobileNavigationMode.systemSideTabs &&
+                rail != null &&
+                nativeBar == null)
               Positioned.fromRect(
                 rect: rail,
                 child: SingleChildScrollView(child: tabBar),
