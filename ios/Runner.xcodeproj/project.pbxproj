@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A71AB0020000000000000003 /* NativeSideTabBarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71AB0020000000000000004 /* NativeSideTabBarTests.swift */; };
+		A71AB0020000000000000001 /* NativeSideTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71AB0020000000000000002 /* NativeSideTabBar.swift */; };
 		A71AB0010000000000000001 /* NativeTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71AB0010000000000000002 /* NativeTabBar.swift */; };
 		A71AB0010000000000000003 /* NativeTabBarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71AB0010000000000000004 /* NativeTabBarTests.swift */; };
         A0D001000000000000000001 /* MobileNavigationGeometryHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = A0D001000000000000000002; };
@@ -94,6 +96,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A71AB0020000000000000004 /* NativeSideTabBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSideTabBarTests.swift; sourceTree = "<group>"; };
+		A71AB0020000000000000002 /* NativeSideTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSideTabBar.swift; sourceTree = "<group>"; };
 		A71AB0010000000000000002 /* NativeTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabBar.swift; sourceTree = "<group>"; };
 		A71AB0010000000000000004 /* NativeTabBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabBarTests.swift; sourceTree = "<group>"; };
         A0D001000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MobileNavigationGeometryHandler.m; sourceTree = "<group>"; };
@@ -233,6 +237,7 @@
 				OUTBOX000000000000000003 /* BackgroundMigrationOutboxTests.swift */,
 				OUTBOX000000000000000008 /* BackgroundMigrationOutboxExecutionGateTests.swift */,
 				A71AB0010000000000000004 /* NativeTabBarTests.swift */,
+				A71AB0020000000000000004 /* NativeSideTabBarTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -319,6 +324,7 @@
 				NATIVESTR000000000000001 /* NativeStrings.swift */,
 				NUMPADIOS000000000000001 /* KeyboardToolbarHandler.swift */,
 				A71AB0010000000000000002 /* NativeTabBar.swift */,
+				A71AB0020000000000000002 /* NativeSideTabBar.swift */,
 				A9E010010000000000000002 /* AppReviewHandler.swift */,
 				ZSYNC000ED2DC5600515810 /* zcash_sync.h */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
@@ -587,6 +593,7 @@
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
 				4576FF64E6AC5A8C2933DEDA /* KeyboardToolbarHandlerTests.swift in Sources */,
 				A71AB0010000000000000003 /* NativeTabBarTests.swift in Sources */,
+				A71AB0020000000000000003 /* NativeSideTabBarTests.swift in Sources */,
 				LEDGERIOS010000000000003 /* LedgerMobileHandlerTests.swift in Sources */,
 				OUTBOX010000000000000003 /* BackgroundMigrationOutboxTests.swift in Sources */,
 				OUTBOX010000000000000008 /* BackgroundMigrationOutboxExecutionGateTests.swift in Sources */,
@@ -603,6 +610,7 @@
 				NATIVESTR010000000000001 /* NativeStrings.swift in Sources */,
 				NUMPADIOS010000000000001 /* KeyboardToolbarHandler.swift in Sources */,
 				A71AB0010000000000000001 /* NativeTabBar.swift in Sources */,
+				A71AB0020000000000000001 /* NativeSideTabBar.swift in Sources */,
 				A9E010010000000000000001 /* AppReviewHandler.swift in Sources */,
 				OUTBOX010000000000000001 /* BackgroundMigrationOutbox.swift in Sources */,
 				OUTBOX010000000000000002 /* BackgroundMigrationOutboxStore.swift in Sources */,

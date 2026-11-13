@@ -129,7 +129,9 @@ final class NativeTabBarPlugin {
       }
     }
     registrar.register(
-      NativeTabBarFactory(messenger: messenger, icons: icons), withId: Self.channelName
+      NativeTabBarFactory(messenger: messenger, icons: icons,
+        owner: { registrar.viewController }),
+      withId: Self.channelName
     )
   }
 
@@ -141,10 +143,13 @@ final class NativeTabBarPlugin {
 private final class NativeTabBarFactory: NSObject, FlutterPlatformViewFactory {
   private let messenger: FlutterBinaryMessenger
   private let icons: NativeTabBarIconCatalog
+  private let owner: () -> UIViewController?
 
-  init(messenger: FlutterBinaryMessenger, icons: NativeTabBarIconCatalog) {
+  init(messenger: FlutterBinaryMessenger, icons: NativeTabBarIconCatalog,
+       owner: @escaping () -> UIViewController?) {
     self.messenger = messenger
     self.icons = icons
+    self.owner = owner
     super.init()
   }
 
@@ -155,7 +160,14 @@ private final class NativeTabBarFactory: NSObject, FlutterPlatformViewFactory {
   func create(
     withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?
   ) -> FlutterPlatformView {
-    NativeTabBarPlatformView(
+    if let placement = (args as? [String: Any])?["placement"] as? String,
+       placement == "left" || placement == "right" {
+      return NativeSideTabBarPlatformView(
+        frame: frame, viewId: viewId, args: args, messenger: messenger,
+        icons: icons, owner: owner
+      )
+    }
+    return NativeTabBarPlatformView(
       frame: frame, viewId: viewId, args: args, messenger: messenger, icons: icons
     )
   }
@@ -179,6 +191,8 @@ struct NativeTabBarSnapshot {
   let visibilityEpoch: Int64
   let showRequestId: Int64
   let selectedTintColor: UInt32?
+  let placement: String
+  let layoutRevision: Int64
 
   init(arguments: Any?) throws {
     guard let args = arguments as? [String: Any],
@@ -188,6 +202,18 @@ struct NativeTabBarSnapshot {
       let direction = args["direction"] as? String,
       ["light", "dark"].contains(brightness), ["ltr", "rtl"].contains(direction)
     else { throw NativeTabBarError.invalidSnapshot }
+    let placement = args["placement"] as? String ?? "bottom"
+    guard ["bottom", "left", "right"].contains(placement),
+      args["placement"] == nil || args["placement"] is String
+    else { throw NativeTabBarError.invalidSnapshot }
+    self.placement = placement
+    if let raw = args["layoutRevision"] {
+      guard let number = raw as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(), number.int64Value >= 0,
+        number.doubleValue == Double(number.int64Value)
+      else { throw NativeTabBarError.invalidSnapshot }
+      layoutRevision = number.int64Value
+    } else { layoutRevision = 0 }
     guard ["hidden", "hideImmediately", "inputEnabled", "layoutReady"].allSatisfy({
       args[$0] == nil || args[$0] is Bool
     }) else {
