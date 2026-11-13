@@ -64,9 +64,11 @@ struct NativeTabBarSnapshot {
   let style: UIUserInterfaceStyle
   let direction: UIUserInterfaceLayoutDirection
   let hidden: Bool
+  let hideImmediately: Bool
   let inputEnabled: Bool
   let layoutReady: Bool
   let visibilityEpoch: Int64
+  let showRequestId: Int64
   let selectedTintColor: UInt32?
 
   init(arguments: Any?) throws {
@@ -77,7 +79,7 @@ struct NativeTabBarSnapshot {
       let direction = args["direction"] as? String,
       ["light", "dark"].contains(brightness), ["ltr", "rtl"].contains(direction)
     else { throw NativeTabBarError.invalidSnapshot }
-    guard ["hidden", "inputEnabled", "layoutReady"].allSatisfy({
+    guard ["hidden", "hideImmediately", "inputEnabled", "layoutReady"].allSatisfy({
       args[$0] == nil || args[$0] is Bool
     }) else {
       throw NativeTabBarError.invalidSnapshot
@@ -90,6 +92,18 @@ struct NativeTabBarSnapshot {
       visibilityEpoch = number.int64Value
     } else {
       visibilityEpoch = 0
+    }
+    if let rawRequest = args["showRequestId"] {
+      guard let number = rawRequest as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(), number.int64Value >= 0,
+        number.doubleValue == Double(number.int64Value)
+      else { throw NativeTabBarError.invalidSnapshot }
+      showRequestId = number.int64Value
+    } else {
+      showRequestId = 0
+    }
+    guard args["hideImmediately"] as? Bool != true || args["hidden"] as? Bool == true else {
+      throw NativeTabBarError.invalidSnapshot
     }
     if let rawColor = args["selectedTintColor"] {
       guard let number = rawColor as? NSNumber,
@@ -119,6 +133,7 @@ struct NativeTabBarSnapshot {
     style = brightness == "dark" ? .dark : .light
     self.direction = direction == "rtl" ? .rightToLeft : .leftToRight
     hidden = args["hidden"] as? Bool ?? false
+    hideImmediately = args["hideImmediately"] as? Bool ?? false
     inputEnabled = args["inputEnabled"] as? Bool ?? true
     layoutReady = args["layoutReady"] as? Bool ?? false
   }
@@ -264,7 +279,7 @@ private struct NativeTabBarPreparedSnapshot {
 }
 
 final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
-  private enum Phase { case detached, hidden, preparing, entering, visible, exiting }
+  private enum Phase: String { case detached, hidden, preparing, entering, visible, exiting }
   private let channel: FlutterMethodChannel
   private let host: NativeTabBarHostView
   private let animate: NativeTabBarAnimator
@@ -280,11 +295,13 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   private var targetInputEnabled = true
   private var layoutReady = false
   private var hasStartedInitialReveal = false
+  private var needsPreparedShow = false
   private var needsAttachmentRestore = false
   private var preparationGeneration: UInt64 = 0
   private var preparationScheduled = false
   private var lastPublishedInteractive = false
   private var visibilityEpoch: Int64 = 0
+  private var showRequestId: Int64 = 0
   private var presentationRevision: Int64 = 0
   private var pendingSnapshot: NativeTabBarPreparedSnapshot?
   private var configurations: [String: NativeTabBarItemConfiguration] = [:]
@@ -292,6 +309,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   private var orderedIds: [String] = []
   private var selectedTintColor: UInt32?
   private var pendingHeight: CGFloat?
+  private var lastAttachedHeight: CGFloat?
   private var heightDeliveryScheduled = false
 
   init(
@@ -351,7 +369,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
           ))
         }
       case "getHeight":
-        result(Double(self.host.preferredHeight))
+        result(Double(self.reportedHeight))
       case "getPresentation":
         result(self.presentation)
       default:
@@ -379,7 +397,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   func view() -> UIView { host }
 
   private func apply(_ snapshot: NativeTabBarSnapshot) throws {
-    guard snapshot.visibilityEpoch >= visibilityEpoch else {
+    guard snapshot.visibilityEpoch >= visibilityEpoch, snapshot.showRequestId >= showRequestId else {
       throw NativeTabBarError.invalidSnapshot
     }
     // Preparing is atomic even while hidden. Only one pending full snapshot is
@@ -405,12 +423,26 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     }
     let epochChanged = visibilityEpoch != snapshot.visibilityEpoch
     let inputChanged = targetInputEnabled != snapshot.inputEnabled
+    let newShow = !snapshot.hidden && (targetHidden || snapshot.showRequestId > showRequestId)
     visibilityEpoch = snapshot.visibilityEpoch
+    showRequestId = snapshot.showRequestId
     pendingSnapshot = .init(configuration: snapshot, images: images)
     targetHidden = snapshot.hidden
     targetInputEnabled = snapshot.inputEnabled
     layoutReady = snapshot.layoutReady
-    if !hasStartedInitialReveal {
+    if snapshot.hidden {
+      needsPreparedShow = false
+    } else if newShow && (host.slidingView.isHidden || phase == .detached || phase == .preparing) {
+      // A logical show can arrive while Flutter still has the stable view
+      // Offstage. Remember it across detachment and any coalesced snapshots.
+      needsPreparedShow = true
+      needsAttachmentRestore = false
+    }
+    if snapshot.hideImmediately {
+      settleImmediatelyHidden()
+      return
+    }
+    if requiresPreparedReveal {
       cancelPreparation()
       // Measurement and the first staged frame must already use the latest
       // labels, images, theme and direction, even before Flutter accepts height.
@@ -423,9 +455,9 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     if !isAttached {
       interruptAnimation()
       cancelPreparation()
-      needsAttachmentRestore = hasStartedInitialReveal
+      needsAttachmentRestore = hasStartedInitialReveal && !needsPreparedShow
       host.slidingView.isHidden = true
-      setPhase(.detached, force: forcePresentation)
+      setPhase(targetHidden ? .hidden : .detached, force: forcePresentation || targetHidden)
     } else if targetHidden {
       cancelPreparation()
       if phase == .visible || phase == .entering {
@@ -435,11 +467,11 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
         needsAttachmentRestore = false
         setPhase(.hidden, force: forcePresentation)
       } else {
-        setPhase(phase, force: forcePresentation)
+        setPhase(phase, force: forcePresentation || phase == .hidden)
       }
-    } else if !hasStartedInitialReveal {
+    } else if requiresPreparedReveal {
       setPhase(.preparing, force: forcePresentation)
-      prepareInitialReveal()
+      prepareReveal()
     } else if needsAttachmentRestore {
       setPhase(.detached, force: forcePresentation)
       restoreAfterAttachment()
@@ -516,6 +548,15 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   }
 
   private var isAttached: Bool { attachmentProvider?() ?? (host.window != nil) }
+  private var requiresPreparedReveal: Bool { !hasStartedInitialReveal || needsPreparedShow }
+  private var reportedHeight: CGFloat {
+    // Offstage removes the platform view from its window; UIKit then measures
+    // the bar without the home-indicator inset. Keep the last attached height
+    // until a real attached layout supplies the next authoritative value.
+    if isAttached, host.bounds.width > 0, host.bounds.height > 0,
+      host.hasLaidOutCurrentGeometry { return host.preferredHeight }
+    return lastAttachedHeight ?? host.preferredHeight
+  }
   private var hasUsableLayout: Bool {
     let size = host.bounds.size
     let height = host.preferredHeight
@@ -527,7 +568,12 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     phase == .visible && !targetHidden && targetInputEnabled && isAttached && hasUsableLayout
   }
   private var presentation: [String: Any] {
-    ["visibilityEpoch": visibilityEpoch, "revision": presentationRevision, "interactive": isInteractive]
+    [
+      "visibilityEpoch": visibilityEpoch, "revision": presentationRevision,
+      "interactive": isInteractive, "phase": phase.rawValue,
+      "settledHidden": targetHidden && host.slidingView.isHidden
+        && animation == nil && !preparationScheduled,
+    ]
   }
 
   private var hiddenTransform: CGAffineTransform {
@@ -559,8 +605,8 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     preparationScheduled = false
   }
 
-  private func prepareInitialReveal() {
-    guard !hasStartedInitialReveal, !targetHidden, isAttached, hasUsableLayout else {
+  private func prepareReveal() {
+    guard requiresPreparedReveal, !targetHidden, isAttached, hasUsableLayout else {
       host.slidingView.isHidden = true
       return
     }
@@ -578,14 +624,30 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     schedulePreparation { [weak self] in
       guard let self, self.preparationGeneration == generation else { return }
       self.preparationScheduled = false
-      guard !self.hasStartedInitialReveal, !self.targetHidden, self.isAttached,
+      guard self.requiresPreparedReveal, !self.targetHidden, self.isAttached,
         self.hasUsableLayout else {
         self.host.slidingView.isHidden = true
         return
       }
       self.hasStartedInitialReveal = true
+      self.needsPreparedShow = false
       self.transition(toHidden: false)
     }
+  }
+
+  private func settleImmediatelyHidden() {
+    cancelPreparation()
+    interruptAnimation()
+    needsPreparedShow = false
+    needsAttachmentRestore = false
+    pendingHeight = nil
+    UIView.performWithoutAnimation {
+      host.slidingView.transform = hiddenTransform
+      host.slidingView.isHidden = true
+    }
+    // Security/logout can Offstage without waiting. Always acknowledge the
+    // current request, even when another hidden update coalesced into it.
+    setPhase(.hidden, force: true)
   }
 
   private func restoreAfterAttachment() {
@@ -652,8 +714,8 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   }
 
   private func geometryChanged() {
-    if !hasStartedInitialReveal {
-      prepareInitialReveal()
+    if requiresPreparedReveal {
+      prepareReveal()
       return
     }
     if needsAttachmentRestore {
@@ -671,8 +733,8 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   }
 
   private func layoutCompleted() {
-    if !hasStartedInitialReveal {
-      prepareInitialReveal()
+    if requiresPreparedReveal {
+      prepareReveal()
     } else if needsAttachmentRestore {
       restoreAfterAttachment()
     } else {
@@ -684,16 +746,20 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
     if !isAttached {
       interruptAnimation()
       cancelPreparation()
-      needsAttachmentRestore = hasStartedInitialReveal
+      needsAttachmentRestore = hasStartedInitialReveal && !needsPreparedShow
       host.slidingView.isHidden = true
-      setPhase(.detached)
+      setPhase(targetHidden ? .hidden : .detached)
     } else if targetHidden {
+      if phase == .exiting, animation != nil {
+        setPhase(.exiting)
+        return
+      }
       host.slidingView.isHidden = true
       needsAttachmentRestore = false
       setPhase(.hidden)
-    } else if !hasStartedInitialReveal {
+    } else if requiresPreparedReveal {
       setPhase(.preparing)
-      prepareInitialReveal()
+      prepareReveal()
     } else if phase == .detached || needsAttachmentRestore {
       needsAttachmentRestore = true
       restoreAfterAttachment()
@@ -705,15 +771,20 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
   }
 
   private func scheduleHeight(_ height: CGFloat) {
+    guard isAttached, host.bounds.width > 0, host.bounds.height > 0,
+      height.isFinite, height > 0 else { return }
+    lastAttachedHeight = height
     pendingHeight = height
     guard !heightDeliveryScheduled else { return }
     heightDeliveryScheduled = true
     // Layout can occur inside a platform-view resize. Deliver after that pass
     // so Flutter can change its constraints without reentering UIKit layout.
     DispatchQueue.main.async { [weak self] in
-      guard let self, let height = self.pendingHeight else { return }
+      guard let self else { return }
       self.heightDeliveryScheduled = false
+      guard let height = self.pendingHeight else { return }
       self.pendingHeight = nil
+      guard self.isAttached else { return }
       self.channel.invokeMethod("layout", arguments: ["height": Double(height)])
     }
   }

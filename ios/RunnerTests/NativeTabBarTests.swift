@@ -630,6 +630,205 @@ struct NativeTabBarTests {
     #expect(!fixture.messenger.hasHandler)
   }
 
+  @Test("The root receives actual settled-hidden acknowledgement only after the exit completes")
+  func settledHiddenAcknowledgement() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    animator.animations.last?.finish()
+    #expect(fixture.presentation["phase"] as? String == "visible")
+    #expect(fixture.presentation["settledHidden"] as? Bool == false)
+    var args = fixture.snapshot()
+    args["hidden"] = true
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    #expect(fixture.presentation["phase"] as? String == "exiting")
+    #expect(fixture.presentation["settledHidden"] as? Bool == false)
+    let exit = try #require(animator.animations.last)
+    #expect(exit.duration == 0.140)
+    exit.finish()
+    #expect(fixture.presentation["phase"] as? String == "hidden")
+    #expect(fixture.presentation["settledHidden"] as? Bool == true)
+    let revision = try #require(fixture.presentation["revision"] as? Int64)
+    // A coalesced/repeated hidden request still needs a fresh acknowledgement.
+    #expect(fixture.update(args) == nil)
+    #expect(try #require(fixture.presentation["revision"] as? Int64) > revision)
+    args["visibilityEpoch"] = 2
+    #expect(fixture.update(args) == nil)
+    #expect(fixture.presentation["visibilityEpoch"] as? Int64 == 2)
+    #expect(fixture.presentation["settledHidden"] as? Bool == true)
+  }
+
+  @Test("Each explicit show after Offstage waits for valid layout and plays its prepared entrance")
+  func repeatedExplicitShowsAfterOffstage() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    animator.animations.last?.finish()
+    for request in 1...3 {
+      var args = fixture.snapshot()
+      args["showRequestId"] = request - 1
+      args["hidden"] = true
+      args["visibilityEpoch"] = request * 2 - 1
+      #expect(fixture.update(args) == nil)
+      animator.animations.last?.finish()
+      #expect(fixture.presentation["settledHidden"] as? Bool == true)
+      fixture.setAttached(false)
+      args["showRequestId"] = request
+      args["hidden"] = false
+      args["layoutReady"] = false
+      args["visibilityEpoch"] = request * 2
+      #expect(fixture.update(args) == nil)
+      let previousCount = animator.animations.count
+      fixture.setAttached(true)
+      #expect(animator.animations.count == previousCount)
+      #expect(fixture.host.slidingView.isHidden)
+      #expect(fixture.presentation["settledHidden"] as? Bool == false)
+      args["layoutReady"] = true
+      #expect(fixture.update(args) == nil)
+      let entrance = try #require(animator.animations.last)
+      #expect(animator.animations.count == previousCount + 1)
+      #expect(entrance.duration == 0.180)
+      #expect(entrance.start.ty > 0)
+      #expect(fixture.presentation["phase"] as? String == "entering")
+      #expect(fixture.presentation["interactive"] as? Bool == false)
+      entrance.finish()
+      #expect(fixture.presentation["phase"] as? String == "visible")
+      #expect(fixture.presentation["interactive"] as? Bool == true)
+    }
+  }
+
+  @Test("Coalesced show identities preserve an onscreen bar but survive a detached hierarchy")
+  func coalescedShowIdentity() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    animator.animations.last?.finish()
+    var args = fixture.snapshot()
+    args["showRequestId"] = 1
+    args["visibilityEpoch"] = 2
+    #expect(fixture.update(args) == nil)
+    #expect(animator.animations.count == 1)
+    #expect(fixture.host.slidingView.transform == .identity)
+    fixture.setAttached(false)
+    fixture.setAttached(true)
+    #expect(animator.animations.count == 1)
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+    fixture.setAttached(false)
+    args["showRequestId"] = 2
+    args["visibilityEpoch"] = 4
+    #expect(fixture.update(args) == nil)
+    fixture.setAttached(true)
+    #expect(animator.animations.count == 2)
+    #expect(fixture.presentation["phase"] as? String == "entering")
+    #expect(fixture.presentation["interactive"] as? Bool == false)
+    animator.animations.last?.finish()
+    #expect(fixture.presentation["interactive"] as? Bool == true)
+  }
+
+  @Test("Immediate security hide cancels exit, entrance and queued preparation without late reveals")
+  func immediateHideCancelsPresentationWork() throws {
+    let animator = NativeTabBarTestAnimator()
+    let fixture = NativeTabBarFixture(animator: animator.animate, reducedMotion: false)
+    animator.animations.last?.finish()
+    var args = fixture.snapshot()
+    args["hidden"] = true
+    args["visibilityEpoch"] = 1
+    #expect(fixture.update(args) == nil)
+    let exit = try #require(animator.animations.last)
+    exit.progress(to: 0.4)
+    args["hideImmediately"] = true
+    args["visibilityEpoch"] = 2
+    #expect(fixture.update(args) == nil)
+    #expect(exit.cancelled)
+    #expect(fixture.host.slidingView.isHidden)
+    #expect(!fixture.host.isUserInteractionEnabled)
+    #expect(fixture.host.accessibilityElementsHidden)
+    #expect(fixture.presentation["settledHidden"] as? Bool == true)
+    let hiddenRevision = fixture.presentation["revision"] as? Int64
+    exit.completeEvenIfCancelled()
+    #expect(fixture.presentation["revision"] as? Int64 == hiddenRevision)
+    #expect(fixture.presentation["phase"] as? String == "hidden")
+
+    args["hidden"] = false
+    args["hideImmediately"] = false
+    args["showRequestId"] = 1
+    args["visibilityEpoch"] = 3
+    #expect(fixture.update(args) == nil)
+    let entrance = try #require(animator.animations.last)
+    entrance.progress(to: 0.3)
+    args["hidden"] = true
+    args["hideImmediately"] = true
+    args["visibilityEpoch"] = 4
+    #expect(fixture.update(args) == nil)
+    #expect(entrance.cancelled)
+    entrance.completeEvenIfCancelled()
+    #expect(fixture.host.slidingView.isHidden)
+    #expect(fixture.presentation["settledHidden"] as? Bool == true)
+
+    let preparation = NativeTabBarTestPreparationScheduler()
+    let pendingAnimator = NativeTabBarTestAnimator()
+    let pending = NativeTabBarFixture(
+      animator: pendingAnimator.animate, reducedMotion: false,
+      schedulePreparation: preparation.schedule
+    )
+    var hidden = pending.snapshot()
+    hidden["hidden"] = true
+    hidden["hideImmediately"] = true
+    hidden["visibilityEpoch"] = 1
+    #expect(pending.update(hidden) == nil)
+    preparation.runNext()
+    #expect(pendingAnimator.animations.isEmpty)
+    #expect(pending.host.slidingView.isHidden)
+    #expect(pending.presentation["settledHidden"] as? Bool == true)
+  }
+
+  @Test("Show request identities and immediate-hide arguments validate atomically")
+  func rootPresentationValidation() {
+    let fixture = NativeTabBarFixture()
+    var args = fixture.snapshot()
+    args["showRequestId"] = 3
+    args["visibilityEpoch"] = 3
+    #expect(fixture.update(args) == nil)
+    for invalid: Any in [-1, 1.5, true, "4", 2] {
+      args["showRequestId"] = invalid
+      #expect(fixture.update(args) is FlutterError)
+      #expect(fixture.presentation["phase"] as? String == "visible")
+      #expect(fixture.presentation["interactive"] as? Bool == true)
+    }
+    args["showRequestId"] = 3
+    args["hideImmediately"] = true
+    #expect(fixture.update(args) is FlutterError)
+    #expect(fixture.presentation["phase"] as? String == "visible")
+    args["hidden"] = true
+    args["hideImmediately"] = "yes"
+    #expect(fixture.update(args) is FlutterError)
+    #expect(fixture.presentation["phase"] as? String == "visible")
+  }
+
+  @Test("Offstage measurements cannot replace the last valid attached height")
+  func attachedHeightSurvivesOffstage() async throws {
+    let fixture = NativeTabBarFixture(fittingHeight: 83)
+    await drainMainQueue()
+    #expect(fixture.messenger.call("getHeight") as? Double == 83)
+    fixture.messenger.outgoing.removeAll()
+    fixture.setAttached(false)
+    fixture.environment.fittingHeight = 49
+    fixture.host.setNeedsLayout()
+    fixture.host.layoutIfNeeded()
+    #expect(fixture.host.preferredHeight == 49)
+    #expect(fixture.messenger.call("getHeight") as? Double == 83)
+    await drainMainQueue()
+    #expect(fixture.messenger.outgoing.filter { $0.method == "layout" }.isEmpty)
+    fixture.environment.fittingHeight = 83
+    fixture.setAttached(true)
+    fixture.host.setNeedsLayout()
+    fixture.host.layoutIfNeeded()
+    await drainMainQueue()
+    let heights = fixture.messenger.outgoing.filter { $0.method == "layout" }.compactMap {
+      ($0.arguments as? [String: Double])?["height"]
+    }
+    #expect(!heights.contains(49))
+    #expect(fixture.messenger.call("getHeight") as? Double == 83)
+  }
+
   private func drainMainQueue() async {
     await withCheckedContinuation { continuation in
       DispatchQueue.main.async { continuation.resume() }
@@ -717,6 +916,8 @@ private final class NativeTabBarFixture {
       "brightness": "light",
       "direction": "ltr",
       "visibilityEpoch": 0,
+      "showRequestId": 0,
+      "hideImmediately": false,
       "inputEnabled": true,
       "layoutReady": true,
     ]
