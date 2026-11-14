@@ -69,6 +69,8 @@ mod progress_work;
 mod retry_progress;
 pub(crate) mod scan_power;
 #[cfg(test)]
+mod scan_bench;
+#[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
 pub(crate) mod transparent_details;
