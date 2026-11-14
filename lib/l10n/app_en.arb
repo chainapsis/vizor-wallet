@@ -5004,18 +5004,6 @@
   "@migrationAnalyzingSemanticsLabel": {
     "description": "Screen-reader label of the progress ring shown while the private migration plan is computed."
   },
-  "migrationAnnouncementBody": "Ironwood is the latest Zcash shielded pool.\nIt's the first formally verified pool with\ncutting edge cryptography.",
-  "@migrationAnnouncementBody": {
-    "description": "Body of the announcement modal about the new Ironwood pool, split over three lines."
-  },
-  "migrationAnnouncementReleaseNote": "Official Release Note",
-  "@migrationAnnouncementReleaseNote": {
-    "description": "Button in the announcement modal that opens the official release note."
-  },
-  "migrationAnnouncementStart": "Start Migration",
-  "@migrationAnnouncementStart": {
-    "description": "Button in the announcement modal that starts the migration."
-  },
   "migrationBackAbout": "About Migration",
   "@migrationBackAbout": {
     "description": "Back-link label that returns to the migration introduction."
@@ -5920,18 +5908,6 @@
   "migrationMobileActionSubmittingScheduled": "Submitting scheduled transaction...",
   "@migrationMobileActionSubmittingScheduled": {
     "description": "Label of the action button while the late scheduled transaction is being submitted."
-  },
-  "migrationMobileAnnouncementBody": "Zcash’s latest shielded pool, bringing cutting-edge cryptography and formal verification.\n\nYour shielded balance needs a one-time migration to Ironwood.",
-  "@migrationMobileAnnouncementBody": {
-    "description": "Body of the bottom sheet announcing the Ironwood pool; two paragraphs separated by a blank line. The apostrophe is a curly one."
-  },
-  "migrationMobileAnnouncementOfficial": "Official announcement",
-  "@migrationMobileAnnouncementOfficial": {
-    "description": "Ghost button of the Ironwood announcement sheet that opens the official announcement in the browser."
-  },
-  "migrationMobileAnnouncementUpgrade": "Upgrade to Ironwood",
-  "@migrationMobileAnnouncementUpgrade": {
-    "description": "Primary button of the Ironwood announcement sheet that starts the migration flow."
   },
   "migrationMobileAttentionContinueTitle": "Continue your migration",
   "@migrationMobileAttentionContinueTitle": {
@@ -10765,7 +10741,7 @@
   "@paymentLinkWaitingDescription": {
     "description": "Secondary line shown while a Gift Card is being prepared."
   },
-  "paymentLinkWaitingStatusLabel": "Wait 1:15 to get the link",
+  "paymentLinkWaitingStatusLabel": "Wait 0:25 to get the link",
   "@paymentLinkWaitingStatusLabel": {
     "description": "Sample status label (preview only) telling the user how long to wait before the Gift Card link is available."
   },

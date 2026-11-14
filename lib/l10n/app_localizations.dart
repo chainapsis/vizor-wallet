@@ -6638,24 +6638,6 @@ abstract class AppLocalizations {
   /// **'Preparing private migration plan'**
   String get migrationAnalyzingSemanticsLabel;
 
-  /// Body of the announcement modal about the new Ironwood pool, split over three lines.
-  ///
-  /// In en, this message translates to:
-  /// **'Ironwood is the latest Zcash shielded pool.\nIt\'s the first formally verified pool with\ncutting edge cryptography.'**
-  String get migrationAnnouncementBody;
-
-  /// Button in the announcement modal that opens the official release note.
-  ///
-  /// In en, this message translates to:
-  /// **'Official Release Note'**
-  String get migrationAnnouncementReleaseNote;
-
-  /// Button in the announcement modal that starts the migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Start Migration'**
-  String get migrationAnnouncementStart;
-
   /// Back-link label that returns to the migration introduction.
   ///
   /// In en, this message translates to:
@@ -7710,24 +7692,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Submitting scheduled transaction...'**
   String get migrationMobileActionSubmittingScheduled;
-
-  /// Body of the bottom sheet announcing the Ironwood pool; two paragraphs separated by a blank line. The apostrophe is a curly one.
-  ///
-  /// In en, this message translates to:
-  /// **'Zcash’s latest shielded pool, bringing cutting-edge cryptography and formal verification.\n\nYour shielded balance needs a one-time migration to Ironwood.'**
-  String get migrationMobileAnnouncementBody;
-
-  /// Ghost button of the Ironwood announcement sheet that opens the official announcement in the browser.
-  ///
-  /// In en, this message translates to:
-  /// **'Official announcement'**
-  String get migrationMobileAnnouncementOfficial;
-
-  /// Primary button of the Ironwood announcement sheet that starts the migration flow.
-  ///
-  /// In en, this message translates to:
-  /// **'Upgrade to Ironwood'**
-  String get migrationMobileAnnouncementUpgrade;
 
   /// Title of the Home sheet asking the user to continue the Ironwood migration.
   ///
@@ -13823,7 +13787,7 @@ abstract class AppLocalizations {
   /// Sample status label (preview only) telling the user how long to wait before the Gift Card link is available.
   ///
   /// In en, this message translates to:
-  /// **'Wait 1:15 to get the link'**
+  /// **'Wait 0:25 to get the link'**
   String get paymentLinkWaitingStatusLabel;
 
   /// Error shown on the account setup screen after redeeming a Gift Card when saving the new wallet could not be finished.

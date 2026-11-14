@@ -3660,16 +3660,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationAnalyzingSemanticsLabel => '正在准备私密迁移计划';
 
   @override
-  String get migrationAnnouncementBody =>
-      'Ironwood 是 Zcash 最新的隐私资金池。\n它是首个经过形式化验证的资金池，\n采用前沿密码学技术。';
-
-  @override
-  String get migrationAnnouncementReleaseNote => '官方发布说明';
-
-  @override
-  String get migrationAnnouncementStart => '开始迁移';
-
-  @override
   String get migrationBackAbout => '关于迁移';
 
   @override
@@ -4333,16 +4323,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileActionSubmittingScheduled => '正在提交已安排的交易...';
-
-  @override
-  String get migrationMobileAnnouncementBody =>
-      'Zcash 最新的隐私资金池，采用前沿密码学和形式化验证。\n\n你的隐私余额需要迁移到 Ironwood（只需迁移一次）。';
-
-  @override
-  String get migrationMobileAnnouncementOfficial => '官方公告';
-
-  @override
-  String get migrationMobileAnnouncementUpgrade => '升级到 Ironwood';
 
   @override
   String get migrationMobileAttentionContinueTitle => '继续你的迁移';
@@ -7803,7 +7783,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkWaitingDescription => '这可能需要一点时间。';
 
   @override
-  String get paymentLinkWaitingStatusLabel => '请等待 1:15 后获取链接';
+  String get paymentLinkWaitingStatusLabel => '请等待 0:25 后获取链接';
 
   @override
   String get paymentLinkWalletSaveRecoveryFailed => '无法完成钱包保存。请重试。';

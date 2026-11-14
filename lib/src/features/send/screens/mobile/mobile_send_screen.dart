@@ -46,7 +46,7 @@ import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../../address_book/widgets/mobile_recipient_list.dart';
 import '../../../../providers/payment_request_flow_provider.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../migration/providers/ironwood_migration_state_provider.dart';
 import '../../../donation/donation_config.dart';
 import '../../../donation/widgets/donation_views.dart';
 import '../../../donation/widgets/mobile/mobile_donation_views.dart';

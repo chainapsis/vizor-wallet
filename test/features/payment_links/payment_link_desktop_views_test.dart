@@ -1277,14 +1277,14 @@ void main() {
         state: PaymentLinkPreviewState.readyWaiting,
       ),
     );
-    expect(find.text('Wait 1:15 to get the link'), findsOneWidget);
+    expect(find.text('Wait 0:25 to get the link'), findsOneWidget);
     expect(
       find.text('You can copy this link again from Settings → My gift cards.'),
       findsNothing,
     );
     expect(find.byType(PaymentLinkConfetti), findsOneWidget);
     final initialPill = find.ancestor(
-      of: find.text('Wait 1:15 to get the link'),
+      of: find.text('Wait 0:25 to get the link'),
       matching: find.byType(CustomPaint),
     );
     expect(tester.getSize(initialPill.first).height, 36);
@@ -1295,8 +1295,8 @@ void main() {
         state: PaymentLinkPreviewState.receivedWaiting,
       ),
     );
-    expect(find.text('Wait 1:15 to claim'), findsOneWidget);
-    final waitLabel = find.text('Wait 1:15 to claim');
+    expect(find.text('Wait 0:25 to claim'), findsOneWidget);
+    final waitLabel = find.text('Wait 0:25 to claim');
     final claimPill = find
         .ancestor(of: waitLabel, matching: find.byType(CustomPaint))
         .first;

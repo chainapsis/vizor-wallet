@@ -3874,16 +3874,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationAnalyzingSemanticsLabel => '비‍공‍개 마‍이‍그‍레‍이‍션 계‍획 준‍비 중';
 
   @override
-  String get migrationAnnouncementBody =>
-      'Ironwood‍는 Zcash‍의 최‍신 비‍공‍개 풀‍이‍에‍요.\n형‍식 검‍증‍을 거‍친 최‍초‍의 풀‍로,\n최‍첨‍단 암‍호 기‍술‍을 사‍용‍해‍요.';
-
-  @override
-  String get migrationAnnouncementReleaseNote => '공‍식 릴‍리‍스 노‍트';
-
-  @override
-  String get migrationAnnouncementStart => '마‍이‍그‍레‍이‍션 시‍작';
-
-  @override
   String get migrationBackAbout => '마‍이‍그‍레‍이‍션 소‍개';
 
   @override
@@ -4596,16 +4586,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get migrationMobileActionSubmittingScheduled =>
       '예‍약‍된 거‍래‍를 제‍출‍하‍는 중...';
-
-  @override
-  String get migrationMobileAnnouncementBody =>
-      'Zcash‍의 최‍신 비‍공‍개 풀‍로, 최‍첨‍단 암‍호 기‍술‍과 형‍식 검‍증‍을 적‍용‍했‍어‍요.\n\n비‍공‍개 잔‍액‍은 Ironwood‍로 한 번 마‍이‍그‍레‍이‍션‍해‍야 해‍요.';
-
-  @override
-  String get migrationMobileAnnouncementOfficial => '공‍식 발‍표';
-
-  @override
-  String get migrationMobileAnnouncementUpgrade => 'Ironwood‍로 업‍그‍레‍이‍드';
 
   @override
   String get migrationMobileAttentionContinueTitle => '마‍이‍그‍레‍이‍션‍을 계‍속‍하‍세‍요';
@@ -8311,7 +8291,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get paymentLinkWaitingDescription => '잠‍시 걸‍릴 수 있‍어‍요.';
 
   @override
-  String get paymentLinkWaitingStatusLabel => '링‍크‍를 받‍으‍려‍면 1:15 기‍다‍려 주‍세‍요';
+  String get paymentLinkWaitingStatusLabel => '링‍크‍를 받‍으‍려‍면 0:25 기‍다‍려 주‍세‍요';
 
   @override
   String get paymentLinkWalletSaveRecoveryFailed =>

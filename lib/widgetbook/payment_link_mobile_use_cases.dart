@@ -416,7 +416,7 @@ Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
       waitingDescription:
           '${context.l10n.paymentLinkClaimWaitingDescription}\n${context.l10n.paymentLinkWaitingDescription}',
       waitingIcon: AppIcons.time,
-      waitingStatusLabel: 'Wait 1:15 to claim',
+      waitingStatusLabel: 'Wait 0:25 to claim',
     ),
   );
 }
