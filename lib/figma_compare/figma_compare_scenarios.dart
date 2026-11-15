@@ -110,6 +110,7 @@ class FigmaCompareScenario {
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
     id: 'mobile-native-tab-bar',
+    allowFocus: true,
     description: 'Native iOS tab bar over scrolling Flutter color bands',
     builder: buildNativeTabBarCapture,
     desktop: false,

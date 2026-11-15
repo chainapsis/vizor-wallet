@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter/material.dart';
 
 import '../src/core/l10n/l10n.dart';
+import '../src/core/widgets/mobile/mobile_keyboard_toolbar.dart';
 import '../src/core/layout/mobile/app_mobile_shell.dart';
 import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
 import '../src/core/layout/mobile/ios_native_tab_bar.dart';
@@ -80,21 +81,23 @@ class _NativeTabBarCaptureRootState extends State<NativeTabBarCapture>
     final geometry = _geometry?.matches(media.size) == true ? _geometry : null;
     final side =
         geometry?.edge != null && geometry?.edge != MobileNavigationEdge.none;
-    return IosNativeTabBarRootHost(
-      hideImmediately: _hardHidden,
-      child: MobileNavigationScope(
-        mode: side
-            ? MobileNavigationMode.systemSideTabs
-            : MobileNavigationMode.bottomTabs,
-        railRect: side ? geometry?.barRect : null,
-        viewportRect: Offset.zero & media.size,
-        navigation: _navigation,
-        child: Navigator(
-          observers: [_observer],
-          onGenerateRoute: (_) => CupertinoPageRoute<void>(
-            builder: (_) => _NativeTabBarCapturePage(
-              onHardHideChanged: (hidden) =>
-                  setState(() => _hardHidden = hidden),
+    return MobileKeyboardToolbar(
+      child: IosNativeTabBarRootHost(
+        hideImmediately: _hardHidden,
+        child: MobileNavigationScope(
+          mode: side
+              ? MobileNavigationMode.systemSideTabs
+              : MobileNavigationMode.bottomTabs,
+          railRect: side ? geometry?.barRect : null,
+          viewportRect: Offset.zero & media.size,
+          navigation: _navigation,
+          child: Navigator(
+            observers: [_observer],
+            onGenerateRoute: (_) => CupertinoPageRoute<void>(
+              builder: (_) => _NativeTabBarCapturePage(
+                onHardHideChanged: (hidden) =>
+                    setState(() => _hardHidden = hidden),
+              ),
             ),
           ),
         ),
