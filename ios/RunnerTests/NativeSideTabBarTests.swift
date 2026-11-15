@@ -127,6 +127,61 @@ struct NativeSideTabBarDuoTests {
     #expect(fixture.status["interactive"] as? Bool == true)
   }
 
+  @Test("Repeated offstage reattachment preserves the actual native hit surface and its position",
+        arguments: [true, false])
+  func reattachmentGeometry(reducedMotion: Bool) async throws {
+    let fixture = try SideTabFixture(reducedMotion: reducedMotion)
+    defer { fixture.close() }
+    await fixture.show()
+    try await Task.sleep(nanoseconds: 250_000_000)
+    let host = try #require(fixture.platform?.view())
+    let controller = try #require(fixture.root.children.first as? UITabBarController)
+    let rect = try #require(fixture.layout?["hitRect"] as? [String: Double])
+    let point = CGPoint(x: try #require(rect["x"]) + 20, y: host.bounds.height - 50)
+    func hitFrame() throws -> CGRect {
+      let hit = try #require(host.hitTest(point, with: nil))
+      // A hit on transparent destination content is not a hit on the glass.
+      #expect(!(controller.viewControllers ?? []).contains { hit.isDescendant(of: $0.view) })
+      return hit.convert(hit.bounds, to: host)
+    }
+    let original = try hitFrame()
+    #expect(original.width < host.bounds.width / 2)
+    var args = fixture.readyArgs
+    for cycle in 0..<3 {
+      args["brightness"] = cycle.isMultiple(of: 2) ? "dark" : "light"
+      args["hideImmediately"] = cycle == 1
+      args["hidden"] = true
+      args["visibilityEpoch"] = 3 + cycle * 3
+      #expect(fixture.messages.call("update", arguments: args) == nil)
+      try await Task.sleep(nanoseconds: 200_000_000)
+      #expect(fixture.status["settledHidden"] as? Bool == true)
+      host.removeFromSuperview() // Flutter removes an acknowledged hidden platform view.
+      await fixture.drain()
+      #expect(controller.parent == nil)
+      args["hidden"] = false
+      args["hideImmediately"] = false
+      args["layoutReady"] = false
+      args["showRequestId"] = cycle + 1
+      args["visibilityEpoch"] = 4 + cycle * 3
+      #expect(fixture.messages.call("update", arguments: args) == nil)
+      fixture.root.view.addSubview(host)
+      fixture.root.view.layoutIfNeeded()
+      await fixture.drain()
+      #expect(fixture.status["interactive"] as? Bool == false)
+      args["layoutReady"] = true
+      args["layoutRevision"] = fixture.layout?["layoutRevision"]
+      args["visibilityEpoch"] = 5 + cycle * 3
+      #expect(fixture.messages.call("update", arguments: args) == nil)
+      try await Task.sleep(nanoseconds: 250_000_000)
+      #expect(fixture.status["interactive"] as? Bool == true)
+      let current = try hitFrame()
+      #expect(abs(current.minX - original.minX) <= 0.5)
+      #expect(abs(current.minY - original.minY) <= 0.5)
+      #expect(abs(current.width - original.width) <= 0.5)
+      #expect(abs(current.height - original.height) <= 0.5)
+    }
+  }
+
   @Test("Right-side enter and exit move rendered contents horizontally without moving the native bar frame")
   func horizontalAnimation() async throws {
     let fixture = try SideTabFixture(reducedMotion: false)

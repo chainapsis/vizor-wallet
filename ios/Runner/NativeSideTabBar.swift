@@ -198,6 +198,9 @@ final class NativeSideTabBarPlatformView: NSObject, FlutterPlatformView, UITabBa
       preparationGeneration += 1
       preparationScheduled = false
       controller.view.alpha = 0
+      // UIKit's floating bar resolves its own window-space placement. Never
+      // detach or reattach its controller with our hidden translation applied.
+      setOffset(0)
       controller.willMove(toParent: nil)
       controller.view.removeFromSuperview()
       controller.removeFromParent()
@@ -206,6 +209,8 @@ final class NativeSideTabBarPlatformView: NSObject, FlutterPlatformView, UITabBa
       input(false)
       setPhase(snapshot?.hidden == true ? .hidden : .detached)
     } else if controller.parent == nil, let owner = owner() {
+      controller.view.alpha = 0
+      setOffset(0)
       owner.addChild(controller)
       controller.view.frame = host.bounds
       controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]

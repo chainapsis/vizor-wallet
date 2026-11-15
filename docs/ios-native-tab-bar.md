@@ -60,6 +60,20 @@ controller contents move horizontally; native layout and safe-area registration
 stay stationary. The full platform view goes offstage after the matching exit
 acknowledgement, so no hidden material remains over a modal.
 
+Before detaching or reattaching the side controller, its view is made invisible
+and the horizontal layer translation is reset to identity. UIKit must resolve
+its floating glass in an unshifted coordinate system. The next explicit show
+still performs the normal prepared entrance after layout acknowledgement.
+Keeping the hidden translation through reattachment caused the actual glass to
+move inward by the exit distance while the public `UITabBar` frame stayed put.
+
+The reattachment regression removes and restores the real native host repeatedly
+with both Reduce Motion settings, an immediate hide, and hidden theme changes.
+It compares the native hit surface's actual converted bounds and rejects hits
+on transparent destination content; checking `UITabBar.frame` alone misses this
+failure. Simulator interaction checks also need to select tabs after each
+complete hide/show cycle.
+
 ## Icon assets and synchronization
 
 `assets/icons/` is the source of truth for the tab artwork. The native catalog
@@ -422,3 +436,15 @@ analysis passed. All 45 bottom/side native tab tests passed. The broader native
 suite also ran, but its unrelated Keychain migration-store test failed with
 `errSecMissingEntitlement` (`-34018`) in the unsigned simulator test host. These
 checks do not establish physical-device haptic feel or performance.
+
+The Duo reattachment fix was verified on 2026-11-15 with the actual Runner
+fixture on a dedicated iOS 27.2 Duo simulator. Before the fix, hidden/show
+reattachment shifted the glass from `(394, 442, 48, 212)` to
+`(309, 442, 48, 212)` while the public bar stayed at `(397, 0, 69, 678)`.
+Afterward, debugger measurements of the actual glass remained
+`(394, 442, 48, 212)` initially, after explicit hide/show, after modal return,
+and after subsequent page-return/immediate-hide cycles. Real taps selected
+Swap, Activity, Settings and Home exactly once after those returns.
+The native suite passed 46 tests, including the repeated hit-surface regression
+with both Reduce Motion settings; the 117 Flutter bridge/root/routing tests
+and full Flutter analysis also passed.
