@@ -45,25 +45,5 @@ geometry, geometry-only changes, keyboard replacement, foreign notifications,
 Done, and host availability. Native tests run on a dedicated simulator through
 the Runner scheme; the actual app's test data must not be reused.
 
-The existing `mobile-native-tab-bar` deterministic scenario includes the same
-keyboard host and permits focus in its account-edit sheet. Use its name field
-to check showing, dismissing, reopening, cancelling and folding with a keyboard
-present. It contains no wallet, storage, Rust or network startup. Run it on Duo
-and a conventional iPhone using the command in `docs/ios-native-tab-bar.md`.
-
 References: [Apple keyboard layout guide](https://developer.apple.com/documentation/uikit/uikeyboardlayoutguide),
 [undocked guide behavior](https://developer.apple.com/documentation/uikit/uikeyboardlayoutguide/followsundockedkeyboard).
-
-On 2026-11-15, the two stale-request regressions failed before the change.
-Afterward, all 11 keyboard-toolbar tests and 45 native tab-bar regressions
-passed on the dedicated Duo simulator. The 56 mobile Flutter keyboard/privacy
-regressions and full Flutter analysis also passed. The actual Runner fixture
-was checked on iOS 27.2 Duo and iOS 26.5 iPhone 17 Pro: the native check dismissed
-the Duo keyboard, reopening and folding preserved usable controls, closing the
-input sheet left no checkmark, and changing keyboard languages on the regular
-iPhone preserved the control until keyboard dismissal.
-
-The exact production sequence behind the reported screenshot was not
-conclusively reproduced. The native/Flutter timing mismatch was observed during
-Duo unfolding; the regressions directly cover the keyboardless visibility
-invariant that the old implementation violated.

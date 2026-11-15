@@ -24,9 +24,6 @@ handling, and accessibility.
 - Other platforms, older iOS versions and the expanded wallet sidebar retain
   their current implementations. Duo system side tabs use the native path.
 
-This implementation is independent of `liquid_glass_widgets`. The earlier
-experiment remains on `codex/ios-liquid-glass-tabs`.
-
 ## iPhone Duo system side tabs
 
 The native geometry bridge reads the system's physical vertical-bar edge. A
@@ -64,8 +61,6 @@ Before detaching or reattaching the side controller, its view is made invisible
 and the horizontal layer translation is reset to identity. UIKit must resolve
 its floating glass in an unshifted coordinate system. The next explicit show
 still performs the normal prepared entrance after layout acknowledgement.
-Keeping the hidden translation through reattachment caused the actual glass to
-move inward by the exit distance while the public `UITabBar` frame stayed put.
 
 The reattachment regression removes and restores the real native host repeatedly
 with both Reduce Motion settings, an immediate hide, and hidden theme changes.
@@ -274,48 +269,17 @@ preview belongs only to the native tab bar.
 ## Native shadow containment
 
 A standalone `UITabBar` can draw effects above its platform-view bounds.
-When an opaque Flutter sheet was composited above the old shell-owned view,
-that overflow left a faint shadow stripe on the sheet at the platform-view
-boundary. The root overlay avoids this partial covering: the complete material
-exits above ordinary Flutter content, then leaves composition when hidden.
-The implementation does not clip away the native glass/shadow to hide the
-artifact; that diagnostic workaround changed backdrop composition in the probe.
+The root overlay keeps the complete material above ordinary Flutter content
+throughout its exit, then removes it from composition while hidden. Avoid
+clipping the native glass or shadow because that can change backdrop composition.
 
-## Background and performance validation
+## Background and performance
 
 Native material and native background sampling are separate claims. A lens
 that magnifies its native icon does not prove that it refracts Flutter content.
 Validate actual moving Flutter pixels under the bar before claiming parity.
-
-The deterministic `mobile-native-tab-bar` scenario contains scrolling color
-bands and large text, without wallet, network, secure-storage, or Rust startup.
-Changing tabs changes the color sequence. The scenario reads live native
-geometry so Duo folding/rotation can exercise side/bottom handoff. Run it on iOS
-with the mobile token define; leave the capture output empty for interaction:
-
-```bash
-fvm flutter run -d <ios-simulator-id> -t lib/figma_compare.dart \
-  --dart-define=VIZOR_FORM_FACTOR=mobile \
-  --dart-define=FIGMA_COMPARE_SCENARIO=mobile-native-tab-bar \
-  --dart-define=FIGMA_COMPARE_OUTPUT=
-```
-
-The fixture's `Hide tabs` / `Show tabs` control exercises a complete exit and
-entrance. `Reverse after 80 ms` interrupts an exit with an entrance so its
-continuity and input gate can be checked without production wallet state.
-The fixture has its own Navigator for `Open modal`, `Push page`, and
-`Push translucent page`. These exercise exit-above-cover and return entrances.
-`Recreate shell` replaces the publishing shell to check ownership handoff while
-the root view remains stable. `Account sheet` opens the actual account-edit
-sheet with deterministic local data, including its real surface and cancel row.
-`Hard hide` / `Release hard hide` exercise immediate security-style suppression
-without a wallet, followed by a prepared entrance.
-
-Use a dedicated simulator/install for native checks. The normal Runner still
-has native startup hooks even when its Dart entry point omits wallet startup.
-Widget tests verify the Dart state/channel contract and fallback layout; they
-cannot capture the UIKit material. Native screenshots need the simulator's
-compositor rather than `RepaintBoundary.toImage`.
+Widget tests cover the Dart state/channel contract and fallback layout; UIKit
+material requires the native compositor rather than `RepaintBoundary.toImage`.
 
 For performance, compare the same content, device, OS, and build mode against
 the previous implementation. Measure scrolling and tab dragging after warm-up,
@@ -336,115 +300,3 @@ application dependency. A standalone tab bar does not provide every
 `UITabBarController` feature, including its controller-managed scroll-edge
 appearance and automatic integration with native scroll views. Flutter
 scrolling is not automatically a UIKit scroll view.
-
-## Verification record
-
-On 2026-11-13, an isolated Flutter 3.47.8 app using the exact Swift host was
-run on a dedicated iPhone 17 Pro simulator with iOS 26.5. It did not contain
-wallet services or Rust code. Its default standalone tab-bar geometry matched
-an untouched native `UITabBarController` reference in that environment.
-
-Solid red and blue Flutter backgrounds changed the visible glass color.
-More usefully, 16-point black/white Flutter stripes were sharp outside the
-native bar and visibly blurred inside it. This demonstrates filtering of
-Flutter background pixels in this configuration, rather than only a lens over
-native icons. It is not a guarantee for every Flutter/OS/GPU combination.
-
-All seven `NativeTabBarTests` also passed in the isolated simulator host,
-covering atomic configuration updates, item/image reuse, selection callbacks,
-theme/direction/visibility, native appearance and template images, height
-notifications, and channel disposal.
-
-The same isolated host was checked on an iOS 27.1 iPhone Duo simulator. Both
-OS runs logged the Impeller Metal backend and showed smoothing of Flutter
-stripes through the native material. For a fixed stripe scanline on 26.5,
-grayscale standard deviation fell from 127.4 with the bar hidden to 31.1 inside
-the visible material, with intermediate edge values instead of only black and
-white. The 27.1 sample showed the same qualitative effect. Different display
-geometry and system materials make these numbers unsuitable for comparing
-blur strength between OS versions.
-
-Maestro interaction checks in the isolated host observed one callback per
-selection, repeat selections, and no destination commit during a held drag
-before release. System optics outside the tested positions and exact optical
-parity were not exhaustively measured.
-
-The actual Vizor simulator target also builds with the deterministic scenario.
-It was installed only on the dedicated 26.5 simulator. A Maestro smoke test
-selected Swap, selected it again, and selected Settings; the Flutter fixture
-observed exactly three committed selections through the production bridge,
-using the real SVG icons and dark app theme.
-Focused Dart bridge tests (12), the mobile routing/layout regression set (68),
-and full Flutter analysis passed. A warmed debug-simulator probe recorded a
-Flutter raster P95 around 0.9 ms, but this excludes UIKit compositor/GPU work;
-it establishes neither a device frame-rate guarantee nor a performance win
-over the previous shader implementation. Real-device profile/release,
-memory, energy and sustained thermal comparisons remain required before
-claiming such a win.
-
-The independent review found two integration gaps: a queued native selection
-could navigate beneath the mobile sync privacy lock, and UIKit accessibility
-selection was not counted by Flutter's idle-activity listener. Both were fixed
-and covered by regression tests, including blocked re-selection and inactive
-lifecycle events. The migration privacy overlay is desktop-only, so its raw
-state does not incorrectly disable mobile native tabs.
-
-The root-overlay revision was subsequently checked on a dedicated iOS 26.5
-simulator with the actual Vizor target and the deterministic scenario. The
-real account-edit sheet, a dialog, opaque and translucent routes, immediate
-suppression, shell replacement, interrupted exits and repeated selections all
-passed interaction checks. A cancelled back gesture kept the bar hidden; a
-completed back gesture restored it without changing selection. The isolated
-native suite passed 30 tab-bar tests, including explicit entrances,
-settled-hidden acknowledgements and immediate suppression. These checks cover
-the native bridge and compositor behavior, not production wallet lifecycle or
-real-device performance.
-
-The native-asset revision passed 33 native tab-bar tests in the isolated iOS
-26.5 simulator host. The capability response reported all four actual bundled
-icons; each loaded as a 25-by-25-point template image. An interaction check
-selected Swap, Activity, Settings and Home and confirmed visible icons and the
-existing selected icon/title tint. The Dart mobile regression set passed 165
-tests, and the source/native asset contracts passed 16 tests. These native
-runtime checks were simulator-based.
-
-The page-return revision passed 177 mobile regression tests and six
-route-owned redirect tests. Real Cupertino gesture tests cover early visual
-reveal, input blocking while held, cancellation, completion, pointer handoff,
-exact return targets, nested router notifications and pointer-listener cleanup.
-The native suite passed 34 tests, including visible material with touch and
-accessibility disabled and cancellation of an input-disabled entrance.
-
-The press-haptic revision passed 39 native tests. A dedicated iOS 26.5
-simulator interaction check observed the impact call at touch-down, three
-seconds before selection during a stationary long press. Repeated presses of
-the current tab each emitted one call, a drag emitted only one, and background
-and home-indicator taps emitted none. A held-touch capture confirmed UIKit's
-lens still responded before destination selection. These checks validate call
-timing and gesture behavior; tactile strength requires a physical device.
-
-The Duo side-tab revision was checked on a dedicated closed/open iPhone Duo
-simulator with iOS 27.2 and Xcode 27.2 using the actual Vizor target and the
-deterministic scenario. Native selection and re-selection each delivered one
-Flutter callback; hide/show, an interrupted exit, modal coverage and folding
-preserved the selected destination. The native side tests verify current-layout
-acknowledgement, touch-down feedback, hidden-state freezing, controller disposal,
-and horizontal enter/exit animations with input blocked until completion.
-
-The mobile layout/navigation regression set passed 224 tests and full Flutter
-analysis passed. All 45 bottom/side native tab tests passed. The broader native
-suite also ran, but its unrelated Keychain migration-store test failed with
-`errSecMissingEntitlement` (`-34018`) in the unsigned simulator test host. These
-checks do not establish physical-device haptic feel or performance.
-
-The Duo reattachment fix was verified on 2026-11-15 with the actual Runner
-fixture on a dedicated iOS 27.2 Duo simulator. Before the fix, hidden/show
-reattachment shifted the glass from `(394, 442, 48, 212)` to
-`(309, 442, 48, 212)` while the public bar stayed at `(397, 0, 69, 678)`.
-Afterward, debugger measurements of the actual glass remained
-`(394, 442, 48, 212)` initially, after explicit hide/show, after modal return,
-and after subsequent page-return/immediate-hide cycles. Real taps selected
-Swap, Activity, Settings and Home exactly once after those returns.
-The native suite passed 46 tests, including the repeated hit-surface regression
-with both Reduce Motion settings; the 117 Flutter bridge/root/routing tests
-and full Flutter analysis also passed.
