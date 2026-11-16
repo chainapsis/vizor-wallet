@@ -227,6 +227,11 @@ Preserve their dimensions and decoded pixels, and update app, Widgetbook, and
 test references to `.webp`. For illustrations, use
 `scripts/convert-illustrations-to-webp.py` (`--apply` writes verified conversions).
 
+iOS native tab icons intentionally duplicate the Flutter SVGs in Xcode's asset
+catalog. Before changing tab icons or their loading path, read
+[docs/ios-native-tab-bar.md](docs/ios-native-tab-bar.md#icon-assets-and-synchronization)
+and refresh/check both copies with `scripts/sync-ios-native-tab-icons.py`.
+
 ## Transaction Record Hero
 
 A transaction record opens on its type's icon (the one its activity row
@@ -1349,10 +1354,15 @@ change. The subsections below this list carry the detailed rules.
   a `MobileSection` title, a row with its icon, label and the shared
   `_SettingsToggle`, and a `bodyMedium` `text.secondary` explanation under it.
   The switch ticks `selection()` as it flips, and a failed save shows a toast.
-- The floating tab bar (`AppMobileTabBar`) has 52 by 72 items in a 60-high
-  bar (`kMobileTabBarHeight`), hugging its tabs, with 24px icons. Code that
+- The Flutter fallback tab bar (`AppMobileTabBar`) has 52 by 72 items in a
+  60-high bar (`kMobileTabBarHeight`), hugging its tabs, with 24px icons. Code that
   clears it reads `kMobileTabBarHeight` or
   `MobileNavigationScope.bottomClearanceOf`, never a literal.
+- iOS 26+ uses the native Liquid Glass tab bar when available. Preserve the
+  native root host, registration and `nativeBar` precedence in `AppMobileShell`.
+  UIKit owns its sizing, safe area, selection lens, motion and press haptics;
+  Flutter fallback metrics, icon flourishes and surrounding touch blocker do
+  not wrap the native lane. See `docs/ios-native-tab-bar.md`.
 - A host that toasts from any wallet page (flip to hide) sits in the wallet's
   root shell route (`buildMobileRoutes`), so its toast shows in the root
   overlay. Mounted above the router it would draw into the tab shell's toast
@@ -1383,8 +1393,8 @@ change. The subsections below this list carry the detailed rules.
     after its save finishes. `AppSegmentedControl` ticks it on a tap itself;
     a pager that switches the same choice by swipe (Receive's pools) ticks
     it on its page change, so each switch ticks once.
-  - `tabSwitch()` (medium) for the tab bar, `copy()`, and `error()` for a
-    rejected passcode.
+  - `tabSwitch()` (medium) for the Flutter fallback tab bar, `copy()`, and
+    `error()` for a rejected passcode.
   - `sendSuccess()` or `sendFailure()` once, when a transaction's outcome
     arrives while its screen is open.
 

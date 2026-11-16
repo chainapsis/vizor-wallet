@@ -9,8 +9,11 @@ import UIKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mobileNavigationGeometryHandler: MobileNavigationGeometryHandler?
   private var keyboardToolbarHandler: KeyboardToolbarHandler?
+  private var nativeTabBarPlugin: NativeTabBarPlugin?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
+  /// True while a seed-entry screen is showing (`keyboard_policy` channel).
+  private(set) var rejectsCustomKeyboards = false
 
   override func application(
     _ application: UIApplication,
@@ -44,6 +47,16 @@ import UIKit
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  // A keyboard extension receives every key typed into a non-secure field.
+  // Returning `false` for all keyboards would apply this app-wide instead.
+  override func application(
+    _ application: UIApplication,
+    shouldAllowExtensionPointIdentifier extensionPointIdentifier: UIApplication
+      .ExtensionPointIdentifier
+  ) -> Bool {
+    !(extensionPointIdentifier == .keyboard && rejectsCustomKeyboards)
+  }
+
   override func applicationWillEnterForeground(_ application: UIApplication) {
     IronwoodMigrationNotificationGate.shared.enforceOnForeground()
     if #available(iOS 26.0, *) {
@@ -56,6 +69,9 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let messenger = engineBridge.applicationRegistrar.messenger()
+    if let tabBarRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "VizorNativeTabBar") {
+      nativeTabBarPlugin = NativeTabBarPlugin(registrar: tabBarRegistrar)
+    }
     let navigationRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "VizorMobileNavigation")
     mobileNavigationGeometryHandler = MobileNavigationGeometryHandler(
       messenger: messenger,
@@ -679,6 +695,22 @@ import UIKit
         result(FlutterMethodNotImplemented)
       }
     }
+
+    // Seed entry asks for the system keyboard only; see
+    // `application(_:shouldAllowExtensionPointIdentifier:)`.
+    FlutterMethodChannel(name: "com.zcash.wallet/keyboard_policy", binaryMessenger: messenger)
+      .setMethodCallHandler { [weak self] (call, result) in
+        guard
+          call.method == "setCustomKeyboardsRejected",
+          let args = call.arguments as? [String: Any],
+          let rejected = args["rejected"] as? Bool
+        else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.rejectsCustomKeyboards = rejected
+        result(nil)
+      }
 
     // EventChannel for screenshot detection — sensitive screens (secret
     // passphrase) warn when the user captures them.

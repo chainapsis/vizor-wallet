@@ -8,6 +8,10 @@ final class KeyboardToolbarHandler {
   private let hostViewProvider: () -> UIView?
   private weak var host: UIView?
   private var button: UIButton?
+  private var layoutProbe: KeyboardToolbarLayoutProbe?
+  private let keyboardFrame: (UIView) -> CGRect
+  private var keyboardHiding = false
+  private var layoutUpdateScheduled = false
   private var observers: [NSObjectProtocol] = []
   private var requestedVisible = false
   private var requestedDark = false
@@ -15,9 +19,11 @@ final class KeyboardToolbarHandler {
   init(
     messenger: FlutterBinaryMessenger,
     notificationCenter: NotificationCenter = .default,
-    hostViewProvider: (() -> UIView?)? = nil
+    hostViewProvider: (() -> UIView?)? = nil,
+    keyboardFrame: @escaping (UIView) -> CGRect = { $0.keyboardLayoutGuide.layoutFrame }
   ) {
     self.notificationCenter = notificationCenter
+    self.keyboardFrame = keyboardFrame
     self.hostViewProvider = hostViewProvider ?? Self.foregroundHostView
     channel = FlutterMethodChannel(
       name: "com.zcash.wallet/keyboard_toolbar", binaryMessenger: messenger
@@ -36,25 +42,63 @@ final class KeyboardToolbarHandler {
       result(nil)
     }
     for name in [UIResponder.keyboardWillHideNotification,
+                 UIResponder.keyboardDidHideNotification,
                  UIApplication.willResignActiveNotification] {
-      observers.append(notificationCenter.addObserver(
-        forName: name, object: nil, queue: .main
-      ) { [weak self] _ in
-        self?.button?.isHidden = true
-      })
+      observe(name) { handler, _ in
+        handler.keyboardHiding = true
+        handler.button?.isHidden = true
+      }
     }
-    observers.append(notificationCenter.addObserver(
-      forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main
-    ) { [weak self] _ in
-      // Keyboard replacement can hide the control while Flutter's insets and
-      // cached visibility stay unchanged. Restore its last requested state.
-      self?.applyRequestedState()
+    for name in [UIResponder.keyboardWillShowNotification,
+                 UIResponder.keyboardDidShowNotification,
+                 UIResponder.keyboardDidChangeFrameNotification] {
+      observe(name) { handler, notification in
+        guard handler.belongsToHost(notification) else { return }
+        handler.keyboardHiding = false
+        handler.applyRequestedState()
+      }
+    }
+    observe(UIResponder.keyboardWillChangeFrameNotification) { handler, notification in
+      guard handler.belongsToHost(notification) else { return }
+      handler.scheduleLayoutUpdate()
+    }
+    observe(UIApplication.didBecomeActiveNotification) { handler, _ in
+      handler.keyboardHiding = false
+      handler.applyRequestedState()
+    }
+  }
+
+  private func observe(_ name: Notification.Name,
+                       action: @escaping (KeyboardToolbarHandler, Notification) -> Void) {
+    observers.append(notificationCenter.addObserver(forName: name, object: nil, queue: .main) {
+      [weak self] notification in
+      guard let self else { return }
+      action(self, notification)
     })
+  }
+
+  private func belongsToHost(_ notification: Notification) -> Bool {
+    if let local = notification.userInfo?[UIResponder.keyboardIsLocalUserInfoKey] as? Bool,
+       !local { return false }
+    if let screen = notification.object as? UIScreen,
+       hostViewProvider()?.window?.screen !== screen { return false }
+    return true
+  }
+
+  private func scheduleLayoutUpdate() {
+    guard !layoutUpdateScheduled else { return }
+    layoutUpdateScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.layoutUpdateScheduled = false
+      self.applyRequestedState()
+    }
   }
 
   deinit {
     observers.forEach(notificationCenter.removeObserver)
     button?.removeFromSuperview()
+    layoutProbe?.removeFromSuperview()
   }
 
   private func update(visible: Bool, dark: Bool) {
@@ -64,14 +108,30 @@ final class KeyboardToolbarHandler {
   }
 
   private func applyRequestedState() {
-    guard requestedVisible else {
+    guard requestedVisible, let view = hostViewProvider() else {
       button?.isHidden = true
       return
     }
-    guard let view = hostViewProvider() else { return }
 
     if host !== view {
       button?.removeFromSuperview()
+      layoutProbe?.removeFromSuperview()
+      // Its height follows the keyboard edge, so keyboard movement and window
+      // resizing both re-evaluate visibility even without a Flutter update.
+      let probe = KeyboardToolbarLayoutProbe()
+      probe.onLayout = { [weak self] in self?.scheduleLayoutUpdate() }
+      probe.translatesAutoresizingMaskIntoConstraints = false
+      probe.isUserInteractionEnabled = false
+      probe.accessibilityElementsHidden = true
+      probe.isHidden = true
+      view.addSubview(probe)
+      NSLayoutConstraint.activate([
+        probe.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+        probe.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        probe.topAnchor.constraint(equalTo: view.topAnchor),
+        probe.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+      ])
+      layoutProbe = probe
       let control = UIButton(type: .system)
       var configuration: UIButton.Configuration
       if #available(iOS 26.0, *) {
@@ -102,13 +162,28 @@ final class KeyboardToolbarHandler {
       ])
       host = view
       button = control
+      view.layoutIfNeeded()
     }
     button?.overrideUserInterfaceStyle = requestedDark ? .dark : .light
-    button?.isHidden = false
+    // The guide collapses to the bottom safe area when the keyboard is absent
+    // or undocked. A cached Flutter inset/show request must not resurrect it.
+    button?.isHidden = keyboardHiding || !Self.hasDockedKeyboard(
+      keyboardFrame(view), bounds: view.bounds, safeArea: view.bounds.inset(by: view.safeAreaInsets)
+    )
     if let button { view.bringSubviewToFront(button) }
   }
 
+  static func hasDockedKeyboard(_ frame: CGRect, bounds: CGRect, safeArea: CGRect) -> Bool {
+    guard [frame.minX, frame.minY, frame.width, frame.height].allSatisfy({ $0.isFinite }),
+      !frame.isEmpty, !frame.isInfinite, !bounds.isEmpty else { return false }
+    let intersection = frame.intersection(bounds)
+    return !intersection.isNull && !intersection.isEmpty
+      && intersection.minY < safeArea.maxY - 0.5
+      && frame.maxY >= bounds.maxY - 0.5
+  }
+
   @objc private func dismissKeyboard() {
+    keyboardHiding = true
     requestedVisible = false
     button?.isHidden = true
     host?.endEditing(true)
@@ -122,4 +197,11 @@ final class KeyboardToolbarHandler {
       .flatMap({ $0.windows }).first(where: { $0.isKeyWindow })?
       .rootViewController?.view
   }
+}
+
+/// A zero-input layout observer, kept in the same host as the control.
+private final class KeyboardToolbarLayoutProbe: UIView {
+  var onLayout: (() -> Void)?
+  override func layoutSubviews() { super.layoutSubviews(); onLayout?() }
+  override func didMoveToWindow() { super.didMoveToWindow(); onLayout?() }
 }
