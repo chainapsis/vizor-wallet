@@ -11,9 +11,12 @@ const kChangeSpendableConfirmations = 3;
 const kReceivedSpendableConfirmations = 6;
 
 /// Held back for the fee of an amount whose fee is not known yet: the
-/// two-action minimum before NU7, the larger of the two eras. Display only;
-/// an amount this close to the whole balance is reported as a shortfall
-/// rather than promised and then refused.
+/// two-action minimum before NU7, the larger of the two eras. Display only.
+///
+/// The fee cannot be quoted for funds that are not spendable yet, so this is
+/// a floor, not the fee: a payment needing more actions than it covers, for
+/// an amount within that difference of the whole balance, is still told a
+/// wait and then a shortfall.
 final kSpendableWaitFeeReserve = BigInt.from(10000);
 
 /// A wait until funds can be spent, as a range of minutes.
@@ -285,9 +288,11 @@ SpendableWait? resolveSpendableWait({
 bool _createsChange(rust_sync.TransactionInfo transaction) =>
     transaction.txKind == 'sent' || transaction.txKind == 'migration';
 
+// A memo-only receipt carries no value, so it explains no pending balance.
 bool _isShieldedReceipt(rust_sync.TransactionInfo transaction) =>
     (transaction.txKind == 'received' || transaction.txKind == 'receiving') &&
-    !transaction.isTransparent;
+    !transaction.isTransparent &&
+    transaction.displayAmount > BigInt.zero;
 
 /// The chain position waits are measured from, and whether the wallet is
 /// still scanning up to it.
@@ -304,7 +309,7 @@ typedef SpendableWaitClock = ({
   SpendableWaitClock clock,
 ) {
   if (transaction.txKind != 'received' ||
-      transaction.isTransparent ||
+      !_isShieldedReceipt(transaction) ||
       transaction.expiredUnmined ||
       transaction.minedHeight <= BigInt.zero) {
     return null;

@@ -208,6 +208,31 @@ void main() {
       expect(wait.hasWait, isFalse);
     });
 
+    test('a memo-only receipt explains no pending value', () {
+      final memoOnly = _tx('received', minedHeight: _tip, amount: BigInt.zero);
+      final wait = resolve(
+        received: _zec,
+        transactions: [
+          memoOnly,
+          _tx('received', minedHeight: _tip - 3),
+        ],
+      )!;
+      // The older receipt's two remaining blocks, not the memo's five.
+      expect(wait.receivedWait, const AvailableIn.underMinute());
+      expect(
+        resolve(received: _zec, transactions: [memoOnly])!.receivedWait,
+        isNull,
+      );
+      expect(
+        receivedSpendableWait(memoOnly, (
+          tipHeight: _tip,
+          spacing: _nu7,
+          catchingUp: false,
+        )),
+        isNull,
+      );
+    });
+
     test('pending value is received funds while a receipt is waiting', () {
       final wait = resolve(
         received: _zec * BigInt.two,
@@ -351,6 +376,7 @@ rust_sync.TransactionInfo _tx(
   int minedHeight = 0,
   bool expiredUnmined = false,
   bool isTransparent = false,
+  BigInt? amount,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: '$kind-$minedHeight',
@@ -365,7 +391,7 @@ rust_sync.TransactionInfo _tx(
     blockTime: BigInt.from(1800000000),
     isTransparent: isTransparent,
     txKind: kind,
-    displayAmount: _zec,
+    displayAmount: amount ?? _zec,
     displayPool: isTransparent ? 'transparent' : 'shielded',
     createdTime: BigInt.from(1800000000),
   );
