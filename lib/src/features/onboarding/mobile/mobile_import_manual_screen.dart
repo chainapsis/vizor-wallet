@@ -589,6 +589,7 @@ class _WordField extends StatelessWidget {
               keyboardType: TextInputType.visiblePassword,
               autocorrect: false,
               enableSuggestions: false,
+              enableIMEPersonalizedLearning: false,
               // Keep the keyboard open when return/check submits a word.
               // onSubmitted still advances through the shared handler below.
               onEditingComplete: () {},
