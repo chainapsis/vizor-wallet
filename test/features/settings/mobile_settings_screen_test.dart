@@ -27,6 +27,9 @@ import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_c
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_section.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/hide_balance_on_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import '../../fakes/fake_hide_balance_on_unlock_notifier.dart';
 import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
@@ -348,6 +351,68 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  testWidgets(
+    'hide on unlock toggles independently of current balance visibility',
+    (tester) async {
+      final notifier = FakeHideBalanceOnUnlockNotifier();
+      await tester.pumpWidget(
+        _app(
+          extraOverrides: [
+            hideBalanceOnUnlockProvider.overrideWith(() => notifier),
+          ],
+        ),
+      );
+      await tester.pump();
+      final toggle = find.byKey(
+        const ValueKey('mobile_settings_hide_on_unlock_row'),
+      );
+      await tester.scrollUntilVisible(toggle, 200);
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(tester.element(toggle));
+      expect(container.read(hideBalanceOnUnlockProvider), isFalse);
+      final privacy = container.read(privacyModeProvider);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(container.read(hideBalanceOnUnlockProvider), isTrue);
+      expect(container.read(privacyModeProvider), privacy);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(container.read(hideBalanceOnUnlockProvider), isFalse);
+    },
+  );
+
+  testWidgets('hide on unlock save failure leaves the toggle off', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [
+          hideBalanceOnUnlockProvider.overrideWith(
+            () => FakeHideBalanceOnUnlockNotifier(failSave: true),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    final toggle = find.byKey(
+      const ValueKey('mobile_settings_hide_on_unlock_row'),
+    );
+    await tester.scrollUntilVisible(toggle, 200);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      ProviderScope.containerOf(
+        tester.element(toggle),
+      ).read(hideBalanceOnUnlockProvider),
+      isFalse,
+    );
+    expect(
+      find.text(_en.settingsHideBalanceOnUnlockUpdateFailed),
+      findsOneWidget,
+    );
+  });
+
   for (final network in ['main', 'test', 'regtest']) {
     testWidgets('Support Vizor is exposed only on mainnet: $network', (
       tester,
@@ -1419,6 +1484,9 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_flip_to_hide_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
     expect(
       find.descendant(of: row, matching: find.text('Flip to hide')),
       findsOneWidget,

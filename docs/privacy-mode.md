@@ -12,6 +12,25 @@ using real values, and network requests, storage, and native surfaces are
 unaffected. The setting is one flag shared by every account
 (`privacyModeProvider`, stored as `zcash_privacy_mode_enabled`).
 
+## Hide balance on unlock
+
+Settings > Hide balance > Hide balance on unlock is available on desktop and
+mobile. It is off by default and stored separately from the current eye-button
+state (`hideBalanceOnUnlockProvider`, `zcash_hide_balance_on_unlock`). Changing
+this preference does not immediately change the displayed balance.
+
+When enabled, successful wallet authentication hides amounts before the wallet
+is uncovered: password/passcode/biometric sign-in, the desktop migration lock,
+and the mobile sync keep-awake lock. Other password confirmations do not apply
+it. An ordinary return to an already-unlocked app does not apply it either.
+Users can show amounts with the eye button or flip gesture as usual; the next
+unlock hides them again. All accounts share the preference, and a full wallet
+reset clears it.
+
+Automatic hiding updates the in-memory mask before persistence and keeps it
+hidden if saving fails. Writes are ordered with manual eye-button changes so a
+late write cannot reveal amounts after authentication.
+
 ## Flip to hide (mobile)
 
 Turning the phone screen-down hides amounts at once, and they stay hidden when

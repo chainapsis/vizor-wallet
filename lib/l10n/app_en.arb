@@ -12307,6 +12307,18 @@
   "@settingsFlipToHideUpdateFailed": {
     "description": "Toast when the mobile Settings flip to hide switch could not be saved."
   },
+  "settingsHideBalanceOnUnlock": "Hide balance on unlock",
+  "@settingsHideBalanceOnUnlock": {
+    "description": "Settings > Hide balance: toggle that hides balances after every successful wallet unlock."
+  },
+  "settingsHideBalanceOnUnlockDescription": "Hide your balance every time you unlock. Tap the eye icon to show it again.",
+  "@settingsHideBalanceOnUnlockDescription": {
+    "description": "Settings > Hide balance: explanation below the hide-on-unlock toggle."
+  },
+  "settingsHideBalanceOnUnlockUpdateFailed": "Couldn't update hide balance on unlock setting.",
+  "@settingsHideBalanceOnUnlockUpdateFailed": {
+    "description": "Toast when saving the hide-on-unlock preference fails."
+  },
   "settingsHideBalanceTitle": "Hide balance",
   "@settingsHideBalanceTitle": {
     "description": "Title of the mobile Settings card that holds the flip to hide switch."

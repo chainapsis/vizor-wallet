@@ -1,5 +1,6 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -33,6 +34,7 @@ import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/flip_to_hide_balance_provider.dart';
+import '../../../../providers/hide_balance_on_unlock_provider.dart';
 import '../../../../core/l10n/app_language.dart';
 import '../../../../providers/app_language_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
@@ -80,6 +82,7 @@ class MobileSettingsScreen extends ConsumerWidget {
         BiometricUnlockState.initial;
     final syncKeepAwake = ref.watch(syncKeepAwakeProvider);
     final flipToHide = ref.watch(flipToHideBalanceProvider);
+    final hideOnUnlock = ref.watch(hideBalanceOnUnlockProvider);
     const settingsRowStyle = AppTypography.labelLarge;
     final settingsValueColor = context.colors.text.accent;
     final settingsChevronColor = context.colors.icon.muted;
@@ -371,7 +374,11 @@ class MobileSettingsScreen extends ConsumerWidget {
                   const SizedBox(height: AppSpacing.md),
                   const MobileNetworkPrivacyCard(),
                   const SizedBox(height: AppSpacing.md),
-                  _FlipToHideSettingsCard(
+                  _HideBalanceSettingsCard(
+                    hideOnUnlock: hideOnUnlock,
+                    onToggleHideOnUnlock: () => unawaited(
+                      _toggleHideOnUnlock(context, ref, enabled: hideOnUnlock),
+                    ),
                     enabled: flipToHide,
                     onToggle: () => unawaited(
                       _toggleFlipToHide(context, ref, enabled: flipToHide),
@@ -591,6 +598,23 @@ class MobileSettingsScreen extends ConsumerWidget {
     } catch (_) {
       if (!context.mounted) return;
       showAppToast(context, context.l10n.settingsKeepAwakeUpdateFailed);
+    }
+  }
+
+  Future<void> _toggleHideOnUnlock(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool enabled,
+  }) async {
+    unawaited(AppHaptics.selection());
+    try {
+      await ref.read(hideBalanceOnUnlockProvider.notifier).set(!enabled);
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppToast(
+        context,
+        context.l10n.settingsHideBalanceOnUnlockUpdateFailed,
+      );
     }
   }
 
@@ -881,20 +905,22 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
   }
 }
 
-/// Flip to hide: turning the phone screen-down hides amounts on any screen
-/// (`FlipToHideBalanceHost`). Built like the keep-awake card.
-class _FlipToHideSettingsCard extends StatelessWidget {
-  const _FlipToHideSettingsCard({
+/// Wallet-wide balance hiding preferences.
+class _HideBalanceSettingsCard extends StatelessWidget {
+  const _HideBalanceSettingsCard({
     required this.enabled,
     required this.onToggle,
+    required this.hideOnUnlock,
+    required this.onToggleHideOnUnlock,
   });
 
   final bool enabled;
   final VoidCallback onToggle;
+  final bool hideOnUnlock;
+  final VoidCallback onToggleHideOnUnlock;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return MobileSection(
       title: context.l10n.settingsHideBalanceTitle,
       padding: const EdgeInsets.fromLTRB(
@@ -906,58 +932,91 @@ class _FlipToHideSettingsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Semantics(
-            button: true,
-            toggled: enabled,
+          _HideBalanceOption(
+            id: 'hide_on_unlock',
+            label: context.l10n.settingsHideBalanceOnUnlock,
+            description: context.l10n.settingsHideBalanceOnUnlockDescription,
+            enabled: hideOnUnlock,
+            onToggle: onToggleHideOnUnlock,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _HideBalanceOption(
+            id: 'flip_to_hide',
             label: context.l10n.settingsFlipToHide,
-            excludeSemantics: true,
-            child: GestureDetector(
-              key: const ValueKey('mobile_settings_flip_to_hide_row'),
-              behavior: HitTestBehavior.opaque,
-              onTap: onToggle,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  minHeight: _settingsRowHeight,
-                ),
-                child: Padding(
-                  padding: const EdgeInsetsDirectional.only(
-                    end: AppSpacing.xxs,
-                  ),
-                  child: Row(
-                    children: [
-                      const _RowIcon(AppIcons.eyeClosed),
-                      const SizedBox(width: AppSpacing.s),
-                      Expanded(
-                        child: Text(
-                          context.l10n.settingsFlipToHide,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
-                          ),
+            description: context.l10n.settingsFlipToHideDescription,
+            enabled: enabled,
+            onToggle: onToggle,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HideBalanceOption extends StatelessWidget {
+  const _HideBalanceOption({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final String id;
+  final String label;
+  final String description;
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          button: true,
+          toggled: enabled,
+          label: label,
+          excludeSemantics: true,
+          child: GestureDetector(
+            key: ValueKey('mobile_settings_${id}_row'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onToggle,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: _settingsRowHeight),
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(end: AppSpacing.xxs),
+                child: Row(
+                  children: [
+                    const _RowIcon(AppIcons.eyeClosed),
+                    const SizedBox(width: AppSpacing.s),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
                         ),
                       ),
-                      _SettingsToggle(
-                        key: const ValueKey(
-                          'mobile_settings_flip_to_hide_toggle',
-                        ),
-                        thumbKey: const ValueKey(
-                          'mobile_settings_flip_to_hide_toggle_thumb',
-                        ),
-                        enabled: enabled,
-                      ),
-                    ],
-                  ),
+                    ),
+                    _SettingsToggle(
+                      key: ValueKey('mobile_settings_${id}_toggle'),
+                      thumbKey: ValueKey('mobile_settings_${id}_toggle_thumb'),
+                      enabled: enabled,
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          Text(
-            context.l10n.settingsFlipToHideDescription,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
-            ),
+        ),
+        Text(
+          description,
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

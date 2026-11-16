@@ -8940,6 +8940,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsFlipToHideUpdateFailed => '无法更新翻转隐藏设置。';
 
   @override
+  String get settingsHideBalanceOnUnlock => '解锁时隐藏余额';
+
+  @override
+  String get settingsHideBalanceOnUnlockDescription => '每次解锁时隐藏余额。点击眼睛图标可再次显示。';
+
+  @override
+  String get settingsHideBalanceOnUnlockUpdateFailed => '无法更新解锁时隐藏余额设置。';
+
+  @override
   String get settingsHideBalanceTitle => '隐藏余额';
 
   @override

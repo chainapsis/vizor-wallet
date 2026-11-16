@@ -40,6 +40,7 @@ import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'wallet_balance_cache_provider.dart';
 import 'app_security_provider.dart';
+import 'hide_balance_on_unlock_provider.dart';
 import 'enhance_pir_provider.dart';
 import 'public_details_loads_provider.dart';
 import 'network_privacy_provider.dart';
@@ -2155,7 +2156,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
       await ref.read(appPasswordInputSourceProvider).clear();
       try {
-        await _storage.deleteAll();
+        await ref
+            .read(hideBalanceOnUnlockProvider.notifier)
+            .clearForWalletReset(_storage.deleteAll);
       } catch (e, st) {
         recordError(
           'secure storage wipe', // l10n-ignore: log label
