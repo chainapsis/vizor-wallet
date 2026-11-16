@@ -13,7 +13,7 @@ class WelcomeGiftCardButton extends StatelessWidget {
     super.key,
   });
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final double? height;
 
   @override

@@ -377,6 +377,49 @@ void main() {
     expect(find.text("Passcodes didn't match. Try again."), findsOneWidget);
   });
 
+  testWidgets(
+    'deferred creation generates only after passcode confirmation and opens biometrics',
+    (tester) async {
+      final accounts = _RecordingAccountNotifier();
+      final security = _RecordingAppSecurityNotifier();
+      final router = GoRouter(
+        initialLocation: '/onboarding/set-passcode',
+        initialExtra: const SetPasswordScreenArgs.createDeferred().withPersona(
+          _persona,
+        ),
+        routes: [
+          ...mobileOnboardingRoutes().whereType<GoRoute>().where(
+            (route) => route.path == '/onboarding/set-passcode',
+          ),
+          GoRoute(
+            path: '/onboarding/biometrics',
+            builder: (_, _) => const Text('biometrics route'),
+          ),
+          GoRoute(
+            path: '/welcome',
+            builder: (_, _) => const Text('welcome route'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        _routerHarness(router, accounts, security: security),
+      );
+      await tester.pumpAndSettle();
+      expect(accounts.mutationCalls, 0);
+      await _enter(tester, '123456');
+      expect(accounts.mutationCalls, 0);
+      await _enter(tester, '123456');
+      await tester.pumpAndSettle();
+      expect(accounts.mutationCalls, 1);
+      expect(accounts.deferred, isTrue);
+      expect(accounts.accountName, _persona.name);
+      expect(security.preparedPassword, '123456');
+      expect(security.commitCalls, 1);
+      expect(find.text('biometrics route'), findsOneWidget);
+    },
+  );
+
   testWidgets('create saves the persona only after matching confirmation', (
     tester,
   ) async {
@@ -681,6 +724,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
   _RecordingAccountNotifier({this.beforeMutation});
   final Future<void> Function(int attempt)? beforeMutation;
   int mutationCalls = 0;
+  bool deferred = false;
   String? createdMnemonic;
   String? accountName;
   String? pictureId;
@@ -709,6 +753,18 @@ class _RecordingAccountNotifier extends AccountNotifier {
     importedBip39Passphrase = bip39Passphrase;
     importedBirthdayHeight = birthdayHeight;
     importedAdditionalAccountIndices = additionalAccountIndices;
+  }
+
+  @override
+  Future<void> createAccountForDeferredSetup({
+    required String name,
+    required String profilePictureId,
+  }) async {
+    mutationCalls++;
+    await beforeMutation?.call(mutationCalls);
+    deferred = true;
+    accountName = name;
+    pictureId = profilePictureId;
   }
 
   @override

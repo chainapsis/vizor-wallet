@@ -99,6 +99,13 @@ class SetPasswordScreenArgs {
   const SetPasswordScreenArgs.create({required String mnemonic})
     : this._(flow: SetPasswordFlow.create, mnemonic: mnemonic);
 
+  /// New accounts defer phrase backup and education until Home. No secret is
+  /// generated or carried by the credential route.
+  const SetPasswordScreenArgs.createDeferred()
+    : this._(flow: SetPasswordFlow.create);
+
+  bool get defersSetup => flow == SetPasswordFlow.create && mnemonic == null;
+
   const SetPasswordScreenArgs.importWallet({
     required String mnemonic,
     String bip39Passphrase = '',
@@ -225,7 +232,8 @@ class SetPasswordScreenArgs {
   List<int> get requiredWalletLinkKeyBytes => walletLinkKeyBytes;
 
   String get backRoutePath => switch (flow) {
-    SetPasswordFlow.create => '/onboarding/secret-passphrase',
+    SetPasswordFlow.create =>
+      defersSetup ? '/welcome' : '/onboarding/secret-passphrase',
     SetPasswordFlow.importWallet => '/import/birthday',
     SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
     SetPasswordFlow.importLedger => '/onboarding/ledger/birthday',
@@ -233,6 +241,7 @@ class SetPasswordScreenArgs {
   };
 
   Object get backRouteExtra => switch (flow) {
+    SetPasswordFlow.create when defersSetup => this,
     SetPasswordFlow.create => CreateSecretPassphraseArgs(
       mnemonic: requiredMnemonic,
       persona: persona,

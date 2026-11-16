@@ -167,6 +167,7 @@ void main() {
     '/gift',
     '/onboarding/secret-passphrase',
     '/onboarding/set-passcode',
+    '/add-account',
   ]) {
     testWidgets('root $location delegates back to its own PopScope', (
       tester,

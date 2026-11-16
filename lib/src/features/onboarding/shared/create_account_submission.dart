@@ -10,8 +10,9 @@ import 'account_setup_submission.dart';
 import 'customise_account_mutation.dart';
 import 'onboarding_flow_args.dart';
 
-/// The phrase screen owns additional-account submission and recovery. First
-/// wallets carry the generated persona to the final credential screen instead.
+/// Welcome owns deferred additional-account submission and recovery. First
+/// wallets carry a stable persona to the final credential screen. Legacy phrase
+/// entry points can still supply a mnemonic.
 class CreateAccountSubmission {
   CreateAccountSubmission({AccountPersona? persona})
     : persona = persona ?? AccountPersona.generate();
@@ -20,18 +21,20 @@ class CreateAccountSubmission {
   final _submission = AccountSetupSubmission();
   bool get requiresRecovery => _submission.requiresRecovery;
 
-  Future<void> continueSetup(WidgetRef ref, String mnemonic) async {
+  Future<void> continueSetup(WidgetRef ref, [String? mnemonic]) async {
     if (requiresRecovery) {
       await _submission.recover(ref);
       return;
     }
-    final args = SetPasswordScreenArgs.create(
-      mnemonic: mnemonic,
-    ).withPersona(persona);
+    final args =
+        (mnemonic == null
+                ? const SetPasswordScreenArgs.createDeferred()
+                : SetPasswordScreenArgs.create(mnemonic: mnemonic))
+            .withPersona(persona);
     if (!ref.read(appSecurityProvider).isPasswordConfigured) {
       clearCustomisedAccountDraft(ref, args.flow);
       if (kAppFormFactor == AppFormFactor.mobile) {
-        // Replace the education stack so its redirects cannot dismiss a durable
+        // Replace the entry stack so its redirects cannot dismiss a durable
         // setup failure when the first account appears. Back uses typed args.
         ref.context.goOnboarding('/onboarding/set-passcode', extra: args);
       } else {

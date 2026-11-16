@@ -51,24 +51,6 @@ void main() {
       // ── Add a second account through the create flow ─────────────
       await openAddAccountFlow(tester);
       await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
-      await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_address_types_continue'),
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_things_to_know_continue'),
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_secret_passphrase_primary'),
-      );
-      // The second tap creates the account using the existing passcode.
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_secret_passphrase_primary'),
-      );
       await waitForHome(tester);
       final addedUuid = await accountUuidAtOrder(1);
       logE2e('second account added: $addedUuid');

@@ -194,6 +194,7 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
     '/gift',
     '/onboarding/secret-passphrase',
     '/onboarding/set-passcode',
+    '/add-account',
     '/activity/swap',
   ];
 

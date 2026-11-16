@@ -394,7 +394,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                 : CustomiseAccountArgs(setupArgs: standardArgs),
           )
         : onboarding_chrome.OnboardingBackTarget.route(
-            label: _backLabel(context.l10n, standardArgs.flow),
+            label: standardArgs.defersSetup
+                ? context.l10n.onboardingWelcome
+                : _backLabel(context.l10n, standardArgs.flow),
             routePath: desktopImportLocation(
               context,
               standardArgs.backRoutePath,

@@ -1,5 +1,13 @@
 /// Account preparation progress, separate from QR decoding and wallet sync.
-enum OnboardingFlow { create, importWallet, keystone, ledger, walletLink, gift }
+enum OnboardingFlow {
+  create,
+  createDeferred,
+  importWallet,
+  keystone,
+  ledger,
+  walletLink,
+  gift,
+}
 
 enum OnboardingSetupMode { createPasscode, reusePasscode }
 
@@ -57,6 +65,7 @@ class OnboardingProgressPlan {
   static List<OnboardingStage> _stagesFor(OnboardingFlow flow) =>
       switch (flow) {
         OnboardingFlow.gift => const [OnboardingStage.passcode],
+        OnboardingFlow.createDeferred => const [OnboardingStage.passcode],
         OnboardingFlow.create => const [
           OnboardingStage.addressTypes,
           OnboardingStage.thingsToKnow,

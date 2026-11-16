@@ -1115,6 +1115,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       child: OnboardingSplitViewShell(
         activeStep: onboardingStepFromLocation(state.matchedLocation),
         showPasswordStep: !ref.read(appSecurityProvider).isPasswordConfigured,
+        showEducationSteps:
+            !(state.extra is SetPasswordScreenArgs &&
+                (state.extra as SetPasswordScreenArgs).defersSetup),
         child: child,
       ),
       transitionsBuilder: (_, _, _, child) => child,
@@ -1175,7 +1178,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
               args.persona != null) {
             return null;
           }
-          return OnboardingStep.secretPassphrase.routePath;
+          return '/welcome';
         },
         pageBuilder: (context, state) => CustomTransitionPage<void>(
           key: state.pageKey,

@@ -1,4 +1,5 @@
 import 'endpoint_selection_capture.dart';
+import 'deferred_creation_capture.dart';
 import 'near_intents_service_notice_capture.dart';
 import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
@@ -764,6 +765,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'desktop-settings-phrase',
     description: 'Existing desktop Settings reveal with no pending backup',
     builder: buildDesktopSettingsPhraseCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-create-password',
+    description:
+        'First account password with backup and education deferred to Home',
+    builder: buildDeferredCreationPasswordCapture,
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(

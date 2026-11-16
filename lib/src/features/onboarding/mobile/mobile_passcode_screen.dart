@@ -320,7 +320,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                 progress:
                     (widget.position ??
                             MobileOnboardingProgressScope.of(context).at(
-                              onboardingFlowForSetup(widget.args!.flow),
+                              widget.args!.defersSetup
+                                  ? OnboardingFlow.createDeferred
+                                  : onboardingFlowForSetup(widget.args!.flow),
                               OnboardingStage.passcode,
                             ))
                         .value,

@@ -575,47 +575,8 @@ void main() {
       description: 'back on add-account Welcome',
     );
     await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
-    await pumpUntil(
-      tester,
-      () => tester.any(find.byKey(const ValueKey('mobile_intro_continue'))),
-      description: 'intro screen',
-    );
-    await shot('32_intro');
-    await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
-    await pumpUntil(
-      tester,
-      () => tester.any(
-        find.byKey(const ValueKey('mobile_address_types_continue')),
-      ),
-      description: 'address types screen',
-    );
-    await shot('33_address_types');
-    await tapAppButton(tester, const ValueKey('mobile_address_types_continue'));
-    await pumpUntil(
-      tester,
-      () => tester.any(
-        find.byKey(const ValueKey('mobile_things_to_know_continue')),
-      ),
-      description: 'things to know screen',
-    );
-    await shot('34_things_to_know');
-    await tapAppButton(
-      tester,
-      const ValueKey('mobile_things_to_know_continue'),
-    );
-    await pumpUntil(
-      tester,
-      () => tester.any(
-        find.byKey(const ValueKey('mobile_secret_passphrase_primary')),
-      ),
-      description: 'secret passphrase screen',
-    );
-    await shot('35_passphrase_hidden');
-    await tapAppButton(
-      tester,
-      const ValueKey('mobile_secret_passphrase_primary'),
-    );
-    await shot('36_passphrase_revealed');
+    await waitForHome(tester);
+    await shot('32_created_home');
 
     logE2e('tour complete');
   }, timeout: const Timeout(Duration(minutes: 20)));

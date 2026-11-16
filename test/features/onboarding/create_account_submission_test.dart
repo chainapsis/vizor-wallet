@@ -7,49 +7,50 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
-import 'package:zcash_wallet/src/features/onboarding/create/secret_passphrase_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
-import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
-const _mnemonic =
-    'abandon ability able about above absent absorb abstract '
-    'absurd abuse access accident account accuse achieve acid acoustic acquire '
-    'across act action actor actress actual';
 const _mobile = kAppFormFactor == AppFormFactor.mobile;
-final _primary = find.byKey(
+final _primaryKey = find.byKey(
   ValueKey(
-    _mobile
-        ? 'mobile_secret_passphrase_primary'
-        : 'create_secret_phrase_primary_button',
+    _mobile ? 'mobile_welcome_get_started' : 'welcome_create_wallet_button',
   ),
+);
+final _primary = find.descendant(
+  of: _primaryKey,
+  matching: find.byType(AppButton),
 );
 
 void main() {
+  setUpAll(loadFigmaCompareFonts);
   Future<GoRouter> pump(WidgetTester tester, _Accounts accounts) async {
     await tester.binding.setSurfaceSize(
       _mobile ? const Size(520, 1100) : const Size(1280, 900),
     );
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final router = GoRouter(
-      initialLocation: '/phrase',
+      initialLocation: '/add-account',
       routes: [
         GoRoute(
-          path: '/phrase',
+          path: '/add-account',
           builder: (_, _) => _mobile
-              ? const MobileSecretPassphraseScreen(
-                  args: CreateSecretPassphraseArgs(mnemonic: _mnemonic),
-                  screenshotStream: Stream.empty(),
+              ? const MobileWelcomeScreen(
+                  showBackButton: true,
+                  animateBackground: false,
                 )
-              : const SecretPassphraseScreen(
-                  args: CreateSecretPassphraseArgs(mnemonic: _mnemonic),
+              : const WelcomeScreen(
+                  showBackButton: true,
+                  animateBackground: false,
                 ),
         ),
         GoRoute(path: '/home', builder: (_, _) => const Text('Created Home')),
@@ -91,21 +92,37 @@ void main() {
     final gate = Completer<void>();
     final accounts = _Accounts()..gate = gate;
     final router = await pump(tester, accounts);
+    final container = ProviderScope.containerOf(tester.element(_primary));
     final submit = tester.widget<AppButton>(_primary).onPressed!;
     submit();
     submit();
     await tester.pump();
     expect(accounts.names, hasLength(1));
+    for (final action in ExternalAction.values) {
+      expect(
+        container.read(externalActionGuardProvider).blocks(action),
+        isTrue,
+      );
+    }
+    expect(
+      container.read(externalActionGuardProvider.notifier).tryBeginNavigation(),
+      isNull,
+    );
     expect(tester.widget<AppButton>(_primary).onPressed, isNull);
     await tester.binding.handlePopRoute();
     await tester.pump();
-    expect(router.state.uri.path, '/phrase');
+    expect(router.state.uri.path, '/add-account');
     gate.complete();
     await tester.pumpAndSettle();
     expect(find.text('Created Home'), findsOneWidget);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
     expect(accounts.names.single, isNotEmpty);
     expect(accounts.pictures.single, isNotEmpty);
-    expect(accounts.mnemonics, [_mnemonic]);
+    expect(accounts.state.requireValue.activeAccount!.setupPending, isTrue);
+    expect(
+      accounts.state.requireValue.activeAccount!.giftEducationPending,
+      isTrue,
+    );
     expect(accounts.state.requireValue.accounts, hasLength(2));
   });
 
@@ -144,7 +161,7 @@ void main() {
         expect(find.text('Retry setup'), findsOneWidget);
         await tester.binding.handlePopRoute();
         await tester.pump();
-        expect(router.state.uri.path, '/phrase');
+        expect(router.state.uri.path, '/add-account');
         await tester.tap(_primary);
         await tester.pumpAndSettle();
         expect(find.text('Recovery Unlock'), findsOneWidget);
@@ -168,7 +185,6 @@ class _Security extends AppSecurityNotifier {
 class _Accounts extends AccountNotifier {
   final names = <String>[];
   final pictures = <String>[];
-  final mnemonics = <String>[];
   Object? failure;
   Completer<void>? gate;
   @override
@@ -177,14 +193,12 @@ class _Accounts extends AccountNotifier {
     activeAccountUuid: 'original',
   );
   @override
-  Future<void> createAccountFromMnemonic({
-    required String mnemonic,
-    String? name,
-    String profilePictureId = 'pfp-01',
+  Future<void> createAccountForDeferredSetup({
+    required String name,
+    required String profilePictureId,
   }) async {
-    names.add(name!);
+    names.add(name);
     pictures.add(profilePictureId);
-    mnemonics.add(mnemonic);
     await gate?.future;
     if (failure != null) throw failure!;
     state = AsyncData(
@@ -195,6 +209,8 @@ class _Accounts extends AccountNotifier {
             uuid: 'created',
             name: name,
             order: 1,
+            setupPending: true,
+            giftEducationPending: true,
             profilePictureId: profilePictureId,
           ),
         ],

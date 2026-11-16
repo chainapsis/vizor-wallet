@@ -11,7 +11,7 @@ validated in the desktop test lane. Mobile builds, tests, and captures use
 
 | Entry | Account preparation | Completion |
 | --- | --- | --- |
-| Create a wallet | Introduction, address types, things to know, secret passphrase, passcode when needed | Optional Face ID, then Home |
+| Create a wallet | Passcode when needed, automatic account creation | Optional Face ID, then Home with backup and Learn Zcash cards |
 | Import a secret passphrase | Phrase entry and review, wallet birthday, account customisation, passcode when needed | Optional Face ID for initial setup, then Home |
 | Import a hardware wallet | Existing Keystone or Ledger connection, account/birthday steps, account customisation, passcode when needed | Existing capability and device gates apply |
 | Link Vizor Desktop | Introduction, scan, account selection, contacts, passcode when needed | Optional Face ID for initial setup, then Home |
@@ -33,8 +33,12 @@ validated in the desktop test lane. Mobile builds, tests, and captures use
 - Ordinary and Gift Card account creation generate a name and profile picture
   without showing account customisation. The generated persona remains fixed
   through credential confirmation and retries; Settings can edit it afterward.
-  Additional accounts reuse the unlocked credential and finish on the phrase or
-  inspected-Card screen, with submission, error and recovery state on that screen.
+  Ordinary creation skips education and phrase display before Home. First accounts
+  generate their seed only after credential confirmation; additional accounts
+  create directly from Welcome using the unlocked credential. Submission, error
+  and recovery remain on Welcome (or the inspected Card for Gift creation).
+  Both creation paths set account-specific backup and education reminders on Home;
+  completing education never marks backup complete.
 - Passphrase, Keystone and Ledger import retain account customisation, including
   imports entered from a Gift Card. Wallet Link retains imported account names.
 - Back from Gift credential setup returns to the inspected Card and clears the
@@ -64,7 +68,7 @@ Account ready: 1
 
 | Flow | Preparation steps after the entry position |
 | --- | --- |
-| Create | Address types → Things to know → Secret passphrase → Passcode |
+| Create | Passcode |
 | Passphrase import | Phrase entry → Phrase review → Birthday → Customise account → Passcode |
 | Keystone | Device intro → Device scan → Account selection → Birthday → Customise account → Passcode |
 | Ledger | Device connect → Birthday → Customise account → Passcode |
@@ -77,9 +81,9 @@ Account ready: 1
   Account-ready/Face ID is 100%; the final preparation step stays below 100%.
 - Back returns to that screen's position. Choosing another method starts that
   method's plan rather than carrying forward a previous maximum.
-- Education Skip advances to Secret passphrase without removing the skipped
-  steps. Paste/manual entry, passcode confirmation, retries, and modal sheets
-  retain their current position.
+- Legacy education/phrase fixtures retain their original progress plan. Production
+  creation uses a separate passcode-only plan. Paste/manual entry, passcode
+  confirmation, retries, and modal sheets retain their current position.
 - Progress is not persisted. The route context carries no duplicate credential
   or mnemonic data, and invalid flow/step combinations fail explicitly.
 
@@ -420,7 +424,9 @@ Windows/Linux use animated WebP without another player dependency. Both animatio
 assets contain the loop crossfade. Reduced motion and deterministic captures use
 the poster; playback follows route visibility and app lifecycle.
 
-Get started opens ordinary creation. Import wallet opens the selectors above,
+Get started opens password setup for a first wallet, or creates an additional
+account directly using the existing unlocked credential. Education and phrase
+display are deferred to Home, using the same reminders as Gift creation. Import wallet opens the selectors above,
 including the additional-account return context. Initial Welcome retains network
 settings; additional-account Welcome retains Back. The initial Welcome Gift
 button now opens desktop Gift setup. Additional-account Welcome offers the same
@@ -435,12 +441,19 @@ difference in review. Gift setup is integrated by the later new-account slice.
 
 ### Desktop interrupted setup recovery
 
+Ordinary creation journals the generated seed in encrypted storage before the
+Rust mutation for both first and additional accounts. Recovery attaches the same
+seed and restores the persona, backup and education flags before Home. A completed
+journal left by cleanup failure preserves later backup/education completion and
+account selection; an incomplete journal selects the account it just recovered.
+
+
 Creation forwards its generated persona to password setup; imports forward their
 Customise draft. Neither creates an account before credential confirmation;
 additional accounts retain their existing credential and skip password setup.
 
 If account persistence is interrupted or its DB state cannot be confirmed,
-The final password step disables Back and offers **Retry setup**.
+The final password step (or additional-account Welcome) disables Back and offers **Retry setup**.
 Retry locks the session and reloads the existing startup snapshot without
 creating another account or preparing another password. Startup inspects the
 DB: an existing account goes to Unlock, confirmed empty setup goes to Welcome,
