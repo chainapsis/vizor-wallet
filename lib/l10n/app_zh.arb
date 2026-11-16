@@ -2188,6 +2188,7 @@
   "paymentLinkQrCardScanToRedeem": "扫码领取",
   "paymentLinkQrCardSemantic": "礼品卡二维码",
   "paymentLinkQrCouldNotBeGenerated": "无法生成二维码",
+  "paymentLinkQrExpandSemantic": "全屏显示礼品卡二维码",
   "paymentLinkQrSaveFailed": "无法保存礼品卡二维码。",
   "paymentLinkQrSaved": "已保存礼品卡二维码",
   "paymentLinkQrSavedStatusFailed": "已保存礼品卡二维码，但无法更新其状态。",

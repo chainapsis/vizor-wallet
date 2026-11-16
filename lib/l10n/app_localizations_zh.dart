@@ -7484,6 +7484,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkQrCouldNotBeGenerated => '无法生成二维码';
 
   @override
+  String get paymentLinkQrExpandSemantic => '全屏显示礼品卡二维码';
+
+  @override
   String get paymentLinkQrSaveFailed => '无法保存礼品卡二维码。';
 
   @override

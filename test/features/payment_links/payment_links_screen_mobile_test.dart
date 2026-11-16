@@ -1595,6 +1595,13 @@ void main() {
       expect(card.qrData, incomingLink.toShareUri().toString());
       expect(operations.sharedLinks, isEmpty);
 
+      // Opening the viewer must preserve the export boundary and its image.
+      await tester.tap(find.byKey(const ValueKey('payment_link_qr_code')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_qr_fullscreen_close')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Share card'));
       await tester.pump();
       await tester.runAsync(() async {

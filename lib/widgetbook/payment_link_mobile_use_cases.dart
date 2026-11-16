@@ -3,6 +3,7 @@
 // storage, payment-link operations, network access, and Rust state.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,7 @@ import '../src/features/payment_links/widgets/gift_card_usage_status.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_claim_account_sheet.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_share_sheet.dart';
+import '../src/features/payment_links/widgets/mobile/payment_link_qr_fullscreen_view.dart';
 import '../src/features/payment_links/widgets/payment_link_amount_card.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
@@ -101,26 +103,44 @@ Widget _shareSheet(
   PaymentLinkCardArtwork artwork, {
   required VoidCallback onClose,
 }) {
-  final link = VizorPaymentLink(
-    network: 'main',
-    address: 'u1previewgiftcardaddress',
-    amountZatoshi: BigInt.from(445000000),
-    mnemonic: List.filled(24, 'abandon').join(' '),
-    birthdayHeight: 3000000,
-    label: 'Payment link',
-    createdAt: DateTime.utc(2026, 8, 6),
-    presentation: PaymentLinkPresentation(
-      artworkId: artwork.protocolId,
-      message: 'A Gift Card for you!',
-    ),
-  );
   return PaymentLinkShareSheet(
     artwork: artwork,
-    link: link.toUri().toString(),
+    link: _shareQrData(artwork),
     onShare: (_, _) async {},
     onShareError: _noop,
     onCopyLink: () async {},
     onClose: onClose,
+  );
+}
+
+// Unfunded public zero-entropy vector. Encode locally so previews need no Rust.
+String _shareQrData(PaymentLinkCardArtwork artwork) {
+  final payload = base64Url
+      .encode(
+        utf8.encode(
+          jsonEncode([
+            'main',
+            'AAAAAAAAAAAAAAAAAAAAAA',
+            3000000,
+            '445000000',
+            artwork.protocolId,
+            null,
+            'A Gift Card for you!',
+          ]),
+        ),
+      )
+      .replaceAll('=', '');
+  return 'https://link.vizor.cash/payment-links/open#v3=$payload';
+}
+
+Widget buildMobilePaymentLinkQrFullscreenUseCase(BuildContext context) {
+  const insets = EdgeInsets.only(top: 55, bottom: 34);
+  return MediaQuery(
+    data: MediaQuery.of(context).copyWith(padding: insets, viewPadding: insets),
+    child: PaymentLinkQrFullscreenView(
+      link: _shareQrData(PaymentLinkCardArtwork.ruby),
+      onClose: _noop,
+    ),
   );
 }
 

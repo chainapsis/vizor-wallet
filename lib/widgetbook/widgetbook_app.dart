@@ -1511,6 +1511,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobilePaymentLinkShareQrUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Gift card QR - Full screen',
+                      builder: buildMobilePaymentLinkQrFullscreenUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Redeem - Paste link',
                       builder: buildMobilePaymentLinkRedeemPasteUseCase,
                     ),

@@ -2676,6 +2676,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-payment-link-qr-fullscreen',
+    description: 'Mobile Gift Card full-screen QR viewer',
+    builder: buildMobilePaymentLinkQrFullscreenUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-payment-link-claim-many-accounts',
     description: 'Mobile Gift Card confirmation with a scrolling account list',
     builder: buildMobilePaymentLinkClaimManyAccountsUseCase,
