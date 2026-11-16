@@ -288,11 +288,16 @@ SpendableWait? resolveSpendableWait({
 bool _createsChange(rust_sync.TransactionInfo transaction) =>
     transaction.txKind == 'sent' || transaction.txKind == 'migration';
 
-// A memo-only receipt carries no value, so it explains no pending balance.
+/// The largest value the wallet treats as uneconomic to spend, the ZIP 317
+/// marginal fee its balance uses. It counts such a note apart from the
+/// pending balances, whatever its confirmations.
+final _uneconomicValue = BigInt.from(5000);
+
+// A memo-only or dust receipt is in no pending balance, so it explains none.
 bool _isShieldedReceipt(rust_sync.TransactionInfo transaction) =>
     (transaction.txKind == 'received' || transaction.txKind == 'receiving') &&
     !transaction.isTransparent &&
-    transaction.displayAmount > BigInt.zero;
+    transaction.displayAmount > _uneconomicValue;
 
 /// The chain position waits are measured from, and whether the wallet is
 /// still scanning up to it.

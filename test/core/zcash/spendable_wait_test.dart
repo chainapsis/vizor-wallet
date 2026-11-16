@@ -208,6 +208,29 @@ void main() {
       expect(wait.hasWait, isFalse);
     });
 
+    test('a dust receipt explains no pending value', () {
+      // At the marginal fee the wallet counts a note as uneconomic, not
+      // pending; one zatoshi more and it is pending like any other.
+      final dust = _tx(
+        'received',
+        minedHeight: _tip,
+        amount: BigInt.from(5000),
+      );
+      expect(
+        resolve(received: _zec, transactions: [dust])!.receivedWait,
+        isNull,
+      );
+      expect(
+        resolve(
+          received: _zec,
+          transactions: [
+            _tx('received', minedHeight: _tip, amount: BigInt.from(5001)),
+          ],
+        )!.receivedWait,
+        const AvailableIn.minutes(1, 3),
+      );
+    });
+
     test('a memo-only receipt explains no pending value', () {
       final memoOnly = _tx('received', minedHeight: _tip, amount: BigInt.zero);
       final wait = resolve(
