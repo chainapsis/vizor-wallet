@@ -193,21 +193,34 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Use Max states the balance it fills; its tooltip lists what is waiting.
+      // Use Max states the balance it fills; the clock beside it opens what
+      // is waiting, in place of the help tooltip.
       expect(
         tester
             .widget<Text>(find.byKey(const ValueKey('send_max_spendable')))
             .data,
         '1.2 ZEC',
       );
-      final tooltip = _spendableTooltipText(tester);
-      expect(tooltip, contains('Available now: 1.2 ZEC'));
       expect(
-        tooltip,
-        contains('Just received: +1.3 ZEC · Available in 1–3 min'),
+        find.byKey(const ValueKey('send_spendable_tooltip')),
+        findsNothing,
       );
-      expect(tooltip, contains('Total: 2.5 ZEC'));
-      expect(tooltip, contains('Funds need confirmations'));
+      await tester.tap(
+        find.byKey(const ValueKey('send_spendable_wait_button')),
+      );
+      await tester.pumpAndSettle();
+      final popover = find.byKey(const ValueKey('send_spendable_wait_popover'));
+      expect(popover, findsOneWidget);
+      expect(
+        find.descendant(of: popover, matching: find.text('1.2 ZEC')),
+        findsOneWidget,
+      );
+      expect(find.text('Just received'), findsOneWidget);
+      expect(find.text('+1.3 ZEC'), findsOneWidget);
+      expect(find.text('2.5 ZEC'), findsOneWidget);
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(popover, findsNothing);
 
       await tester.enterText(
         _editableIn('send_address_field'),
@@ -259,7 +272,7 @@ void main() {
     expect(tooltip, isNot(contains('Available now')));
   });
 
-  testWidgets('Use Max masks its balance and tooltip in privacy mode', (
+  testWidgets('Use Max masks its balance and popover in privacy mode', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -278,11 +291,15 @@ void main() {
           .data,
       '****** ZEC',
     );
-    final tooltip = _spendableTooltipText(tester);
-    expect(tooltip, contains('Available now: ****** ZEC'));
-    expect(tooltip, isNot(contains('1.2')));
-    expect(tooltip, isNot(contains('1.3')));
-    expect(tooltip, isNot(contains('2.5')));
+    await tester.tap(find.byKey(const ValueKey('send_spendable_wait_button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('send_spendable_wait_popover')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('1.2'), findsNothing);
+    expect(find.textContaining('1.3'), findsNothing);
+    expect(find.textContaining('2.5'), findsNothing);
   });
 
   testWidgets(

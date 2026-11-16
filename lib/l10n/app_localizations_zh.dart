@@ -8644,30 +8644,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendSpendableInfoLabel => '可用余额说明';
 
   @override
-  String sendSpendableTooltipAvailableNow(String amount) {
-    return '现在可用：$amount';
-  }
-
-  @override
   String get sendSpendableTooltipBody =>
       '资金需要先获得确认才能使用：来自自己钱包的找零需要 3 次确认，收到的他人转账需要 6 次确认。隐私票据还需要完整扫描。它们很快就会可用。';
 
   @override
   String get sendSpendableTooltipTitle => '可用余额可能低于总余额。';
-
-  @override
-  String sendSpendableTooltipTotal(String amount) {
-    return '合计：$amount';
-  }
-
-  @override
-  String sendSpendableTooltipWaitingRow(
-    String label,
-    String amount,
-    String wait,
-  ) {
-    return '$label：$amount · $wait';
-  }
 
   @override
   String get sendStatusDonationFailed => '捐赠失败';

@@ -48,6 +48,7 @@ import '../services/send_flow.dart';
 import '../services/send_proving_key_warmup.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
+import '../widgets/spendable_wait_breakdown.dart';
 
 final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
   return getWalletDbPath;
@@ -1519,12 +1520,17 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             rightSlot: _SendMaxBalanceControl(
                               spendableText: spendableText,
                               showSpendable: widget.hasDisplayBalance,
-                              spendableWait: ref.watch(
-                                spendableWaitProvider(widget.activeAccountUuid),
-                              ),
-                              privacyModeEnabled: ref.watch(
-                                privacyModeProvider,
-                              ),
+                              spendableWaitAccountUuid:
+                                  (ref
+                                          .watch(
+                                            spendableWaitProvider(
+                                              widget.activeAccountUuid,
+                                            ),
+                                          )
+                                          ?.hasWait ??
+                                      false)
+                                  ? widget.activeAccountUuid
+                                  : null,
                               onMaxPressed: _isResolvingMax
                                   ? null
                                   : _activateMaxMode,
@@ -2118,70 +2124,28 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
 
 /// "Use Max" with the balance it fills, and a help icon whose tooltip
 /// explains why that balance can be below the total. While funds are
-/// confirming, the icon turns into a clock and the tooltip lists them.
+/// confirming, a clock takes the icon's place and opens their breakdown.
 class _SendMaxBalanceControl extends StatelessWidget {
   const _SendMaxBalanceControl({
     required this.spendableText,
     required this.onMaxPressed,
     this.showSpendable = true,
-    this.spendableWait,
-    this.privacyModeEnabled = false,
+    this.spendableWaitAccountUuid,
   });
 
   /// The spendable balance, already masked in privacy mode.
   final String spendableText;
   final VoidCallback? onMaxPressed;
   final bool showSpendable;
-  final SpendableWait? spendableWait;
-  final bool privacyModeEnabled;
 
-  String _amount(BigInt zatoshi, {bool added = false}) {
-    final text = ZecAmount.fromZatoshi(
-      zatoshi,
-    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
-    return hideAmountIfPrivacyMode(
-      added ? '+$text' : text,
-      privacyModeEnabled: privacyModeEnabled,
-    );
-  }
-
-  /// What is spendable now, each amount still confirming with its wait, and
-  /// their total; null when nothing is waiting.
-  List<InlineSpan>? _waitingLines(AppLocalizations l10n) {
-    final wait = spendableWait;
-    if (wait == null || !wait.hasWait) return null;
-    String row(String label, BigInt amount, AvailableIn available) =>
-        l10n.sendSpendableTooltipWaitingRow(
-          label,
-          _amount(amount, added: true),
-          availableInLabel(l10n, available),
-        );
-    return [
-      TextSpan(
-        text: l10n.sendSpendableTooltipAvailableNow(_amount(wait.availableNow)),
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      if (wait.changeWaiting > BigInt.zero)
-        TextSpan(
-          text:
-              '\n${row(l10n.sendAvailableChangeRow, wait.changeWaiting, wait.changeWait!)}',
-        ),
-      if (wait.receivedWaiting > BigInt.zero)
-        TextSpan(
-          text:
-              '\n${row(l10n.sendAvailableReceivedRow, wait.receivedWaiting, wait.receivedWait!)}',
-        ),
-      TextSpan(
-        text: '\n${l10n.sendSpendableTooltipTotal(_amount(wait.total))}',
-      ),
-    ];
-  }
+  /// The account whose funds are still confirming, or null when none are.
+  final String? spendableWaitAccountUuid;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final l10n = context.l10n;
-    final waitingLines = _waitingLines(l10n);
+    final waitAccountUuid = spendableWaitAccountUuid;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -2224,37 +2188,33 @@ class _SendMaxBalanceControl extends StatelessWidget {
           ),
         ),
         const SizedBox(width: AppSpacing.xxs),
-        AppTooltip(
-          key: const ValueKey('send_spendable_tooltip'),
-          richMessage: TextSpan(
-            children: waitingLines == null
-                ? [
-                    TextSpan(
-                      text: l10n.sendSpendableTooltipTitle,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    TextSpan(text: '\n\n${l10n.sendSpendableTooltipBody}'),
-                  ]
-                : [
-                    ...waitingLines,
-                    TextSpan(text: '\n\n${l10n.sendSpendableTooltipBody}'),
-                  ],
-          ),
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: Center(
-              child: AppIcon(
-                waitingLines == null ? AppIcons.help : AppIcons.time,
-                size: 16,
-                color: waitingLines == null
-                    ? colors.icon.muted
-                    : colors.icon.regular,
-                semanticLabel: l10n.sendSpendableInfoLabel,
+        if (waitAccountUuid != null)
+          SendSpendableWaitButton(accountUuid: waitAccountUuid)
+        else
+          AppTooltip(
+            key: const ValueKey('send_spendable_tooltip'),
+            richMessage: TextSpan(
+              children: [
+                TextSpan(
+                  text: l10n.sendSpendableTooltipTitle,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                TextSpan(text: '\n\n${l10n.sendSpendableTooltipBody}'),
+              ],
+            ),
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: Center(
+                child: AppIcon(
+                  AppIcons.help,
+                  size: 16,
+                  color: colors.icon.muted,
+                  semanticLabel: l10n.sendSpendableInfoLabel,
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
