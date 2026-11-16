@@ -1193,9 +1193,13 @@ change. The subsections below this list carry the detailed rules.
 - Success, pending and failure screen: `MobileTransactionProgressScreen`.
 - Typing an amount: `MobileAmountCard`, Pay's card (its header row holds
   Pay's asset picker; Request ZEC leaves it out and the amount centres in
-  the same 240 height). Adding a message (memo):
+  the same minimum 240 height). Its amount/conversion rows and header grow with
+  scaled text; narrow Pay headers and actions reflow before labels are clipped.
+  Adding a message (memo):
   `showMobileMemoSheet`, Send's sheet, opened from a line under the card;
   pass a title, hint and `sanitize` for a flow with its own rules.
+  Memo labels, errors and buttons grow with text; the input keeps an internal
+  scroll view. Its scrollbar has a 24px hit area and a 6px visible thumb.
 - Buttons `AppButton`, icons `AppIcon(AppIcons.x)`, toasts `showAppToast`,
   haptics `AppHaptics`.
 

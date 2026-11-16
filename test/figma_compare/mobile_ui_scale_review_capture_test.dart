@@ -13,10 +13,12 @@ import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 
 import 'figma_compare_capture_support.dart';
 
-/// Deliberately captures the current, unfixed layout at larger text sizes.
-/// Overflow diagnostics are recorded rather than allowed to prevent evidence.
+/// Capture the real screen layouts at larger text sizes. The optional
+/// UI_SCALE_REVIEW_ALLOW_ERRORS flag records unfixed diagnostics for comparison;
+/// normal captures reject overflow and clipped amount/label rows.
 void main() {
   const output = String.fromEnvironment('UI_SCALE_REVIEW_OUTPUT');
+  const allowErrors = bool.fromEnvironment('UI_SCALE_REVIEW_ALLOW_ERRORS');
   if (output.isEmpty) return;
   for (final screen in ['pay', 'request', 'memo']) {
     for (final scale in [1.0, 1.5, 2.0]) {
@@ -99,6 +101,33 @@ void main() {
               'scrollbarThumbRect': rectJson(thumb),
             }),
           );
+          if (!allowErrors) {
+            expect(exceptions, isEmpty, reason: '$screen at $percent%');
+            if (screen == 'pay') expect(editables, isNotEmpty);
+            for (final editable in editables) {
+              expect(
+                editable['allocatedHeight'] as double,
+                greaterThanOrEqualTo(editable['preferredLineHeight'] as double),
+                reason: '$screen input at $percent%',
+              );
+            }
+            for (final paragraph in paragraphs) {
+              final text = paragraph['text'] as String;
+              if (text == 'Message' ||
+                  text.endsWith('/512') ||
+                  text == 'ZEC' ||
+                  text.startsWith(r'$')) {
+                expect(
+                  paragraph['allocatedHeight'] as double,
+                  greaterThanOrEqualTo(
+                    (paragraph['naturalHeight'] as double) - 1,
+                  ),
+                  reason: '$text at $percent%',
+                );
+              }
+            }
+            if (screen == 'memo') expect(hit!.width, greaterThanOrEqualTo(24));
+          }
         },
       );
     }

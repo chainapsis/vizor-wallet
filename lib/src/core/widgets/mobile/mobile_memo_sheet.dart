@@ -3,6 +3,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -147,20 +148,24 @@ class _MobileMemoSheetState extends State<MobileMemoSheet> {
 
     return MobileModalScaffold(
       title: title,
+      titleMaxLines: 2,
       onClose: () => Navigator.of(context).pop(),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
+          ConstrainedBox(
             key: const ValueKey('mobile_send_memo_text_area'),
-            height: 222,
+            constraints: const BoxConstraints(minHeight: 222),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    height: _kMemoLabelLineHeight,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: _kMemoLabelLineHeight,
+                    ),
                     child: Row(
                       children: [
                         Text(context.l10n.commonMessage, style: labelStyle),
@@ -188,8 +193,10 @@ class _MobileMemoSheetState extends State<MobileMemoSheet> {
                     onChanged: _handleChanged,
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  SizedBox(
-                    height: _kMemoErrorHeight,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: _kMemoErrorHeight,
+                    ),
                     child: Align(
                       // Top, so a one-line message keeps the position it had
                       // before this slot grew.
@@ -210,13 +217,16 @@ class _MobileMemoSheetState extends State<MobileMemoSheet> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          SizedBox(
+          ConstrainedBox(
             key: const ValueKey('mobile_send_memo_buttons'),
-            height: 112,
+            constraints: const BoxConstraints(minHeight: 112),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 AppButton(
+                  growWithContent: true,
+                  constrainContent: true,
                   key: ValueKey(
                     primaryIsClear
                         ? 'mobile_send_memo_clear'
@@ -239,6 +249,8 @@ class _MobileMemoSheetState extends State<MobileMemoSheet> {
                 ),
                 const SizedBox(height: AppSpacing.s),
                 AppButton(
+                  growWithContent: true,
+                  constrainContent: true,
                   key: const ValueKey('mobile_send_memo_cancel'),
                   expand: true,
                   variant: AppButtonVariant.ghost,
@@ -322,9 +334,19 @@ class _MemoTextAreaState extends State<_MemoTextArea> {
     final focused = widget.focusNode.hasFocus;
 
     return Container(
-      // The memo error slot below holds two lines, and the sheet keeps its
-      // height: the second line comes from here. This area scrolls.
-      height: 148 - _kMemoLabelLineHeight,
+      // Keep the 1x field geometry and roughly three visible lines at larger
+      // sizes. Scale the font size before applying its line-height ratio, so
+      // nonlinear platform scaling is respected. Long memos still scroll.
+      height: math.max(
+        148 - _kMemoLabelLineHeight,
+        MediaQuery.textScalerOf(
+                  context,
+                ).scale(AppTypography.bodyMedium.fontSize!) *
+                AppTypography.bodyMedium.height! *
+                3 +
+            AppSpacing.s * 2 +
+            2,
+      ),
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.small),
@@ -395,7 +417,7 @@ class _MemoTextAreaState extends State<_MemoTextArea> {
             top: 0,
             right: 0,
             bottom: 0,
-            width: 12,
+            width: AppSpacing.md,
             child: _MemoTextAreaScrollbar(
               visible: _canScroll,
               controller: _scrollController,
@@ -554,7 +576,7 @@ class _MemoTextAreaScrollbarState extends State<_MemoTextAreaScrollbar> {
             children: [
               Positioned(
                 key: const ValueKey('mobile_send_memo_scrollbar_thumb'),
-                left: _horizontalInset,
+                right: _horizontalInset,
                 top: geometry.thumbTop,
                 width: _thumbWidth,
                 height: geometry.thumbHeight,

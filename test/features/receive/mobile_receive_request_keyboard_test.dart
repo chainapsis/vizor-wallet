@@ -336,4 +336,77 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant({TargetPlatform.android}));
+  for (final scale in [1.5, 2.0]) {
+    testWidgets(
+      'scaled memo drag target and request actions remain usable ($scale)',
+      (tester) async {
+        await _pumpPhone(tester, size: const Size(360, 800), textScale: scale);
+        await _openRequest(tester, keyboardInset: 0);
+        await tester.enterText(
+          find.byKey(const ValueKey('request_amount_input')),
+          '1234567.12345678',
+        );
+        await _settle(tester);
+        expect(tester.takeException(), isNull);
+        await tester.enterText(
+          find.byKey(const ValueKey('request_amount_input')),
+          '1',
+        );
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('request_message_row')),
+        );
+        await tester.tap(find.byKey(const ValueKey('request_message_row')));
+        await _settle(tester);
+        final field = find.byKey(const ValueKey('mobile_send_memo_editable'));
+        final message = List.generate(
+          12,
+          (i) => 'Memo line $i with more text',
+        ).join('\n');
+        await tester.enterText(field, message);
+        await _settle(tester);
+        final bar = find.byKey(const ValueKey('mobile_send_memo_scrollbar'));
+        await tester.ensureVisible(bar);
+        final hit = tester.getRect(bar);
+        final editable = tester.widget<EditableText>(
+          find.descendant(of: field, matching: find.byType(EditableText)),
+        );
+        final scrolling = editable.scrollController!;
+        scrolling.jumpTo(0);
+        await tester.pump();
+        final thumb = tester.getRect(
+          find.byKey(const ValueKey('mobile_send_memo_scrollbar_thumb')),
+        );
+        final drag = await tester.startGesture(
+          Offset(hit.left + 2, thumb.center.dy),
+        );
+        await drag.moveBy(const Offset(0, 45));
+        await drag.up();
+        await tester.pump();
+        expect(scrolling.offset, greaterThan(0));
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        await _settle(tester);
+        final save = find.byKey(const ValueKey('mobile_send_memo_save'));
+        await tester.ensureVisible(save);
+        await _settle(tester);
+        expect(tester.getRect(save).bottom, lessThanOrEqualTo(500));
+        await tester.tap(save);
+        await _settle(tester);
+        expect(find.byType(MobileMemoSheet), findsNothing);
+        tester.view.viewInsets = const FakeViewPadding();
+        await _settle(tester);
+        await _create(tester);
+        expect(
+          _qrData(tester),
+          ZecRequestView(
+            address: _address,
+            amountZec: '1',
+            messageText: message,
+          ).qrData,
+        );
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({TargetPlatform.android}),
+    );
+  }
 }
