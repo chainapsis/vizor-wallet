@@ -86,7 +86,7 @@ import 'mobile_shield_page.dart';
 /// The mobile route tree: the shared entry/onboarding routes, a
 /// stateful tab shell (home / swap / activity / settings), and
 /// full-screen flows pushed over the shell as [MobilePage]s, which fade and
-/// zoom in and keep the iOS edge-swipe back.
+/// zoom in, slide out on Back, and keep the iOS edge-swipe back.
 ///
 /// Route paths intentionally match the desktop tree so the shared
 /// redirect guard, deep links, and `bootstrap.initialLocation` work

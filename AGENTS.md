@@ -1212,13 +1212,16 @@ change. The subsections below this list carry the detailed rules.
 
 - Register every pushed screen through `_mobilePage`. It gives the window
   background, the side constraints, the scroll edge fades, the fade-and-zoom
-  transition (320ms in, 260ms out, `Cubic(0.23, 1, 0.32, 1)`), the edge-swipe
-  back and the page haptic. The back swipe slides the page opaque and at full
-  size; never let it fade, or the page below shows through. A route outside
-  it (onboarding, the Gift Card claim) installs
+  entrance (320ms, `Cubic(0.23, 1, 0.32, 1)`), the edge-swipe back and the page
+  haptic. Button Back slides out over 400ms, restoring the previous page from
+  1.03 scale to 1 with the same progress; a back swipe follows the finger and
+  settles over 350ms. Both exits keep the page opaque and at full size, so the
+  page below shows beside it. Under Reduce Motion button Back only fades.
+  A pop during entry reverses that entry without jumping to a slide. A route
+  outside it (onboarding, the Gift Card claim) installs
   `MobileScrollEdgeFades(color: window, bottomHeight: AppSpacing.xl)` itself.
 - Onboarding steps enter instantly: `_mobileOnboardingPage` uses
-  `MobilePageTransition.onboarding`. Back slides out over 260ms (fades under
+  `MobilePageTransition.onboarding`. Back slides out over 400ms (fades under
   Reduce Motion); a back swipe stays opaque and follows the finger, then
   completes or cancels over 350ms. The previous page stays still. Keep entry
   duration zero and use the shared policy rather than per-screen transitions.
@@ -1378,9 +1381,9 @@ change. The subsections below this list carry the detailed rules.
 - Curves: `Cubic(0.23, 1, 0.32, 1)` for entrances, `Cubic(0.77, 0, 0.175, 1)`
   for movement on screen, `Cubic(0.32, 0.72, 0, 1)` for iOS-style sheets and
   pagers.
-- Keep interaction motion short (pages 320ms, toasts 350ms in and 200ms out,
-  sheets about 200ms). Longer motion is for one-off moments only, such as the
-  tab icon flourishes and the 1,950ms success ripple. Frequent actions
+- Keep interaction motion short (pages 320ms in and 400ms out, toasts 350ms in
+  and 200ms out, sheets about 200ms). Longer motion is for one-off moments
+  only, such as the tab icon flourishes and the 1,950ms success ripple. Frequent actions
   (typing, row taps) don't animate.
 - Passcode keys fire on touch and dim to 50% while held: at once on the
   touch, fading back over 150ms on release (`_PasscodeKey` in

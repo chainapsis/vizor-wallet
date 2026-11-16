@@ -49,6 +49,7 @@ import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
+import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
@@ -391,6 +392,8 @@ void main() {
       tester.element(find.byType(AppMobileShell)),
     );
     final revision = container.read(syncKeepAwakeInteractionProvider).revision;
+    final settings = find.byType(MobileSettingsScreen, skipOffstage: false);
+    final settingsRect = tester.getRect(settings);
     final covered = router.push<void>('/accounts');
 
     // GoRouter has published the new path, but the shell is not covered yet.
@@ -406,16 +409,38 @@ void main() {
     expect(mobileVisiblePath(router), '/accounts');
     expect(container.read(syncKeepAwakeInteractionProvider).revision, revision);
 
-    router.pop();
+    final accounts = find.byType(MobileAccountsScreen);
+    final accountsRect = tester.getRect(accounts);
+    final route = ModalRoute.of(tester.element(accounts))!;
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
     await tester.pump();
     await tester.pump();
-    await tester.pump();
+    final shift =
+        (tester.getRect(accounts).left - accountsRect.left) /
+        accountsRect.width;
+    expect(shift, greaterThan(0));
+    expect(
+      tester.getRect(accounts).width,
+      closeTo(accountsRect.width, .000001),
+    );
+    expect(
+      tester.getRect(settings).width / settingsRect.width,
+      closeTo(1 + .03 * (1 - shift), .000001),
+    );
     expect(observer.hasDepartingRoutes, true);
     expect(native.latest['hidden'], false);
     expect(native.latest['inputEnabled'], false);
     await native.present(interactive: true, phase: 'visible');
     await native.send('select', {'id': '/home'});
     expect(mobileVisiblePath(router), '/settings');
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(route.animation!.value, greaterThan(0));
+    expect(observer.hasDepartingRoutes, true);
+    expect(native.latest['inputEnabled'], false);
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(route.animation!.value, 0);
     await tester.pumpAndSettle();
     await covered;
     expect(native.latest['selectedId'], '/settings');
@@ -425,6 +450,40 @@ void main() {
     expect(native.created, hasLength(1));
     expect(find.byType(AppMobileTabBar), findsNothing);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('Android system Back uses the same opaque page slide', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.reset);
+    final router = _router(initialLocation: '/settings');
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_app(router));
+    await tester.pumpAndSettle();
+    final covered = router.push<void>('/accounts');
+    await tester.pumpAndSettle();
+    final accounts = find.byType(MobileAccountsScreen);
+    final screen = tester.getRect(accounts);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(mobileVisiblePath(router), '/settings');
+    expect(tester.getRect(accounts).left, greaterThan(screen.left));
+    expect(tester.getRect(accounts).width, closeTo(screen.width, .000001));
+    expect(
+      tester
+          .widgetList<Opacity>(
+            find.ancestor(of: accounts, matching: find.byType(Opacity)),
+          )
+          .every((opacity) => opacity.opacity == 1),
+      true,
+    );
+    await tester.pumpAndSettle();
+    await covered;
+    expect(accounts, findsNothing);
+    expect(find.byType(MobileSettingsScreen), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
   for (final commit in [false, true]) {
     testWidgets('accounts mobile back swipe previews native tabs without input '
@@ -514,6 +573,12 @@ void main() {
     expect(native.latest['inputEnabled'], false);
     await native.send('select', {'id': '/settings'});
     expect(mobileVisiblePath(router), '/home');
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(route.animation!.value, greaterThan(0));
+    expect(observer.hasDepartingRoutes, true);
+    expect(native.latest['inputEnabled'], false);
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(route.animation!.value, 0);
     await tester.pumpAndSettle();
     await covered;
     expect(native.latest['inputEnabled'], true);
