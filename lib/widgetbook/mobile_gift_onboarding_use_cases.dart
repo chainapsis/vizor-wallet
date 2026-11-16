@@ -4,7 +4,6 @@ import 'dart:async';
 import '../src/features/payment_links/providers/gift_card_entry_price_provider.dart';
 import '../src/features/payment_links/providers/gift_card_check_progress_provider.dart';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,7 +32,6 @@ import '../src/features/payment_links/services/payment_link_clipboard.dart';
 import '../src/features/payment_links/providers/gift_claim_flow_provider.dart';
 import '../src/features/payment_links/screens/gift_claim_screen.dart';
 import '../src/features/payment_links/screens/gift_passcode_screen.dart';
-import '../src/features/payment_links/screens/gift_customise_account_screen.dart';
 import '../src/features/payment_links/screens/payment_links_screen.dart';
 import '../src/features/payment_links/services/payment_link_recovery_store.dart';
 import '../src/features/payment_links/services/payment_link_received_store.dart';
@@ -61,8 +59,6 @@ Widget buildMobileGiftAddAccountEntry(BuildContext context) =>
     );
 Widget buildMobileGiftOnboardingPasscode(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift/passcode');
-Widget buildMobileGiftOnboardingCustomise(BuildContext context) =>
-    const _GiftPreview(initialLocation: '/gift/customise');
 Widget buildMobileGiftOnboardingWalkthrough(BuildContext context) =>
     const _GiftPreview();
 Widget buildMobileGiftOnboardingInspected(BuildContext context) =>
@@ -87,12 +83,9 @@ Widget buildMobileGiftOnboardingLongSyncWarning(BuildContext context) =>
 Widget buildMobileGiftOnboardingSubmissionError(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift', failCreation: true);
 Widget buildMobileGiftOnboardingClaimFailure(BuildContext context) =>
-    const _GiftPreview(initialLocation: '/gift/customise', failClaim: true);
+    const _GiftPreview(initialLocation: '/gift/passcode', failClaim: true);
 Widget buildMobileGiftOnboardingStorageRecovery(BuildContext context) =>
-    const _GiftPreview(
-      initialLocation: '/gift/customise',
-      recoverStorage: true,
-    );
+    const _GiftPreview(initialLocation: '/gift/passcode', recoverStorage: true);
 Widget buildMobileGiftOnboardingBiometrics(BuildContext context) =>
     const _GiftPreview(initialLocation: '/onboarding/biometrics');
 Widget buildMobileGiftOnboardingImportAccounts(BuildContext context) =>
@@ -300,31 +293,6 @@ class _GiftPreviewState extends State<_GiftPreview> {
       GoRoute(
         path: '/gift/passcode',
         builder: (_, _) => const GiftPasscodeScreen(),
-      ),
-      GoRoute(
-        path: '/gift/customise',
-        redirect: (context, _) =>
-            ProviderScope.containerOf(
-                  context,
-                ).read(giftClaimFlowProvider)?.walletSetupInProgress ==
-                true
-            ? null
-            : '/gift',
-        pageBuilder: (context, state) {
-          final setup = ProviderScope.containerOf(
-            context,
-          ).read(giftClaimFlowProvider)!;
-          return NoTransitionPage(
-            key: state.pageKey,
-            child: GiftCustomiseAccountScreen(
-              args: GiftCustomiseAccountArgs(
-                passcode: setup.setupPasscode,
-                inspection: setup.inspection!,
-              ),
-              random: Random(1234),
-            ),
-          );
-        },
       ),
       GoRoute(
         path: '/payment-links',

@@ -1,4 +1,5 @@
 import 'endpoint_selection_capture.dart';
+import 'deferred_creation_capture.dart';
 import 'near_intents_service_notice_capture.dart';
 import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
@@ -679,18 +680,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
-    id: 'desktop-gift-customise',
-    description: 'Gift Card first-wallet customise',
-    builder: buildDesktopGiftCustomiseUseCase,
-    platform: TargetPlatform.macOS,
-  ),
-  FigmaCompareScenario(
-    id: 'desktop-gift-additional-customise',
-    description: 'Gift Card additional-account customise',
-    builder: buildDesktopGiftAdditionalCustomiseUseCase,
-    platform: TargetPlatform.macOS,
-  ),
-  FigmaCompareScenario(
     id: 'desktop-gift-check-error',
     description: 'Gift Card inspection failure and retry',
     builder: buildDesktopGiftCheckErrorUseCase,
@@ -776,6 +765,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'desktop-settings-phrase',
     description: 'Existing desktop Settings reveal with no pending backup',
     builder: buildDesktopSettingsPhraseCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-create-password',
+    description:
+        'First account password with backup and education deferred to Home',
+    builder: buildDeferredCreationPasswordCapture,
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
@@ -902,7 +898,8 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'desktop-onboarding-customise',
-    description: 'Desktop account name and profile picture customisation',
+    description:
+        'Desktop imported-account name and profile picture customisation',
     builder: buildCustomiseAccountUseCase,
     platform: TargetPlatform.macOS,
   ),
@@ -1012,9 +1009,10 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-gift-onboarding-customise',
-    description: 'Gift wallet customisation before committing setup',
-    builder: buildMobileGiftOnboardingCustomise,
+    id: 'mobile-gift-onboarding-passcode',
+    description:
+        'Gift Card passcode setup with an automatically generated persona',
+    builder: buildMobileGiftOnboardingPasscode,
     desktop: false,
     mobile: true,
   ),
@@ -2878,7 +2876,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-customise-account',
-    description: 'Mobile account personalisation onboarding screen',
+    description: 'Mobile imported-account personalisation screen',
     builder: buildMobileCustomiseAccountUseCase,
     desktop: false,
     mobile: true,

@@ -105,9 +105,6 @@ import 'src/features/payment_links/screens/gift_claim_screen.dart';
 import 'src/features/payment_links/screens/desktop_payment_link_scan_screen.dart';
 import 'src/features/send/screens/payment_request_scan_screen.dart';
 import 'src/features/payment_links/screens/desktop_gift_password_screen.dart';
-import 'src/features/payment_links/screens/desktop_gift_customise_screen.dart';
-import 'src/features/payment_links/screens/gift_customise_account_screen.dart'
-    show GiftCustomiseAccountArgs;
 import 'src/features/payment_links/screens/payment_links_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -726,7 +723,7 @@ String? appRedirect({
   // actionable on this screen; locking still takes precedence.
   if (hasWallet &&
       ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true &&
-      (state.matchedLocation == '/gift/customise' ||
+      (state.matchedLocation == '/gift' ||
           state.matchedLocation == '/gift/set-password' ||
           state.matchedLocation == '/gift/passcode')) {
     return requiresUnlock ? '/unlock' : null;
@@ -890,23 +887,6 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
     redirect: (_, _) =>
         ref.read(giftClaimFlowProvider)?.setupPersona == null ? '/gift' : null,
     builder: (_, _) => const DesktopGiftPasswordScreen(),
-  ),
-  GoRoute(
-    path: '/gift/customise',
-    redirect: (_, _) =>
-        ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true
-        ? null
-        : '/gift',
-    builder: (_, _) {
-      final setup = ref.read(giftClaimFlowProvider)!;
-      return DesktopGiftCustomiseScreen(
-        args: GiftCustomiseAccountArgs(
-          passcode: setup.setupPasscode,
-          passwordInputSource: setup.setupPasswordInputSource,
-          inspection: setup.inspection!,
-        ),
-      );
-    },
   ),
   GoRoute(
     path: '/import/method',
@@ -1135,6 +1115,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       child: OnboardingSplitViewShell(
         activeStep: onboardingStepFromLocation(state.matchedLocation),
         showPasswordStep: !ref.read(appSecurityProvider).isPasswordConfigured,
+        showEducationSteps:
+            !(state.extra is SetPasswordScreenArgs &&
+                (state.extra as SetPasswordScreenArgs).defersSetup),
         child: child,
       ),
       transitionsBuilder: (_, _, _, child) => child,
@@ -1195,31 +1178,13 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
               args.persona != null) {
             return null;
           }
-          return OnboardingStep.secretPassphrase.routePath;
+          return '/welcome';
         },
         pageBuilder: (context, state) => CustomTransitionPage<void>(
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
-          transitionsBuilder: _onboardingFadeTransition,
-        ),
-      ),
-      GoRoute(
-        path: '/onboarding/customise-account',
-        redirect: (_, state) =>
-            state.extra is CustomiseAccountArgs &&
-                (state.extra as CustomiseAccountArgs).flow ==
-                    SetPasswordFlow.create
-            ? null
-            : OnboardingStep.secretPassphrase.routePath,
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: CustomiseAccountScreen(
-            args: state.extra as CustomiseAccountArgs,
-          ),
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),

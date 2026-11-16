@@ -41,7 +41,6 @@ const _setupArgsByFlow = <SetPasswordScreenArgs>[
     ),
     birthdayHeight: 2500000,
   ),
-  SetPasswordScreenArgs.create(mnemonic: _mnemonic),
   SetPasswordScreenArgs.importWallet(
     mnemonic: _mnemonic,
     birthdayHeight: 2500000,
@@ -121,7 +120,10 @@ void main() {
         _harness(
           MobileCustomiseAccountScreen(
             args: const CustomiseAccountArgs(
-              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+              setupArgs: SetPasswordScreenArgs.importWallet(
+                mnemonic: _mnemonic,
+                birthdayHeight: 2500000,
+              ),
             ),
             onFinish: (_, _) async {
               attempts++;
@@ -228,7 +230,10 @@ void main() {
             key: state.pageKey,
             child: MobileCustomiseAccountScreen(
               args: const CustomiseAccountArgs(
-                setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+                setupArgs: SetPasswordScreenArgs.importWallet(
+                  mnemonic: _mnemonic,
+                  birthdayHeight: 2500000,
+                ),
               ),
               random: _SequenceRandom([0, 1, 2]),
               onFinish: (_, _) async {},
@@ -269,7 +274,10 @@ void main() {
       _harness(
         MobileCustomiseAccountScreen(
           args: const CustomiseAccountArgs(
-            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            setupArgs: SetPasswordScreenArgs.importWallet(
+              mnemonic: _mnemonic,
+              birthdayHeight: 2500000,
+            ),
           ),
           random: random,
           onFinish: (name, profilePictureId) async {
@@ -369,7 +377,10 @@ void main() {
       _harness(
         MobileCustomiseAccountScreen(
           args: const CustomiseAccountArgs(
-            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            setupArgs: SetPasswordScreenArgs.importWallet(
+              mnemonic: _mnemonic,
+              birthdayHeight: 2500000,
+            ),
           ),
           random: random,
           onFinish: (name, profilePictureId) async {
@@ -420,7 +431,10 @@ void main() {
           textDirection: TextDirection.rtl,
           child: MobileCustomiseAccountScreen(
             args: const CustomiseAccountArgs(
-              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+              setupArgs: SetPasswordScreenArgs.importWallet(
+                mnemonic: _mnemonic,
+                birthdayHeight: 2500000,
+              ),
             ),
             random: _SequenceRandom([0, 1, 2]),
             onFinish: (_, _) async {},
@@ -449,7 +463,10 @@ void main() {
       _harness(
         MobileCustomiseAccountScreen(
           args: const CustomiseAccountArgs(
-            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            setupArgs: SetPasswordScreenArgs.importWallet(
+              mnemonic: _mnemonic,
+              birthdayHeight: 2500000,
+            ),
           ),
           onFinish: (_, _) async => submitCount += 1,
         ),
@@ -483,7 +500,10 @@ void main() {
       _harness(
         MobileCustomiseAccountScreen(
           args: const CustomiseAccountArgs(
-            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            setupArgs: SetPasswordScreenArgs.importWallet(
+              mnemonic: _mnemonic,
+              birthdayHeight: 2500000,
+            ),
           ),
           onFinish: (_, profilePictureId) async {
             submittedProfilePictureId = profilePictureId;
@@ -519,7 +539,10 @@ void main() {
       _harness(
         MobileCustomiseAccountScreen(
           args: const CustomiseAccountArgs(
-            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            setupArgs: SetPasswordScreenArgs.importWallet(
+              mnemonic: _mnemonic,
+              birthdayHeight: 2500000,
+            ),
           ),
           onFinish: (_, _) => finish.future,
         ),
@@ -690,7 +713,7 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
-  testWidgets('creates the initial account with the selected persona', (
+  testWidgets('imports the initial account with the selected persona', (
     tester,
   ) async {
     final accountNotifier = _RecordingAccountNotifier();
@@ -701,7 +724,10 @@ void main() {
           path: '/',
           builder: (_, _) => MobileCustomiseAccountScreen(
             args: const CustomiseAccountArgs(
-              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+              setupArgs: SetPasswordScreenArgs.importWallet(
+                mnemonic: _mnemonic,
+                birthdayHeight: 2500000,
+              ),
             ),
             random: _SequenceRandom([0, 1, 2]),
           ),
@@ -747,14 +773,14 @@ void main() {
 
     expect(find.text('Create Passcode'), findsOneWidget);
     expect(securityNotifier.preparedPassword, isNull);
-    expect(accountNotifier.createdMnemonic, isNull);
+    expect(accountNotifier.importedMnemonic, isNull);
     for (final digit in '123456'.split('')) {
       await tester.tap(find.bySemanticsLabel('Digit $digit'));
       await tester.pump();
     }
     expect(find.text('Confirm Passcode'), findsOneWidget);
     expect(securityNotifier.preparedPassword, isNull);
-    expect(accountNotifier.createdMnemonic, isNull);
+    expect(accountNotifier.importedMnemonic, isNull);
     for (final digit in '123456'.split('')) {
       await tester.tap(find.bySemanticsLabel('Digit $digit'));
       await tester.pump();
@@ -762,13 +788,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(securityNotifier.preparedPassword, '123456');
     expect(securityNotifier.committed, isTrue);
-    expect(accountNotifier.createdMnemonic, _mnemonic);
-    expect(accountNotifier.createdName, 'Gentle Warden');
-    expect(accountNotifier.createdProfilePictureId, 'pfp-03');
+    expect(accountNotifier.importedMnemonic, _mnemonic);
+    expect(accountNotifier.importedName, 'Gentle Warden');
+    expect(accountNotifier.importedProfilePictureId, 'pfp-03');
     expect(find.text('biometrics route'), findsOneWidget);
   });
 
-  testWidgets('creates an additional account without reconfiguring security', (
+  testWidgets('imports an additional account without reconfiguring security', (
     tester,
   ) async {
     final accountNotifier = _RecordingAccountNotifier();
@@ -778,7 +804,10 @@ void main() {
           path: '/',
           builder: (_, _) => MobileCustomiseAccountScreen(
             args: const CustomiseAccountArgs(
-              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+              setupArgs: SetPasswordScreenArgs.importWallet(
+                mnemonic: _mnemonic,
+                birthdayHeight: 2500000,
+              ),
             ),
             random: _SequenceRandom([0, 1, 2]),
           ),
@@ -813,9 +842,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(accountNotifier.createdMnemonic, _mnemonic);
-    expect(accountNotifier.createdName, 'Windborne Wardbearer');
-    expect(accountNotifier.createdProfilePictureId, 'pfp-03');
+    expect(accountNotifier.importedMnemonic, _mnemonic);
+    expect(accountNotifier.importedName, 'Windborne Wardbearer');
+    expect(accountNotifier.importedProfilePictureId, 'pfp-03');
     expect(find.text('home route'), findsOneWidget);
   });
 
@@ -867,7 +896,10 @@ void main() {
       extra: const MobileOnboardingRouteArgs(
         setupMode: OnboardingSetupMode.reusePasscode,
         payload: CustomiseAccountArgs(
-          setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          setupArgs: SetPasswordScreenArgs.importWallet(
+            mnemonic: _mnemonic,
+            birthdayHeight: 2500000,
+          ),
         ),
       ),
     );
@@ -882,7 +914,7 @@ void main() {
     accountNotifier.release.complete();
     await tester.pumpAndSettle();
 
-    expect(accountNotifier.createdMnemonic, _mnemonic);
+    expect(accountNotifier.importedMnemonic, _mnemonic);
     // A refresh during setup rebuilds the route without its arguments, which
     // replaces the screen with an error view and never reaches Home.
     expect(find.byType(ErrorWidget), findsNothing);
@@ -1070,9 +1102,6 @@ class _SequenceRandom implements Random {
 }
 
 class _RecordingAccountNotifier extends AccountNotifier {
-  String? createdMnemonic;
-  String? createdName;
-  String? createdProfilePictureId;
   String? importedMnemonic;
   String? importedBip39Passphrase;
   int? importedBirthdayHeight;
@@ -1086,17 +1115,6 @@ class _RecordingAccountNotifier extends AccountNotifier {
 
   @override
   FutureOr<AccountState> build() => const AccountState();
-
-  @override
-  Future<void> createAccountFromMnemonic({
-    required String mnemonic,
-    String? name,
-    String profilePictureId = 'pfp-01',
-  }) async {
-    createdMnemonic = mnemonic;
-    createdName = name;
-    createdProfilePictureId = profilePictureId;
-  }
 
   @override
   Future<void> importAccount({
@@ -1137,13 +1155,19 @@ class _PublishingAccountNotifier extends _RecordingAccountNotifier {
   final release = Completer<void>();
 
   @override
-  Future<void> createAccountFromMnemonic({
+  Future<void> importAccount({
     required String mnemonic,
+    String bip39Passphrase = '',
+    int? birthdayHeight,
+    List<int> additionalAccountIndices = const [],
     String? name,
     String profilePictureId = 'pfp-01',
   }) async {
-    await super.createAccountFromMnemonic(
+    await super.importAccount(
       mnemonic: mnemonic,
+      bip39Passphrase: bip39Passphrase,
+      birthdayHeight: birthdayHeight,
+      additionalAccountIndices: additionalAccountIndices,
       name: name,
       profilePictureId: profilePictureId,
     );

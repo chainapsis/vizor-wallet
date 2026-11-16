@@ -19,7 +19,7 @@ import '../services/gift_claim_setup_coordinator.dart';
 import '../services/payment_link_service.dart';
 import '../../../core/l10n/l10n.dart';
 
-/// Final credential step for the already personalised Gift Card account.
+/// Final credential step for a Gift Card account with a generated persona.
 class GiftSecuritySetupScreen extends ConsumerStatefulWidget {
   const GiftSecuritySetupScreen({super.key});
 
@@ -31,7 +31,7 @@ class GiftSecuritySetupScreen extends ConsumerStatefulWidget {
 class _GiftSecuritySetupState extends ConsumerState<GiftSecuritySetupScreen> {
   late final GiftClaimFlowNotifier _flow;
   late final PaymentLinkClaimInspection _inspection;
-  bool _returningToPersona = false;
+  bool _returningToCard = false;
   String? _createdAccountUuid;
 
   @override
@@ -43,9 +43,9 @@ class _GiftSecuritySetupState extends ConsumerState<GiftSecuritySetupScreen> {
 
   @override
   void dispose() {
-    // Both form factors replace the persona page and transfer cleanup ownership
-    // here until the user explicitly returns to edit the draft.
-    if (!_returningToPersona) {
+    // This screen owns the retained inspection until completion or explicit
+    // return to the inspected Card.
+    if (!_returningToCard) {
       scheduleMicrotask(() => _flow.finishWalletSetup(_inspection));
     }
     super.dispose();
@@ -89,15 +89,18 @@ class _GiftSecuritySetupState extends ConsumerState<GiftSecuritySetupScreen> {
     });
   }
 
-  void _returnToPersona() {
-    _returningToPersona = true;
-    // A pre-account failure may retain the attempted credential in live flow
-    // memory. Editing the persona starts a new credential confirmation step.
+  void _returnToCard() {
+    _returningToCard = true;
     _flow.beginWalletSetup(
       _inspection,
       persona: ref.read(giftClaimFlowProvider)?.setupPersona,
     );
-    context.go('/gift/customise');
+    _flow.cancelWalletSetup(_inspection);
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/gift');
+    }
   }
 
   @override
@@ -107,7 +110,7 @@ class _GiftSecuritySetupState extends ConsumerState<GiftSecuritySetupScreen> {
             OnboardingFlow.gift,
             setupMode: OnboardingSetupMode.createPasscode,
           ).at(OnboardingStage.passcode),
-          onBack: _returnToPersona,
+          onBack: _returnToCard,
           onConfirmed: (passcode) => _finish(passcode, null),
           recoverSetup: () async {
             if (_createdAccountUuid == null) {
@@ -126,8 +129,8 @@ class _GiftSecuritySetupState extends ConsumerState<GiftSecuritySetupScreen> {
         )
       : SetPasswordScreen.gift(
           backTarget: OnboardingBackTarget.callback(
-            label: context.l10n.commonCustomiseAccount,
-            onTap: _returnToPersona,
+            label: context.l10n.paymentLinkRedeemCardStepTitle,
+            onTap: _returnToCard,
           ),
           onContinue: _finish,
         );

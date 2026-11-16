@@ -464,14 +464,22 @@ transparent addresses had activity.
   on the app-start `/unlock` screen. Never show it in any other passcode keypad
   context.
 
-### Mobile Backup Reminder (to integrate)
+### Account Creation and Home Setup
 
-A new mobile account's secret passphrase is shown in the create flow, as on
-desktop; Home's backup card reminds the user while the backup is due. A
-reminder that asks new users to back up later is being built separately
-(Tony Yoon's version). Integrate it at the `TODO(backup-reminder)` in
-`mobile_home_screen.dart`, beside the NU7 announcement host, which already
-waits for Home to be the visible route. Record its rules here when it lands.
+Ordinary software creation and Gift Card creation defer secret-passphrase backup
+and Zcash education to Home. First ordinary accounts generate their mnemonic only
+after password/passcode confirmation; additional accounts create from Welcome with
+the unlocked credential. Imports retain account customisation. Ordinary creation
+uses `createAccountForDeferredSetup`, journaling the unseen seed in encrypted
+storage before first or additional account mutations. Recovery must preserve the
+seed, persona and account-specific `setupPending` / `giftEducationPending` flags.
+The existing Home cards share backup snooze/completion and education completion
+with Gift creation; education completion never marks a seed backed up.
+
+A separate mobile reminder that asks new users to back up later is still being
+built (Tony Yoon’s version). Integrate it at `TODO(backup-reminder)` in
+`mobile_home_screen.dart`, beside the NU7 announcement host, and record its
+rules here when it lands.
 
 ### Mobile Screen Privacy
 

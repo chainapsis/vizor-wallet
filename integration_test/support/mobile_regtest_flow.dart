@@ -368,27 +368,10 @@ Future<void> _expectRecordedWalletDb(String reason) async {
 
 // ── Mobile flow primitives ───────────────────────────────────────────
 
-/// Welcome → create flow → customisation → passcode ×2 → biometrics → home.
+/// Welcome → create flow → passcode ×2 → biometrics → home.
 Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('creating wallet');
   await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
-  await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
-  await tapAppButton(tester, const ValueKey('mobile_address_types_continue'));
-  await tapAppButton(tester, const ValueKey('mobile_things_to_know_continue'));
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_secret_passphrase_primary'),
-  );
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_secret_passphrase_primary'),
-  );
-
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_customise_account_continue'),
-    timeout: const Duration(minutes: 2),
-  );
   await enterPasscode(tester, mobileE2ePasscode);
   await enterPasscode(tester, mobileE2ePasscode);
   await tapWidget(

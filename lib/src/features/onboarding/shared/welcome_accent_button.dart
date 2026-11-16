@@ -13,6 +13,7 @@ class WelcomeAccentButton extends StatelessWidget {
     this.height,
     this.glow = WelcomeButtonTokens.accentGlow,
     this.semanticKey,
+    this.label,
     super.key,
   });
 
@@ -20,12 +21,14 @@ class WelcomeAccentButton extends StatelessWidget {
   final BoxShadow glow;
   final Key? semanticKey;
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final String? label;
 
   @override
   Widget build(BuildContext context) => Semantics(
     key: semanticKey,
     button: true,
+    enabled: onPressed != null,
     child: AppButton(
       expand: true,
       height: height,
@@ -68,7 +71,7 @@ class WelcomeAccentButton extends StatelessWidget {
       },
       onPressed: onPressed,
       child: Text(
-        context.l10n.onboardingWelcomeGetStarted,
+        label ?? context.l10n.onboardingWelcomeGetStarted,
         style: TextStyle(shadows: WelcomeButtonTokens.accentLabelShadows),
       ),
     ),
