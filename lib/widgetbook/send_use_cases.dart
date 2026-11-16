@@ -321,17 +321,6 @@ Widget buildMobileSpendableWaitSheetUseCase(BuildContext context) {
   );
 }
 
-/// The desktop popover the "available now" line opens.
-Widget buildSendAvailableNowPopoverUseCase(BuildContext context) {
-  return Padding(
-    padding: const EdgeInsets.all(AppSpacing.xl),
-    child: Align(
-      alignment: Alignment.topLeft,
-      child: SpendableWaitPopoverSurface(wait: _receivedWaiting),
-    ),
-  );
-}
-
 Widget buildMobileSendAmountErrorUseCase(BuildContext context) {
   return const _MobileSendHarness(
     initialRecipient: _mobileShieldedAddress,

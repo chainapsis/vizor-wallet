@@ -3167,7 +3167,7 @@ abstract class AppLocalizations {
   /// **'Toggle flashlight'**
   String get commonToggleFlashlight;
 
-  /// Label of the last row on the mobile donation summary showing amount plus fee, and of the total row in the Available now sheet and popover on Send. Shared by: donation, send, voting.
+  /// Label of the last row on the mobile donation summary showing amount plus fee, and of the total row in the Available now sheet on Send. Shared by: donation, send, voting.
   ///
   /// In en, this message translates to:
   /// **'Total'**
@@ -14252,31 +14252,25 @@ abstract class AppLocalizations {
   /// **'Enter amount to continue'**
   String get sendAmountCtaEnterAmount;
 
-  /// Row label in the Available now sheet (mobile) and popover (desktop) on Send: change coming back from the last payment this wallet sent, which cannot be spent yet.
+  /// Row label in the Available now sheet (mobile) and the Use Max tooltip (desktop) on Send: change coming back from the last payment this wallet sent, which cannot be spent yet.
   ///
   /// In en, this message translates to:
   /// **'Finishing your last payment'**
   String get sendAvailableChangeRow;
 
-  /// Footnote of the Available now sheet (mobile) and popover (desktop) on Send.
+  /// Footnote of the Available now sheet on mobile Send.
   ///
   /// In en, this message translates to:
   /// **'Funds are available after a few network confirmations.'**
   String get sendAvailableFootnote;
 
-  /// Link under the amount field on desktop Send, shown while some funds cannot be spent yet. Opens the Available now popover.
-  ///
-  /// In en, this message translates to:
-  /// **'{amount} available now'**
-  String sendAvailableNowLine(String amount);
-
-  /// Row label in the Available now sheet (mobile) and popover (desktop) on Send: funds received from someone else that cannot be spent yet.
+  /// Row label in the Available now sheet (mobile) and the Use Max tooltip (desktop) on Send: funds received from someone else that cannot be spent yet.
   ///
   /// In en, this message translates to:
   /// **'Just received'**
   String get sendAvailableReceivedRow;
 
-  /// Heading above the spendable amount in the sheet (mobile) and popover (desktop) that Send opens to show which funds cannot be spent yet.
+  /// Heading above the spendable amount in the sheet mobile Send opens to show which funds cannot be spent yet.
   ///
   /// In en, this message translates to:
   /// **'Available now'**
@@ -15344,6 +15338,12 @@ abstract class AppLocalizations {
   /// **'Spendable balance info'**
   String get sendSpendableInfoLabel;
 
+  /// First line of the tooltip next to Use Max on desktop Send while some funds cannot be spent yet: the spendable balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Available now: {amount}'**
+  String sendSpendableTooltipAvailableNow(String amount);
+
   /// [security] Body of the tooltip next to Use Max explaining confirmation counts before funds are spendable.
   ///
   /// In en, this message translates to:
@@ -15355,6 +15355,22 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your spendable balance may be lower than your total balance.'**
   String get sendSpendableTooltipTitle;
+
+  /// Line of the tooltip next to Use Max on desktop Send while some funds cannot be spent yet: spendable plus waiting funds.
+  ///
+  /// In en, this message translates to:
+  /// **'Total: {amount}'**
+  String sendSpendableTooltipTotal(String amount);
+
+  /// Line of the tooltip next to Use Max on desktop Send for funds that cannot be spent yet. {label} is sendAvailableChangeRow or sendAvailableReceivedRow, {wait} is commonAvailableInMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{label}: {amount} · {wait}'**
+  String sendSpendableTooltipWaitingRow(
+    String label,
+    String amount,
+    String wait,
+  );
 
   /// Title on the status screen when a donation failed.
   ///

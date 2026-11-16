@@ -8725,11 +8725,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Funds are available after a few network confirmations.';
 
   @override
-  String sendAvailableNowLine(String amount) {
-    return '$amount available now';
-  }
-
-  @override
   String get sendAvailableReceivedRow => 'Just received';
 
   @override
@@ -9384,12 +9379,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendSpendableInfoLabel => 'Spendable balance info';
 
   @override
+  String sendSpendableTooltipAvailableNow(String amount) {
+    return 'Available now: $amount';
+  }
+
+  @override
   String get sendSpendableTooltipBody =>
       'Funds need confirmations before they can be spent: 3 for change from your own wallet, 6 for funds received from others. Shielded notes also need to be fully scanned. They\'ll become available shortly.';
 
   @override
   String get sendSpendableTooltipTitle =>
       'Your spendable balance may be lower than your total balance.';
+
+  @override
+  String sendSpendableTooltipTotal(String amount) {
+    return 'Total: $amount';
+  }
+
+  @override
+  String sendSpendableTooltipWaitingRow(
+    String label,
+    String amount,
+    String wait,
+  ) {
+    return '$label: $amount · $wait';
+  }
 
   @override
   String get sendStatusDonationFailed => 'Donation failed';

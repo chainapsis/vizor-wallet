@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
 import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
@@ -28,6 +29,7 @@ import 'package:zcash_wallet/src/features/send/services/payment_request_precheck
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
@@ -183,20 +185,29 @@ void main() {
     'an amount covered by confirming funds states the wait instead of a shortfall',
     (tester) async {
       await _setDesktopViewport(tester);
-      final receivedWaiting = SpendableWait(
-        availableNow: BigInt.from(120000000),
-        changeWaiting: BigInt.zero,
-        receivedWaiting: BigInt.from(130000000),
-        receivedWait: const AvailableIn.minutes(1, 3),
-      );
       await tester.pumpWidget(
         _sendHarness(
           spendableBalance: BigInt.from(120000000),
-          spendableWait: receivedWaiting,
+          spendableWait: _receivedWaiting,
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('1.2 ZEC available now'), findsOneWidget);
+
+      // Use Max states the balance it fills; its tooltip lists what is waiting.
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('send_max_spendable')))
+            .data,
+        '1.2 ZEC',
+      );
+      final tooltip = _spendableTooltipText(tester);
+      expect(tooltip, contains('Available now: 1.2 ZEC'));
+      expect(
+        tooltip,
+        contains('Just received: +1.3 ZEC · Available in 1–3 min'),
+      );
+      expect(tooltip, contains('Total: 2.5 ZEC'));
+      expect(tooltip, contains('Funds need confirmations'));
 
       await tester.enterText(
         _editableIn('send_address_field'),
@@ -213,19 +224,7 @@ void main() {
         isNull,
       );
 
-      await tester.tap(find.byKey(const ValueKey('send_available_now_link')));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('send_available_now_popover')),
-        findsOneWidget,
-      );
-      expect(find.text('Just received'), findsOneWidget);
-      expect(find.text('+1.3 ZEC'), findsOneWidget);
-      expect(find.text('2.5 ZEC'), findsOneWidget);
-
       // An amount the whole balance cannot cover is still a shortfall.
-      await tester.tapAt(const Offset(4, 4));
-      await tester.pumpAndSettle();
       await tester.enterText(_editableIn('send_amount_field'), '9');
       await tester.pumpAndSettle();
       expect(find.text('Insufficient shielded balance'), findsOneWidget);
@@ -239,6 +238,52 @@ void main() {
       expect(find.text('Available in 1–3 min'), findsNothing);
     },
   );
+
+  testWidgets('Use Max keeps its plain tooltip when nothing is waiting', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(120000000)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('send_max_spendable')), findsOneWidget);
+    final tooltip = _spendableTooltipText(tester);
+    expect(
+      tooltip,
+      startsWith(
+        'Your spendable balance may be lower than your total balance.',
+      ),
+    );
+    expect(tooltip, isNot(contains('Available now')));
+  });
+
+  testWidgets('Use Max masks its balance and tooltip in privacy mode', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(120000000),
+        spendableWait: _receivedWaiting,
+        privacyModeEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('send_max_spendable')))
+          .data,
+      '****** ZEC',
+    );
+    final tooltip = _spendableTooltipText(tester);
+    expect(tooltip, contains('Available now: ****** ZEC'));
+    expect(tooltip, isNot(contains('1.2')));
+    expect(tooltip, isNot(contains('1.3')));
+    expect(tooltip, isNot(contains('2.5')));
+  });
 
   testWidgets(
     'released spendable balance clears the visible amount error and permits retry',
@@ -1904,6 +1949,7 @@ Widget _sendHarness({
   bool realReview = false,
   PaymentRequestPrecheck? precheck,
   SpendableWait? spendableWait,
+  bool privacyModeEnabled = false,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1930,6 +1976,8 @@ Widget _sendHarness({
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       if (spendableWait != null)
         spendableWaitProvider.overrideWith((ref, accountUuid) => spendableWait),
+      if (privacyModeEnabled)
+        privacyModeProvider.overrideWith(() => _FixedPrivacy(true)),
       if (realReview)
         ownAccountAddressesProvider.overrideWith((ref) async => {}),
       if (realReview)
@@ -2033,6 +2081,28 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 String _fieldText(WidgetTester tester, String keyValue) {
   final editable = tester.widget<EditableText>(_editableIn(keyValue));
   return editable.controller.text;
+}
+
+final _receivedWaiting = SpendableWait(
+  availableNow: BigInt.from(120000000),
+  changeWaiting: BigInt.zero,
+  receivedWaiting: BigInt.from(130000000),
+  receivedWait: const AvailableIn.minutes(1, 3),
+);
+
+/// The plain text of the tooltip beside Use Max.
+String _spendableTooltipText(WidgetTester tester) => tester
+    .widget<AppTooltip>(find.byKey(const ValueKey('send_spendable_tooltip')))
+    .richMessage!
+    .toPlainText();
+
+class _FixedPrivacy extends PrivacyModeNotifier {
+  _FixedPrivacy(this.enabled);
+
+  final bool enabled;
+
+  @override
+  bool build() => enabled;
 }
 
 Finder _editableIn(String keyValue) {

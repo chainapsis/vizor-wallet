@@ -1563,12 +1563,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'send-available-now-popover',
-    description: 'Desktop popover listing what can be sent now',
-    builder: buildSendAvailableNowPopoverUseCase,
-    renderShadows: true,
-  ),
-  FigmaCompareScenario(
     id: 'received-receipt-spendable-wait',
     description: 'Received receipt whose funds cannot be spent yet',
     builder: buildReceivedReceiptSpendableWaitUseCase,

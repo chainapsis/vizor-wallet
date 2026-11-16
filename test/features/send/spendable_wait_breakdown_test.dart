@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -8,8 +7,6 @@ import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/send/widgets/spendable_wait_breakdown.dart';
-import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
-import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 final _wait = SpendableWait(
@@ -59,42 +56,6 @@ void main() {
     expect(find.text('Available in 1–3 min'), findsOneWidget);
   });
 
-  for (final privacy in [false, true]) {
-    testWidgets('the desktop link ${privacy ? 'masks' : 'shows'} the spendable '
-        'amount and opens the popover', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            spendableWaitProvider.overrideWith((ref, accountUuid) => _wait),
-            privacyModeProvider.overrideWith(() => _FixedPrivacy(privacy)),
-          ],
-          child: _app(
-            const Align(
-              alignment: Alignment.topLeft,
-              child: SendAvailableNowLink(accountUuid: 'account-1'),
-            ),
-          ),
-        ),
-      );
-
-      expect(
-        find.text(privacy ? '****** ZEC available now' : '1 ZEC available now'),
-        findsOneWidget,
-      );
-      await tester.tap(find.byKey(const ValueKey('send_available_now_link')));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('send_available_now_popover')),
-        findsOneWidget,
-      );
-      expect(find.text('+1.3 ZEC'), privacy ? findsNothing : findsOneWidget);
-      expect(
-        find.textContaining('3.5'),
-        privacy ? findsNothing : findsOneWidget,
-      );
-    });
-  }
-
   testWidgets('a confirming receipt row says when it is available', (
     tester,
   ) async {
@@ -139,15 +100,6 @@ void main() {
     expect(withoutClock.subtitle, isNot(contains('Available')));
     expect(spendable.subtitle, withoutClock.subtitle);
   });
-}
-
-class _FixedPrivacy extends PrivacyModeNotifier {
-  _FixedPrivacy(this.enabled);
-
-  final bool enabled;
-
-  @override
-  bool build() => enabled;
 }
 
 rust_sync.TransactionInfo _received({required int minedHeight}) {

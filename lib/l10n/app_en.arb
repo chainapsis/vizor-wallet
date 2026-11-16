@@ -2450,7 +2450,7 @@
   },
   "commonTotal": "Total",
   "@commonTotal": {
-    "description": "Label of the last row on the mobile donation summary showing amount plus fee, and of the total row in the Available now sheet and popover on Send. Shared by: donation, send, voting."
+    "description": "Label of the last row on the mobile donation summary showing amount plus fee, and of the total row in the Available now sheet on Send. Shared by: donation, send, voting."
   },
   "commonTransactionExpired": "Transaction expired",
   "@commonTransactionExpired": {
@@ -11106,29 +11106,19 @@
   },
   "sendAvailableChangeRow": "Finishing your last payment",
   "@sendAvailableChangeRow": {
-    "description": "Row label in the Available now sheet (mobile) and popover (desktop) on Send: change coming back from the last payment this wallet sent, which cannot be spent yet."
+    "description": "Row label in the Available now sheet (mobile) and the Use Max tooltip (desktop) on Send: change coming back from the last payment this wallet sent, which cannot be spent yet."
   },
   "sendAvailableFootnote": "Funds are available after a few network confirmations.",
   "@sendAvailableFootnote": {
-    "description": "Footnote of the Available now sheet (mobile) and popover (desktop) on Send."
-  },
-  "sendAvailableNowLine": "{amount} available now",
-  "@sendAvailableNowLine": {
-    "description": "Link under the amount field on desktop Send, shown while some funds cannot be spent yet. Opens the Available now popover.",
-    "placeholders": {
-      "amount": {
-        "type": "String",
-        "example": "1.20 ZEC"
-      }
-    }
+    "description": "Footnote of the Available now sheet on mobile Send."
   },
   "sendAvailableReceivedRow": "Just received",
   "@sendAvailableReceivedRow": {
-    "description": "Row label in the Available now sheet (mobile) and popover (desktop) on Send: funds received from someone else that cannot be spent yet."
+    "description": "Row label in the Available now sheet (mobile) and the Use Max tooltip (desktop) on Send: funds received from someone else that cannot be spent yet."
   },
   "sendAvailableTitle": "Available now",
   "@sendAvailableTitle": {
-    "description": "Heading above the spendable amount in the sheet (mobile) and popover (desktop) that Send opens to show which funds cannot be spent yet."
+    "description": "Heading above the spendable amount in the sheet mobile Send opens to show which funds cannot be spent yet."
   },
   "sendBroadcastCancelledBeforeParams": "Sending was cancelled before proving parameters were downloaded.",
   "@sendBroadcastCancelledBeforeParams": {
@@ -11906,6 +11896,16 @@
   "@sendSpendableInfoLabel": {
     "description": "Accessibility label of the help icon that opens the spendable balance tooltip."
   },
+  "sendSpendableTooltipAvailableNow": "Available now: {amount}",
+  "@sendSpendableTooltipAvailableNow": {
+    "description": "First line of the tooltip next to Use Max on desktop Send while some funds cannot be spent yet: the spendable balance.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "1.2 ZEC"
+      }
+    }
+  },
   "sendSpendableTooltipBody": "Funds need confirmations before they can be spent: 3 for change from your own wallet, 6 for funds received from others. Shielded notes also need to be fully scanned. They'll become available shortly.",
   "@sendSpendableTooltipBody": {
     "description": "[security] Body of the tooltip next to Use Max explaining confirmation counts before funds are spendable."
@@ -11913,6 +11913,34 @@
   "sendSpendableTooltipTitle": "Your spendable balance may be lower than your total balance.",
   "@sendSpendableTooltipTitle": {
     "description": "[security] Bold first line of the tooltip next to Use Max explaining why spendable balance can be lower than total."
+  },
+  "sendSpendableTooltipTotal": "Total: {amount}",
+  "@sendSpendableTooltipTotal": {
+    "description": "Line of the tooltip next to Use Max on desktop Send while some funds cannot be spent yet: spendable plus waiting funds.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "2.5 ZEC"
+      }
+    }
+  },
+  "sendSpendableTooltipWaitingRow": "{label}: {amount} · {wait}",
+  "@sendSpendableTooltipWaitingRow": {
+    "description": "Line of the tooltip next to Use Max on desktop Send for funds that cannot be spent yet. {label} is sendAvailableChangeRow or sendAvailableReceivedRow, {wait} is commonAvailableInMinutes.",
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "Just received"
+      },
+      "amount": {
+        "type": "String",
+        "example": "+1.3 ZEC"
+      },
+      "wait": {
+        "type": "String",
+        "example": "Available in 1–3 min"
+      }
+    }
   },
   "sendStatusDonationFailed": "Donation failed",
   "@sendStatusDonationFailed": {
