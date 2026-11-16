@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/core/navigation/mobile_sidebar_route_observer.d
 import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_page.dart';
+import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_destinations.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -38,6 +39,7 @@ import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activit
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/donation/screens/donation_screen.dart';
@@ -470,6 +472,54 @@ void main() {
       expect(find.byType(AppMobileTabBar), findsNothing);
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
   }
+
+  testWidgets('onboarding entry is instant over native tabs and its animated '
+      'return keeps native input blocked until settled', (tester) async {
+    final native = NativeTabBarFixture();
+    addTearDown(native.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.reset);
+    final observer = RouteOwnedNavigationObserver();
+    addTearDown(observer.dispose);
+    final router = GoRouter(
+      initialLocation: '/home',
+      observers: [observer],
+      routes: buildMobileRoutes(entryRoutes: mobileOnboardingRoutes()),
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_app(router, nativeRoot: true));
+    await tester.pumpAndSettle();
+    final view = tester.state(find.byType(UiKitView));
+    final home = find.byType(MobileHomeScreen, skipOffstage: false);
+    final homeRect = tester.getRect(home);
+
+    final covered = router.push<void>('/onboarding/intro');
+    await tester.pump();
+    final intro = find.byType(MobileOnboardingIntroScreen);
+    final route = ModalRoute.of(tester.element(intro))!;
+    expect(route.animation!.isCompleted, true);
+    expect(tester.getRect(intro), const Rect.fromLTWH(0, 0, 393, 852));
+    expect(tester.getRect(home), homeRect);
+    await tester.pumpAndSettle();
+    expect(native.latest['hidden'], true);
+
+    router.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.pump();
+    expect(tester.getRect(intro).left, greaterThan(0));
+    expect(observer.hasDepartingRoutes, true);
+    expect(native.latest['hidden'], false);
+    expect(native.latest['inputEnabled'], false);
+    await native.send('select', {'id': '/settings'});
+    expect(mobileVisiblePath(router), '/home');
+    await tester.pumpAndSettle();
+    await covered;
+    expect(native.latest['inputEnabled'], true);
+    expect(tester.state(find.byType(UiKitView)), same(view));
+    expect(native.created, hasLength(1));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   for (final destination in ['/home', '/settings']) {
     testWidgets('native $destination activation queued before the sync privacy '

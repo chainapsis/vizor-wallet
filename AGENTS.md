@@ -1217,10 +1217,12 @@ change. The subsections below this list carry the detailed rules.
   size; never let it fade, or the page below shows through. A route outside
   it (onboarding, the Gift Card claim) installs
   `MobileScrollEdgeFades(color: window, bottomHeight: AppSpacing.xl)` itself.
-- Onboarding steps switch instantly: `_mobileOnboardingPage` builds
-  `MobilePage(animated: false)`, which keeps the edge-swipe back and the
-  haptic but drops the fade and zoom. Don't add a transition to an
-  onboarding route.
+- Onboarding steps enter instantly: `_mobileOnboardingPage` uses
+  `MobilePageTransition.onboarding`. Back slides out over 260ms (fades under
+  Reduce Motion); a back swipe stays opaque and follows the finger, then
+  completes or cancels over 350ms. The previous page stays still. Keep entry
+  duration zero and use the shared policy rather than per-screen transitions.
+  Unlock, tab roots and the wallet root shell retain `NoTransitionPage`.
 - Every step with a progress bar uses `MobileTopNav.steps` with its default
   geometry (`kMobileTopNavHeight`, no `progressOffset`, the default track
   color), directly under the safe area. Don't give one step its own height,

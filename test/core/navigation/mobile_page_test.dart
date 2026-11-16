@@ -4,13 +4,14 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/feedback/app_haptics.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_page.dart';
 
 class _Stack extends StatefulWidget {
-  const _Stack({this.animated = true, super.key});
+  const _Stack({this.transition = MobilePageTransition.fadeZoom, super.key});
 
-  final bool animated;
+  final MobilePageTransition transition;
 
   @override
   State<_Stack> createState() => _StackState();
@@ -21,7 +22,7 @@ class _StackState extends State<_Stack> {
 
   Page<void> _page(String name) => MobilePage<void>(
     key: ValueKey(name),
-    animated: widget.animated,
+    transition: widget.transition,
     child: ColoredBox(
       key: ValueKey('$name-screen'),
       color: const Color(0xff202020),
@@ -63,16 +64,20 @@ void main() {
   Future<void> pumpStack(
     WidgetTester tester, {
     bool disableAnimations = false,
-    bool animated = true,
+    MobilePageTransition transition = MobilePageTransition.fadeZoom,
+    TextDirection textDirection = TextDirection.ltr,
   }) => tester.pumpWidget(
     MaterialApp(
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(disableAnimations: disableAnimations),
-        child: child!,
+      builder: (context, child) => Directionality(
+        textDirection: textDirection,
+        child: MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(disableAnimations: disableAnimations),
+          child: child!,
+        ),
       ),
-      home: _Stack(key: stack, animated: animated),
+      home: _Stack(key: stack, transition: transition),
     ),
   );
 
@@ -180,10 +185,113 @@ void main() {
     expect(tester.getRect(first), screen);
   });
 
-  testWidgets('an instant page slides opaque under a back swipe', (
+  testWidgets('onboarding enters on its first frame and slides out on Back', (
     tester,
   ) async {
-    await pumpStack(tester, animated: false);
+    await pumpStack(tester, transition: MobilePageTransition.onboarding);
+    final screen = tester.getRect(first);
+    stack.currentState!.push();
+    await tester.pump();
+    expect(tester.getRect(second), screen);
+    expect(translucent(tester, second), false);
+    final route = ModalRoute.of(tester.element(second))!;
+    expect(route.animation!.isCompleted, true);
+
+    tester.state<NavigatorState>(find.byType(Navigator).last).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(second, findsOneWidget);
+    expect(tester.getRect(second).left, greaterThan(screen.left));
+    expect(tester.getRect(second).width, closeTo(screen.width, 0.001));
+    expect(translucent(tester, second), false);
+    expect(tester.getRect(first), screen);
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(route.animation!.value, closeTo(0, 0.001));
+    await tester.pumpAndSettle();
+    expect(second, findsNothing);
+    expect(tester.getRect(first), screen);
+  });
+
+  testWidgets(
+    'onboarding reduced-motion exit fades without moving or scaling',
+    (tester) async {
+      await pumpStack(
+        tester,
+        transition: MobilePageTransition.onboarding,
+        disableAnimations: true,
+      );
+      final screen = tester.getRect(first);
+      stack.currentState!.push();
+      await tester.pump();
+      expect(tester.getRect(second), screen);
+      expect(translucent(tester, second), false);
+      tester.state<NavigatorState>(find.byType(Navigator).last).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(tester.getRect(second), screen);
+      expect(tester.getRect(first), screen);
+      expect(translucent(tester, second), true);
+      await tester.pumpAndSettle();
+      expect(second, findsNothing);
+    },
+  );
+
+  testWidgets('onboarding Back slides toward the leading edge in RTL', (
+    tester,
+  ) async {
+    await pumpStack(
+      tester,
+      transition: MobilePageTransition.onboarding,
+      textDirection: TextDirection.rtl,
+    );
+    stack.currentState!.push();
+    await tester.pump();
+    final screen = tester.getRect(second);
+    tester.state<NavigatorState>(find.byType(Navigator).last).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(tester.getRect(second).left, lessThan(screen.left));
+    await tester.pumpAndSettle();
+    expect(second, findsNothing);
+  });
+
+  testWidgets('onboarding go() replaces a step immediately without keeping it '
+      'in back history', (tester) async {
+    final router = GoRouter(
+      initialLocation: '/first',
+      routes: [
+        for (final name in ['first', 'second'])
+          GoRoute(
+            path: '/$name',
+            pageBuilder: (_, state) => MobilePage<void>(
+              key: state.pageKey,
+              transition: MobilePageTransition.onboarding,
+              child: ColoredBox(
+                key: ValueKey('$name-screen'),
+                color: Colors.white,
+                child: Center(child: Text(name)),
+              ),
+            ),
+          ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpAndSettle();
+    final screen = tester.getRect(first);
+    router.go('/second');
+    await tester.pump();
+    expect(tester.getRect(second), screen);
+    expect(second.hitTestable(), findsOneWidget);
+    expect(translucent(tester, second), false);
+    expect(router.canPop(), false);
+    await tester.pumpAndSettle();
+    expect(first, findsNothing);
+  });
+
+  testWidgets('onboarding swipe completion and cancellation keep settling '
+      'after release', (tester) async {
+    await pumpStack(tester, transition: MobilePageTransition.onboarding);
     stack.currentState!.push();
     await tester.pumpAndSettle();
     final screen = tester.getRect(second);
@@ -199,6 +307,9 @@ void main() {
     expect(translucent(tester, second), isFalse);
     expect(tester.getRect(first), screen);
     await drag.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.getRect(second).left, greaterThan(screen.left));
     await tester.pumpAndSettle();
     expect(tester.getRect(second), screen);
 
@@ -206,10 +317,48 @@ void main() {
     drag = await tester.startGesture(start);
     await drag.moveBy(Offset(screen.width * .75, 0));
     await tester.pump(const Duration(milliseconds: 400));
+    final releasedAt = tester.getRect(second).left;
     await drag.up();
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator).last);
+    expect(navigator.userGestureInProgress, true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(second, findsOneWidget);
+    expect(tester.getRect(second).left, greaterThan(releasedAt));
+    expect(tester.getRect(first), screen);
+    expect(translucent(tester, second), false);
     await tester.pumpAndSettle();
+    expect(navigator.userGestureInProgress, false);
     expect(second, findsNothing);
     expect(tester.getRect(first), screen);
+  });
+
+  testWidgets('a short fast onboarding swipe animates its remaining distance', (
+    tester,
+  ) async {
+    await pumpStack(tester, transition: MobilePageTransition.onboarding);
+    stack.currentState!.push();
+    await tester.pump();
+    final screen = tester.getRect(second);
+    final drag = await tester.startGesture(Offset(screen.left + 2, 200));
+    for (var i = 1; i <= 5; i++) {
+      await drag.moveBy(
+        const Offset(15, 0),
+        timeStamp: Duration(milliseconds: i * 16),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(tester.getRect(second).left, lessThan(screen.width / 2));
+    await drag.up(timeStamp: const Duration(milliseconds: 96));
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator).last);
+    expect(navigator.userGestureInProgress, true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(second, findsOneWidget);
+    expect(tester.getRect(second).left, greaterThan(75));
+    await tester.pumpAndSettle();
+    expect(second, findsNothing);
+    expect(navigator.userGestureInProgress, false);
   });
 
   testWidgets('opening and closing a page each play one light tap', (

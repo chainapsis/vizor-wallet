@@ -30,9 +30,9 @@ import '../../features/onboarding/shared/onboarding_flow_args.dart';
 import 'mobile_page.dart';
 
 /// Mobile onboarding tree: single-pane screens pushed as [MobilePage]s
-/// (instant, edge-swipe back) under the same route paths as the desktop
-/// onboarding, so the shared auth guard and `bootstrap.initialLocation` keep
-/// working unchanged. Steps switch at once, without the fade and zoom, so a
+/// (instant entry, animated exit, edge-swipe back) under the same route paths
+/// as desktop onboarding, so the shared auth guard and `bootstrap.initialLocation`
+/// keep working unchanged. Steps switch at once, without the fade and zoom, so a
 /// flow reads as one screen moving through its steps.
 ///
 /// Mobile-only additions: `/onboarding/set-passcode` (the passcode is
@@ -326,7 +326,7 @@ MobilePage<void> _mobileOnboardingPage(
   final extra = state.extra;
   return MobilePage<void>(
     key: state.pageKey,
-    animated: false,
+    transition: MobilePageTransition.onboarding,
     child: MobileOnboardingProgressFrame(
       setupMode: extra is MobileOnboardingRouteArgs ? extra.setupMode : null,
       child: child,

@@ -8,7 +8,16 @@ import 'package:flutter/widgets.dart';
 import '../feedback/app_haptics.dart';
 import '../layout/mobile/covered_route_keyboard_hold.dart';
 
-/// A mobile screen pushed onto the wallet navigator, with a fade and zoom.
+/// Motion for a mobile page. Fully non-animated routes use NoTransitionPage.
+enum MobilePageTransition {
+  /// Fade and zoom on entry and exit.
+  fadeZoom,
+
+  /// Appear immediately; slide out on Back. The previous page stays still.
+  onboarding,
+}
+
+/// A mobile screen pushed onto the wallet navigator.
 ///
 /// The new page fades in while growing from slightly smaller, and the page
 /// it covers grows a touch, so going deeper reads as moving forward. Popping
@@ -21,19 +30,19 @@ import '../layout/mobile/covered_route_keyboard_hold.dart';
 /// halfway completes the pop. The gesture uses the same thresholds as
 /// `CupertinoPageRoute`, which these pages replace.
 ///
-/// With [animated] false the page appears and leaves at once, with no fade
-/// or zoom; onboarding steps use this. The back swipe and the tap stay.
+/// [MobilePageTransition.onboarding] enters immediately and slides out on
+/// Back. Under reduced motion its button-driven exit fades instead. A back
+/// swipe stays attached to the finger, including its completion or cancellation.
 class MobilePage<T> extends Page<T> {
   const MobilePage({
     required super.key,
     required this.child,
-    this.animated = true,
+    this.transition = MobilePageTransition.fadeZoom,
   });
 
   final Widget child;
 
-  /// Whether opening and closing the page fades and zooms.
-  final bool animated;
+  final MobilePageTransition transition;
 
   @override
   Route<T> createRoute(BuildContext context) => MobilePageRoute<T>(page: this);
@@ -94,11 +103,12 @@ class MobilePageRoute<T> extends PageRoute<T> {
 
   @override
   Duration get transitionDuration =>
-      _page.animated ? _enterDuration : Duration.zero;
+      _page.transition == MobilePageTransition.onboarding
+      ? Duration.zero
+      : _enterDuration;
 
   @override
-  Duration get reverseTransitionDuration =>
-      _page.animated ? _exitDuration : Duration.zero;
+  Duration get reverseTransitionDuration => _exitDuration;
 
   @override
   Color? get barrierColor => null;
@@ -114,6 +124,10 @@ class MobilePageRoute<T> extends PageRoute<T> {
   @override
   bool canTransitionTo(TransitionRoute<dynamic> nextRoute) =>
       nextRoute is MobilePageRoute;
+
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) =>
+      _page.transition != MobilePageTransition.onboarding;
 
   @override
   Widget buildPage(
@@ -133,8 +147,8 @@ class MobilePageRoute<T> extends PageRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) => _FadeZoomTransition(
-    animated: _page.animated,
+  ) => _MobileTransition(
+    transition: _page.transition,
     animation: animation,
     secondaryAnimation: secondaryAnimation,
     // A back swipe drives the animation from the finger, so it must map
@@ -204,30 +218,30 @@ class MobilePageRoute<T> extends PageRoute<T> {
   }
 }
 
-class _FadeZoomTransition extends StatefulWidget {
-  const _FadeZoomTransition({
-    required this.animated,
+class _MobileTransition extends StatefulWidget {
+  const _MobileTransition({
+    required this.transition,
     required this.animation,
     required this.secondaryAnimation,
     required this.followsFinger,
     required this.child,
   });
 
-  /// [MobilePage.animated]. Without it the page never fades or zooms.
-  final bool animated;
+  final MobilePageTransition transition;
   final Animation<double> animation;
   final Animation<double> secondaryAnimation;
   final bool followsFinger;
   final Widget child;
 
   @override
-  State<_FadeZoomTransition> createState() => _FadeZoomTransitionState();
+  State<_MobileTransition> createState() => _MobileTransitionState();
 }
 
-class _FadeZoomTransitionState extends State<_FadeZoomTransition> {
+class _MobileTransitionState extends State<_MobileTransition> {
   late CurvedAnimation _entering;
   late CurvedAnimation _fading;
   late CurvedAnimation _covered;
+  late CurvedAnimation _sliding;
 
   @override
   void initState() {
@@ -235,16 +249,19 @@ class _FadeZoomTransitionState extends State<_FadeZoomTransition> {
     _entering = _curved(widget.animation);
     _fading = _faded(widget.animation);
     _covered = _curved(widget.secondaryAnimation);
+    _sliding = _slide(widget.animation);
   }
 
   @override
-  void didUpdateWidget(_FadeZoomTransition oldWidget) {
+  void didUpdateWidget(_MobileTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.animation != widget.animation) {
       _entering.dispose();
       _entering = _curved(widget.animation);
       _fading.dispose();
       _fading = _faded(widget.animation);
+      _sliding.dispose();
+      _sliding = _slide(widget.animation);
     }
     if (oldWidget.secondaryAnimation != widget.secondaryAnimation) {
       _covered.dispose();
@@ -257,6 +274,7 @@ class _FadeZoomTransitionState extends State<_FadeZoomTransition> {
     _entering.dispose();
     _fading.dispose();
     _covered.dispose();
+    _sliding.dispose();
     super.dispose();
   }
 
@@ -272,35 +290,46 @@ class _FadeZoomTransitionState extends State<_FadeZoomTransition> {
     reverseCurve: MobilePageRoute._reverseFadeCurve,
   );
 
+  static CurvedAnimation _slide(Animation<double> parent) => CurvedAnimation(
+    parent: parent,
+    curve: MobilePageRoute._swipeSettleCurve,
+    reverseCurve: MobilePageRoute._swipeSettleCurve.flipped,
+  );
+
   @override
   Widget build(BuildContext context) {
     final followsFinger = widget.followsFinger;
+    final onboarding = widget.transition == MobilePageTransition.onboarding;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     // Under the finger the page only slides, opaque and at full size, so the
     // page below shows beside it rather than through it. The fade and zoom
     // are for opening and closing.
     final entering = followsFinger ? 1.0 : _entering.value;
-    final opacity = followsFinger ? 1.0 : _fading.value;
+    final opacity = followsFinger || (onboarding && !reduceMotion)
+        ? 1.0
+        : onboarding
+        ? _sliding.value
+        : _fading.value;
     final covered = followsFinger
         ? widget.secondaryAnimation.value
         : _covered.value;
-    final animated = widget.animated;
-    final zooms = animated && !MediaQuery.disableAnimationsOf(context);
+    final zooms = !onboarding && !reduceMotion;
     final scale = zooms
         ? lerpDouble(MobilePageRoute._enterScale, 1, entering)! *
               lerpDouble(1, MobilePageRoute._coveredScale, covered)!
         : 1.0;
-    // It never slides on its own.
-    final shift = followsFinger
-        ? (1 - widget.animation.value) *
+    // Keep the same widget structure through a gesture, including settling.
+    // Replacing the detector's ancestors could dispose an active drag.
+    final slides = followsFinger || (onboarding && !reduceMotion);
+    final shift = slides
+        ? (1 - (followsFinger ? widget.animation.value : _sliding.value)) *
               (Directionality.of(context) == TextDirection.rtl ? -1 : 1)
         : 0.0;
     return FractionalTranslation(
       translation: Offset(shift, 0),
       child: Transform.scale(
         scale: scale,
-        child: animated
-            ? Opacity(opacity: opacity.clamp(0.0, 1.0), child: widget.child)
-            : widget.child,
+        child: Opacity(opacity: opacity.clamp(0.0, 1.0), child: widget.child),
       ),
     );
   }
