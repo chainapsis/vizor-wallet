@@ -196,18 +196,20 @@ with the spacing at each part's start, and Rust checks receipts the same way.
 
 ## NU7 block spacing
 
-Block spacing drops from 75 to 25 seconds at NU7. Every estimate splits each
-span at activation:
+Block spacing drops from 75 to 25 seconds at NU7:
 
-- `block_times.rs` for birthday and date conversion. The mainnet table updater
-  accepts 25-second averages, so it keeps running after activation.
-- `BlockSpacing` and `blockSpacingProvider` in Dart for wait-time text. They
-  read `get_block_spacing_schedule`, which takes the 25-second value from
-  Common's spacing ratio.
-- The iOS outbox check cadence.
+- `block_times.rs` splits each span at activation for birthday and date
+  conversion, which reach back before it. The mainnet table updater accepts
+  25-second averages, so it keeps running after activation.
+- `BlockSpacing` and `blockSpacingProvider` in Dart estimate wait-time text at
+  25 seconds alone: mainnet and testnet are past activation, so every wait
+  starts after it. They read `get_block_spacing_schedule`, which takes the
+  25-second value from Common's spacing ratio. The activation height and the
+  75-second value remain for ZIP 318 reference blocks.
+- The iOS outbox check cadence also uses 25 seconds alone.
 
-If the schedule cannot be read, Dart falls back to 75-second spacing, which
-only affects estimates.
+If the schedule cannot be read, Dart falls back to 25-second spacing with no
+activation height, which only affects estimates.
 
 ## NU7 announcement
 
@@ -221,8 +223,10 @@ and need no change. Check the rest:
 
 - **Block spacing or ZIP 318 parameters.** If they change again, update
   `block_times.rs`, Dart `BlockSpacing` and the iOS outbox cadence, which
-  restates the 75- and 25-second spacing in Swift for its check estimates.
-  The outbox's expiry and schedule spacing come from Rust.
+  restates the 25-second spacing in Swift for its check estimates. Dart and
+  the cadence assume one spacing, so they need the split at activation again
+  until the tip passes it. The outbox's expiry and schedule spacing come from
+  Rust.
 - **Hardware signing.** Check
   `orchard_circuit_version_for_consensus_branch` in `pczt.rs`: it keys on the
   branch's Orchard protocol revision. Also check whether Keystone and Ledger
