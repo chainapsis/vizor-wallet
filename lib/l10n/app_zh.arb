@@ -2594,7 +2594,7 @@
   "settingsExplorerPrivateCopy": "ZecBlock 不会被告知你打开了哪笔交易，但仍能看到你的 IP 地址。页面加载较慢，新交易被打包进区块后才会显示。",
   "settingsExplorerPrivateSubtitle": "私密浏览",
   "settingsExplorerSaveFailed": "无法保存该区块浏览器网址。",
-  "settingsExplorerTemplateHint": "在交易 ID 所在的位置使用 {txid} 或 {txHash}。两者都没有时，会自动添加 /tx/{txid}。",
+  "settingsExplorerTemplateHint": "在交易 ID 所在的位置使用 {txid} 或 {txHash}，或只输入域名。",
   "settingsExplorerTitle": "区块浏览器",
   "settingsExplorerUpdate": "更新区块浏览器",
   "settingsExplorerUrlLabel": "区块浏览器网址",

@@ -9478,7 +9478,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String settingsExplorerTemplateHint(String txid, String txHash) {
-    return '거‍래 ID‍가 들‍어‍갈 자‍리‍에 $txid 또‍는 $txHash‍를 넣‍으‍세‍요. 둘 다 없‍으‍면 /tx/$txid‍가 붙‍어‍요.';
+    return '거‍래 ID‍가 들‍어‍갈 자‍리‍에 $txid 또‍는 $txHash‍를 넣‍거‍나 도‍메‍인‍만 입‍력‍하‍세‍요.';
   }
 
   @override

@@ -12212,9 +12212,9 @@
   "@settingsExplorerSaveFailed": {
     "description": "Error shown under the custom explorer URL field when saving it failed."
   },
-  "settingsExplorerTemplateHint": "Put {txid} or {txHash} where the transaction ID goes. A URL with neither gets /tx/{txid} added.",
+  "settingsExplorerTemplateHint": "Put {txid} or {txHash} where the transaction ID goes, or enter just the domain.",
   "@settingsExplorerTemplateHint": {
-    "description": "Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation. /tx/{txid} is the path the app appends when the URL has no placeholder.",
+    "description": "Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation.",
     "placeholders": {
       "txid": {
         "type": "String"

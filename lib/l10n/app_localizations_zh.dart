@@ -8877,7 +8877,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String settingsExplorerTemplateHint(String txid, String txHash) {
-    return '在交易 ID 所在的位置使用 $txid 或 $txHash。两者都没有时，会自动添加 /tx/$txid。';
+    return '在交易 ID 所在的位置使用 $txid 或 $txHash，或只输入域名。';
   }
 
   @override

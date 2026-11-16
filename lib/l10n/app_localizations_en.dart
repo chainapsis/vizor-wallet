@@ -9627,7 +9627,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String settingsExplorerTemplateHint(String txid, String txHash) {
-    return 'Put $txid or $txHash where the transaction ID goes. A URL with neither gets /tx/$txid added.';
+    return 'Put $txid or $txHash where the transaction ID goes, or enter just the domain.';
   }
 
   @override

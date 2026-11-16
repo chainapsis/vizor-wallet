@@ -15734,10 +15734,10 @@ abstract class AppLocalizations {
   /// **'Couldn\'t save that explorer URL.'**
   String get settingsExplorerSaveFailed;
 
-  /// Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation. /tx/{txid} is the path the app appends when the URL has no placeholder.
+  /// Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation.
   ///
   /// In en, this message translates to:
-  /// **'Put {txid} or {txHash} where the transaction ID goes. A URL with neither gets /tx/{txid} added.'**
+  /// **'Put {txid} or {txHash} where the transaction ID goes, or enter just the domain.'**
   String settingsExplorerTemplateHint(String txid, String txHash);
 
   /// Title of the block explorer setting, used as the Settings row label and the screen heading; the explorer is the website used to look up transactions.
