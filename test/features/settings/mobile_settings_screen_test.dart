@@ -44,7 +44,9 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../fakes/fake_app_language_notifier.dart';
+
 import 'package:zcash_wallet/l10n/app_localizations.dart';
+
 import '../../support/test_l10n.dart';
 
 final _en = lookupAppLocalizations(const Locale('en'));
@@ -809,6 +811,32 @@ void main() {
     );
     // A full-width button, as sheet actions are.
     expect(tester.getSize(start).width, tester.getSize(section).width);
+  });
+
+  testWidgets('the NEAR swap privacy explanation leaves the screen in view', (
+    tester,
+  ) async {
+    // Real glyph widths, on a phone the explanation is taller than.
+    await loadFigmaCompareFonts();
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      _app(enhancePirEnabled: true, nearSwapPrivacyEnabled: true),
+    );
+    await tester.pumpAndSettle();
+
+    final sheet = await _openNearSwapPrivacyInfo(tester);
+    expect(
+      tester.getSize(sheet).height,
+      closeTo(844 * NearSwapPrivacyInfoSheet.maxHeightFactor, 0.01),
+    );
+    // The rest of the explanation scrolls, above the pinned history check.
+    final scrollable = tester.state<ScrollableState>(
+      find.descendant(of: sheet, matching: find.byType(Scrollable)),
+    );
+    expect(scrollable.position.maxScrollExtent, greaterThan(0));
+    final start = find.byKey(const ValueKey('settings_check_swap_history'));
+    expect(tester.getBottomLeft(start).dy, lessThanOrEqualTo(844));
   });
 
   for (final (name, accountState) in [
