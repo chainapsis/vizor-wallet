@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 
 import '../../support/leading_decimal_input.dart';
+import '../../support/app_test_fonts.dart';
 
 const _recipient = '0x1111111111111111111111111111111111111111';
 const _otherRecipient = '0x2222222222222222222222222222222222222222';
@@ -76,6 +77,7 @@ final _recents = [
 ];
 
 void main() {
+  setUpAll(loadAppTestFonts);
   testWidgets('amount input displays a leading zero and keeps the cursor', (
     tester,
   ) async {

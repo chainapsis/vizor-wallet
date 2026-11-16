@@ -1,4 +1,6 @@
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/locale_typography.dart';
+import 'dart:math' as math;
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
@@ -16,6 +18,7 @@ import '../../../../core/widgets/mobile/mobile_amount_card.dart';
 import '../../models/pay_amount_input.dart';
 
 const _slippageButtonWidth = 90.0;
+const _slippageIconSize = 20.0;
 
 /// Mobile Pay amount step from the 393 px Figma frame. The screen host owns
 /// top navigation; this widget fills the remaining height and pins its actions
@@ -114,39 +117,77 @@ class MobilePayAmountStep extends StatelessWidget {
             kMobilePageMargin,
             kMobileFooterGap,
           ),
-          child: Row(
-            key: const ValueKey('mobile_pay_amount_actions'),
-            children: [
-              SizedBox(
-                width: _slippageButtonWidth,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Icon, gap, label-slot padding and the custom button padding.
+              final slippageWidth = math.max(
+                _slippageButtonWidth,
+                _scaledTextWidth(
+                      context,
+                      slippageLabel,
+                      AppTypography.labelLarge,
+                    ) +
+                    _slippageIconSize +
+                    AppSpacing.xxs * 5,
+              );
+              final slippage = SizedBox(
+                width: slippageWidth,
                 child: AppButton(
                   key: const ValueKey('mobile_pay_slippage_button'),
+                  growWithContent: true,
                   variant: AppButtonVariant.secondary,
-                  expand: true,
+                  expand: false,
                   constrainContent: true,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.xxs,
                   ),
                   onPressed: onOpenSlippage,
-                  trailing: const AppIcon(AppIcons.cog, size: 20),
+                  trailing: const AppIcon(AppIcons.cog, size: _slippageIconSize),
                   child: Text(
                     slippageLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: AppButton(
-                  key: const ValueKey('mobile_pay_amount_continue_button'),
-                  expand: true,
-                  constrainContent: true,
-                  onPressed: canContinue ? onContinue : null,
-                  child: Text(context.l10n.commonContinue),
-                ),
-              ),
-            ],
+              );
+              final proceed = AppButton(
+                key: const ValueKey('mobile_pay_amount_continue_button'),
+                growWithContent: true,
+                expand: true,
+                constrainContent: true,
+                onPressed: canContinue ? onContinue : null,
+                child: Text(context.l10n.commonContinue),
+              );
+              final neededWidth =
+                  slippageWidth +
+                  AppSpacing.s +
+                  _scaledTextWidth(
+                    context,
+                    context.l10n.commonContinue,
+                    AppTypography.labelLarge,
+                  ) +
+                  AppSpacing.lg;
+              if (neededWidth > constraints.maxWidth) {
+                return Column(
+                  key: const ValueKey('mobile_pay_amount_actions'),
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(alignment: Alignment.centerRight, child: slippage),
+                    const SizedBox(height: AppSpacing.s),
+                    proceed,
+                  ],
+                );
+              }
+              return Row(
+                key: const ValueKey('mobile_pay_amount_actions'),
+                children: [
+                  slippage,
+                  const SizedBox(width: AppSpacing.s),
+                  Expanded(child: proceed),
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -179,26 +220,23 @@ class _MobilePayAmountCard extends StatelessWidget {
     final asset = state.externalAsset;
     return MobileAmountCard(
       key: const ValueKey('mobile_pay_amount_card'),
-      header: Row(
-        children: [
-          Expanded(
-            child: Text(
-              context.l10n.payAmountPayingIn,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
+      header: LayoutBuilder(
+        builder: (context, constraints) {
+          final label = Text(
+            context.l10n.payAmountPayingIn,
+            style: AppTypography.labelLarge.copyWith(
+              color: colors.text.secondary,
             ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Semantics(
+          );
+          final selector = Semantics(
             button: true,
             label: context.l10n.payAmountChooseAsset,
             child: GestureDetector(
               key: const ValueKey('mobile_pay_asset_selector'),
               behavior: HitTestBehavior.opaque,
               onTap: onOpenAssetSelector,
-              child: SizedBox(
-                height: 44,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 44),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -209,28 +247,31 @@ class _MobilePayAmountCard extends StatelessWidget {
                       overhangScale: 0.1,
                     ),
                     const SizedBox(width: AppSpacing.s),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          asset.symbol,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
+                    Flexible(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            asset.symbol,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(
-                          asset.chainLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.secondary,
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            asset.chainLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.secondary,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     AppIcon(
@@ -242,8 +283,49 @@ class _MobilePayAmountCard extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-        ],
+          );
+          final labelWidth = _scaledTextWidth(
+            context,
+            context.l10n.payAmountPayingIn,
+            AppTypography.labelLarge,
+          );
+          final selectorWidth =
+              AppAssetSize.size +
+              AppSpacing.s +
+              math.max(
+                _scaledTextWidth(
+                  context,
+                  asset.symbol,
+                  AppTypography.labelLarge,
+                ),
+                _scaledTextWidth(
+                  context,
+                  asset.chainLabel,
+                  AppTypography.labelLarge,
+                ),
+              ) +
+              AppSpacing.xs +
+              AppIconSize.medium;
+          if (labelWidth + AppSpacing.xs + selectorWidth <=
+              constraints.maxWidth) {
+            return Row(
+              children: [
+                Expanded(child: label),
+                const SizedBox(width: AppSpacing.xs),
+                selector,
+              ],
+            );
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              label,
+              const SizedBox(height: AppSpacing.xs),
+              Align(alignment: Alignment.centerRight, child: selector),
+            ],
+          );
+        },
       ),
       amount: _MobilePayAmountInput(
         key: const ValueKey('mobile_pay_amount_display'),
@@ -294,65 +376,88 @@ class _MobilePayAmountInput extends StatelessWidget {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxInputWidth = (constraints.maxWidth - 108)
-            .clamp(56.0, 220.0)
-            .toDouble();
+        final unit = inputIsFiat
+            ? 'USD'
+            : asset.symbol; // l10n-ignore: currency code
+        final unitWidth = _scaledTextWidth(context, unit, unitStyle);
+        final availableInputWidth =
+            constraints.maxWidth - math.max(108, unitWidth + AppSpacing.xs);
+        final enlarged =
+            MediaQuery.textScalerOf(context).scale(amountStyle.fontSize!) >
+            amountStyle.fontSize!;
         return Center(
           child: AnimatedBuilder(
             animation: controller,
             builder: (context, _) {
+              final desiredInputWidth = payAmountInputWidth(
+                context: context,
+                text: controller.text,
+                style: amountStyle,
+                maxWidth: 220,
+              );
+              final stackUnit =
+                  availableInputWidth < 56 ||
+                  (enlarged && desiredInputWidth > availableInputWidth);
+              final maxInputWidth = math.min(
+                220.0,
+                stackUnit ? constraints.maxWidth : availableInputWidth,
+              );
               final inputWidth = payAmountInputWidth(
                 context: context,
                 text: controller.text,
                 style: amountStyle,
                 maxWidth: maxInputWidth,
               );
-              return Row(
+              final input = SizedBox(
+                width: inputWidth,
+                child: TextField(
+                  key: const ValueKey('mobile_pay_amount_input'),
+                  controller: controller,
+                  focusNode: focusNode,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    const CommaToDotInputFormatter(),
+                    DecimalAmountInputFormatter(
+                      maxFractionDigits: inputIsFiat ? 2 : asset.decimals,
+                    ),
+                  ],
+                  onChanged: inputIsFiat
+                      ? onFiatAmountChanged
+                      : onAmountChanged,
+                  textAlign: TextAlign.center,
+                  style: amountStyle,
+                  cursorColor: colors.text.accent,
+                  cursorWidth: 3,
+                  cursorRadius: const Radius.circular(AppRadii.full),
+                  decoration: InputDecoration.collapsed(
+                    hintText: '0',
+                    hintStyle: amountStyle.copyWith(color: colors.text.muted),
+                  ),
+                ),
+              );
+              final suffix = Text(
+                inputIsFiat
+                    ? 'USD' // l10n-ignore: currency code
+                    : asset.symbol,
+                key: const ValueKey('mobile_pay_amount_unit'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: unitStyle,
+              );
+              return Flex(
+                direction: stackUnit ? Axis.vertical : Axis.horizontal,
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  input,
                   SizedBox(
-                    width: inputWidth,
-                    child: TextField(
-                      key: const ValueKey('mobile_pay_amount_input'),
-                      controller: controller,
-                      focusNode: focusNode,
-                      autofocus: true,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      inputFormatters: [
-                        const CommaToDotInputFormatter(),
-                        DecimalAmountInputFormatter(
-                          maxFractionDigits: inputIsFiat ? 2 : asset.decimals,
-                        ),
-                      ],
-                      onChanged: inputIsFiat
-                          ? onFiatAmountChanged
-                          : onAmountChanged,
-                      textAlign: TextAlign.center,
-                      style: amountStyle,
-                      cursorColor: colors.text.accent,
-                      cursorWidth: 3,
-                      cursorRadius: const Radius.circular(AppRadii.full),
-                      decoration: InputDecoration.collapsed(
-                        hintText: '0',
-                        hintStyle: amountStyle.copyWith(
-                          color: colors.text.muted,
-                        ),
-                      ),
-                    ),
+                    width: stackUnit ? 0 : AppSpacing.xs,
+                    height: stackUnit ? AppSpacing.xxs : 0,
                   ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Text(
-                    inputIsFiat
-                        ? 'USD' // l10n-ignore: currency code
-                        : asset.symbol,
-                    key: const ValueKey('mobile_pay_amount_unit'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: unitStyle,
-                  ),
+                  suffix,
                 ],
               );
             },
@@ -513,4 +618,17 @@ class _MobilePaySkeletonBar extends StatelessWidget {
       ),
     );
   }
+}
+
+// Measure the actual scaled font, including locale fallback, for layout choices.
+double _scaledTextWidth(BuildContext context, String text, TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: withLocaleFontFallback(context, style)),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final width = painter.width;
+  painter.dispose();
+  return width;
 }

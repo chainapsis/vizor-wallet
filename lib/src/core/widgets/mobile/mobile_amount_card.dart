@@ -11,10 +11,10 @@ import 'mobile_surface_card.dart';
 /// and the unit switch under it, 24 above and below them.
 ///
 /// Pay puts "Paying in" and its asset picker in the header; Request ZEC has
-/// no asset to pick and leaves it out. The card is [height] tall either way,
+/// no asset to pick and leaves it out. The card is at least [height] tall,
 /// with the amount centred when there is no header, so it is the same card
-/// on every page. The rows have fixed heights, so it keeps its size while
-/// the amount is typed.
+/// on every page. Its minimum row heights keep the 1x geometry, while larger
+/// text can grow the rows and card.
 class MobileAmountCard extends StatelessWidget {
   const MobileAmountCard({
     required this.amount,
@@ -49,16 +49,22 @@ class MobileAmountCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return MobileSurfaceCard(
       cornerRadius: cornerRadius,
-      child: SizedBox(
-        height: height - AppSpacing.sm * 2,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: height - AppSpacing.sm * 2,
+        ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: header == null
               ? MainAxisAlignment.center
               : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (header != null) ...[
-              SizedBox(height: headerHeight, child: header),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: headerHeight),
+                child: Center(child: header),
+              ),
               const SizedBox(height: AppSpacing.sm),
             ],
             Padding(
@@ -68,13 +74,19 @@ class MobileAmountCard extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    height: amountRowHeight,
-                    width: double.infinity,
-                    child: amount,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: amountRowHeight,
+                    ),
+                    child: Center(child: amount),
                   ),
                   const SizedBox(height: AppSpacing.s),
-                  SizedBox(height: conversionRowHeight, child: conversion),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: conversionRowHeight,
+                    ),
+                    child: Center(child: conversion),
+                  ),
                 ],
               ),
             ),

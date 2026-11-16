@@ -150,6 +150,7 @@ class RequestAmountComposeStep extends StatelessWidget {
           ),
           child: AppButton(
             key: const ValueKey('request_create_button'),
+            growWithContent: true,
             expand: true,
             constrainContent: true,
             onPressed: request.isReady ? (onCreateRequest ?? _noop) : null,

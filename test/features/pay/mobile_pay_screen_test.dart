@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/app_test_fonts.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -352,6 +353,7 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  setUpAll(loadAppTestFonts);
   testWidgets(
     'service notice keeps mobile Pay usable with multiple windows and keyboard',
     (tester) async {
