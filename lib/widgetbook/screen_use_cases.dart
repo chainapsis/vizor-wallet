@@ -108,6 +108,7 @@ import '../src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/app_security_provider.dart';
+import '../src/providers/hide_balance_on_unlock_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
 import '../src/providers/network_privacy_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
@@ -803,6 +804,9 @@ Widget buildMobileSettingsMainUseCase(
 }) {
   return ProviderScope(
     overrides: [
+      hideBalanceOnUnlockProvider.overrideWith(
+        () => _PreviewHideBalanceOnUnlockNotifier(false),
+      ),
       appBootstrapProvider.overrideWithValue(
         _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
       ),
@@ -856,6 +860,9 @@ Widget buildMobileSettingsFooterUseCase(BuildContext context) =>
 Widget _buildMobileSettingsFooterUseCase({bool recoveryChanging = false}) {
   return ProviderScope(
     overrides: [
+      hideBalanceOnUnlockProvider.overrideWith(
+        () => _PreviewHideBalanceOnUnlockNotifier(false),
+      ),
       if (recoveryChanging) ...[
         enhancePirProvider.overrideWith(_PreviewEnhancePirEnabled.new),
         enhancePirTransitionProvider.overrideWith(
@@ -931,7 +938,11 @@ class _MobileSettingsFooterPreviewState
 }
 
 class _MobileSettingsExplorerPreview extends StatefulWidget {
-  const _MobileSettingsExplorerPreview();
+  const _MobileSettingsExplorerPreview({
+    this.rowKey = 'mobile_settings_explorer_row',
+  });
+
+  final String rowKey;
 
   @override
   State<_MobileSettingsExplorerPreview> createState() =>
@@ -954,8 +965,7 @@ class _MobileSettingsExplorerPreviewState
       Element? found;
       void visitor(Element element) {
         if (found != null) return;
-        if (element.widget.key ==
-            const ValueKey('mobile_settings_explorer_row')) {
+        if (element.widget.key == ValueKey(widget.rowKey)) {
           found = element;
           return;
         }
@@ -964,8 +974,16 @@ class _MobileSettingsExplorerPreviewState
 
       context.visitChildElements(visitor);
       final rowContext = found;
-      if (rowContext == null) return;
-      Scrollable.ensureVisible(rowContext, alignment: 0.4);
+      if (rowContext == null) {
+        if (_controller.hasClients) {
+          _controller.jumpTo(_controller.position.maxScrollExtent);
+        }
+        return;
+      }
+      Scrollable.ensureVisible(
+        rowContext,
+        alignment: widget.rowKey == 'mobile_settings_explorer_row' ? 0.4 : 0.15,
+      );
     });
   }
 
@@ -1043,9 +1061,13 @@ Widget _buildSettingsMainUseCase(
   NetworkPrivacyState networkPrivacyState, {
   double initialScrollOffset = 0,
   bool recoveryChanging = false,
+  bool hideOnUnlock = false,
 }) {
   return ProviderScope(
     overrides: [
+      hideBalanceOnUnlockProvider.overrideWith(
+        () => _PreviewHideBalanceOnUnlockNotifier(hideOnUnlock),
+      ),
       if (recoveryChanging) ...[
         enhancePirProvider.overrideWith(_PreviewEnhancePirEnabled.new),
         enhancePirTransitionProvider.overrideWith(
@@ -1101,9 +1123,40 @@ Widget buildMobileExplorerCustomUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileSettingsExplorerUseCase(BuildContext context) {
+Widget buildMobileSettingsExplorerUseCase(BuildContext context) =>
+    _buildMobileSettingsTargetUseCase();
+
+Widget buildMobileSettingsHideBalanceUseCase(BuildContext context) =>
+    _buildMobileSettingsTargetUseCase(
+      rowKey: 'mobile_settings_hide_on_unlock_row',
+      hideOnUnlock: true,
+    );
+
+Widget buildSettingsHideBalanceUseCase(BuildContext context) =>
+    _buildSettingsMainUseCase(
+      const NetworkPrivacyState.off(),
+      initialScrollOffset: 1050,
+      hideOnUnlock: true,
+    );
+
+class _PreviewHideBalanceOnUnlockNotifier extends HideBalanceOnUnlockNotifier {
+  _PreviewHideBalanceOnUnlockNotifier(this.enabled);
+  final bool enabled;
+  @override
+  bool build() => enabled;
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
+}
+
+Widget _buildMobileSettingsTargetUseCase({
+  String rowKey = 'mobile_settings_explorer_row',
+  bool hideOnUnlock = false,
+}) {
   return ProviderScope(
     overrides: [
+      hideBalanceOnUnlockProvider.overrideWith(
+        () => _PreviewHideBalanceOnUnlockNotifier(hideOnUnlock),
+      ),
       appBootstrapProvider.overrideWithValue(
         _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
       ),
@@ -1117,9 +1170,11 @@ Widget buildMobileSettingsExplorerUseCase(BuildContext context) {
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
       ),
     ],
-    child: const _MobilePreviewFrame(
+    child: _MobilePreviewFrame(
       constrainToDesignSize: false,
-      child: IgnorePointer(child: _MobileSettingsExplorerPreview()),
+      child: IgnorePointer(
+        child: _MobileSettingsExplorerPreview(rowKey: rowKey),
+      ),
     ),
   );
 }

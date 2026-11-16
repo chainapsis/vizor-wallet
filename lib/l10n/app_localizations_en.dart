@@ -9691,6 +9691,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t update flip to hide setting.';
 
   @override
+  String get settingsHideBalanceOnUnlock => 'Hide balance on unlock';
+
+  @override
+  String get settingsHideBalanceOnUnlockDescription =>
+      'Hide your balance every time you unlock. Tap the eye icon to show it again.';
+
+  @override
+  String get settingsHideBalanceOnUnlockUpdateFailed =>
+      'Couldn\'t update hide balance on unlock setting.';
+
+  @override
   String get settingsHideBalanceTitle => 'Hide balance';
 
   @override

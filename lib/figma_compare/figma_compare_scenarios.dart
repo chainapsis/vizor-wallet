@@ -2711,6 +2711,19 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'settings-hide-balance',
+    description: 'Desktop hide balance on unlock preference enabled',
+    builder: buildSettingsHideBalanceUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-hide-balance',
+    description:
+        'Mobile balance hiding preferences with hide on unlock enabled',
+    builder: buildMobileSettingsHideBalanceUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'settings-main',
     description: 'Desktop settings with Tor privacy control',
     builder: buildSettingsMainUseCase,

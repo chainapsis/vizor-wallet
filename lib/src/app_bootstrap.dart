@@ -67,6 +67,7 @@ class AppBootstrapState {
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
     this.flipToHideBalanceEnabled = true,
+    this.hideBalanceOnUnlockEnabled = false,
     this.enhancePirEnabled = false,
     this.failureKind,
     this.failureMessage,
@@ -83,6 +84,7 @@ class AppBootstrapState {
   /// The saved language; English when nothing is saved or it cannot be read.
   final AppLanguage appLanguage;
   final bool privacyModeEnabled;
+  final bool hideBalanceOnUnlockEnabled;
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
@@ -298,6 +300,11 @@ Future<AppBootstrapState> loadAppBootstrap({
     final themeMode = await _readThemeMode(storage);
     final appLanguage = await _readAppLanguage(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
+    final hideBalanceOnUnlockEnabled = await _readPlainBool(
+      storage,
+      key: kHideBalanceOnUnlockKey,
+      label: 'hide balance on unlock flag', // l10n-ignore: log label
+    );
     final swapEnabledOverrideCachedForRelease =
         await _readSwapEnabledOverrideCachedForRelease();
     final biometricUnlockEnabled = await _readBiometricUnlockEnabled(storage);
@@ -513,6 +520,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       themeMode: themeMode,
       appLanguage: appLanguage,
       privacyModeEnabled: privacyModeEnabled,
+      hideBalanceOnUnlockEnabled: hideBalanceOnUnlockEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,

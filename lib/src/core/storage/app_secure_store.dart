@@ -27,6 +27,7 @@ const kWalletDbNameKey = 'zcash_wallet_db_name';
 const kThemeModeKey = 'zcash_theme_mode';
 const kAppLanguageKey = 'zcash_app_language';
 const kPrivacyModeEnabledKey = 'zcash_privacy_mode_enabled';
+const kHideBalanceOnUnlockKey = 'zcash_hide_balance_on_unlock';
 const kSyncKeepAwakeEnabledKey = 'zcash_sync_keep_awake_enabled';
 const kSyncKeepAwakePromptSeenKey = 'zcash_sync_keep_awake_prompt_seen';
 

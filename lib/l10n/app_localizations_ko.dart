@@ -9542,6 +9542,17 @@ class AppLocalizationsKo extends AppLocalizations {
       '뒤‍집‍어‍서 숨‍기‍기 설‍정‍을 변‍경‍하‍지 못‍했‍어‍요.';
 
   @override
+  String get settingsHideBalanceOnUnlock => '잠‍금 해‍제 시 잔‍액 숨‍기‍기';
+
+  @override
+  String get settingsHideBalanceOnUnlockDescription =>
+      '잠‍금‍을 해‍제‍할 때‍마‍다 잔‍액‍을 숨‍겨‍요. 눈 아‍이‍콘‍을 눌‍러 다‍시 볼 수 있‍어‍요.';
+
+  @override
+  String get settingsHideBalanceOnUnlockUpdateFailed =>
+      '잠‍금 해‍제 시 잔‍액 숨‍기‍기 설‍정‍을 변‍경‍하‍지 못‍했‍어‍요.';
+
+  @override
   String get settingsHideBalanceTitle => '잔‍액 숨‍기‍기';
 
   @override

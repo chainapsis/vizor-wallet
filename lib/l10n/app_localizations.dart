@@ -15854,6 +15854,24 @@ abstract class AppLocalizations {
   /// **'Couldn\'t update flip to hide setting.'**
   String get settingsFlipToHideUpdateFailed;
 
+  /// Settings > Hide balance: toggle that hides balances after every successful wallet unlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide balance on unlock'**
+  String get settingsHideBalanceOnUnlock;
+
+  /// Settings > Hide balance: explanation below the hide-on-unlock toggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide your balance every time you unlock. Tap the eye icon to show it again.'**
+  String get settingsHideBalanceOnUnlockDescription;
+
+  /// Toast when saving the hide-on-unlock preference fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update hide balance on unlock setting.'**
+  String get settingsHideBalanceOnUnlockUpdateFailed;
+
   /// Title of the mobile Settings card that holds the flip to hide switch.
   ///
   /// In en, this message translates to:
