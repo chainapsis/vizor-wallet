@@ -1049,13 +1049,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       // fired and this warning could not reach the composer at all.
       final msg = e.toString().toLowerCase();
       if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
-        // The amount fits but its fee does not; the fee itself is unknown.
-        setState(
-          () => _setAmountShortfall(
-            _availableBalanceForCurrentAddress + BigInt.one,
-            _insufficientBalanceIncludingFeeText,
-          ),
-        );
+        // The amount fits but its fee does not. How much more it needs is
+        // unknown, so no wait is promised for it.
+        setState(() => _amountError = _insufficientBalanceIncludingFeeText);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);

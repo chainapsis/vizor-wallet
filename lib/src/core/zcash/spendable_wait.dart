@@ -205,6 +205,10 @@ class SpendableWait {
 ///   received funds, except that with no receipt waiting and a payment on its
 ///   second confirmation, it is that payment's change.
 ///
+/// [transactions] is the newest few, so "no receipt waiting" holds only when
+/// the list reaches back past the wait: a receipt missing from a list of
+/// nothing but recent entries may simply have been pushed out of it.
+///
 /// Returns null if [changePending] exceeds [shieldedPending].
 SpendableWait? resolveSpendableWait({
   required BigInt availableNow,
@@ -248,10 +252,21 @@ SpendableWait? resolveSpendableWait({
   );
   // Any payment on its second confirmation, however many others are newer.
   final changeInLastBlock = changeBlocks.any((blocks) => blocks <= 1);
+  // An entry old enough to spend means every newer one is listed too.
+  final listCoversWait = transactions.any(
+    (transaction) =>
+        blocksUntilSpendable(
+          minedHeight: transaction.minedHeight.toInt(),
+          tipHeight: tipHeight,
+          requiredConfirmations: kReceivedSpendableConfirmations,
+        ) ==
+        0,
+  );
   final restIsChange =
       receivedPending > BigInt.zero &&
       receivedBlocks.isEmpty &&
-      changeInLastBlock;
+      changeInLastBlock &&
+      listCoversWait;
   final changeWaiting = restIsChange ? shieldedPending : changePending;
   final receivedWaiting = restIsChange ? BigInt.zero : receivedPending;
   return SpendableWait(

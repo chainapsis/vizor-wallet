@@ -182,12 +182,30 @@ void main() {
       // the anchor reaches it; for that block it is pending value.
       final wait = resolve(
         received: _zec,
-        transactions: [_tx('sent', minedHeight: _tip - 1)],
+        transactions: [
+          _tx('sent', minedHeight: _tip - 1),
+          _old,
+        ],
       )!;
       expect(wait.changeWaiting, _zec);
       expect(wait.receivedWaiting, BigInt.zero);
       expect(wait.changeWait, const AvailableIn.underMinute());
       expect(wait.hasWait, isTrue);
+    });
+
+    test('a list of nothing but recent entries cannot rule out a receipt', () {
+      // The receipt behind the pending value may have been pushed out of the
+      // newest-few list, so it is not read as change, and no wait is stated.
+      final wait = resolve(
+        received: _zec,
+        transactions: [
+          _tx('sent', minedHeight: _tip - 1),
+          _tx('sent', minedHeight: _tip - 3),
+        ],
+      )!;
+      expect(wait.changeWaiting, BigInt.zero);
+      expect(wait.receivedWaiting, _zec);
+      expect(wait.hasWait, isFalse);
     });
 
     test('pending value is received funds while a receipt is waiting', () {
@@ -222,6 +240,7 @@ void main() {
         transactions: [
           _tx('sent'),
           _tx('sent', minedHeight: _tip - 1),
+          _old,
         ],
       )!;
       expect(wait.changeWaiting, _zec * BigInt.two);
@@ -323,6 +342,9 @@ void main() {
     );
   });
 }
+
+/// An entry old enough to spend: the list reaches back past the wait.
+final _old = _tx('received', minedHeight: _tip - 50);
 
 rust_sync.TransactionInfo _tx(
   String kind, {
