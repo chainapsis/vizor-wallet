@@ -27,10 +27,12 @@ import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../../core/zcash/spendable_wait.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/spendable_wait_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
@@ -46,6 +48,7 @@ import '../services/send_flow.dart';
 import '../services/send_proving_key_warmup.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
+import '../widgets/spendable_wait_breakdown.dart';
 
 final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
   return getWalletDbPath;
@@ -735,7 +738,47 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
 
-  String get _reviewButtonLabel => context.l10n.sendReviewAction;
+  /// The total the last validation found above the spendable balance but
+  /// within reach of funds still confirming; null when it fit or cannot.
+  BigInt? _amountWaitTarget;
+
+  SpendableWait? get _spendableWait =>
+      ref.read(spendableWaitProvider(widget.activeAccountUuid));
+
+  /// Marks [needed] as more than the account can spend: a silent wait when
+  /// funds still confirming will cover it, otherwise [error].
+  void _setAmountShortfall(
+    BigInt needed,
+    String error, {
+    bool includesFee = true,
+  }) {
+    final target = includesFee ? needed : needed + kSpendableWaitFeeReserve;
+    final waits = _spendableWait?.waitFor(target) != null;
+    _amountWaitTarget = waits ? target : null;
+    _amountError = waits ? '' : error;
+  }
+
+  /// When the entered amount becomes sendable, while it waits on funds. The
+  /// target outlives a cleared field or a switch to Max, so it counts only
+  /// for an entered amount the last validation left silently invalid.
+  AvailableIn? get _amountWait {
+    final target = _amountWaitTarget;
+    if (target == null ||
+        _isMaxMode ||
+        _isResolvingMax ||
+        _amountError != '' ||
+        _amountText.trim().isEmpty) {
+      return null;
+    }
+    return _spendableWait?.waitFor(target);
+  }
+
+  String get _reviewButtonLabel {
+    final wait = _amountWait;
+    return wait == null
+        ? context.l10n.sendReviewAction
+        : availableInLabel(context.l10n, wait);
+  }
 
   String? _amountConversionText({
     required BigInt? amountZatoshi,
@@ -893,6 +936,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
     final text = _amountText.trim();
+    _amountWaitTarget = null;
 
     // Empty, incomplete, or zero amounts are silently invalid: no error text,
     // just keep Review disabled.
@@ -913,7 +957,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     final available = _availableBalanceForCurrentAddress;
     if (zatoshi > available && !_hasValidAddress) {
-      setState(() => _amountError = _insufficientBalanceText);
+      setState(
+        () => _setAmountShortfall(
+          zatoshi,
+          _insufficientBalanceText,
+          includesFee: false,
+        ),
+      );
       return;
     }
 
@@ -927,7 +977,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
 
     if (zatoshi > available) {
-      setState(() => _amountError = _insufficientBalanceText);
+      setState(
+        () => _setAmountShortfall(
+          zatoshi,
+          _insufficientBalanceText,
+          includesFee: false,
+        ),
+      );
       return;
     }
     if (widget.isUsingCompletedSpendableSnapshot) {
@@ -971,7 +1027,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final totalNeeded = zatoshi + fee;
       if (totalNeeded > _availableBalanceForCurrentAddress) {
         final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
-        setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
+        setState(
+          () => _setAmountShortfall(
+            totalNeeded,
+            _insufficientBalanceWithFeeText(feeText),
+          ),
+        );
       } else {
         setState(() => _amountError = null);
       }
@@ -983,7 +1044,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       // fired and this warning could not reach the composer at all.
       final msg = e.toString().toLowerCase();
       if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
-        setState(() => _amountError = _insufficientBalanceIncludingFeeText);
+        // The amount fits but its fee does not; the fee itself is unknown.
+        setState(
+          () => _setAmountShortfall(
+            _availableBalanceForCurrentAddress + BigInt.one,
+            _insufficientBalanceIncludingFeeText,
+          ),
+        );
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -1480,6 +1547,20 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           ),
                           _SendAmountSubRows(
                             errorText: _showAmountError ? _amountError : null,
+                            availableNow: widget.activeAccountUuid == null
+                                ? null
+                                : SendAvailableNowLink(
+                                    accountUuid: widget.activeAccountUuid!,
+                                  ),
+                            showsAvailableNow:
+                                ref
+                                    .watch(
+                                      spendableWaitProvider(
+                                        widget.activeAccountUuid,
+                                      ),
+                                    )
+                                    ?.hasWait ??
+                                false,
                             conversionText: amountConversionText,
                             conversionLoading: amountConversionLoading,
                             onConversionTap: _toggleAmountInputMode,
@@ -2111,6 +2192,8 @@ class _SendAmountSubRows extends StatelessWidget {
     required this.onConversionTap,
     required this.conversionEnabled,
     required this.enterUsdMode,
+    this.availableNow,
+    this.showsAvailableNow = false,
   });
 
   static const _topGap = AppSpacing.xxs;
@@ -2123,11 +2206,19 @@ class _SendAmountSubRows extends StatelessWidget {
   final bool conversionEnabled;
   final bool enterUsdMode;
 
+  /// The "available now" line, in the error row's place while no error
+  /// shows and [showsAvailableNow] says some funds cannot be spent yet.
+  final Widget? availableNow;
+  final bool showsAvailableNow;
+
   @override
   Widget build(BuildContext context) {
     final hasError = errorText != null && errorText!.trim().isNotEmpty;
+    final hasAvailableNow =
+        !hasError && showsAvailableNow && availableNow != null;
     return SizedBox(
-      height: _topGap + (hasError ? _rowHeight * 2 : _rowHeight),
+      height:
+          _topGap + (hasError || hasAvailableNow ? _rowHeight * 2 : _rowHeight),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2136,6 +2227,14 @@ class _SendAmountSubRows extends StatelessWidget {
             SizedBox(
               height: _rowHeight,
               child: _SendAmountErrorRow(text: errorText!),
+            ),
+          if (hasAvailableNow)
+            SizedBox(
+              height: _rowHeight,
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: availableNow,
+              ),
             ),
           SizedBox(
             height: _rowHeight,

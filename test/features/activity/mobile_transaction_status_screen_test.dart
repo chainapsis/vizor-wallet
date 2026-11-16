@@ -14,6 +14,8 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
+import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
@@ -26,6 +28,7 @@ import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.d
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -179,10 +182,15 @@ Widget _app(
   bool privateQueriesEnabled = false,
   String? routeTxid,
   List<rust_sync.TransactionInfo>? history,
+  SpendableWaitClock? spendableWaitClock,
 }) {
   final resolvedDetail = detail ?? _detail(kind: tx.txKind);
   return ProviderScope(
     overrides: [
+      if (spendableWaitClock != null)
+        activeReceivedSpendableWaitClockProvider.overrideWithValue(
+          spendableWaitClock,
+        ),
       swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
       privacyModeProvider.overrideWith(() => _FixedPrivacy(privacyEnabled)),
       enhancePirProvider.overrideWith(
@@ -409,6 +417,41 @@ void main() {
       expect(find.text('0.00015 ZEC'), findsNothing);
     });
   }
+
+  testWidgets('a receipt that cannot be spent yet says when and counts its '
+      'confirmations', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final received = _tx(
+      kind: 'received',
+      fee: BigInt.zero,
+      minedHeight: BigInt.from(2500000),
+    );
+    await tester.pumpWidget(
+      _app(
+        received,
+        spendableWaitClock: (
+          tipHeight: 2500001,
+          spacing: const BlockSpacing(
+            preNu7BlockSeconds: 75,
+            nu7BlockSeconds: 25,
+            nu7ActivationHeight: 1,
+          ),
+          catchingUp: false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Available in 1–2 min'), findsOneWidget);
+    expect(find.text('Completed'), findsNothing);
+    expect(find.text('Confirmations'), findsOneWidget);
+    expect(find.text('2 of 6'), findsOneWidget);
+    expect(
+      find.text('New funds can be spent after 6 confirmations.'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('ordinary receive shows no fee even when history is enriched', (
     tester,

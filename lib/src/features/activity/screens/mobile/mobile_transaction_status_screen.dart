@@ -21,10 +21,12 @@ import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/review_info_row.dart';
+import '../../../../core/zcash/spendable_wait.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
@@ -527,6 +529,12 @@ class _MobileTransactionStatusScreenState
     // "From transparent balance" -> "Shielded balance". No Figma frame for
     // this state yet; mobile is aligned to the (more informative) desktop
     // shape pending one.
+    final spendableWaitClock = ref.watch(
+      activeReceivedSpendableWaitClockProvider,
+    );
+    final spendableWait = giftCard != null || spendableWaitClock == null
+        ? null
+        : receivedSpendableWait(tx, spendableWaitClock);
     final reviewChildren = giftCard != null
         ? <Widget>[]
         : _isMigration
@@ -647,6 +655,7 @@ class _MobileTransactionStatusScreenState
                       const SizedBox(height: AppSpacing.md),
                       _DetailCard(
                         phase: _phaseFor(giftCard),
+                        spendableWait: spendableWait,
                         statusText: giftCard == null
                             ? null
                             : switch (_phaseFor(giftCard)) {
@@ -695,6 +704,26 @@ class _MobileTransactionStatusScreenState
                               ),
                         detailsIncomplete: _showIncompleteDetails(tx),
                       ),
+                      if (spendableWait != null)
+                        Padding(
+                          key: const ValueKey(
+                            'mobile_tx_status_spendable_after',
+                          ),
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.xs,
+                            AppSpacing.s,
+                            AppSpacing.xs,
+                            0,
+                          ),
+                          child: Text(
+                            l10n.activityReceiptSpendableAfter(
+                              kReceivedSpendableConfirmations.toString(),
+                            ),
+                            style: AppTypography.bodySmall.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                        ),
                       if (giftCard == null &&
                           detail?.transparentDetailsState != null)
                         TransparentDetailsSection(
@@ -956,6 +985,7 @@ class _DetailCard extends StatelessWidget {
   const _DetailCard({
     required this.phase,
     this.statusText,
+    this.spendableWait,
     required this.failed,
     required this.memo,
     this.memoLoading = false,
@@ -972,6 +1002,10 @@ class _DetailCard extends StatelessWidget {
 
   final _TxPhase phase;
   final String? statusText;
+
+  /// A completed receipt the account cannot spend yet: the Status says when
+  /// it can, and a row counts its confirmations.
+  final ({AvailableIn wait, int confirmations})? spendableWait;
   final bool failed;
   final String? memo;
   final bool memoLoading;
@@ -1004,9 +1038,28 @@ class _DetailCard extends StatelessWidget {
           _ListRow(
             label: context.l10n.activityReceiptStatus,
             labelColor: failed ? colors.text.destructive : null,
-            value: _StatusChip(phase: phase, statusText: statusText),
+            value: _StatusChip(
+              phase: phase,
+              statusText: spendableWait == null
+                  ? statusText
+                  : availableInLabel(context.l10n, spendableWait!.wait),
+              waiting: spendableWait != null,
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
+          if (spendableWait != null) ...[
+            _ListRow(
+              key: const ValueKey('mobile_tx_status_confirmations'),
+              label: context.l10n.activityReceiptConfirmations,
+              value: _ValueWithIcon(
+                text: context.l10n.activityReceiptConfirmationsProgress(
+                  spendableWait!.confirmations.toString(),
+                  kReceivedSpendableConfirmations.toString(),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
           if (memoLoading) ...[
             const ReceiptMemoSkeleton(),
             const SizedBox(height: AppSpacing.xs),
@@ -1226,10 +1279,17 @@ class _ValueWithIcon extends StatelessWidget {
 /// Status chip: spinner + "In progress", green check + "Completed", or
 /// destructive cross + "Failed, funds returned".
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.phase, this.statusText});
+  const _StatusChip({
+    required this.phase,
+    this.statusText,
+    this.waiting = false,
+  });
 
   final _TxPhase phase;
   final String? statusText;
+
+  /// Completed, but its funds cannot be spent yet: a clock, not a check.
+  final bool waiting;
 
   @override
   Widget build(BuildContext context) {
@@ -1239,6 +1299,11 @@ class _StatusChip extends StatelessWidget {
         AppIcons.loader,
         context.l10n.commonInProgress,
         colors.text.secondary,
+      ),
+      _TxPhase.succeeded when waiting => (
+        AppIcons.time,
+        context.l10n.commonCompleted,
+        colors.text.accent,
       ),
       _TxPhase.succeeded => (
         AppIcons.checkCircle,

@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
+import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
@@ -27,6 +28,7 @@ import 'package:zcash_wallet/src/features/send/services/payment_request_precheck
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
@@ -176,6 +178,67 @@ void main() {
       expect(_fieldText(tester, 'send_address_field'), isEmpty);
     });
   });
+
+  testWidgets(
+    'an amount covered by confirming funds states the wait instead of a shortfall',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final receivedWaiting = SpendableWait(
+        availableNow: BigInt.from(120000000),
+        changeWaiting: BigInt.zero,
+        receivedWaiting: BigInt.from(130000000),
+        receivedWait: const AvailableIn.minutes(1, 3),
+      );
+      await tester.pumpWidget(
+        _sendHarness(
+          spendableBalance: BigInt.from(120000000),
+          spendableWait: receivedWaiting,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1.2 ZEC available now'), findsOneWidget);
+
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.enterText(_editableIn('send_amount_field'), '2');
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsNothing);
+      expect(find.text('Available in 1–3 min'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(find.byKey(const ValueKey('send_review_button')))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('send_available_now_link')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('send_available_now_popover')),
+        findsOneWidget,
+      );
+      expect(find.text('Just received'), findsOneWidget);
+      expect(find.text('+1.3 ZEC'), findsOneWidget);
+      expect(find.text('2.5 ZEC'), findsOneWidget);
+
+      // An amount the whole balance cannot cover is still a shortfall.
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      await tester.enterText(_editableIn('send_amount_field'), '9');
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsOneWidget);
+
+      // The wait does not outlive the amount that caused it.
+      await tester.enterText(_editableIn('send_amount_field'), '2');
+      await tester.pumpAndSettle();
+      expect(find.text('Available in 1–3 min'), findsOneWidget);
+      await tester.enterText(_editableIn('send_amount_field'), '');
+      await tester.pumpAndSettle();
+      expect(find.text('Available in 1–3 min'), findsNothing);
+    },
+  );
 
   testWidgets(
     'released spendable balance clears the visible amount error and permits retry',
@@ -1840,6 +1903,7 @@ Widget _sendHarness({
   void Function(SendReviewArgs?)? onReviewArgs,
   bool realReview = false,
   PaymentRequestPrecheck? precheck,
+  SpendableWait? spendableWait,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1864,6 +1928,8 @@ Widget _sendHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      if (spendableWait != null)
+        spendableWaitProvider.overrideWith((ref, accountUuid) => spendableWait),
       if (realReview)
         ownAccountAddressesProvider.overrideWith((ref) async => {}),
       if (realReview)

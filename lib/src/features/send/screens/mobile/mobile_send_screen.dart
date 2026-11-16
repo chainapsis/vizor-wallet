@@ -34,9 +34,11 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../core/widgets/review_info_row.dart';
+import '../../../../core/zcash/spendable_wait.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -58,6 +60,7 @@ import '../../services/recent_send_recipients.dart';
 import '../../services/send_proving_key_warmup.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
+import '../../widgets/spendable_wait_breakdown.dart';
 import 'mobile_send_scan_screen.dart';
 
 enum _SendStep { recipient, amount, review }
@@ -569,6 +572,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   int _validateSeq = 0;
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
+
+  /// The total the last validation found above the spendable balance but
+  /// within reach of funds still confirming; null when it fit or cannot.
+  BigInt? _amountWaitTarget;
   int _maxSeq = 0;
   _MobileSendMaxQuote? _maxQuote;
 
@@ -1471,6 +1478,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   /// mobile copy is the design's "Not enough ZEC".
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
+    _amountWaitTarget = null;
     final text = _amountText.trim();
     if (text.isEmpty || text == '.' || text == '0.') {
       setState(() => _amountError = '');
@@ -1482,7 +1490,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       return;
     }
     if (zatoshi > _spendable) {
-      setState(() => _amountError = _notEnoughZecText);
+      setState(() => _setAmountShortfall(zatoshi, includesFee: false));
       return;
     }
     if (_isUsingCompletedSpendableSnapshot) {
@@ -1515,7 +1523,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       );
       if (!mounted || seq != _validateSeq) return;
       if (zatoshi + fee > _spendable) {
-        setState(() => _amountError = _notEnoughZecText);
+        setState(() => _setAmountShortfall(zatoshi + fee));
       } else {
         setState(() {
           _amountError = null;
@@ -1539,12 +1547,39 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       // never fired and this warning could not reach the composer at all.
       final msg = e.toString().toLowerCase();
       if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
-        setState(() => _amountError = _notEnoughZecText);
+        // The amount fits but its fee does not; the fee itself is unknown.
+        setState(() => _setAmountShortfall(_spendable + BigInt.one));
       } else {
         log('MobileSend: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
       }
     }
+  }
+
+  SpendableWait? get _spendableWait =>
+      ref.read(spendableWaitProvider(_activeAccountUuid));
+
+  /// Marks [needed] as more than the account can spend: a wait when funds
+  /// still confirming will cover it, otherwise the shortfall error.
+  void _setAmountShortfall(BigInt needed, {bool includesFee = true}) {
+    final target = includesFee ? needed : needed + kSpendableWaitFeeReserve;
+    final waits = _spendableWait?.waitFor(target) != null;
+    _amountWaitTarget = waits ? target : null;
+    _amountError = waits ? '' : _notEnoughZecText;
+  }
+
+  /// When the entered amount becomes sendable, while it waits on funds. The
+  /// target outlives a cleared field or a switch to Max, so it counts only
+  /// for an entered amount the last validation left silently invalid.
+  AvailableIn? get _amountWait {
+    final target = _amountWaitTarget;
+    if (target == null ||
+        _isMaxMode ||
+        _amountError != '' ||
+        _amountText.trim().isEmpty) {
+      return null;
+    }
+    return _spendableWait?.waitFor(target);
   }
 
   bool get _amountReady =>
@@ -1559,6 +1594,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String get _amountCtaLabel {
     if (_isResolvingMax) return context.l10n.sendCalculatingMax;
     if (_amountReady) return context.l10n.commonReviewAndFinish;
+
+    final wait = _amountWait;
+    if (wait != null) return availableInLabel(context.l10n, wait);
 
     final error = _amountError;
     if (error != null && error.isNotEmpty) {
@@ -2225,6 +2263,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
     ref.watch(_mobileSendSpendableStateProvider(accountUuid));
+    ref.watch(spendableWaitProvider(accountUuid));
     ref.listen(_mobileSendSpendableStateProvider(accountUuid), (
       previous,
       next,
@@ -2976,6 +3015,26 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
+  /// "+1.30 ZEC in 1–3 min" while funds are confirming, with the amount
+  /// masked like the balance above it.
+  String? _spendableWaitLine(SpendableWait? spendableWait) {
+    final wait = spendableWait?.wait;
+    if (spendableWait == null || wait == null) return null;
+    final amount = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        spendableWait.waiting,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
+    return wait.isUnderMinute
+        ? context.l10n.sendWaitingMoreInUnderMinute(amount)
+        : context.l10n.sendWaitingMoreInMinutes(
+            amount,
+            wait.minMinutes.toString(),
+            wait.maxMinutes.toString(),
+          );
+  }
+
   Widget _buildAmountBalanceRow(
     BuildContext context, {
     required bool showError,
@@ -2983,6 +3042,18 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }) {
     final colors = context.colors;
     final textColor = showError ? colors.text.destructive : colors.text.accent;
+    final accountUuid = _activeAccountUuid;
+    final spendableWait = ref.watch(spendableWaitProvider(accountUuid));
+    final waitLine = _spendableWaitLine(spendableWait);
+    final spendable = Text(
+      spendableText,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.labelLarge.copyWith(
+        color: textColor,
+        fontWeight: FontWeight.w600,
+      ),
+    );
     return SizedBox(
       key: const ValueKey('mobile_send_amount_balance_row'),
       height: _kMobileSendAmountBalanceRowHeight,
@@ -2991,15 +3062,51 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           const _ReviewZecIcon(),
           const SizedBox(width: AppSpacing.s),
           Expanded(
-            child: Text(
-              spendableText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: textColor,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: waitLine == null
+                ? spendable
+                : Semantics(
+                    button: true,
+                    child: GestureDetector(
+                      key: const ValueKey('mobile_send_spendable_wait_line'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => unawaited(
+                        showMobileSpendableWaitSheet(
+                          context,
+                          accountUuid: accountUuid!,
+                        ),
+                      ),
+                      child: SizedBox(
+                        height: _kMobileSendAmountBalanceRowHeight,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            spendable,
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    waitLine,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.bodySmall.copyWith(
+                                      color: colors.text.secondary,
+                                    ),
+                                  ),
+                                ),
+                                AppIcon(
+                                  AppIcons.chevronForward,
+                                  size: 14,
+                                  color: colors.icon.muted,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
           ),
           const SizedBox(width: AppSpacing.xs),
           Semantics(

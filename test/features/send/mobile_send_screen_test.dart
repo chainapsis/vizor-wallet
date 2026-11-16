@@ -37,6 +37,8 @@ import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_host.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
+import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
@@ -607,9 +609,14 @@ Widget _app({
   );
 }
 
-Widget _amountStepWithPriceLoadingApp({bool privacyModeEnabled = false}) {
+Widget _amountStepWithPriceLoadingApp({
+  bool privacyModeEnabled = false,
+  SpendableWait? spendableWait,
+}) {
   return ProviderScope(
     overrides: [
+      if (spendableWait != null)
+        spendableWaitProvider.overrideWith((ref, accountUuid) => spendableWait),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(privacyModeEnabled: privacyModeEnabled),
       ),
@@ -4062,6 +4069,35 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining(visibleBalance), findsNothing);
+  });
+
+  testWidgets('amount step masks the confirming amount in privacy mode', (
+    tester,
+  ) async {
+    final receivedWaiting = SpendableWait(
+      availableNow: BigInt.from(500000000),
+      changeWaiting: BigInt.zero,
+      receivedWaiting: BigInt.from(130000000),
+      receivedWait: const AvailableIn.minutes(1, 3),
+    );
+
+    await tester.pumpWidget(
+      _amountStepWithPriceLoadingApp(spendableWait: receivedWaiting),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('+1.3 ZEC in 1–3 min'), findsOneWidget);
+
+    await tester.pumpWidget(
+      _amountStepWithPriceLoadingApp(
+        privacyModeEnabled: true,
+        spendableWait: receivedWaiting,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('+****** ZEC in 1–3 min'), findsOneWidget);
+    expect(find.textContaining('1.3'), findsNothing);
   });
 
   testWidgets('amount input displays a leading zero and keeps the cursor', (
