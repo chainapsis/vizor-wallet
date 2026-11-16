@@ -294,8 +294,15 @@ class SendSpendableWaitButton extends ConsumerStatefulWidget {
   // Enough for two waiting rows; decides only which way the popover opens.
   static const _popoverHeightEstimate = 280.0;
 
-  // The popover overhangs the icon so its tail sits under the icon's center.
-  static const _overhang = 12.0;
+  static const _iconSize = 16.0;
+  static const _tailSize = 10.0;
+
+  // The tail's center from the popover's trailing edge: past the rounded
+  // corner, on the straight part of the edge.
+  static const _tailInset = AppRadii.large + _tailSize;
+
+  // How far the popover overhangs the icon, so the tail meets its center.
+  static const _overhang = _tailInset - _iconSize / 2;
   static const _gap = AppSpacing.xs;
 
   final String accountUuid;
@@ -387,13 +394,13 @@ class _SendSpendableWaitButtonState
             behavior: HitTestBehavior.opaque,
             onTap: _toggle,
             child: SizedBox(
-              width: 16,
-              height: 16,
+              width: SendSpendableWaitButton._iconSize,
+              height: SendSpendableWaitButton._iconSize,
               child: Center(
                 child: ExcludeSemantics(
                   child: AppIcon(
                     AppIcons.time,
-                    size: 16,
+                    size: SendSpendableWaitButton._iconSize,
                     color: open ? colors.icon.accent : colors.icon.regular,
                   ),
                 ),
@@ -479,14 +486,16 @@ class SpendableWaitPopoverSurface extends StatelessWidget {
             ),
           ),
           Positioned(
-            right: SendSpendableWaitButton._overhang + 8 - 5,
-            top: tailBelow ? null : -5,
-            bottom: tailBelow ? -5 : null,
+            right:
+                SendSpendableWaitButton._tailInset -
+                SendSpendableWaitButton._tailSize / 2,
+            top: tailBelow ? null : -SendSpendableWaitButton._tailSize / 2,
+            bottom: tailBelow ? -SendSpendableWaitButton._tailSize / 2 : null,
             child: Transform.rotate(
               angle: math.pi / 4,
               child: Container(
-                width: 10,
-                height: 10,
+                width: SendSpendableWaitButton._tailSize,
+                height: SendSpendableWaitButton._tailSize,
                 decoration: BoxDecoration(
                   color: colors.background.raised,
                   border: tailBelow
