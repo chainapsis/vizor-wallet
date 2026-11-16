@@ -46,6 +46,7 @@ class _FlipToHideBalanceHostState extends ConsumerState<FlipToHideBalanceHost> {
   StreamSubscription<double>? _subscription;
   final _clock = Stopwatch();
   bool _visible = true;
+  int _sensorSession = 0;
 
   @override
   void initState() {
@@ -74,6 +75,7 @@ class _FlipToHideBalanceHostState extends ConsumerState<FlipToHideBalanceHost> {
 
   @override
   void dispose() {
+    ++_sensorSession;
     _listener?.dispose();
     unawaited(_subscription?.cancel());
     super.dispose();
@@ -89,12 +91,14 @@ class _FlipToHideBalanceHostState extends ConsumerState<FlipToHideBalanceHost> {
 
   void _update() {
     if (!_shouldListen) {
+      ++_sensorSession;
       unawaited(_subscription?.cancel());
       _subscription = null;
       _clock.stop();
       return;
     }
     if (_subscription != null) return;
+    final session = ++_sensorSession;
     // A fresh detector each time: a phone already screen-down when listening
     // starts is not a flip.
     final detector = FlipToHideDetector();
@@ -102,20 +106,39 @@ class _FlipToHideBalanceHostState extends ConsumerState<FlipToHideBalanceHost> {
       ..reset()
       ..start();
     _subscription = widget.facingEvents().listen((facing) {
+      if (session != _sensorSession || !_shouldListen) return;
       final action = detector.add(
         facing,
         at: _clock.elapsed,
-        hidden: ref.read(privacyModeProvider),
+        hidden: ref.read(privacyModeProvider.notifier).requestedHidden,
       );
-      if (action != null) _apply(action);
+      if (action != null) unawaited(_apply(action, session));
     });
   }
 
-  void _apply(FlipToHideAction action) {
+  Future<void> _apply(FlipToHideAction action, int session) async {
     final hide = action == FlipToHideAction.hide;
+    final privacy = ref.read(privacyModeProvider.notifier);
+    bool isActive() => mounted && session == _sensorSession && _shouldListen;
+    final change = privacy.setFromFlip(hide, isActive: isActive);
+    bool isCurrent() => isActive() && change.isCurrent;
+    try {
+      final applied = await change.completed;
+      if (!applied || !isCurrent()) return;
+    } catch (_) {
+      if (!mounted || !isCurrent()) return;
+      showAppToast(
+        context,
+        hide
+            ? context.l10n.privacyBalanceHiddenSaveFailed
+            : context.l10n.privacyBalanceShowFailed,
+        iconName: AppIcons.warning,
+        tone: AppToastTone.destructive,
+      );
+      return;
+    }
+    if (!mounted) return;
     unawaited(AppHaptics.privacyToggle());
-    unawaited(ref.read(privacyModeProvider.notifier).set(hide));
-    // The screen in view may show no amount, so the toast confirms it.
     showAppToast(
       context,
       hide ? context.l10n.commonBalanceHidden : context.l10n.commonBalanceShown,

@@ -2302,6 +2302,8 @@
   "paymentUriUnsupported": "此收款链接使用了 Vizor 尚不支持的功能。",
   "poolShielded": "隐私",
   "poolTransparent": "公开",
+  "privacyBalanceHiddenSaveFailed": "余额已隐藏，但无法保存设置。",
+  "privacyBalanceShowFailed": "无法显示余额。请重试。",
   "privateQueriesOptOutUnfinished": "关闭隐私查询未完成。请在设置中再次关闭，以使用公开资金。",
   "profilePictureChange": "更换头像",
   "profilePictureName": "{id, select, p01{骑士} p02{维京人} p03{武士} p04{君主} p05{铁盔} p06{浪人} p07{骷髅骑士} p08{先知} p09{狂战士} p10{盗贼} p11{法师} p12{蒙面猫} p13{守卫} p14{青铜盔} p15{鱼骑士} other{}}",

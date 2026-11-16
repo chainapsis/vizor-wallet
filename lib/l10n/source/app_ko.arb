@@ -2302,6 +2302,8 @@
   "paymentUriUnsupported": "이 요청 링크는 Vizor가 아직 지원하지 않는 기능을 사용해요.",
   "poolShielded": "비공개",
   "poolTransparent": "공개",
+  "privacyBalanceHiddenSaveFailed": "잔액을 숨겼지만 설정을 저장하지 못했어요.",
+  "privacyBalanceShowFailed": "잔액을 표시하지 못했어요. 다시 시도해 주세요.",
   "privateQueriesOptOutUnfinished": "비공개 조회 끄기가 완료되지 않았어요. 공개 자금을 사용하려면 설정에서 다시 끄세요.",
   "profilePictureChange": "프로필 사진 변경",
   "profilePictureName": "{id, select, p01{기사} p02{바이킹} p03{사무라이} p04{군주} p05{철투구} p06{로닌} p07{해골 기사} p08{예언자} p09{광전사} p10{도적} p11{마법사} p12{가면 쓴 고양이} p13{감시자} p14{청동 투구} p15{물고기 기사} other{}}",

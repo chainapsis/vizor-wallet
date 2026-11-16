@@ -10873,6 +10873,14 @@
   "@poolTransparent": {
     "description": "Badge naming a transparent pool or address."
   },
+  "privacyBalanceHiddenSaveFailed": "Balance hidden, but the setting couldn't be saved.",
+  "@privacyBalanceHiddenSaveFailed": {
+    "description": "[security] Mobile flip-to-hide error toast: amounts are hidden for this session, but persisting that choice failed."
+  },
+  "privacyBalanceShowFailed": "Couldn't show your balance. Try again.",
+  "@privacyBalanceShowFailed": {
+    "description": "[security] Mobile flip-to-show error toast: saving the visibility choice failed, so amounts remain hidden."
+  },
   "privateQueriesOptOutUnfinished": "Turning off Private queries didn't finish. Turn it off again in Settings to use transparent funds.",
   "@privateQueriesOptOutUnfinished": {
     "description": "[security] Error shown when the wallet still requires private recovery because turning off Private queries did not finish."

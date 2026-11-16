@@ -7884,6 +7884,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get poolTransparent => '公开';
 
   @override
+  String get privacyBalanceHiddenSaveFailed => '余额已隐藏，但无法保存设置。';
+
+  @override
+  String get privacyBalanceShowFailed => '无法显示余额。请重试。';
+
+  @override
   String get privateQueriesOptOutUnfinished => '关闭隐私查询未完成。请在设置中再次关闭，以使用公开资金。';
 
   @override

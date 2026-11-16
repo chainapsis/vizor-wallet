@@ -41,6 +41,16 @@ bag, only ever hides, so picking it up never reveals the balance. A slow turn
 "Balance hidden" or "Balance shown" toast confirm the change, since the page
 in view may show no amount.
 
+Flip hiding applies the mask before saving and keeps it hidden if saving
+fails. Revealing waits for a successful save and an active sensor session.
+Pending changes share ordering with the eye button and automatic unlock hiding;
+the detector reads the latest requested visibility, even while a save waits.
+Success feedback follows a completed, still-current change. A failed save uses
+an error toast; hiding failures explicitly say the balance remains hidden.
+Locking, backgrounding, disabling the setting, or removing the host cancels a
+pending reveal and suppresses its feedback. If its write has already started,
+the saved mask is restored before queued changes or a wallet reset can finish.
+
 - `FlipToHideDetector` (`lib/src/core/privacy/flip_to_hide_detector.dart`)
   holds the thresholds: screen-down within about 40° of straight down, a turn
   from screen-up within 1 second, the 2 second show window.

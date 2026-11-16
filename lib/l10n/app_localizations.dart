@@ -13982,6 +13982,18 @@ abstract class AppLocalizations {
   /// **'Transparent'**
   String get poolTransparent;
 
+  /// [security] Mobile flip-to-hide error toast: amounts are hidden for this session, but persisting that choice failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance hidden, but the setting couldn\'t be saved.'**
+  String get privacyBalanceHiddenSaveFailed;
+
+  /// [security] Mobile flip-to-show error toast: saving the visibility choice failed, so amounts remain hidden.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t show your balance. Try again.'**
+  String get privacyBalanceShowFailed;
+
   /// [security] Error shown when the wallet still requires private recovery because turning off Private queries did not finish.
   ///
   /// In en, this message translates to:

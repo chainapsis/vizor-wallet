@@ -8400,6 +8400,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get poolTransparent => '공‍개';
 
   @override
+  String get privacyBalanceHiddenSaveFailed =>
+      '잔‍액‍을 숨‍겼‍지‍만 설‍정‍을 저‍장‍하‍지 못‍했‍어‍요.';
+
+  @override
+  String get privacyBalanceShowFailed =>
+      '잔‍액‍을 표‍시‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
   String get privateQueriesOptOutUnfinished =>
       '비‍공‍개 조‍회 끄‍기‍가 완‍료‍되‍지 않‍았‍어‍요. 공‍개 자‍금‍을 사‍용‍하‍려‍면 설‍정‍에‍서 다‍시 끄‍세‍요.';
 

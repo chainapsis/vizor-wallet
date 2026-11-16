@@ -8527,6 +8527,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get poolTransparent => 'Transparent';
 
   @override
+  String get privacyBalanceHiddenSaveFailed =>
+      'Balance hidden, but the setting couldn\'t be saved.';
+
+  @override
+  String get privacyBalanceShowFailed =>
+      'Couldn\'t show your balance. Try again.';
+
+  @override
   String get privateQueriesOptOutUnfinished =>
       'Turning off Private queries didn\'t finish. Turn it off again in Settings to use transparent funds.';
 
