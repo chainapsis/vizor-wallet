@@ -9,6 +9,7 @@ import '../../../core/feedback/app_haptics.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
+import '../../../core/privacy/custom_keyboard_policy.dart';
 import '../../../core/privacy/route_coverage_aware.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
@@ -89,6 +90,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
 
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
+  bool _rejectsCustomKeyboards = false;
   late final bool _ownsPrivacyController;
   late final SensitivePrivacyOverlayController _privacyController;
 
@@ -128,7 +130,27 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Before the autofocused field brings the keyboard up.
+    _setCustomKeyboardsRejected(!isCoveredByNextRoute);
+  }
+
+  // Later import steps stay stacked on this screen and keep their keyboards.
+  // A pop re-engages as it starts, ahead of the refocus that follows it.
+  @override
+  void onRouteCoverageChanged(bool covered) =>
+      _setCustomKeyboardsRejected(!covered);
+
+  void _setCustomKeyboardsRejected(bool rejected) {
+    if (rejected == _rejectsCustomKeyboards) return;
+    _rejectsCustomKeyboards = rejected;
+    rejected ? CustomKeyboardPolicy.hold() : CustomKeyboardPolicy.release();
+  }
+
+  @override
   void dispose() {
+    _setCustomKeyboardsRejected(false);
     _screenshotSub?.cancel();
     if (_ownsPrivacyController) _privacyController.dispose();
     _controller.dispose();
