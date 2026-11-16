@@ -12,6 +12,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import 'payment_link_action.dart';
 import 'payment_link_gift_card.dart';
 import '../../../core/l10n/l10n.dart';
 
@@ -20,6 +21,7 @@ class PaymentLinkQrShareCard extends StatelessWidget {
   const PaymentLinkQrShareCard({
     required this.artwork,
     required this.qrData,
+    this.onQrTap,
     super.key,
   });
 
@@ -31,6 +33,7 @@ class PaymentLinkQrShareCard extends StatelessWidget {
 
   final PaymentLinkCardArtwork artwork;
   final String qrData;
+  final VoidCallback? onQrTap;
 
   @override
   Widget build(BuildContext context) {
@@ -81,35 +84,38 @@ class PaymentLinkQrShareCard extends StatelessWidget {
               Positioned(
                 right: 18,
                 top: 66,
-                child: Container(
-                  key: const ValueKey('payment_link_qr_code'),
-                  width: 184,
-                  height: 184,
-                  padding: const EdgeInsets.all(AppSpacing.s),
-                  decoration: BoxDecoration(
-                    color: _foreground,
-                    borderRadius: BorderRadius.circular(AppRadii.medium),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0xF2000000),
-                        offset: Offset(0, 4),
-                        blurRadius: 54,
-                      ),
-                    ],
-                  ),
-                  child: PrettyQrView.data(
-                    data: qrData,
-                    errorCorrectLevel: QrErrorCorrectLevel.L,
-                    decoration: const PrettyQrDecoration(
-                      quietZone: PrettyQrQuietZone.zero,
-                      shape: PrettyQrSmoothSymbol(roundFactor: 0.5),
+                child: _qrAction(
+                  context,
+                  child: Container(
+                    key: const ValueKey('payment_link_qr_code'),
+                    width: 184,
+                    height: 184,
+                    padding: const EdgeInsets.all(AppSpacing.s),
+                    decoration: BoxDecoration(
+                      color: _foreground,
+                      borderRadius: BorderRadius.circular(AppRadii.medium),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xF2000000),
+                          offset: Offset(0, 4),
+                          blurRadius: 54,
+                        ),
+                      ],
                     ),
-                    errorBuilder: (context, error, stackTrace) => Center(
-                      child: AppIcon(
-                        AppIcons.warning,
-                        color: Color(0xFF141818),
-                        semanticLabel:
-                            context.l10n.paymentLinkQrCouldNotBeGenerated,
+                    child: PrettyQrView.data(
+                      data: qrData,
+                      errorCorrectLevel: QrErrorCorrectLevel.L,
+                      decoration: const PrettyQrDecoration(
+                        quietZone: PrettyQrQuietZone.zero,
+                        shape: PrettyQrSmoothSymbol(roundFactor: 0.5),
+                      ),
+                      errorBuilder: (context, error, stackTrace) => Center(
+                        child: AppIcon(
+                          AppIcons.warning,
+                          color: Color(0xFF141818),
+                          semanticLabel:
+                              context.l10n.paymentLinkQrCouldNotBeGenerated,
+                        ),
                       ),
                     ),
                   ),
@@ -124,6 +130,16 @@ class PaymentLinkQrShareCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _qrAction(BuildContext context, {required Widget child}) {
+    if (onQrTap == null) return child;
+    // Interaction adds no painted content to the exportable image.
+    return PaymentLinkAction(
+      onPressed: onQrTap,
+      semanticLabel: context.l10n.paymentLinkQrExpandSemantic,
+      builder: (_, _, _) => child,
     );
   }
 }

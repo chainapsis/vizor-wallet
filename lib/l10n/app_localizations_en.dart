@@ -8104,6 +8104,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'QR code could not be generated';
 
   @override
+  String get paymentLinkQrExpandSemantic =>
+      'Show gift card QR code full screen';
+
+  @override
   String get paymentLinkQrSaveFailed => 'Gift card QR could not be saved.';
 
   @override
