@@ -8,6 +8,14 @@ import '../create/account_persona_generator.dart';
 class AccountPersona {
   const AccountPersona({required this.name, required this.profilePictureId});
 
+  factory AccountPersona.generate({Random? random}) {
+    final suggestion = generateAccountPersona(random: random);
+    return AccountPersona(
+      name: suggestion.name,
+      profilePictureId: suggestion.profilePictureId,
+    );
+  }
+
   final String name;
   final String profilePictureId;
 }

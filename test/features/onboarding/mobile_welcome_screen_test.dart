@@ -167,10 +167,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('mobile_intro_continue')));
       await tester.pumpAndSettle();
-      expect(_stepsProgress(tester), closeTo(0.42176870748, 1e-8));
+      expect(_stepsProgress(tester), closeTo(0.44489795918, 1e-8));
       security.configure();
       await tester.pumpAndSettle();
-      expect(_stepsProgress(tester), closeTo(0.42176870748, 1e-8));
+      expect(_stepsProgress(tester), closeTo(0.44489795918, 1e-8));
       for (var i = 0; i < 2; i++) {
         await tester.tap(find.bySemanticsLabel('Back'));
         await tester.pumpAndSettle();
@@ -181,7 +181,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('mobile_intro_continue')));
       await tester.pumpAndSettle();
-      expect(_stepsProgress(tester), closeTo(0.44489795918, 1e-8));
+      expect(_stepsProgress(tester), closeTo(0.47959183673, 1e-8));
     },
   );
 

@@ -260,7 +260,6 @@ class _Sidebar extends StatelessWidget {
     OnboardingStep.addressTypes,
     OnboardingStep.thingsToKnow,
     OnboardingStep.secretPassphrase,
-    OnboardingStep.customiseAccount,
     if (showPasswordStep) OnboardingStep.setPassword,
   ];
 

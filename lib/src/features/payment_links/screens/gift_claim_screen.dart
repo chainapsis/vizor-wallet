@@ -23,6 +23,12 @@ import '../../../providers/zec_price_change_provider.dart';
 import '../providers/gift_card_entry_price_provider.dart';
 import '../providers/gift_card_check_progress_provider.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
+import '../../onboarding/shared/account_persona_draft.dart';
+import '../../onboarding/shared/account_setup_submission.dart';
+import '../../onboarding/shared/onboarding_error_messages.dart';
+import '../services/gift_claim_setup_coordinator.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../models/vizor_payment_link.dart';
 import '../providers/gift_claim_flow_provider.dart';
@@ -64,11 +70,17 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   bool _reading = false;
   bool _invalidPaste = false;
   bool _handingOff = false;
+  final _setupSubmission = AccountSetupSubmission();
+  OnboardingSubmitError? _setupError;
   GiftClaimFlowState? _desktopLongSyncWarning;
+  late final GiftClaimFlowNotifier _flowNotifier;
+  PaymentLinkClaimInspection? _setupInspection;
+  bool _transferringToSecurity = false;
 
   @override
   void initState() {
     super.initState();
+    _flowNotifier = ref.read(giftClaimFlowProvider.notifier);
     ref.listenManual(giftClaimFlowProvider, (_, next) {
       if (next?.phase != GiftClaimPhase.longSyncConfirmation) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -84,6 +96,15 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         _openPendingLink();
       });
     }, fireImmediately: true);
+  }
+
+  @override
+  void dispose() {
+    final inspection = _setupInspection;
+    if (inspection != null && !_transferringToSecurity) {
+      scheduleMicrotask(() => _flowNotifier.finishWalletSetup(inspection));
+    }
+    super.dispose();
   }
 
   void _openPendingLink() {
@@ -102,6 +123,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   }
 
   Future<void> _close() async {
+    if (_handingOff || _setupSubmission.requiresRecovery) return;
     try {
       await ref.read(giftClaimFlowProvider.notifier).close();
       if (mounted) {
@@ -137,7 +159,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   }
 
   Future<void> _continueToSetup(String location) async {
-    if (_handingOff) return;
+    if (_handingOff || _setupSubmission.requiresRecovery) return;
     _handingOff = true;
     try {
       final saved = await ref
@@ -161,7 +183,16 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         );
         return;
       }
-      if (mounted && saved) context.startOnboarding(location);
+      // A failed pre-account creation attempt may still own this inspection.
+      // The durable import handoff now owns it, including if this Card route is
+      // replaced or the wallet locks while the user imports an account.
+      final inspection = _setupInspection;
+      if (inspection != null) {
+        _flowNotifier.cancelWalletSetup(inspection);
+        _setupInspection = null;
+        _setupError = null;
+      }
+      context.startOnboarding(location);
     } catch (_) {
       if (mounted) {
         showAppToast(
@@ -177,24 +208,65 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
 
   Future<void> _createGiftWallet() async {
     if (_handingOff) return;
-    _handingOff = true;
+    setState(() {
+      _handingOff = true;
+      _setupError = null;
+    });
     try {
-      await ref.read(giftClaimFlowProvider.notifier).cancelSetupReturn();
+      if (_setupSubmission.requiresRecovery) {
+        await _setupSubmission.recover(ref);
+        return;
+      }
+      final notifier = ref.read(giftClaimFlowProvider.notifier);
+      await notifier.cancelSetupReturn();
       if (!mounted) return;
-      final inspection = ref.read(giftClaimFlowProvider)?.inspection;
+      final flow = ref.read(giftClaimFlowProvider);
+      final inspection = flow?.inspection;
       if (inspection == null) return;
-      ref.read(giftClaimFlowProvider.notifier).beginWalletSetup(inspection);
-      context.push('/gift/customise');
-    } catch (_) {
+      final persona = flow?.setupPersona ?? AccountPersona.generate();
+      _setupInspection = inspection;
+      notifier.beginWalletSetup(inspection, persona: persona);
+      if (!ref.read(appSecurityProvider).isPasswordConfigured) {
+        _transferringToSecurity = true;
+        context.go(
+          kAppFormFactor == AppFormFactor.mobile
+              ? '/gift/passcode'
+              : '/gift/set-password',
+        );
+        return;
+      }
+      await _setupSubmission.run(ref, () async {
+        await ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+          try {
+            await completeGiftClaimWalletSetup(
+              ref,
+              password: null,
+              accountName: persona.name,
+              profilePictureId: persona.profilePictureId,
+              inspection: inspection,
+              onComplete: () {
+                if (mounted) context.go('/home');
+              },
+            );
+          } on GiftClaimAccountCreatedException catch (error) {
+            // Retry durable recovery, never create another receiving account.
+            throw WalletAccountSetupInterruptedException(
+              error.accountUuid,
+              error.cause,
+            );
+          }
+        });
+      });
+    } catch (error, stack) {
+      log('GiftClaim: account setup failed: $error\n$stack');
       if (mounted) {
-        showAppToast(
-          context,
-          context.l10n.paymentLinkClaimSaveFailed,
-          iconName: AppIcons.warning,
+        _setupError = OnboardingSubmitError.fromError(
+          error,
+          requiresRecovery: _setupSubmission.requiresRecovery,
         );
       }
     } finally {
-      _handingOff = false;
+      if (mounted) setState(() => _handingOff = false);
     }
   }
 
@@ -303,7 +375,9 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                   MobileTopNav.back(
                     key: const ValueKey('gift_claim_close_button'),
                     title: '',
-                    onBack: _close,
+                    onBack: _handingOff || _setupSubmission.requiresRecovery
+                        ? null
+                        : _close,
                     backIcon: AppIcons.cross,
                   ),
                 Expanded(
@@ -384,6 +458,9 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                             flow: flow,
                             reserveClaimActions: true,
                             addingAccount: widget.addingAccount,
+                            setupBusy: _handingOff,
+                            setupError: _setupError,
+                            requiresRecovery: _setupSubmission.requiresRecovery,
                             onCreate: _createGiftWallet,
                             onExisting: () =>
                                 _continueToSetup('/onboarding/method'),
@@ -399,6 +476,9 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                           flow: flow,
                           reserveClaimActions: waitingForCheck,
                           addingAccount: widget.addingAccount,
+                          setupBusy: _handingOff,
+                          setupError: _setupError,
+                          requiresRecovery: _setupSubmission.requiresRecovery,
                           onCreate: _createGiftWallet,
                           onExisting: () =>
                               _continueToSetup('/onboarding/method'),
@@ -465,6 +545,9 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                         child: _GiftClaimActions(
                           flow: flow,
                           addingAccount: widget.addingAccount,
+                          setupBusy: _handingOff,
+                          setupError: _setupError,
+                          requiresRecovery: _setupSubmission.requiresRecovery,
                           onCreate: _createGiftWallet,
                           onExisting: () =>
                               _continueToSetup('/import/method?from=gift'),
@@ -513,6 +596,8 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     final hasHandoff = ref.watch(giftClaimSetupReturnProvider) != null;
     return PopScope<void>(
       canPop:
+          !_handingOff &&
+          !_setupSubmission.requiresRecovery &&
           !hasHandoff &&
           phase != GiftClaimPhase.checking &&
           phase != GiftClaimPhase.longSyncConfirmation,
@@ -1014,9 +1099,15 @@ class _GiftClaimActions extends ConsumerWidget {
     required this.onExisting,
     required this.onClose,
     this.reserveClaimActions = false,
+    this.setupBusy = false,
+    this.setupError,
+    this.requiresRecovery = false,
   });
 
   final bool reserveClaimActions;
+  final bool setupBusy;
+  final OnboardingSubmitError? setupError;
+  final bool requiresRecovery;
   final GiftClaimFlowState flow;
   final bool addingAccount;
   final VoidCallback onCreate;
@@ -1076,15 +1167,19 @@ class _GiftClaimActions extends ConsumerWidget {
           addingAccount
               ? 'gift_claim_create_an_account_to_claim'
               : 'gift_claim_create_a_wallet_to_claim',
-          addingAccount
+          requiresRecovery
+              ? context.l10n.onboardingRetrySetup
+              : setupBusy
+              ? context.l10n.onboardingPasscodeSettingUp
+              : addingAccount
               ? context.l10n.paymentLinkClaimActionCreateAccount
               : context.l10n.paymentLinkClaimActionCreateWallet,
-          onCreate,
+          setupBusy ? null : onCreate,
         ),
         _secondary(
           'gift_claim_claim_with_an_existing_wallet',
           context.l10n.paymentLinkClaimActionExistingWallet,
-          onExisting,
+          setupBusy || requiresRecovery ? null : onExisting,
         ),
       ],
       GiftClaimPhase.inspected => [
@@ -1102,6 +1197,16 @@ class _GiftClaimActions extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (setupError != null) ...[
+          Text(
+            setupError!.resolve(context.l10n),
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.destructive,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
         for (final (index, action) in actions.indexed) ...[
           if (index > 0) const SizedBox(height: AppSpacing.xs),
           action,

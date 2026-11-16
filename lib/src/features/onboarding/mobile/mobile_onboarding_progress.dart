@@ -56,15 +56,11 @@ class OnboardingProgressPlan {
 
   static List<OnboardingStage> _stagesFor(OnboardingFlow flow) =>
       switch (flow) {
-        OnboardingFlow.gift => const [
-          OnboardingStage.customiseAccount,
-          OnboardingStage.passcode,
-        ],
+        OnboardingFlow.gift => const [OnboardingStage.passcode],
         OnboardingFlow.create => const [
           OnboardingStage.addressTypes,
           OnboardingStage.thingsToKnow,
           OnboardingStage.secretPassphrase,
-          OnboardingStage.customiseAccount,
           OnboardingStage.passcode,
         ],
         OnboardingFlow.importWallet => const [

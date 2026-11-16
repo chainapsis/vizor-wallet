@@ -6,7 +6,6 @@ import '../../providers/app_security_provider.dart';
 import '../../features/payment_links/providers/gift_claim_flow_provider.dart';
 import '../../features/payment_links/screens/gift_claim_screen.dart';
 import '../../features/payment_links/screens/gift_passcode_screen.dart';
-import '../../features/payment_links/screens/gift_customise_account_screen.dart';
 
 import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../../features/onboarding/mobile/mobile_customise_account_screen.dart';
@@ -58,30 +57,6 @@ List<RouteBase> mobileOnboardingRoutes() => [
         : null,
     pageBuilder: (_, state) =>
         _mobileOnboardingPage(state, child: const GiftPasscodeScreen()),
-  ),
-  GoRoute(
-    path: '/gift/customise',
-    redirect: (context, _) =>
-        ProviderScope.containerOf(
-              context,
-            ).read(giftClaimFlowProvider)?.walletSetupInProgress ==
-            true
-        ? null
-        : '/gift',
-    pageBuilder: (context, state) {
-      final setup = ProviderScope.containerOf(
-        context,
-      ).read(giftClaimFlowProvider)!;
-      return _mobileOnboardingPage(
-        state,
-        child: GiftCustomiseAccountScreen(
-          args: GiftCustomiseAccountArgs(
-            passcode: setup.setupPasscode,
-            inspection: setup.inspection!,
-          ),
-        ),
-      );
-    },
   ),
   GoRoute(
     path: '/welcome',
@@ -163,7 +138,8 @@ List<RouteBase> mobileOnboardingRoutes() => [
     redirect: (_, state) {
       final args = mobileOnboardingPayload(state.extra);
       return args is CustomiseAccountArgs &&
-              args.flow != SetPasswordFlow.importWalletLink
+              args.flow != SetPasswordFlow.importWalletLink &&
+              args.flow != SetPasswordFlow.create
           ? null
           : '/welcome';
     },

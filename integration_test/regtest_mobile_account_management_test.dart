@@ -64,15 +64,10 @@ void main() {
         tester,
         const ValueKey('mobile_secret_passphrase_primary'),
       );
-      // The second tap advances to account customisation (passcode exists).
+      // The second tap creates the account using the existing passcode.
       await tapAppButton(
         tester,
         const ValueKey('mobile_secret_passphrase_primary'),
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_customise_account_continue'),
-        timeout: const Duration(minutes: 2),
       );
       await waitForHome(tester);
       final addedUuid = await accountUuidAtOrder(1);

@@ -111,11 +111,11 @@ void main() {
 
     await tester.pumpWidget(_app('/onboarding/address-types'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(0.42176870748, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.44489795918, 0.0001));
 
     await tester.pumpWidget(_app('/onboarding/things-to-know'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(0.53741496599, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.58367346939, 0.0001));
   });
 
   testWidgets('the progress bar sits in one place on every step', (

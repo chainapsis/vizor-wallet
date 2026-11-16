@@ -54,7 +54,7 @@ void main() {
 
       await _fundGift(link, confirmations: kPaymentLinkClaimConfirmationTarget);
       await _inspectGift(tester, link);
-      await _createGiftWallet(tester, name: 'Gift recipient');
+      await _createGiftWallet(tester);
 
       final uuid = await accountUuidAtOrder(0);
       final account = _container(
@@ -219,7 +219,7 @@ void main() {
       final link = await _newGift();
       await _fundGift(link, confirmations: 1);
       await _inspectGift(tester, link);
-      await _createGiftWallet(tester, name: 'Waiting recipient');
+      await _createGiftWallet(tester);
       final recipientUuid = await accountUuidAtOrder(0);
       final record = await _waitForRecord(
         tester,
@@ -350,25 +350,12 @@ Future<void> _inspectGift(WidgetTester tester, VizorPaymentLink link) async {
   expect(inspected.link.address, link.address);
 }
 
-Future<void> _createGiftWallet(
-  WidgetTester tester, {
-  required String name,
-}) async {
+Future<void> _createGiftWallet(WidgetTester tester) async {
   await tapAppButton(
     tester,
     const ValueKey('gift_claim_create_a_wallet_to_claim'),
   );
 
-  await enterText(
-    tester,
-    const ValueKey('mobile_customise_account_name_field'),
-    name,
-  );
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_customise_account_continue'),
-    timeout: const Duration(minutes: 2),
-  );
   await enterPasscode(tester, mobileE2ePasscode);
   await enterPasscode(tester, mobileE2ePasscode);
   await tapWidget(

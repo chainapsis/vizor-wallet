@@ -14,9 +14,10 @@ enum SetPasswordFlow {
 }
 
 class CreateSecretPassphraseArgs {
-  const CreateSecretPassphraseArgs({required this.mnemonic});
+  const CreateSecretPassphraseArgs({required this.mnemonic, this.persona});
 
   final String mnemonic;
+  final AccountPersona? persona;
 }
 
 /// Ephemeral wallet-setup draft passed to the account-personalisation step.
@@ -234,6 +235,7 @@ class SetPasswordScreenArgs {
   Object get backRouteExtra => switch (flow) {
     SetPasswordFlow.create => CreateSecretPassphraseArgs(
       mnemonic: requiredMnemonic,
+      persona: persona,
     ),
     SetPasswordFlow.importWallet => ImportBirthdayArgs(
       mnemonic: requiredMnemonic,

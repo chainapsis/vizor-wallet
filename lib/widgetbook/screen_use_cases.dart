@@ -89,7 +89,6 @@ import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import '../src/features/onboarding/create/customise_account_screen.dart';
 import '../src/features/onboarding/create/desktop_gift_education_screen.dart';
-import '../src/features/onboarding/create/onboarding_split_view.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/settings/screens/settings_change_password_screen.dart';
 import '../src/features/settings/screens/settings_endpoint_screen.dart';
@@ -423,7 +422,10 @@ Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
   return _MobilePreviewFrame(
     child: MobileCustomiseAccountScreen(
       args: const CustomiseAccountArgs(
-        setupArgs: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
+        setupArgs: SetPasswordScreenArgs.importWallet(
+          mnemonic: _previewMnemonic,
+          birthdayHeight: 2500000,
+        ),
       ),
       random: Random(1234),
       onFinish: (_, _) async {},
@@ -5277,17 +5279,18 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
   void initState() {
     super.initState();
     _router = GoRouter(
-      initialLocation: OnboardingStep.customiseAccount.routePath,
+      initialLocation: '/import/customise-account',
       routes: [
         GoRoute(
-          path: OnboardingStep.customiseAccount.routePath,
-          builder: (_, _) => OnboardingSplitViewShell(
-            activeStep: OnboardingStep.customiseAccount,
+          path: '/import/customise-account',
+          builder: (_, _) => ImportOnboardingShell(
+            activeStep: ImportOnboardingStep.customiseAccount,
             showPasswordStep: true,
             child: CustomiseAccountScreen(
               args: CustomiseAccountArgs(
-                setupArgs: const SetPasswordScreenArgs.create(
+                setupArgs: const SetPasswordScreenArgs.importWallet(
                   mnemonic: _previewMnemonic,
+                  birthdayHeight: 2500000,
                 ),
               ),
               random: Random(1234),
@@ -5297,15 +5300,14 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
           ),
         ),
         GoRoute(
-          path: OnboardingStep.setPassword.routePath,
+          path: '/import/set-password',
           builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/onboarding/set-password'),
+              const _PreviewRoutePlaceholder(label: '/import/set-password'),
         ),
         GoRoute(
-          path: OnboardingStep.secretPassphrase.routePath,
-          builder: (_, _) => const _PreviewRoutePlaceholder(
-            label: '/onboarding/secret-passphrase',
-          ),
+          path: '/import/birthday',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/import/birthday'),
         ),
       ],
     );

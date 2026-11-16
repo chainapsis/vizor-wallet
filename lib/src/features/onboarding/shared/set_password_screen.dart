@@ -377,7 +377,8 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         _submitPhase != _SetPasswordSubmitPhase.idle ||
             _submission.requiresRecovery
         ? null
-        : standardArgs.persona != null
+        : standardArgs.persona != null &&
+              standardArgs.flow != SetPasswordFlow.create
         ? onboarding_chrome.OnboardingBackTarget.route(
             label: context.l10n.commonCustomiseAccount,
             routePath: desktopImportLocation(
