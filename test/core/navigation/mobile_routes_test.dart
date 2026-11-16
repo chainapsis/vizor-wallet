@@ -411,6 +411,7 @@ void main() {
 
     final accounts = find.byType(MobileAccountsScreen);
     final accountsRect = tester.getRect(accounts);
+    final route = ModalRoute.of(tester.element(accounts))!;
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
@@ -434,6 +435,12 @@ void main() {
     await native.present(interactive: true, phase: 'visible');
     await native.send('select', {'id': '/home'});
     expect(mobileVisiblePath(router), '/settings');
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(route.animation!.value, greaterThan(0));
+    expect(observer.hasDepartingRoutes, true);
+    expect(native.latest['inputEnabled'], false);
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(route.animation!.value, 0);
     await tester.pumpAndSettle();
     await covered;
     expect(native.latest['selectedId'], '/settings');
@@ -566,6 +573,12 @@ void main() {
     expect(native.latest['inputEnabled'], false);
     await native.send('select', {'id': '/settings'});
     expect(mobileVisiblePath(router), '/home');
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(route.animation!.value, greaterThan(0));
+    expect(observer.hasDepartingRoutes, true);
+    expect(native.latest['inputEnabled'], false);
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(route.animation!.value, 0);
     await tester.pumpAndSettle();
     await covered;
     expect(native.latest['inputEnabled'], true);

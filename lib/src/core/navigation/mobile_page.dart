@@ -56,7 +56,7 @@ class MobilePageRoute<T> extends PageRoute<T> {
   MobilePage<T> get _page => settings as MobilePage<T>;
 
   static const _enterDuration = Duration(milliseconds: 320);
-  static const _exitDuration = Duration(milliseconds: 260);
+  static const _exitDuration = Duration(milliseconds: 400);
 
   /// A strong ease-out: the page arrives quickly and settles gently. Its
   /// reverse is used when a pop interrupts that entrance.
