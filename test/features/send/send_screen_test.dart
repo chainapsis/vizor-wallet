@@ -252,6 +252,69 @@ void main() {
     },
   );
 
+  testWidgets('funds that start or stop confirming re-read an amount above the '
+      'spendable balance', (tester) async {
+    await _setDesktopViewport(tester);
+    final source = NotifierProvider<_SpendableWaitSource, SpendableWait?>(
+      _SpendableWaitSource.new,
+    );
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(120000000),
+        spendableWaitSource: source,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.enterText(_editableIn('send_amount_field'), '2');
+    await tester.pumpAndSettle();
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+    );
+    container.read(source.notifier).set(_receivedWaiting);
+    await tester.pumpAndSettle();
+    expect(find.text('Insufficient shielded balance'), findsNothing);
+    expect(find.text('Available in 1–3 min'), findsOneWidget);
+
+    container.read(source.notifier).set(null);
+    await tester.pumpAndSettle();
+    expect(find.text('Available in 1–3 min'), findsNothing);
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+  });
+
+  testWidgets('a wait that changes leaves an amount that already fits alone', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final source = NotifierProvider<_SpendableWaitSource, SpendableWait?>(
+      _SpendableWaitSource.new,
+    );
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(120000000),
+        spendableWaitSource: source,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.enterText(_editableIn('send_amount_field'), '1');
+    await tester.pumpAndSettle();
+    AppButton review() => tester.widget<AppButton>(
+      find.byKey(const ValueKey('send_review_button')),
+    );
+    expect(review().onPressed, isNotNull);
+
+    ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+    ).read(source.notifier).set(_receivedWaiting);
+    // The frame after the change, before any re-quote could finish.
+    await tester.pump();
+    await tester.pump();
+    expect(review().onPressed, isNotNull);
+  });
+
   testWidgets('Use Max keeps its plain tooltip when nothing is waiting', (
     tester,
   ) async {
@@ -1966,6 +2029,7 @@ Widget _sendHarness({
   bool realReview = false,
   PaymentRequestPrecheck? precheck,
   SpendableWait? spendableWait,
+  NotifierProvider<_SpendableWaitSource, SpendableWait?>? spendableWaitSource,
   bool privacyModeEnabled = false,
 }) {
   final router = GoRouter(
@@ -1993,6 +2057,10 @@ Widget _sendHarness({
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       if (spendableWait != null)
         spendableWaitProvider.overrideWith((ref, accountUuid) => spendableWait),
+      if (spendableWaitSource != null)
+        spendableWaitProvider.overrideWith(
+          (ref, accountUuid) => ref.watch(spendableWaitSource),
+        ),
       if (privacyModeEnabled)
         privacyModeProvider.overrideWith(() => _FixedPrivacy(true)),
       if (realReview)
@@ -2106,6 +2174,13 @@ final _receivedWaiting = SpendableWait(
   receivedWaiting: BigInt.from(130000000),
   receivedWait: const AvailableIn.minutes(1, 3),
 );
+
+class _SpendableWaitSource extends Notifier<SpendableWait?> {
+  @override
+  SpendableWait? build() => null;
+
+  void set(SpendableWait? wait) => state = wait;
+}
 
 /// The plain text of the tooltip beside Use Max.
 String _spendableTooltipText(WidgetTester tester) => tester

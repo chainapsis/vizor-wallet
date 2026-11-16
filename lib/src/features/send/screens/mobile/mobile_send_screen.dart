@@ -2264,6 +2264,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
     ref.watch(_mobileSendSpendableStateProvider(accountUuid));
     ref.watch(spendableWaitProvider(accountUuid));
+    // Funds that start or stop confirming change what an amount above the
+    // spendable balance means, without changing that balance.
+    // An amount that already fits is unaffected, and is not re-quoted.
+    ref.listen(spendableWaitProvider(accountUuid), (previous, next) {
+      if (previous == next || _isConfirmingSend || _isMaxMode) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _isConfirmingSend ||
+            _isMaxMode ||
+            _amountError == null ||
+            _step != _SendStep.amount ||
+            _amountText.trim().isEmpty) {
+          return;
+        }
+        unawaited(_validateAmount());
+      });
+    });
     ref.listen(_mobileSendSpendableStateProvider(accountUuid), (
       previous,
       next,

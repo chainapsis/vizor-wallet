@@ -158,7 +158,7 @@ All sync log messages include `[Xs]` elapsed time from sync start (set once in `
 - `onResume`: refreshes balance → `_checkAndSync()` (which starts polling)
 - `onHide`: stops polling where the app does no work in the background (`canRunAppProcessWork`; mobile), so no network is wasted there
 - `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
-- `SyncState.changePendingConfirmation` / `valuePendingSpendability`: the pending balances split by cause (own change, other received value), each summed over every pool. `spendableWaitProvider` turns them into the "Available in …" waits on Send, Activity and receipts, for a balance settled at the tip (`hasSettledSpendableBalance`) or a completed one held through a catch-up. Only shielded pools hold pending change, so the change is all shielded and the rest of the shielded pending balance is received value
+- `SyncState.changePendingConfirmation`: the part of the pending balances that is the wallet's own change. `spendableWaitProvider` turns it, the shielded pending balances and the recent transactions into the "Available in …" waits on Send, Activity and receipts, for a balance settled at the tip (`hasSettledSpendableBalance`) or a completed one held through a catch-up. Only shielded pools hold pending change, and the wallet counts change as pending change only until its second confirmation: for the block after that it is pending value, which the provider still reads as change when no receipt is waiting
 - `hasCachedBalance` permits Home to display the persisted snapshot without setting
   `hasBalanceData`, current pool balances, sync completion, or spendability. An
   accepted live read updates current balances independently of history. Persisted

@@ -55,7 +55,6 @@ void main() {
     chainTipHeight: chainTipHeight ?? _tip,
     spendableBalance: _zec,
     orchardPendingBalance: _zec,
-    valuePendingSpendability: _zec,
     recentTransactions: [_received(minedHeight: _tip)],
   );
 

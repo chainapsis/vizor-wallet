@@ -79,22 +79,18 @@ void main() {
   });
 
   group('resolveSpendableWait', () {
+    // [received] is the pending shielded value that is not pending change.
     SpendableWait? resolve({
       BigInt? change,
       BigInt? received,
-      BigInt? transparentPending,
-      BigInt? shieldedPending,
       List<rust_sync.TransactionInfo> transactions = const [],
       bool catchingUp = false,
     }) {
       final c = change ?? BigInt.zero;
-      final v = received ?? BigInt.zero;
       return resolveSpendableWait(
         availableNow: _zec,
-        shieldedPending: shieldedPending ?? c + v,
-        transparentPending: transparentPending ?? BigInt.zero,
+        shieldedPending: c + (received ?? BigInt.zero),
         changePending: c,
-        valuePending: v,
         tipHeight: _tip,
         spacing: _nu7,
         transactions: transactions,
@@ -173,34 +169,94 @@ void main() {
       expect(
         resolve(
           received: _zec,
-          transactions: [_tx('received', minedHeight: _tip - 6)],
+          transactions: [_tx('received', minedHeight: _tip - 9)],
           catchingUp: true,
         )!.receivedWait,
         isNull,
       );
     });
 
-    test('pending transparent value is left out of the shielded split', () {
-      // The causes are summed over every pool; change is shielded only, so
-      // the transparent share comes out of the received value.
+    test('change on its second confirmation, reported as pending value, '
+        'still reads as change', () {
+      // The wallet stops counting change as pending change one block before
+      // the anchor reaches it; for that block it is pending value.
       final wait = resolve(
-        change: _zec,
-        received: _zec + BigInt.from(5000),
-        shieldedPending: _zec * BigInt.two,
-        transparentPending: BigInt.from(5000),
-        transactions: [
-          _tx('sent', minedHeight: _tip),
-          _tx('received', minedHeight: _tip),
-        ],
+        received: _zec,
+        transactions: [_tx('sent', minedHeight: _tip - 1)],
       )!;
       expect(wait.changeWaiting, _zec);
-      expect(wait.receivedWaiting, _zec);
+      expect(wait.receivedWaiting, BigInt.zero);
+      expect(wait.changeWait, const AvailableIn.underMinute());
       expect(wait.hasWait, isTrue);
     });
 
-    test('a split that does not add up is unknown', () {
+    test('pending value is received funds while a receipt is waiting', () {
+      final wait = resolve(
+        received: _zec * BigInt.two,
+        transactions: [
+          _tx('sent', minedHeight: _tip - 1),
+          _tx('received', minedHeight: _tip),
+        ],
+      )!;
+      expect(wait.changeWaiting, BigInt.zero);
+      expect(wait.receivedWaiting, _zec * BigInt.two);
+      expect(wait.receivedWait, const AvailableIn.minutes(1, 3));
+    });
+
+    test('pending value no payment or receipt explains has no wait', () {
+      final wait = resolve(
+        received: _zec,
+        transactions: [_tx('sent', minedHeight: _tip)],
+      )!;
+      expect(wait.receivedWaiting, _zec);
+      expect(wait.hasWait, isFalse);
+    });
+
+    test('one payment on its second confirmation is found among newer '
+        'ones', () {
+      // The newer payment's change is still pending change; the older one's
+      // has moved to pending value.
+      final wait = resolve(
+        change: _zec,
+        received: _zec,
+        transactions: [
+          _tx('sent'),
+          _tx('sent', minedHeight: _tip - 1),
+        ],
+      )!;
+      expect(wait.changeWaiting, _zec * BigInt.two);
+      expect(wait.receivedWaiting, BigInt.zero);
+      expect(wait.changeWait, const AvailableIn.minutes(1, 2));
+      expect(wait.hasWait, isTrue);
+    });
+
+    test('several blocks landing in one catch-up do not drop the wait', () {
+      final wait = resolve(
+        received: _zec,
+        transactions: [_tx('received', minedHeight: _tip - 7)],
+        catchingUp: true,
+      )!;
+      expect(wait.receivedWait, const AvailableIn.underMinute());
       expect(
-        resolve(received: _zec, shieldedPending: _zec * BigInt.two),
+        resolve(
+          received: _zec,
+          transactions: [_tx('received', minedHeight: _tip - 20)],
+          catchingUp: true,
+        )!.receivedWait,
+        isNull,
+      );
+    });
+
+    test('more pending change than pending shielded value is unknown', () {
+      expect(
+        resolveSpendableWait(
+          availableNow: _zec,
+          shieldedPending: _zec,
+          changePending: _zec * BigInt.two,
+          tipHeight: _tip,
+          spacing: _nu7,
+          transactions: const [],
+        ),
         isNull,
       );
     });

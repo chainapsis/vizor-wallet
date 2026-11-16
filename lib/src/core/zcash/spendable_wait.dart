@@ -78,11 +78,16 @@ int? blocksUntilSpendable({
   return math.max(0, requiredConfirmations - confirmations);
 }
 
+/// Blocks past its last confirmation that an output still counts as waiting
+/// while the wallet catches up: the balance it is pending in was read a few
+/// blocks ago and is about to be read again.
+const _catchUpGraceBlocks = 3;
+
 /// Blocks an output still waits, or null when it explains no wait.
 ///
-/// While the wallet is [catchingUp] with a block it has not scanned, an
-/// output that block just completed still counts, as a wait of no blocks:
-/// its value stays pending until the scan lands, moments later.
+/// While the wallet is [catchingUp], an output the unscanned blocks just
+/// completed still counts, as a wait of no blocks: its value stays pending
+/// until the scan lands, moments later.
 int? _waitingBlocks({
   required int minedHeight,
   required int tipHeight,
@@ -96,9 +101,8 @@ int? _waitingBlocks({
   );
   if (blocks == null) return null;
   if (blocks > 0) return blocks;
-  final justCompleted =
-      catchingUp && tipHeight - minedHeight + 1 == requiredConfirmations;
-  return justCompleted ? 0 : null;
+  final blocksPast = tipHeight - minedHeight + 1 - requiredConfirmations;
+  return catchingUp && blocksPast <= _catchUpGraceBlocks ? 0 : null;
 }
 
 AvailableIn _waitForBlocks(int blocks, int tipHeight, BlockSpacing spacing) =>
@@ -190,16 +194,22 @@ class SpendableWait {
 /// Splits the account's pending shielded balance into change and received
 /// funds, with a wait for each from [transactions].
 ///
-/// The wallet reports the two causes summed over every pool, but only a
-/// shielded pool ever holds pending change: a transparent output is either
-/// spendable or pending value. So [changePending] is all shielded, and the
-/// rest of [shieldedPending] is received. Returns null if the sums disagree.
+/// [changePending] is the wallet's pending change over every pool, with two
+/// quirks this accounts for:
+///
+/// * Only a shielded pool ever holds pending change: a transparent output is
+///   either spendable or pending value. So [changePending] is all shielded.
+/// * Change counts as pending change only until its second confirmation.
+///   For the one block after that, until the anchor reaches it, the wallet
+///   reports it as pending value. So the rest of [shieldedPending] is
+///   received funds, except that with no receipt waiting and a payment on its
+///   second confirmation, it is that payment's change.
+///
+/// Returns null if [changePending] exceeds [shieldedPending].
 SpendableWait? resolveSpendableWait({
   required BigInt availableNow,
   required BigInt shieldedPending,
-  required BigInt transparentPending,
   required BigInt changePending,
-  required BigInt valuePending,
   required int tipHeight,
   required BlockSpacing spacing,
   required List<rust_sync.TransactionInfo> transactions,
@@ -212,43 +222,48 @@ SpendableWait? resolveSpendableWait({
       receivedWaiting: BigInt.zero,
     );
   }
-  if (changePending > shieldedPending ||
-      changePending + valuePending != shieldedPending + transparentPending) {
-    return null;
-  }
+  if (changePending > shieldedPending) return null;
   final receivedPending = shieldedPending - changePending;
-  int? latestBlocks(bool Function(rust_sync.TransactionInfo) matches, int n) {
-    int? latest;
-    for (final transaction in transactions) {
-      if (transaction.expiredUnmined || !matches(transaction)) continue;
-      final blocks = _waitingBlocks(
-        minedHeight: transaction.minedHeight.toInt(),
-        tipHeight: tipHeight,
-        requiredConfirmations: n,
-        catchingUp: catchingUp,
-      );
-      if (blocks == null) continue;
-      latest = math.max(latest ?? 0, blocks);
-    }
-    return latest;
-  }
+  List<int> waitingBlocks(
+    bool Function(rust_sync.TransactionInfo) matches,
+    int requiredConfirmations,
+  ) => [
+    for (final transaction in transactions)
+      if (!transaction.expiredUnmined && matches(transaction))
+        ?_waitingBlocks(
+          minedHeight: transaction.minedHeight.toInt(),
+          tipHeight: tipHeight,
+          requiredConfirmations: requiredConfirmations,
+          catchingUp: catchingUp,
+        ),
+  ];
 
-  final changeBlocks = changePending == BigInt.zero
-      ? null
-      : latestBlocks(_createsChange, kChangeSpendableConfirmations);
-  final receivedBlocks = receivedPending == BigInt.zero
-      ? null
-      : latestBlocks(_isShieldedReceipt, kReceivedSpendableConfirmations);
+  final changeBlocks = waitingBlocks(
+    _createsChange,
+    kChangeSpendableConfirmations,
+  );
+  final receivedBlocks = waitingBlocks(
+    _isShieldedReceipt,
+    kReceivedSpendableConfirmations,
+  );
+  // Any payment on its second confirmation, however many others are newer.
+  final changeInLastBlock = changeBlocks.any((blocks) => blocks <= 1);
+  final restIsChange =
+      receivedPending > BigInt.zero &&
+      receivedBlocks.isEmpty &&
+      changeInLastBlock;
+  final changeWaiting = restIsChange ? shieldedPending : changePending;
+  final receivedWaiting = restIsChange ? BigInt.zero : receivedPending;
   return SpendableWait(
     availableNow: availableNow,
-    changeWaiting: changePending,
-    receivedWaiting: receivedPending,
-    changeWait: changeBlocks == null
+    changeWaiting: changeWaiting,
+    receivedWaiting: receivedWaiting,
+    changeWait: changeWaiting == BigInt.zero || changeBlocks.isEmpty
         ? null
-        : _waitForBlocks(changeBlocks, tipHeight, spacing),
-    receivedWait: receivedBlocks == null
+        : _waitForBlocks(changeBlocks.reduce(math.max), tipHeight, spacing),
+    receivedWait: receivedWaiting == BigInt.zero || receivedBlocks.isEmpty
         ? null
-        : _waitForBlocks(receivedBlocks, tipHeight, spacing),
+        : _waitForBlocks(receivedBlocks.reduce(math.max), tipHeight, spacing),
   );
 }
 

@@ -59,9 +59,7 @@ final spendableWaitProvider = Provider.autoDispose
             sync.saplingPendingBalance +
             sync.orchardPendingBalance +
             sync.ironwoodPendingBalance,
-        transparentPending: sync.transparentPendingBalance,
         changePending: sync.changePendingConfirmation,
-        valuePending: sync.valuePendingSpendability,
         tipHeight: _waitTip(sync),
         spacing: ref.watch(blockSpacingProvider),
         transactions: sync.recentTransactions,

@@ -1210,6 +1210,24 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
       },
     );
+    // Funds that start or stop confirming change what an amount above the
+    // spendable balance means, without changing that balance.
+    ref.listen(spendableWaitProvider(widget.activeAccountUuid), (
+      previous,
+      next,
+    ) {
+      if (previous == next || _isMaxMode) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // An amount that already fits is unaffected, and is not re-quoted.
+        if (!mounted ||
+            _isMaxMode ||
+            _amountError == null ||
+            _amountText.trim().isEmpty) {
+          return;
+        }
+        _validateAmount();
+      });
+    });
 
     final available = _availableBalanceForCurrentAddress;
     final visibleSpendableText = ZecAmount.fromZatoshi(
