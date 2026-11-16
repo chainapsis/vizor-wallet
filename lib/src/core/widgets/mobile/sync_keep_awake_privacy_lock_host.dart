@@ -696,7 +696,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                         enabled: !submitting,
                       ),
                       legacyPadding: EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
+                        horizontal: kMobilePageMargin,
                         vertical: verticalPadding,
                       ),
                       legacySpacing: topGap + AppSpacing.s + sectionGap * 2,
@@ -704,7 +704,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                       legacyKeypadGap: sectionGap,
                       legacy: Padding(
                         padding: EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
+                          horizontal: kMobilePageMargin,
                           vertical: verticalPadding,
                         ),
                         child: Column(

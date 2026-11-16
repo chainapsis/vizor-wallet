@@ -259,12 +259,12 @@ class _MobileChangePasscodeScreenState
                     enabled: !_submitting,
                   ),
                   legacyPadding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
+                    horizontal: kMobilePageMargin,
                     vertical: AppSpacing.md,
                   ),
                   legacy: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
+                      horizontal: kMobilePageMargin,
                       vertical: AppSpacing.md,
                     ),
                     child: Column(

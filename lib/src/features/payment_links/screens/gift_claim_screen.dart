@@ -13,6 +13,8 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../onboarding/shared/onboarding_auth_shell.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../core/layout/mobile/mobile_scroll_edge_fades.dart';
+import '../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -253,15 +255,21 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       return _guardBack(
         Scaffold(
           backgroundColor: context.colors.background.window,
-          body: SafeArea(
-            child: MobileGiftCardEntryView(
-              addingAccount: widget.addingAccount,
-              state: _invalidPaste
-                  ? PaymentLinkRedeemMobileState.invalid
-                  : PaymentLinkRedeemMobileState.paste,
-              onBack: _close,
-              onPaste: _reading ? null : _paste,
-              onScan: _reading ? null : _scan,
+          // This route sits outside the page viewport, so it installs the
+          // page fades itself.
+          body: MobileScrollEdgeFades(
+            color: context.colors.background.window,
+            bottomHeight: AppSpacing.xl,
+            child: SafeArea(
+              child: MobileGiftCardEntryView(
+                addingAccount: widget.addingAccount,
+                state: _invalidPaste
+                    ? PaymentLinkRedeemMobileState.invalid
+                    : PaymentLinkRedeemMobileState.paste,
+                onBack: _close,
+                onPaste: _reading ? null : _paste,
+                onScan: _reading ? null : _scan,
+              ),
             ),
           ),
         ),
@@ -283,88 +291,113 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     return _guardBack(
       Scaffold(
         backgroundColor: context.colors.background.window,
-        body: SafeArea(
-          child: Column(
-            children: [
-              if (waitingForCheck)
-                const SizedBox(height: kMobileTopNavHeight)
-              else
-                MobileTopNav.back(
-                  key: const ValueKey('gift_claim_close_button'),
-                  title: '',
-                  onBack: _close,
-                  backIcon: AppIcons.cross,
-                ),
-              Expanded(
-                child: SingleChildScrollView(
-                  key: const ValueKey('gift_claim_stage_scroll'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: AppSpacing.sm,
+        body: MobileScrollEdgeFades(
+          color: context.colors.background.window,
+          bottomHeight: AppSpacing.xl,
+          child: SafeArea(
+            child: Column(
+              children: [
+                if (waitingForCheck)
+                  const SizedBox(height: kMobileTopNavHeight)
+                else
+                  MobileTopNav.back(
+                    key: const ValueKey('gift_claim_close_button'),
+                    title: '',
+                    onBack: _close,
+                    backIcon: AppIcons.cross,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _GiftClaimStageHeading(
-                        checking: waitingForCheck,
-                        showArrival: canContinue,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: _card(
-                          flow.link,
-                          celebrate: canContinue,
-                          loading:
-                              waitingForCheck &&
-                              !(checkProgress?.hasFunding ?? false),
+                Expanded(
+                  child: SingleChildScrollView(
+                    key: const ValueKey('gift_claim_stage_scroll'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _GiftClaimStageHeading(
+                          checking: waitingForCheck,
+                          showArrival: canContinue,
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      // Keep the scroll extent stable when the progress
-                      // details become the shorter inspection result.
-                      Stack(
-                        alignment: Alignment.topCenter,
-                        children: [
-                          Visibility(
-                            visible: false,
-                            maintainSize: true,
-                            maintainAnimation: true,
-                            maintainState: true,
-                            child: PaymentLinkMobileCheckingDetails(
-                              label: context.l10n.paymentLinkCheckingGiftFull,
-                            ),
+                        const SizedBox(height: AppSpacing.md),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: _card(
+                            flow.link,
+                            celebrate: canContinue,
+                            loading:
+                                waitingForCheck &&
+                                !(checkProgress?.hasFunding ?? false),
                           ),
-                          if (waitingForCheck)
-                            PaymentLinkMobileCheckingDetails(
-                              label:
-                                  checkProgress?.label(context.l10n) ??
-                                  context.l10n.paymentLinkCheckingGiftEllipsis,
-                            )
-                          else
-                            _GiftClaimStatus(
-                              flow: flow,
-                              addingAccount: widget.addingAccount,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        // Keep the scroll extent stable when the progress
+                        // details become the shorter inspection result.
+                        Stack(
+                          alignment: Alignment.topCenter,
+                          children: [
+                            Visibility(
+                              visible: false,
+                              maintainSize: true,
+                              maintainAnimation: true,
+                              maintainState: true,
+                              child: PaymentLinkMobileCheckingDetails(
+                                label: context.l10n.paymentLinkCheckingGiftFull,
+                              ),
                             ),
-                        ],
-                      ),
-                    ],
+                            if (waitingForCheck)
+                              PaymentLinkMobileCheckingDetails(
+                                label:
+                                    checkProgress?.label(context.l10n) ??
+                                    context
+                                        .l10n
+                                        .paymentLinkCheckingGiftEllipsis,
+                              )
+                            else
+                              _GiftClaimStatus(
+                                flow: flow,
+                                addingAccount: widget.addingAccount,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Stack(
-                  children: [
-                    if (!waitingForCheck && !canContinue)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                    kMobileFooterGap,
+                  ),
+                  child: Stack(
+                    children: [
+                      if (!waitingForCheck && !canContinue)
+                        Visibility(
+                          visible: false,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: _GiftClaimActions(
+                            flow: flow,
+                            reserveClaimActions: true,
+                            addingAccount: widget.addingAccount,
+                            onCreate: _createGiftWallet,
+                            onExisting: () =>
+                                _continueToSetup('/onboarding/method'),
+                            onClose: _close,
+                          ),
+                        ),
                       Visibility(
-                        visible: false,
+                        visible: !waitingForCheck,
                         maintainSize: true,
                         maintainAnimation: true,
                         maintainState: true,
                         child: _GiftClaimActions(
                           flow: flow,
-                          reserveClaimActions: true,
+                          reserveClaimActions: waitingForCheck,
                           addingAccount: widget.addingAccount,
                           onCreate: _createGiftWallet,
                           onExisting: () =>
@@ -372,25 +405,11 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                           onClose: _close,
                         ),
                       ),
-                    Visibility(
-                      visible: !waitingForCheck,
-                      maintainSize: true,
-                      maintainAnimation: true,
-                      maintainState: true,
-                      child: _GiftClaimActions(
-                        flow: flow,
-                        reserveClaimActions: waitingForCheck,
-                        addingAccount: widget.addingAccount,
-                        onCreate: _createGiftWallet,
-                        onExisting: () =>
-                            _continueToSetup('/onboarding/method'),
-                        onClose: _close,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -636,22 +655,18 @@ class MobileGiftCardEntryView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: AppSpacing.s),
-        SizedBox(
-          height: 74,
-          child: MobileTopNav.steps(
-            progress: OnboardingProgressPosition.start.value,
-            progressOffset: const Offset(-4.5, 0),
-            progressTrackColor: const Color(0xffb1b3b3),
-            onBack: onBack,
-          ),
+        // The shared steps geometry, as on every onboarding step, so the
+        // progress bar holds still into the steps that follow.
+        MobileTopNav.steps(
+          progress: OnboardingProgressPosition.start.value,
+          onBack: onBack,
         ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(
+              kMobilePageMargin,
               AppSpacing.sm,
-              AppSpacing.sm,
-              AppSpacing.sm,
+              kMobilePageMargin,
               AppSpacing.md,
             ),
             child: Column(

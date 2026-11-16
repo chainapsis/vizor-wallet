@@ -198,7 +198,7 @@ class _MobileSecretPassphraseScreenState
               Text(
                 onboardingSubmitErrorMessage(context.l10n, _error!),
                 textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
+                style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.destructive,
                 ),
               ),

@@ -12,9 +12,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_sticky_bottom_action.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -405,12 +407,13 @@ void main() {
     expect(find.text('Other'), findsOneWidget);
     expect(find.text('Knight'), findsOneWidget);
     expect(find.text('Viking'), findsOneWidget);
+    // An inner page: the small title, not the tab roots' serif.
     final title = tester.widget<Text>(find.text('Accounts'));
-    expect(title.style?.fontSize, AppTypography.headlineLarge.fontSize);
-    expect(title.style?.height, AppTypography.headlineLarge.height);
+    expect(title.style?.fontSize, AppTypography.headlineSmall.fontSize);
+    expect(title.style?.fontFamily, AppTypography.headlineSmall.fontFamily);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_accounts_row_a'))),
-      const Size(456, 44),
+      const Size(448, 60),
     );
     expect(
       tester.getSize(
@@ -424,12 +427,27 @@ void main() {
     final list = tester.widget<ListView>(find.byType(ListView));
     expect(
       list.padding,
+      // Page margins; the bottom lets the last row rest above the pinned
+      // Add account (its height, Android's 12px gap below it, and the
+      // section gap).
       const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
-        AppSpacing.sm,
-        kMobileTabBarHeight + AppSpacing.lg,
+        kMobilePageMargin,
+        AppButtonSizing.largeHeight + AppSpacing.s + AppSpacing.md,
       ),
+    );
+    // Add account is the accent action, pinned over the list rather than
+    // scrolling at its end.
+    final add = find.byKey(const ValueKey('mobile_accounts_add_account'));
+    expect(tester.widget<AppButton>(add).variant, AppButtonVariant.primary);
+    expect(
+      find.descendant(of: find.byType(ListView), matching: add),
+      findsNothing,
+    );
+    expect(
+      find.ancestor(of: add, matching: find.byType(MobileStickyBottomAction)),
+      findsOneWidget,
     );
     final safeArea = tester.widget<SafeArea>(find.byType(SafeArea).first);
     expect(safeArea.bottom, isFalse);
@@ -506,11 +524,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret phrase'), findsOneWidget);
+    expect(find.text('Show secret phrase'), findsOneWidget);
     expect(find.text('Account details'), findsNothing);
     expect(
       find.ancestor(
-        of: find.text('View secret phrase'),
+        of: find.text('Show secret phrase'),
         matching: find.byType(FittedBox),
       ),
       findsNothing,
@@ -561,13 +579,13 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
         await tester.pumpAndSettle();
 
-        expect(find.text('View secret phrase'), findsNothing);
+        expect(find.text('Show secret phrase'), findsNothing);
         expect(
           find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
           findsNothing,
         );
         expect(find.text('Account details'), findsNothing);
-        expect(find.text('View viewing key'), findsOneWidget);
+        expect(find.text('Show viewing key'), findsOneWidget);
       },
     );
   }
@@ -1321,9 +1339,7 @@ void main() {
     });
   }
 
-  testWidgets('row menu stays above the floating tab bar clearance', (
-    tester,
-  ) async {
+  testWidgets('row menu stays clear of the bottom edge', (tester) async {
     tester.view
       ..physicalSize = const Size(393, 852)
       ..devicePixelRatio = 1.0;
@@ -1354,10 +1370,8 @@ void main() {
     final menuRect = tester.getRect(
       find.byKey(const ValueKey('mobile_account_menu_card')),
     );
-    expect(
-      menuRect.bottom,
-      lessThanOrEqualTo(852 - (kMobileTabBarHeight + AppSpacing.lg)),
-    );
+    // Accounts covers the tab bar, so only the bottom inset is kept clear.
+    expect(menuRect.bottom, lessThanOrEqualTo(852 - AppSpacing.lg));
   });
 
   testWidgets('row menu barrier dismisses before the floating tab bar', (
@@ -1697,15 +1711,16 @@ void main() {
       findsNothing,
       reason: 'Another account needing backup does not affect this removal.',
     );
+    // The shared mobile sheet title and body tokens.
     final title = tester.widget<Text>(find.text('Remove account'));
-    expect(title.style?.fontSize, 16);
-    expect(title.style?.height, 24 / 16);
+    expect(title.style?.fontSize, AppTypography.bodyLarge.fontSize);
+    expect(title.style?.height, AppTypography.bodyLarge.height);
     expect(title.style?.fontWeight, FontWeight.w600);
     final body = tester.widget<Text>(
       find.textContaining('deletes its local data'),
     );
-    expect(body.style?.fontSize, 14);
-    expect(body.style?.height, 21 / 14);
+    expect(body.style?.fontSize, AppTypography.bodyMedium.fontSize);
+    expect(body.style?.height, AppTypography.bodyMedium.height);
     expect(body.style?.fontWeight, FontWeight.w400);
     // Buttons use the mobile label token, not the desktop 14px one.
     for (final label in ['Remove', 'Cancel']) {

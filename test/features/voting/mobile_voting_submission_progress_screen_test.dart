@@ -208,7 +208,7 @@ void main() {
     final proofNoticeRect = tester.getRect(
       find.byKey(const ValueKey('mobile_voting_submission_proof_notice')),
     );
-    expect(proofNoticeRect.size, const Size(277, 75));
+    expect(proofNoticeRect.size, const Size(269, 75));
     expect(proofNoticeRect.bottom, lessThanOrEqualTo(contentRect.bottom));
     final topGap =
         tester
@@ -247,7 +247,7 @@ void main() {
       const ValueKey('mobile_voting_submission_progress_content'),
     );
     final contentRect = tester.getRect(content);
-    expect(contentRect.size, const Size(361, 701));
+    expect(contentRect.size, const Size(353, 701));
     expect(find.byType(RawScrollbar), findsNothing);
     final scrollable = tester.state<ScrollableState>(find.byType(Scrollable));
     expect(scrollable.position.maxScrollExtent, 0);

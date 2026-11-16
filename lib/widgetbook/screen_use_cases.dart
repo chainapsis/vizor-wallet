@@ -127,6 +127,7 @@ const _previewMnemonic =
 const _previewLongWordMnemonic =
     'business question physical security language purchase abstract accident '
     'distance elephant hospital umbrella';
+
 final _previewImportWordList = _previewMnemonic.split(' ');
 
 bool _previewMnemonicValidator(String mnemonic) => mnemonic.isNotEmpty;
@@ -652,6 +653,7 @@ Widget buildMobileSettingsViewingKeyRevealUseCase(
       account: _accountsDesignState.activeAccount!,
       initialType: type,
       initialFormat: format,
+      balanceText: '143.1212 ZEC', // l10n-ignore: preview amount
     ),
   );
 }
@@ -1384,6 +1386,19 @@ Widget _buildMobileBackupUseCase(
           pending ? _setupPreviewState : _accountsDesignState,
         ),
       ),
+      // The account header's balance under the name.
+      syncProvider.overrideWith(() {
+        final uuid = (pending ? _setupPreviewState : _accountsDesignState)
+            .activeAccountUuid;
+        return _PreviewSyncNotifier(
+          uuid,
+          initialState: SyncState(
+            accountUuid: uuid,
+            hasAccountScopedData: true,
+            displayTotalBalance: BigInt.from(14312120000),
+          ),
+        );
+      }),
       appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(

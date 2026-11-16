@@ -55,6 +55,7 @@ import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_book_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
+import '../widgetbook/wallet_pir_server_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
 import 'gift_card_artwork_capture.dart';
@@ -1132,7 +1133,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-onboarding-intro',
-    description: 'Mobile Introduction: The Shielded World',
+    description: 'Mobile Introduction: About Zcash',
     builder: buildMobileOnboardingIntroCapture,
     desktop: false,
     mobile: true,
@@ -2955,6 +2956,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-voting-source',
+    description: 'Mobile voting Source sheet under Vote config',
+    builder: buildMobileVotingSourceUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-custom-source',
+    description: 'Mobile voting custom source sheet editing a saved source',
+    builder: buildMobileVotingCustomSourceUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-voted',
     description: 'Mobile completed vote detail with shares still submitting',
     builder: buildMobileVotingVotedUseCase,
@@ -3973,6 +3988,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-wallet-pir-server-sheet',
+    description: 'Mobile private query server sheet with two servers',
+    builder: buildWalletPirServerMobileSheetUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-options-sheet',
+    description: 'Mobile Home Receive sheet: receive, request, redeem',
+    builder: buildReceiveMobileOptionsSheetUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-transparent',
     description: 'Mobile receive screen on the transparent pool',
     builder: buildReceiveMobileTransparentUseCase,
@@ -3997,37 +4026,37 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-compose-no-price',
-    description: 'Mobile request sheet step one with no live price',
+    description: 'Mobile request page step one with no live price',
     builder: buildRequestMobileComposePriceUnavailableUseCase,
     desktop: false,
     mobile: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-compose',
-    description: 'Mobile request sheet step one with an amount and a message',
+    description: 'Mobile request page step one with an amount and a message',
     builder: buildRequestMobileComposeMessageUseCase,
     desktop: false,
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-receive-request-compose-expanded-message',
-    description: 'Mobile request sheet with a two-line memo editor',
-    builder: buildRequestMobileComposeExpandedMessageUseCase,
+    id: 'mobile-receive-request-message-sheet',
+    description: 'Mobile request page with the message sheet open',
+    builder: buildRequestMobileMessageSheetUseCase,
     desktop: false,
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-receive-request-compose-expanded-message-keyboard',
+    id: 'mobile-receive-request-message-sheet-keyboard',
     description:
-        'Mobile two-line memo editor with Gboard-sized keyboard insets',
-    builder: buildRequestMobileComposeExpandedMessageKeyboardUseCase,
+        'Mobile request message sheet with Gboard-sized keyboard insets',
+    builder: buildRequestMobileMessageSheetKeyboardUseCase,
     desktop: false,
     mobile: true,
     platform: TargetPlatform.android,
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-compose-error',
-    description: 'Mobile request sheet step one with an invalid amount',
+    description: 'Mobile request page step one with an invalid amount',
     builder: buildRequestMobileComposeAmountErrorUseCase,
     desktop: false,
     mobile: true,
@@ -4066,7 +4095,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-result',
-    description: 'Mobile request sheet step two with the shielded request QR',
+    description: 'Mobile request page step two with the shielded request QR',
     builder: buildRequestMobileResultShieldedUseCase,
     desktop: false,
     mobile: true,

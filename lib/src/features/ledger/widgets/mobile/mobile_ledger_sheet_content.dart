@@ -233,7 +233,7 @@ class MobileLedgerStatus extends StatelessWidget {
     final labelWidget = Text(
       label,
       textAlign: TextAlign.center,
-      style: AppTypography.bodySmall.copyWith(
+      style: AppTypography.bodyMedium.copyWith(
         color: context.colors.text.accent,
       ),
     );

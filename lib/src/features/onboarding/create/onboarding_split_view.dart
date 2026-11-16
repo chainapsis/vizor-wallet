@@ -73,7 +73,7 @@ extension OnboardingStepX on OnboardingStep {
 
   String get iconName => switch (this) {
     OnboardingStep.intro => AppIcons.zcash,
-    OnboardingStep.addressTypes => AppIcons.shieldKeyholeOutline,
+    OnboardingStep.addressTypes => AppIcons.shieldKeyhole,
     OnboardingStep.thingsToKnow => AppIcons.crystalBall,
     OnboardingStep.secretPassphrase => AppIcons.key,
     OnboardingStep.setPassword => AppIcons.lock,

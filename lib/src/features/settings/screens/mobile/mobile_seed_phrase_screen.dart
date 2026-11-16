@@ -17,6 +17,7 @@ import '../../../../core/navigation/external_action_guard_provider.dart';
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/platform/screenshot_observer.dart';
 import '../../../../core/privacy/sensitive_privacy_overlay.dart';
@@ -28,6 +29,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/biometric_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../core/widgets/mobile/mobile_account_header.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
@@ -542,16 +544,21 @@ class _MobileSeedPhraseScreenState
         Expanded(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sm,
+              kMobilePageMargin,
               AppSpacing.s,
-              AppSpacing.sm,
+              kMobilePageMargin,
               AppSpacing.sm,
             ),
             children: const [SecretPassphraseRevealWarningCard()],
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(AppSpacing.sm),
+          padding: const EdgeInsets.fromLTRB(
+            kMobilePageMargin,
+            AppSpacing.sm,
+            kMobilePageMargin,
+            kMobileFooterGap,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -765,9 +772,9 @@ class _MobileSeedPhraseScreenState
         (account.setupPending || _markingBackedUp);
     final content = SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.lg,
       ),
       child: Column(
@@ -783,6 +790,25 @@ class _MobileSeedPhraseScreenState
               ),
             )
           else ...[
+            // Whose phrase it is, as on the viewing key page. Optional: a
+            // design proposal, not a requirement. Naming the account (and
+            // its funds) above the words tells the user this is that
+            // wallet's master key and to treat the screen with care. Drop
+            // this block, and the SizedBox after it, to remove it.
+            if (account != null) ...[
+              MobileAccountHeader(
+                account: account,
+                balanceText: mobileAccountHeaderBalance(
+                  ref,
+                  account,
+                  activeAccountUuid: ref
+                      .watch(accountProvider)
+                      .value
+                      ?.activeAccountUuid,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.base),
+            ],
             MobileSurfaceCard(
               cornerRadius: AppRadii.xLarge,
               padding: EdgeInsets.zero,
@@ -888,10 +914,10 @@ class _MobileSeedPhraseScreenState
         if (showBackupAction)
           Padding(
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sm,
+              kMobilePageMargin,
               AppSpacing.s,
-              AppSpacing.sm,
-              AppSpacing.sm,
+              kMobilePageMargin,
+              kMobileFooterGap,
             ),
             child: AppButton(
               key: const ValueKey('mobile_seed_backed_up'),
@@ -989,7 +1015,7 @@ class _CopyChip extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: AppTypography.labelMedium.copyWith(
+                  style: AppTypography.labelLarge.copyWith(
                     color: colors.text.inverse,
                   ),
                 ),
@@ -1068,7 +1094,7 @@ class _MobileBip39PassphraseRow extends StatelessWidget {
     final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.5;
     final label = Text(
       context.l10n.bip39PassphraseTitle,
-      style: AppTypography.labelMedium.copyWith(color: colors.text.accent),
+      style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
     );
     final valueAndCopy = Row(
       children: [
@@ -1079,9 +1105,7 @@ class _MobileBip39PassphraseRow extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.end,
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.text.accent,
-            ),
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
           ),
         ),
         Semantics(
@@ -1143,7 +1167,7 @@ class _BirthdayRow extends StatelessWidget {
     final colors = context.colors;
     final labelText = Text(
       label,
-      style: AppTypography.labelMedium.copyWith(
+      style: AppTypography.labelLarge.copyWith(
         fontWeight: FontWeight.w500,
         color: colors.text.accent,
       ),
@@ -1151,7 +1175,7 @@ class _BirthdayRow extends StatelessWidget {
     final valueText = Text(
       value,
       textAlign: TextAlign.end,
-      style: AppTypography.labelMedium.copyWith(
+      style: AppTypography.labelLarge.copyWith(
         fontWeight: FontWeight.w400,
         color: colors.text.accent,
       ),
@@ -1285,7 +1309,6 @@ class _MobileSeedScreenshotWarningSheetState
       onClose: _dismiss,
       showTitle: false,
       showClose: false,
-      bottomPadding: AppSpacing.base,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

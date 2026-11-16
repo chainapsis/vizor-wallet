@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/layout/mobile/mobile_bottom_safe_area.dart';
+import '../src/core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../src/core/layout/mobile/mobile_top_nav.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
@@ -463,13 +464,13 @@ class _MobilePayReviewPreview extends StatelessWidget {
               ),
             ),
             MobileBottomSafeArea(
-              bottomPadding: AppSpacing.md,
+              bottomPadding: kMobileFooterGap,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.sm,
                   AppSpacing.s,
                   AppSpacing.sm,
-                  AppSpacing.md,
+                  kMobileFooterGap,
                 ),
                 child: MobilePayReviewActions(
                   expired: expired,

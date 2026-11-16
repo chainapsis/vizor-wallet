@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -33,6 +32,7 @@ import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import '../../features/pay/models/pay_recent_recipients.dart';
 import '../../features/payment_links/providers/payment_link_cards_provider.dart';
 import '../../features/payment_links/screens/payment_links_screen.dart';
+import '../../features/receive/screens/mobile/mobile_receive_request_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
@@ -66,6 +66,8 @@ import '../../features/voting/screens/mobile/mobile_voting_screens.dart';
 import '../config/swap_feature_config.dart';
 import '../l10n/l10n.dart';
 import '../layout/mobile/app_mobile_shell.dart';
+import '../layout/mobile/covered_route_keyboard_hold.dart';
+import '../privacy/flip_to_hide_balance_host.dart';
 import '../layout/mobile/mobile_adaptive_frame.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
 import '../layout/mobile/mobile_navigation_scope.dart';
@@ -73,12 +75,13 @@ import '../layout/mobile/mobile_page_viewport.dart';
 import 'mobile_destinations.dart';
 import 'route_owned_redirect.dart';
 import 'payload_page_key.dart';
+import 'mobile_page.dart';
 import 'mobile_shield_page.dart';
 
 /// The mobile route tree: the shared entry/onboarding routes, a
 /// stateful tab shell (home / swap / activity / settings), and
-/// full-screen flows pushed over the shell as [CupertinoPage]s so iOS
-/// edge-swipe back works.
+/// full-screen flows pushed over the shell as [MobilePage]s, which fade and
+/// zoom in and keep the iOS edge-swipe back.
 ///
 /// Route paths intentionally match the desktop tree so the shared
 /// redirect guard, deep links, and `bootstrap.initialLocation` work
@@ -93,7 +96,18 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       observers: [RouteOwnedNavigationObserver()],
       pageBuilder: (context, state, child) => NoTransitionPage(
         key: state.pageKey,
-        child: MobileAdaptiveFrame(router: GoRouter.of(context), child: child),
+        // Flip to hide works on every wallet page. Mounted in this root
+        // route, its toast shows in the root overlay, above pages and sheets.
+        child: FlipToHideBalanceHost(
+          // Root sheets cover the whole shell; it holds still while their
+          // keyboard moves.
+          child: CoveredRouteKeyboardHold(
+            child: MobileAdaptiveFrame(
+              router: GoRouter.of(context),
+              child: child,
+            ),
+          ),
+        ),
       ),
       routes: _walletRoutes(),
     ),
@@ -127,16 +141,6 @@ List<RouteBase> _walletRoutes() {
                 // routes below) so the bottom tab bar is hidden while
                 // they're open; nothing extra nests inside a branch.
               ),
-              // The Accounts screen lives in the home branch (its
-              // Figma frame keeps the tab bar) under its own path.
-              if (tab.path == '/home')
-                GoRoute(
-                  path: '/accounts',
-                  pageBuilder: (context, state) => _mobilePage(
-                    key: state.pageKey,
-                    child: const MobileAccountsScreen(),
-                  ),
-                ),
             ],
           ),
       ],
@@ -169,6 +173,13 @@ List<RouteBase> _walletRoutes() {
           showBackupIntro: true,
         ),
       ),
+    ),
+    // Accounts is a detail screen too: it covers the tab bar like the
+    // settings screens.
+    GoRoute(
+      path: '/accounts',
+      pageBuilder: (context, state) =>
+          _mobilePage(key: state.pageKey, child: const MobileAccountsScreen()),
     ),
     GoRoute(
       path: '/accounts/confirm-removal',
@@ -284,6 +295,7 @@ List<RouteBase> _walletRoutes() {
         key: state.pageKey,
         child: PaymentLinksScreen(
           initialReceivedCardAddress: state.uri.queryParameters['received'],
+          startOnRedeem: state.uri.queryParameters['redeem'] == '1',
           initialCards: state.extra is PaymentLinkCardsSnapshot
               ? state.extra! as PaymentLinkCardsSnapshot
               : null,
@@ -570,6 +582,16 @@ List<RouteBase> _walletRoutes() {
         child: const MobileReceiveScreen(),
       ),
     ),
+    // Opened with the address it requests to, snapshotted by the caller.
+    // Without one there is nothing to request to, so it falls back to Receive.
+    GoRoute(
+      path: kReceiveRequestPath,
+      redirect: (context, state) => state.extra is String ? null : '/receive',
+      pageBuilder: (context, state) => _mobilePage(
+        key: state.pageKey,
+        child: MobileReceiveRequestScreen(address: state.extra! as String),
+      ),
+    ),
     GoRoute(
       path: '/migration',
       pageBuilder: (context, state) => _mobilePage(
@@ -765,12 +787,12 @@ String? _mobileDonationRedirect(BuildContext context) =>
     ? null
     : '/settings';
 
-CupertinoPage<dynamic> _mobilePage({
+MobilePage<dynamic> _mobilePage({
   required LocalKey key,
   required Widget child,
   bool constrainContent = true,
   double? maxContentWidth,
-}) => CupertinoPage(
+}) => MobilePage(
   key: key,
   child: MobilePageViewport(
     constrainContent: constrainContent,

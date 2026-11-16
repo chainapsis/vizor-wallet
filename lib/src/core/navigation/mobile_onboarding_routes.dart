@@ -1,5 +1,4 @@
-import 'package:flutter/cupertino.dart'
-    show BuildContext, CupertinoPage, Widget;
+import 'package:flutter/widgets.dart' show BuildContext, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,18 +20,20 @@ import '../../features/onboarding/mobile/mobile_ledger_birthday_screen.dart';
 import '../../features/onboarding/mobile/mobile_ledger_connect_screen.dart';
 import '../../features/onboarding/mobile/mobile_method_selection_screen.dart';
 import '../../features/onboarding/mobile/mobile_hardware_selection_screen.dart';
-import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
+import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
 import '../../features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 import '../../features/onboarding/mobile/mobile_wallet_link_screens.dart';
 import '../../features/onboarding/ledger/ledger_setup_args.dart';
 import '../../features/onboarding/shared/onboarding_flow_args.dart';
+import 'mobile_page.dart';
 
-/// Mobile onboarding tree: single-pane screens pushed as
-/// [CupertinoPage]s (edge-swipe back) under the same route paths as the
-/// desktop onboarding, so the shared auth guard and
-/// `bootstrap.initialLocation` keep working unchanged.
+/// Mobile onboarding tree: single-pane screens pushed as [MobilePage]s
+/// (instant, edge-swipe back) under the same route paths as the desktop
+/// onboarding, so the shared auth guard and `bootstrap.initialLocation` keep
+/// working unchanged. Steps switch at once, without the fade and zoom, so a
+/// flow reads as one screen moving through its steps.
 ///
 /// Mobile-only additions: `/onboarding/set-passcode` (the passcode is
 /// the wallet password on mobile) and `/onboarding/biometrics`.
@@ -318,13 +319,14 @@ Future<String?> _mobileLedgerRedirect(BuildContext context) async {
   return security.requiresUnlock ? '/unlock' : null;
 }
 
-CupertinoPage<void> _mobileOnboardingPage(
+MobilePage<void> _mobileOnboardingPage(
   GoRouterState state, {
   required Widget child,
 }) {
   final extra = state.extra;
-  return CupertinoPage<void>(
+  return MobilePage<void>(
     key: state.pageKey,
+    animated: false,
     child: MobileOnboardingProgressFrame(
       setupMode: extra is MobileOnboardingRouteArgs ? extra.setupMode : null,
       child: child,

@@ -289,7 +289,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('mobile_customise_account_card')),
       ),
-      const Size(361, 123),
+      const Size(353, 123),
     );
     expect(
       tester.getSize(
@@ -342,7 +342,7 @@ void main() {
           tester.getTopLeft(
             find.byKey(const ValueKey('mobile_customise_account_card')),
           ),
-      const Offset(325, 8),
+      const Offset(317, 8),
     );
 
     await tester.binding.setSurfaceSize(const Size(430, 932));

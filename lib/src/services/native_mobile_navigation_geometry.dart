@@ -25,6 +25,26 @@ class MobileNavigationGeometry {
   final List<Rect> divisions;
   final Rect? barRect;
 
+  @override
+  bool operator ==(Object other) =>
+      other is MobileNavigationGeometry &&
+      other.edge == edge &&
+      other.viewSize == viewSize &&
+      other.safeRect == safeRect &&
+      listEquals(other.occlusions, occlusions) &&
+      listEquals(other.divisions, divisions) &&
+      other.barRect == barRect;
+
+  @override
+  int get hashCode => Object.hash(
+    edge,
+    viewSize,
+    safeRect,
+    Object.hashAll(occlusions),
+    Object.hashAll(divisions),
+    barRect,
+  );
+
   static MobileNavigationGeometry? fromNative(Object? value) {
     if (value is! Map) return null;
     final bounds = _rect(value['bounds']);

@@ -229,7 +229,7 @@ class _MobileSwapAddressEditModalState
                       key: const ValueKey('swap_destination_format_error'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.destructive,
                       ),
                     ),

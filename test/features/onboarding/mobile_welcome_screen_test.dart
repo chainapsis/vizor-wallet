@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
 import 'dart:ui' show SemanticsAction, Tristate;
 
 import 'package:flutter/material.dart';
@@ -46,6 +47,10 @@ Widget _app({
     routes: [
       ...mobileOnboardingRoutes(),
       GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+      GoRoute(
+        path: '/accounts',
+        builder: (_, _) => const Text('accounts-route'),
+      ),
     ],
   );
   return ProviderScope(
@@ -440,6 +445,25 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
     expect(find.text('home-route'), findsOneWidget);
+  });
+
+  testWidgets('add-account Welcome goes back to the screen that opened it', (
+    tester,
+  ) async {
+    // Settings → Accounts pushes Add account; Back returns to Accounts
+    // instead of jumping to the Home tab.
+    await pump(tester, location: '/accounts');
+    unawaited(
+      GoRouter.of(
+        tester.element(find.text('accounts-route')),
+      ).push('/add-account'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Activate gift card'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('accounts-route'), findsOneWidget);
+    expect(find.text('home-route'), findsNothing);
   });
 
   testWidgets('reduced motion uses the poster at the Figma video slot', (

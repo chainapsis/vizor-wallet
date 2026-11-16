@@ -1,4 +1,5 @@
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/layout/mobile/mobile_scroll_edge_fades.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
@@ -95,142 +96,147 @@ class _MobileVotingSubmittedScreenState
         },
         child: Scaffold(
           backgroundColor: colors.background.window,
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              const Positioned.fill(
-                child: Image(
-                  image: mobileTransactionProgressBackgroundImage,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  excludeFromSemantics: true,
+          // The page fades paint the window color, which would band across the
+          // engraving behind the content; the content scrolls without them.
+          body: MobileScrollEdgeFades.off(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const Positioned.fill(
+                  child: Image(
+                    image: mobileTransactionProgressBackgroundImage,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    excludeFromSemantics: true,
+                  ),
                 ),
-              ),
-              SafeArea(
-                child: Column(
-                  children: [
-                    const SizedBox(height: kMobileTopNavHeight),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          const minimumContentHeight = 540.0;
-                          final paddedViewportHeight =
-                              constraints.maxHeight - AppSpacing.s * 2;
-                          final contentHeight =
-                              paddedViewportHeight < minimumContentHeight
-                              ? minimumContentHeight
-                              : paddedViewportHeight;
-                          return VotingPaneScrollbar(
-                            scrollbarKey: const ValueKey(
-                              'mobile_voting_submitted_scrollbar',
-                            ),
-                            builder: (context, controller) => SingleChildScrollView(
-                              controller: controller,
-                              primary: false,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.sm,
-                                  vertical: AppSpacing.s,
-                                ),
-                                child: SizedBox(
-                                  height: contentHeight,
-                                  child: Stack(
-                                    key: const ValueKey(
-                                      'mobile_voting_submitted_content',
-                                    ),
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Positioned(
-                                        top: 163,
-                                        left: 0,
-                                        right: 0,
-                                        child: Center(
-                                          child: MobileTransactionProgressBadge(
-                                            phase:
-                                                MobileTransactionProgressPhase
-                                                    .succeeded,
-                                            successIconKey: ValueKey(
-                                              'mobile_voting_submitted_success_icon',
-                                            ),
-                                            successRippleKey: ValueKey(
-                                              'mobile_voting_submitted_success_ripple',
-                                            ),
-                                            terminalAnimationEnabled:
-                                                _celebrationStarted,
-                                          ),
-                                        ),
+                SafeArea(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: kMobileTopNavHeight),
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            const minimumContentHeight = 540.0;
+                            final paddedViewportHeight =
+                                constraints.maxHeight - AppSpacing.s * 2;
+                            final contentHeight =
+                                paddedViewportHeight < minimumContentHeight
+                                ? minimumContentHeight
+                                : paddedViewportHeight;
+                            return VotingPaneScrollbar(
+                              scrollbarKey: const ValueKey(
+                                'mobile_voting_submitted_scrollbar',
+                              ),
+                              builder: (context, controller) => SingleChildScrollView(
+                                controller: controller,
+                                primary: false,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: kMobilePageMargin,
+                                    vertical: AppSpacing.s,
+                                  ),
+                                  child: SizedBox(
+                                    height: contentHeight,
+                                    child: Stack(
+                                      key: const ValueKey(
+                                        'mobile_voting_submitted_content',
                                       ),
-                                      Positioned(
-                                        top: 293,
-                                        left: 0,
-                                        right: 0,
-                                        child: Text(
-                                          context.l10n.votingStatusVoted,
-                                          key: const ValueKey(
-                                            'mobile_voting_submitted_title',
-                                          ),
-                                          textAlign: TextAlign.center,
-                                          style: AppTypography.displayLarge
-                                              .copyWith(
-                                                color: colors.text.accent,
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Positioned(
+                                          top: 163,
+                                          left: 0,
+                                          right: 0,
+                                          child: Center(
+                                            child: MobileTransactionProgressBadge(
+                                              phase:
+                                                  MobileTransactionProgressPhase
+                                                      .succeeded,
+                                              successIconKey: ValueKey(
+                                                'mobile_voting_submitted_success_icon',
                                               ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        top: 350,
-                                        left: 0,
-                                        right: 0,
-                                        child: Center(
-                                          child: SizedBox(
-                                            width: 259,
-                                            child: Text(
-                                              context
-                                                  .l10n
-                                                  .votingMobileSubmittedBody,
-                                              textAlign: TextAlign.center,
-                                              style: AppTypography
-                                                  .bodyMediumStrong
-                                                  .copyWith(
-                                                    color: colors.text.primary,
-                                                  ),
+                                              successRippleKey: ValueKey(
+                                                'mobile_voting_submitted_success_ripple',
+                                              ),
+                                              terminalAnimationEnabled:
+                                                  _celebrationStarted,
                                             ),
                                           ),
                                         ),
-                                      ),
-                                      Positioned(
-                                        top: 466,
-                                        left: 0,
-                                        right: 0,
-                                        child: Center(
-                                          child: SizedBox(
-                                            width: 232,
-                                            child: AppButton(
-                                              key: const ValueKey(
-                                                'mobile_voting_submitted_home_button',
-                                              ),
-                                              onPressed: _finish,
-                                              expand: true,
-                                              constrainContent: true,
+                                        Positioned(
+                                          top: 293,
+                                          left: 0,
+                                          right: 0,
+                                          child: Text(
+                                            context.l10n.votingStatusVoted,
+                                            key: const ValueKey(
+                                              'mobile_voting_submitted_title',
+                                            ),
+                                            textAlign: TextAlign.center,
+                                            style: AppTypography.displayLarge
+                                                .copyWith(
+                                                  color: colors.text.accent,
+                                                ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: 350,
+                                          left: 0,
+                                          right: 0,
+                                          child: Center(
+                                            child: SizedBox(
+                                              width: 259,
                                               child: Text(
-                                                context.l10n.commonGoHome,
+                                                context
+                                                    .l10n
+                                                    .votingMobileSubmittedBody,
+                                                textAlign: TextAlign.center,
+                                                style: AppTypography
+                                                    .bodyMediumStrong
+                                                    .copyWith(
+                                                      color:
+                                                          colors.text.primary,
+                                                    ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                        Positioned(
+                                          top: 466,
+                                          left: 0,
+                                          right: 0,
+                                          child: Center(
+                                            child: SizedBox(
+                                              width: 232,
+                                              child: AppButton(
+                                                key: const ValueKey(
+                                                  'mobile_voting_submitted_home_button',
+                                                ),
+                                                onPressed: _finish,
+                                                expand: true,
+                                                constrainContent: true,
+                                                child: Text(
+                                                  context.l10n.commonGoHome,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

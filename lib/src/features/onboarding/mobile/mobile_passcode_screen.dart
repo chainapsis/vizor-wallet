@@ -348,7 +348,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                     enabled: !isSubmitting,
                   ),
                   legacyPadding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
+                    horizontal: kMobilePageMargin,
                     vertical: AppSpacing.md,
                   ),
                   subtitleMaxWidth: 320,
@@ -356,7 +356,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
 
                   legacy: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
+                      horizontal: kMobilePageMargin,
                       vertical: AppSpacing.md,
                     ),
                     child: Column(

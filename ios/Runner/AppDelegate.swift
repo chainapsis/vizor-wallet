@@ -1,6 +1,7 @@
 import AVFoundation
 import BackgroundTasks
 import CoreHaptics
+import CoreMotion
 import Flutter
 import UIKit
 
@@ -694,6 +695,14 @@ import UIKit
       binaryMessenger: messenger
     )
     devicePowerChannel.setStreamHandler(DevicePowerStreamHandler())
+
+    // EventChannel for which way the screen faces: flip to hide hides
+    // amounts when the phone is turned screen-down.
+    let screenFacingChannel = FlutterEventChannel(
+      name: "com.zcash.wallet/screen_facing",
+      binaryMessenger: messenger
+    )
+    screenFacingChannel.setStreamHandler(ScreenFacingStreamHandler())
 
     let incomingUriChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/payment_uri",
@@ -1409,6 +1418,44 @@ class DevicePowerStreamHandler: NSObject, FlutterStreamHandler {
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
     observers.forEach { NotificationCenter.default.removeObserver($0) }
     observers = []
+    return nil
+  }
+}
+
+/// Streams how far the screen faces the floor, about 20 times a second:
+/// gravity along the screen's normal, -1 with the screen straight up and 1
+/// straight down. Dart turns a quick flip screen-down into hiding amounts
+/// (flip to hide). The sensor runs only while Dart listens, which it does
+/// only while the app is visible and unlocked. Needs no permission prompt.
+/// Lives in this file so it doesn't need a project.pbxproj entry.
+class ScreenFacingStreamHandler: NSObject, FlutterStreamHandler {
+  private let motion = CMMotionManager()
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    let interval = 1.0 / 20.0
+    if motion.isDeviceMotionAvailable {
+      // Device motion separates gravity from the hand's own movement.
+      motion.deviceMotionUpdateInterval = interval
+      motion.startDeviceMotionUpdates(to: .main) { data, _ in
+        guard let gravity = data?.gravity else { return }
+        events(max(-1.0, min(1.0, gravity.z)))
+      }
+    } else if motion.isAccelerometerAvailable {
+      motion.accelerometerUpdateInterval = interval
+      motion.startAccelerometerUpdates(to: .main) { data, _ in
+        guard let acceleration = data?.acceleration else { return }
+        events(max(-1.0, min(1.0, acceleration.z)))
+      }
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    motion.stopDeviceMotionUpdates()
+    motion.stopAccelerometerUpdates()
     return nil
   }
 }

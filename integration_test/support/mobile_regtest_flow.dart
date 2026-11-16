@@ -691,9 +691,22 @@ Future<void> switchAccountTo(WidgetTester tester, String accountUuid) async {
   await waitForHome(tester);
 }
 
+/// Home → Receive sheet → "Receive ZEC" → receive screen.
+Future<void> openReceiveScreen(WidgetTester tester) async {
+  await tapWidget(tester, const ValueKey('mobile_home_receive'));
+  // The option tap can land while the sheet is still rising.
+  await tapUntilVisible(
+    tester,
+    trigger: find.byKey(const ValueKey('receive_options_receive')),
+    outcome: find.byKey(const ValueKey('mobile_receive_copy')),
+    description: 'receive screen',
+    timeout: const Duration(minutes: 1),
+  );
+}
+
 /// Home → receive screen → copy → back. Returns the copied address.
 Future<String> copyShieldedAddress(WidgetTester tester) async {
-  await tapWidget(tester, const ValueKey('mobile_home_receive'));
+  await openReceiveScreen(tester);
   await tapWidget(
     tester,
     const ValueKey('mobile_receive_copy'),

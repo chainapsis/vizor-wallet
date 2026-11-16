@@ -5,6 +5,8 @@ import 'package:flutter/material.dart'
     show BoxDecoration, MaterialApp, Scaffold, TextField;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_amount_card.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_sticky_bottom_action.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -16,6 +18,7 @@ import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_amount_s
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 
 import '../../support/leading_decimal_input.dart';
 
@@ -137,7 +140,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(
         tester.getSize(find.byKey(const ValueKey('mobile_pay_amount_card'))),
-        const Size(361, 240),
+        const Size(353, 240),
       );
       expect(
         tester
@@ -145,10 +148,23 @@ void main() {
             .top,
         16,
       );
-      final card = tester.widget<Container>(
-        find.byKey(const ValueKey('mobile_pay_amount_card')),
+      final card = tester.widget<DecoratedBox>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('mobile_pay_amount_card')),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
       );
-      expect((card.decoration! as BoxDecoration).boxShadow, isNull);
+      // The card shares the soft lift of the mobile surfaces.
+      expect(
+        (card.decoration as BoxDecoration).boxShadow,
+        mobileSurfaceShadows(AppThemeData.light.colors),
+      );
+      expect(
+        (card.decoration as BoxDecoration).borderRadius,
+        BorderRadius.circular(MobileAmountCard.cornerRadius),
+      );
       expect(find.text('Paying in'), findsOneWidget);
       expect(find.text('USDC'), findsNWidgets(2));
       expect(find.text('Ethereum'), findsOneWidget);
@@ -183,7 +199,8 @@ void main() {
         tester
             .getRect(find.byKey(const ValueKey('mobile_pay_amount_actions')))
             .bottom,
-        closeTo(675, 0.01),
+        // The shared page footer gap above the bottom edge.
+        closeTo(699 - kMobileFooterGap, 0.01),
       );
 
       await tester.tap(find.byKey(const ValueKey('mobile_pay_asset_selector')));
@@ -431,7 +448,7 @@ void main() {
         tester.getSize(
           find.byKey(const ValueKey('mobile_pay_recipient_field')),
         ),
-        const Size(361, 60),
+        const Size(353, 60),
       );
       expect(find.text('Ethereum address'), findsOneWidget);
       expect(
@@ -576,7 +593,8 @@ void main() {
         tester
             .getRect(find.byKey(const ValueKey('mobile_pay_recipient_actions')))
             .bottom,
-        closeTo(675, 0.01),
+        // The shared page footer gap above the bottom edge.
+        closeTo(699 - kMobileFooterGap, 0.01),
       );
 
       await tester.tap(

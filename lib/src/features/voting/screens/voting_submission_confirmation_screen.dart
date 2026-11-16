@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -534,9 +535,9 @@ class _ConfirmationScaffold extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: EdgeInsets.fromLTRB(
-                  showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+                  showDesktopToolbar ? AppSpacing.md : kMobilePageMargin,
                   0,
-                  showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+                  showDesktopToolbar ? AppSpacing.md : kMobilePageMargin,
                   AppSpacing.md,
                 ),
                 child: Center(

@@ -210,6 +210,8 @@ Widget _app({
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       accountProvider.overrideWith(accountNotifier ?? _FakeAccountNotifier.new),
+      // The account header reads the balance from sync.
+      syncProvider.overrideWith(FakeSyncNotifier.new),
       appSecurityProvider.overrideWith(
         securityNotifier ?? _FakeSecurityNotifier.new,
       ),
@@ -255,10 +257,10 @@ Widget _routerApp(
       ),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
-      if (incomingUris != null) ...[
-        syncProvider.overrideWith(FakeSyncNotifier.new),
+      // The account header reads the balance from sync.
+      syncProvider.overrideWith(FakeSyncNotifier.new),
+      if (incomingUris != null)
         incomingUriServiceProvider.overrideWithValue(incomingUris),
-      ],
     ],
     child: MaterialApp.router(
       localizationsDelegates: appLocalizationsDelegates,

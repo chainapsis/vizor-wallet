@@ -1159,6 +1159,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildReceiveMobileTransparentSheetUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Home options sheet',
+                      builder: buildReceiveMobileOptionsSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Entry - Request ZEC button',
                       builder: buildRequestMobileEntryUseCase,
                     ),

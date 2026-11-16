@@ -198,7 +198,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('mobile_home_zcash_education')));
     await _advance(tester);
-    expect(find.text('The Shielded World'), findsOneWidget);
+    expect(find.text('About Zcash'), findsOneWidget);
     expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
     await tester.tap(find.byKey(const ValueKey('mobile_intro_skip')));
     await _advance(tester);

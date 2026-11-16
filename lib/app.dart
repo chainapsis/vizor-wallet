@@ -33,6 +33,7 @@ import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/navigation/windows_update_prompt_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
+import 'src/core/motion/platform_reduce_motion_scope.dart';
 import 'src/core/security/background_auto_lock_host.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
@@ -1965,12 +1966,18 @@ class ZcashWalletApp extends ConsumerWidget {
         final localized = NativeLanguageSync(
           child: LocaleTypography(child: app),
         );
-        return kAppFormFactor == AppFormFactor.mobile
-            ? MobileWindowPolicyScope(
-                policy: MobileWindowPolicy.resolve(MediaQuery.of(context)),
-                child: localized,
-              )
-            : localized;
+        return PlatformReduceMotionScope(
+          child: kAppFormFactor == AppFormFactor.mobile
+              // Only this scope reads MediaQuery. Read in this builder, every
+              // host above would rebuild on each frame of a keyboard animation.
+              ? Builder(
+                  builder: (context) => MobileWindowPolicyScope(
+                    policy: MobileWindowPolicy.resolve(MediaQuery.of(context)),
+                    child: localized,
+                  ),
+                )
+              : localized,
+        );
       },
     );
   }

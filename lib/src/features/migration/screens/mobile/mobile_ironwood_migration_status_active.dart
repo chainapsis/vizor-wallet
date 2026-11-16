@@ -133,7 +133,7 @@ class _MobileMigrationPartRow extends StatelessWidget {
         : _mobileMigrationPercentage(value, totalZatoshi);
     final availableWidth = math.max(
       0.0,
-      MediaQuery.sizeOf(context).width - (AppSpacing.sm * 2),
+      MediaQuery.sizeOf(context).width - (kMobilePageMargin * 2),
     );
     final flexibleColumnScale = math.min(
       1.0,

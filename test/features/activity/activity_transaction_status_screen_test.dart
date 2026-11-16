@@ -188,7 +188,7 @@ void main() {
     final card = find.byType(GiftCardActivityDetailView);
     expect(
       tester.widget<GiftCardActivityDetailView>(card).amountText,
-      '******',
+      '••••••',
     );
     expect(
       find.descendant(of: card, matching: find.text('ZEC')),

@@ -66,6 +66,7 @@ class AppBootstrapState {
     this.biometricUnlockEnabled = false,
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
+    this.flipToHideBalanceEnabled = true,
     this.enhancePirEnabled = false,
     this.failureKind,
     this.failureMessage,
@@ -85,6 +86,10 @@ class AppBootstrapState {
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
+
+  /// Whether turning the phone screen-down hides amounts (mobile). On unless
+  /// turned off in Settings.
+  final bool flipToHideBalanceEnabled;
 
   /// The saved private queries setting, or `null` when it could not be read.
   /// An unreadable setting is private for this launch, but unconfirmed: see
@@ -306,6 +311,11 @@ Future<AppBootstrapState> loadAppBootstrap({
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag', // l10n-ignore: log label
     );
+    final flipToHideBalanceDisabled = await _readPlainBool(
+      storage,
+      key: kFlipToHideBalanceDisabledKey,
+      label: 'flip to hide disabled flag', // l10n-ignore: log label
+    );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
     var isPasswordConfigured = await storage.isPasswordConfigured();
     var isUnlocked = storage.hasSessionPassword;
@@ -507,6 +517,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       biometricUnlockEnabled: biometricUnlockEnabled,
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
+      flipToHideBalanceEnabled: !flipToHideBalanceDisabled,
       enhancePirEnabled: enhancePirEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,

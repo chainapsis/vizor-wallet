@@ -19,6 +19,8 @@ import 'mobile_network_settings_sheet.dart';
 import 'mobile_onboarding_progress_scope.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../core/layout/mobile/mobile_window_policy.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -120,7 +122,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
     final showLanguage =
         !widget.showBackButton &&
         ref.watch(availableAppLanguagesProvider).length > 1;
-    final bottom = math.max(50.0, MediaQuery.paddingOf(context).bottom + 16);
+    final bottom = MediaQuery.paddingOf(context).bottom + kMobileFooterGap;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -220,7 +222,12 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                     bottom: false,
                     child: LayoutBuilder(
                       builder: (context, available) => SingleChildScrollView(
-                        padding: EdgeInsets.fromLTRB(16, 24, 16, bottom),
+                        padding: EdgeInsets.fromLTRB(
+                          kMobilePageMargin,
+                          24,
+                          kMobilePageMargin,
+                          bottom,
+                        ),
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
                             minHeight: math.max(
@@ -239,7 +246,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                 if (!widget.showBackButton)
                   Positioned(
                     top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
-                    right: (landscape ? insets.right : 0) + AppSpacing.sm,
+                    right: (landscape ? insets.right : 0) + kMobilePageMargin,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -294,7 +301,12 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                         variant: AppButtonVariant.ghost,
                         focusRingColor: WelcomeButtonTokens.focusRing,
                         enabledLabelColor: const Color(0xffffffff),
-                        onPressed: () => context.go('/home'),
+                        // Back to whatever opened Add account (Accounts,
+                        // or the tab under the accounts sheet); home when
+                        // it was reached without history.
+                        onPressed: () => context.canPop()
+                            ? context.pop()
+                            : context.go('/home'),
                         child: const AppIcon(
                           AppIcons.chevronBackward,
                           size: 24,

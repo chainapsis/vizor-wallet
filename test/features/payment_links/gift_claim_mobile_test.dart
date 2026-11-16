@@ -432,6 +432,18 @@ void main() {
     expect(find.text('Gift found'), findsOneWidget);
   });
 
+  testWidgets('the Gift screen fades its cut scroll edge like every page', (
+    tester,
+  ) async {
+    // Short enough that the Gift screen scrolls.
+    await pumpWelcome(tester, size: const Size(393, 520));
+    await tester.tap(keyed('mobile_welcome_redeem_card'));
+    await tester.pumpAndSettle();
+
+    expect(location(tester), '/gift');
+    expect(keyed('mobile_scroll_edge_fade_bottom'), findsOneWidget);
+  });
+
   testWidgets('the initial Gift screen stays below the top safe area', (
     tester,
   ) async {

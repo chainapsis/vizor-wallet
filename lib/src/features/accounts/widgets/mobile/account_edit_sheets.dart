@@ -140,129 +140,116 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Stack(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.base,
-            AppSpacing.sm,
-            AppSpacing.base,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Semantics(
-                  button: true,
-                  label: context.l10n.profilePictureChange,
-                  excludeSemantics: true,
-                  child: GestureDetector(
-                    key: const ValueKey('mobile_account_edit_avatar'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _pickPicture,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        AppProfilePicture(
-                          key: const ValueKey(
-                            'mobile_account_edit_avatar_image',
-                          ),
-                          profilePictureId: _profilePictureId,
-                          size: AppProfilePictureSize.xxLarge,
-                        ),
-                        Positioned(
-                          right: -4,
-                          bottom: -4,
-                          child: _AvatarEditBadge(
-                            ringColor: colors.background.base,
-                            fillColor: colors.background.inverse,
-                            iconColor: colors.text.inverse,
-                          ),
-                        ),
-                      ],
+    // The shared sheet template; the heading sits under the avatar.
+    return MobileModalScaffold(
+      title: context.l10n.accountsEdit,
+      showTitle: false,
+      onClose: () => Navigator.of(context).pop(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Semantics(
+              button: true,
+              label: context.l10n.profilePictureChange,
+              excludeSemantics: true,
+              child: GestureDetector(
+                key: const ValueKey('mobile_account_edit_avatar'),
+                behavior: HitTestBehavior.opaque,
+                onTap: _pickPicture,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AppProfilePicture(
+                      key: const ValueKey('mobile_account_edit_avatar_image'),
+                      profilePictureId: _profilePictureId,
+                      size: AppProfilePictureSize.xxLarge,
                     ),
-                  ),
+                    Positioned(
+                      right: -4,
+                      bottom: -4,
+                      child: _AvatarEditBadge(
+                        ringColor: colors.background.base,
+                        fillColor: colors.background.inverse,
+                        iconColor: colors.text.inverse,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                context.l10n.accountNameLabel,
-                style: AppTypography.labelLarge.copyWith(
-                  fontWeight: FontWeight.w400,
-                  color: colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              MobileTextField(
-                fieldKey: const ValueKey('mobile_account_edit_name'),
-                controller: _nameController,
-                focusNode: _nameFocusNode,
-                textInputAction: TextInputAction.done,
-                onChanged: (_) {
-                  if (_error != null) setState(() => _error = null);
-                },
-                onSubmitted: (_) => _save(),
-                trailing: Padding(
-                  padding: const EdgeInsets.only(right: AppSpacing.xs),
-                  child: Semantics(
-                    label: context.l10n.accountsClearName,
-                    button: true,
-                    child: GestureDetector(
-                      key: const ValueKey('mobile_account_edit_name_clear'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _clearName,
-                      child: SizedBox(
-                        width: 32,
-                        height: AppInputSizing.height,
-                        child: Center(
-                          child: AppIcon(
-                            AppIcons.cross,
-                            size: 20,
-                            color: colors.icon.muted,
-                          ),
-                        ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            context.l10n.accountNameLabel,
+            style: AppTypography.labelLarge.copyWith(
+              fontWeight: FontWeight.w400,
+              color: colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          MobileTextField(
+            fieldKey: const ValueKey('mobile_account_edit_name'),
+            controller: _nameController,
+            focusNode: _nameFocusNode,
+            textInputAction: TextInputAction.done,
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+            onSubmitted: (_) => _save(),
+            trailing: Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xs),
+              child: Semantics(
+                label: context.l10n.accountsClearName,
+                button: true,
+                child: GestureDetector(
+                  key: const ValueKey('mobile_account_edit_name_clear'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _clearName,
+                  child: SizedBox(
+                    width: 32,
+                    height: AppInputSizing.height,
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.cross,
+                        size: 20,
+                        color: colors.icon.muted,
                       ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.xs),
-              SizedBox(
-                height: 16,
-                child: _error == null
-                    ? null
-                    : Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          _error!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.text.destructive,
-                          ),
-                        ),
-                      ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppButton(
-                key: const ValueKey('mobile_account_edit_save'),
-                expand: true,
-                onPressed: _save,
-                child: Text(context.l10n.accountsSaveEdits),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
-            ],
+            ),
           ),
-        ),
-        Positioned(
-          top: AppSpacing.sm,
-          right: AppSpacing.sm,
-          child: MobileSheetClose(onTap: () => Navigator.of(context).pop()),
-        ),
-      ],
+          const SizedBox(height: AppSpacing.xs),
+          SizedBox(
+            height: 16,
+            child: _error == null
+                ? null
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _error!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.destructive,
+                      ),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_account_edit_save'),
+            expand: true,
+            onPressed: _save,
+            child: Text(context.l10n.accountsSaveEdits),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+        ],
+      ),
     );
   }
 }
@@ -282,64 +269,53 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Stack(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.base,
-            AppSpacing.sm,
-            AppSpacing.base,
-          ),
-          child: Column(
+    // The shared sheet template; the heading sits under the avatar.
+    return MobileModalScaffold(
+      title: context.l10n.profilePictureSelect,
+      showTitle: false,
+      onClose: () => Navigator.of(context).pop(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppProfilePicture(
-                    key: const ValueKey('mobile_account_pfp_current_image'),
-                    profilePictureId: _selected,
-                    size: AppProfilePictureSize.xxLarge,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    context.l10n.profilePictureSelect,
-                    style: AppTypography.bodyLarge.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ],
+              AppProfilePicture(
+                key: const ValueKey('mobile_account_pfp_current_image'),
+                profilePictureId: _selected,
+                size: AppProfilePictureSize.xxLarge,
               ),
-              const SizedBox(height: AppSpacing.md),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-                child: _ProfilePictureGrid(
-                  selected: _selected,
-                  onSelected: (id) => setState(() => _selected = id),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                context.l10n.profilePictureSelect,
+                style: AppTypography.bodyLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colors.text.accent,
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
-              AppButton(
-                key: const ValueKey('mobile_account_pfp_update'),
-                expand: true,
-                constrainContent: true,
-                onPressed: () => Navigator.of(context).pop(_selected),
-                child: Text(context.l10n.accountsUpdatePicture),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
             ],
           ),
-        ),
-        Positioned(
-          top: AppSpacing.sm,
-          right: AppSpacing.sm,
-          child: MobileSheetClose(onTap: () => Navigator.of(context).pop()),
-        ),
-      ],
+          const SizedBox(height: AppSpacing.md),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+            child: _ProfilePictureGrid(
+              selected: _selected,
+              onSelected: (id) => setState(() => _selected = id),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_account_pfp_update'),
+            expand: true,
+            constrainContent: true,
+            onPressed: () => Navigator.of(context).pop(_selected),
+            child: Text(context.l10n.accountsUpdatePicture),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+        ],
+      ),
     );
   }
 }
@@ -497,37 +473,6 @@ class _AvatarEditGlyph extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(2.4287, 2, 2, 2.4276),
         child: AppIcon(AppIcons.editFilled, size: 11.572, color: color),
-      ),
-    );
-  }
-}
-
-/// Circled X dismiss control in a sheet's top-right corner.
-class MobileSheetClose extends StatelessWidget {
-  const MobileSheetClose({required this.onTap, super.key});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      label: context.l10n.commonClose,
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: colors.background.raised,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: AppIcon(AppIcons.cross, size: 20, color: colors.icon.accent),
-          ),
-        ),
       ),
     );
   }
