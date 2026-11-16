@@ -227,6 +227,11 @@ Preserve their dimensions and decoded pixels, and update app, Widgetbook, and
 test references to `.webp`. For illustrations, use
 `scripts/convert-illustrations-to-webp.py` (`--apply` writes verified conversions).
 
+iOS native tab icons intentionally duplicate the Flutter SVGs in Xcode's asset
+catalog. Before changing tab icons or their loading path, read
+[docs/ios-native-tab-bar.md](docs/ios-native-tab-bar.md#icon-assets-and-synchronization)
+and refresh/check both copies with `scripts/sync-ios-native-tab-icons.py`.
+
 ## Editing Figma
 
 When the user explicitly asks you to modify a Figma file or design, read

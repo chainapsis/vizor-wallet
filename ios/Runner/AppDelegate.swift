@@ -8,6 +8,7 @@ import UIKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mobileNavigationGeometryHandler: MobileNavigationGeometryHandler?
   private var keyboardToolbarHandler: KeyboardToolbarHandler?
+  private var nativeTabBarPlugin: NativeTabBarPlugin?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
 
@@ -55,6 +56,9 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let messenger = engineBridge.applicationRegistrar.messenger()
+    if let tabBarRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "VizorNativeTabBar") {
+      nativeTabBarPlugin = NativeTabBarPlugin(registrar: tabBarRegistrar)
+    }
     let navigationRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "VizorMobileNavigation")
     mobileNavigationGeometryHandler = MobileNavigationGeometryHandler(
       messenger: messenger,

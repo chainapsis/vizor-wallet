@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -176,6 +177,7 @@ import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/incoming_uri_service.dart';
 import 'src/providers/payment_request_flow_provider.dart';
+import 'src/core/layout/mobile/ios_native_tab_bar_root.dart';
 
 /// Prints an app log line. Identifier-shaped values are masked in every build
 /// mode; see [redactLogText] for what that does and does not catch.
@@ -1860,6 +1862,41 @@ Widget _onboardingFadeTransition(
   );
 }
 
+class _WalletNativeTabBarRootHost extends ConsumerWidget {
+  const _WalletNativeTabBarRootHost({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (kAppFormFactor != AppFormFactor.mobile ||
+        kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return child;
+    }
+    final security = ref.watch(appSecurityProvider);
+    final privacyLocked = ref.watch(syncKeepAwakePrivacyLockVisibleProvider);
+    final account = ref.watch(accountProvider).value;
+    final payment = ref.watch(paymentRequestFlowProvider) != null;
+    return IosNativeTabBarRootHost(
+      hideImmediately:
+          security.requiresUnlock ||
+          privacyLocked ||
+          (account?.accounts.isEmpty ?? true),
+      covered: payment,
+      sessionIdentity: account?.activeAccountUuid,
+      canInteract: () =>
+          !ref.read(appSecurityProvider).requiresUnlock &&
+          !ref.read(syncKeepAwakePrivacyLockVisibleProvider) &&
+          (ref.read(accountProvider).value?.accounts.isNotEmpty ?? false) &&
+          ref.read(paymentRequestFlowProvider) == null &&
+          !ref
+              .read(externalActionGuardProvider)
+              .blocks(ExternalAction.navigation),
+      child: child,
+    );
+  }
+}
+
 class ZcashWalletApp extends ConsumerWidget {
   const ZcashWalletApp({super.key});
 
@@ -1931,15 +1968,17 @@ class ZcashWalletApp extends ConsumerWidget {
                                     // and the keep-awake hosts above it. The
                                     // link intake that feeds it lives further
                                     // up, in `_IncomingLinkHost`.
-                                    child: PaymentRequestHost(
-                                      router: router,
-                                      child: LedgerOperationRecoveryHost(
-                                        child: MobileKeyboardToolbar(
-                                          child: BackgroundAutoLockHost(
-                                            router: router,
-                                            child: AppReviewHost(
+                                    child: _WalletNativeTabBarRootHost(
+                                      child: PaymentRequestHost(
+                                        router: router,
+                                        child: LedgerOperationRecoveryHost(
+                                          child: MobileKeyboardToolbar(
+                                            child: BackgroundAutoLockHost(
                                               router: router,
-                                              child: child!,
+                                              child: AppReviewHost(
+                                                router: router,
+                                                child: child!,
+                                              ),
                                             ),
                                           ),
                                         ),
