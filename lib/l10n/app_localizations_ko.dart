@@ -7969,6 +7969,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get paymentLinkQrCouldNotBeGenerated => 'QR 코‍드‍를 만‍들‍지 못‍했‍어‍요';
 
   @override
+  String get paymentLinkQrExpandSemantic =>
+      '기‍프‍트 카‍드 QR 코‍드‍를 전‍체 화‍면‍으‍로 보‍기';
+
+  @override
   String get paymentLinkQrSaveFailed => '기‍프‍트 카‍드 QR‍을 저‍장‍하‍지 못‍했‍어‍요.';
 
   @override

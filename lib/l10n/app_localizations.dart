@@ -13293,6 +13293,12 @@ abstract class AppLocalizations {
   /// **'QR code could not be generated'**
   String get paymentLinkQrCouldNotBeGenerated;
 
+  /// Accessibility label of the QR code in the mobile Gift Card sharing sheet; tapping it opens the full-screen QR viewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Show gift card QR code full screen'**
+  String get paymentLinkQrExpandSemantic;
+
   /// Toast shown when saving the Gift Card QR image failed.
   ///
   /// In en, this message translates to:

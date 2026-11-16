@@ -177,6 +177,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   PaymentLinkRecoveryRecord? _shareQrRecord;
   String? _shareQrData;
   bool _preparingShareQr = false;
+  ModalRoute<void>? _mobileShareSheetRoute;
   PaymentLinkFundingQuote? _maxFundingQuote;
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
@@ -293,6 +294,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
 
   @override
   void dispose() {
+    final shareSheet = _mobileShareSheetRoute;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (shareSheet != null && shareSheet.isActive) {
+        shareSheet.navigator?.removeRoute(shareSheet);
+      }
+    });
     _claimCoordinator.preparationChanges.removeListener(
       _schedulePreparationResume,
     );
@@ -3748,6 +3755,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       unawaited(
         showAppMobileSheet<void>(
           context: context,
+          onRouteCreated: (route) => _mobileShareSheetRoute = route,
           builder: (sheetContext) => PaymentLinkShareSheet(
             artwork: PaymentLinkCardArtwork.fromProtocolId(
               record.link.presentation?.artworkId,
@@ -3763,7 +3771,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
             onCopyLink: () => _copyPaymentLink(record.link),
             onClose: () => Navigator.of(sheetContext).pop(),
           ),
-        ),
+        ).whenComplete(() => _mobileShareSheetRoute = null),
       );
       return;
     }

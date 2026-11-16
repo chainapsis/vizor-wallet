@@ -10327,6 +10327,10 @@
   "@paymentLinkQrCouldNotBeGenerated": {
     "description": "Message shown in place of the Gift Card QR image when it could not be drawn."
   },
+  "paymentLinkQrExpandSemantic": "Show gift card QR code full screen",
+  "@paymentLinkQrExpandSemantic": {
+    "description": "Accessibility label of the QR code in the mobile Gift Card sharing sheet; tapping it opens the full-screen QR viewer."
+  },
   "paymentLinkQrSaveFailed": "Gift card QR could not be saved.",
   "@paymentLinkQrSaveFailed": {
     "description": "Toast shown when saving the Gift Card QR image failed."
