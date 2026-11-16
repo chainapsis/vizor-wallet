@@ -69,12 +69,12 @@ use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::{future::Future, time::Duration};
 use zakura_pir_client::enhance::transport::{self, BoundedBody};
-use zcash_client_backend::tor::{http::Retry, Error as TorError, ErrorKind, HasKind};
+use zcash_client_backend::tor::{http::Retry, Error as TorError};
 
 use super::super::{lwd::DirectRouteConnector, SyncError};
+use crate::network_privacy::{tor_stream_open_recovery, TOR_STREAM_OPEN_RECOVERY_RETRIES};
 
 pub(super) const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const TOR_STREAM_OPEN_RECOVERY_RETRIES: u8 = 1;
 type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnector>, Full<Bytes>>;
 
 #[derive(Debug)]
@@ -247,28 +247,15 @@ async fn tor_response(
     .map_err(|error| SyncError::net(format!("private-service Tor request failed: {error}")))
 }
 
-/// In the SDK HTTP path, top-level Tor errors come from opening the stream,
-/// before TLS or HTTP. Recover only DNS failures or Arti's
-/// [`ErrorKind::RemoteNetworkTimeout`]. HTTP errors, including the ambiguous
-/// connect deadline, stay excluded.
-/// The enclosing cancellation and deadline still cover both attempts. A fresh
-/// isolation context does not guarantee a different exit relay.
+/// [`tor_stream_open_recovery`], declined once the sync is stopping.
 fn stream_open_recovery(
     result: Result<StatusCode, &TorError>,
     should_exit: &impl Fn() -> bool,
 ) -> Option<Retry> {
-    if should_exit() || !crate::network_privacy::is_tor_desired() {
+    if should_exit() {
         return None;
     }
-    match result {
-        Err(error)
-            if error.is_tor_name_resolution_failure()
-                || matches!(error, TorError::Tor(error) if error.kind() == ErrorKind::RemoteNetworkTimeout) =>
-        {
-            Some(Retry::Isolated)
-        }
-        _ => None,
-    }
+    tor_stream_open_recovery(result)
 }
 
 /// Keep the deadline outside both phases; error bodies are never consumed.
