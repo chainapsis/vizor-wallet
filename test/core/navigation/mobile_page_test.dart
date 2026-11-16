@@ -124,21 +124,97 @@ void main() {
     expect(translucent(tester, second), isFalse);
 
     await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'button Back slides opaque at full size and restores the previous '
+    'page in step over 260ms',
+    (tester) async {
+      await pumpStack(tester);
+      final screen = tester.getRect(first);
+      stack.currentState!.push();
+      await tester.pumpAndSettle();
+      final route = ModalRoute.of(tester.element(second))!;
+
+      tester.state<NavigatorState>(find.byType(Navigator).last).pop();
+      await tester.pump();
+      expect(tester.getRect(second), screen);
+      var previousShift = 0.0;
+      for (final milliseconds in [40, 90, 120]) {
+        await tester.pump(Duration(milliseconds: milliseconds));
+        final outgoing = tester.getRect(second);
+        final shift = (outgoing.left - screen.left) / screen.width;
+        expect(shift, greaterThan(previousShift));
+        expect(shift, lessThan(1));
+        expect(outgoing.width, closeTo(screen.width, .000001));
+        expect(outgoing.height, closeTo(screen.height, .000001));
+        expect(translucent(tester, second), false);
+        expect(
+          tester.getRect(first).width / screen.width,
+          closeTo(1 + .03 * (1 - shift), .000001),
+        );
+        expect(
+          tester.getRect(first).center,
+          offsetMoreOrLessEquals(screen.center),
+        );
+        previousShift = shift;
+      }
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(route.animation!.value, 0);
+      await tester.pumpAndSettle();
+      expect(second, findsNothing);
+      expect(tester.getRect(first), screen);
+    },
+  );
+
+  testWidgets('button Back mirrors the slide in RTL', (tester) async {
+    await pumpStack(tester, textDirection: TextDirection.rtl);
+    final screen = tester.getRect(first);
+    stack.currentState!.push();
+    await tester.pumpAndSettle();
     tester.state<NavigatorState>(find.byType(Navigator).last).pop();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 130));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.getRect(second).left, lessThan(screen.left));
+    expect(tester.getRect(second).size, screen.size);
+    expect(translucent(tester, second), false);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(first), screen);
+  });
 
-    // A pop fades out first and draws nothing for the rest.
+  testWidgets('Back during entry reverses without a geometry or opacity jump', (
+    tester,
+  ) async {
+    await pumpStack(tester);
+    final screen = tester.getRect(first);
+    stack.currentState!.push();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    final outgoing = tester.getRect(second);
+    final covered = tester.getRect(first);
+    final opacity = tester
+        .widget<Opacity>(
+          find.ancestor(of: second, matching: find.byType(Opacity)).first,
+        )
+        .opacity;
+    tester.state<NavigatorState>(find.byType(Navigator).last).pop();
+    await tester.pump();
+    expect(tester.getRect(second), outgoing);
+    expect(tester.getRect(first), covered);
     expect(
       tester
-          .widgetList<Opacity>(
-            find.ancestor(of: second, matching: find.byType(Opacity)),
+          .widget<Opacity>(
+            find.ancestor(of: second, matching: find.byType(Opacity)).first,
           )
-          .map((opacity) => opacity.opacity),
-      contains(0),
+          .opacity,
+      opacity,
     );
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.getRect(second).center, screen.center);
+    expect(tester.getRect(second).width, lessThan(outgoing.width));
     await tester.pumpAndSettle();
     expect(second, findsNothing);
+    expect(tester.getRect(first), screen);
   });
 
   testWidgets('reduced motion keeps only the fade', (tester) async {
@@ -152,6 +228,16 @@ void main() {
     expect(tester.getRect(second), screen);
     expect(tester.getRect(first), screen);
     expect(translucent(tester, second), isTrue);
+
+    await tester.pumpAndSettle();
+    tester.state<NavigatorState>(find.byType(Navigator).last).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(tester.getRect(second), screen);
+    expect(tester.getRect(first), screen);
+    expect(translucent(tester, second), true);
+    await tester.pumpAndSettle();
+    expect(second, findsNothing);
   });
 
   testWidgets('a swipe from the leading edge follows the finger and pops', (
@@ -171,6 +257,11 @@ void main() {
     expect(tester.getRect(second).left, greaterThan(screen.left));
     expect(tester.getRect(second).size, screen.size);
     expect(translucent(tester, second), isFalse);
+    final shift = (tester.getRect(second).left - screen.left) / screen.width;
+    expect(
+      tester.getRect(first).width / screen.width,
+      closeTo(1 + .03 * (1 - shift), .000001),
+    );
     await drag.up();
     await tester.pumpAndSettle();
     expect(tester.getRect(second), screen);
@@ -184,6 +275,32 @@ void main() {
     expect(second, findsNothing);
     expect(tester.getRect(first), screen);
   });
+
+  testWidgets(
+    'button Back after a cancelled swipe still slides without fading',
+    (tester) async {
+      await pumpStack(tester);
+      stack.currentState!.push();
+      await tester.pumpAndSettle();
+      final screen = tester.getRect(second);
+      final drag = await tester.startGesture(Offset(screen.left + 2, 200));
+      await drag.moveBy(Offset(screen.width * .25, 0));
+      await tester.pump(const Duration(milliseconds: 400));
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(second), screen);
+      tester.state<NavigatorState>(find.byType(Navigator).last).pop();
+      await tester.pump();
+      expect(tester.getRect(second), screen);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.getRect(second).left, greaterThan(screen.left));
+      expect(tester.getRect(second).width, closeTo(screen.width, .000001));
+      expect(translucent(tester, second), false);
+      await tester.pumpAndSettle();
+      expect(second, findsNothing);
+      expect(tester.getRect(first), screen);
+    },
+  );
 
   testWidgets('onboarding enters on its first frame and slides out on Back', (
     tester,

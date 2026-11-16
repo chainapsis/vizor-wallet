@@ -1212,10 +1212,13 @@ change. The subsections below this list carry the detailed rules.
 
 - Register every pushed screen through `_mobilePage`. It gives the window
   background, the side constraints, the scroll edge fades, the fade-and-zoom
-  transition (320ms in, 260ms out, `Cubic(0.23, 1, 0.32, 1)`), the edge-swipe
-  back and the page haptic. The back swipe slides the page opaque and at full
-  size; never let it fade, or the page below shows through. A route outside
-  it (onboarding, the Gift Card claim) installs
+  entrance (320ms, `Cubic(0.23, 1, 0.32, 1)`), the edge-swipe back and the page
+  haptic. Button Back slides out over 260ms, restoring the previous page from
+  1.03 scale to 1 with the same progress; a back swipe follows the finger and
+  settles over 350ms. Both exits keep the page opaque and at full size, so the
+  page below shows beside it. Under Reduce Motion button Back only fades.
+  A pop during entry reverses that entry without jumping to a slide. A route
+  outside it (onboarding, the Gift Card claim) installs
   `MobileScrollEdgeFades(color: window, bottomHeight: AppSpacing.xl)` itself.
 - Onboarding steps enter instantly: `_mobileOnboardingPage` uses
   `MobilePageTransition.onboarding`. Back slides out over 260ms (fades under

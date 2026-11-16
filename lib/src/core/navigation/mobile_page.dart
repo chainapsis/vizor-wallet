@@ -10,7 +10,7 @@ import '../layout/mobile/covered_route_keyboard_hold.dart';
 
 /// Motion for a mobile page. Fully non-animated routes use NoTransitionPage.
 enum MobilePageTransition {
-  /// Fade and zoom on entry and exit.
+  /// Fade and zoom on entry; slide out while the previous page scales back.
   fadeZoom,
 
   /// Appear immediately; slide out on Back. The previous page stays still.
@@ -20,8 +20,9 @@ enum MobilePageTransition {
 /// A mobile screen pushed onto the wallet navigator.
 ///
 /// The new page fades in while growing from slightly smaller, and the page
-/// it covers grows a touch, so going deeper reads as moving forward. Popping
-/// plays it backwards. With reduced motion only the fade remains. Opening
+/// it covers grows a touch, so going deeper reads as moving forward. Back
+/// slides the opaque, full-size page out while the page below scales back.
+/// With reduced motion only the fade remains. Opening
 /// or closing a page plays a light tap ([AppHaptics.pageTransition]).
 ///
 /// Dragging from the leading edge pops the page as the iOS back swipe does:
@@ -57,15 +58,15 @@ class MobilePageRoute<T> extends PageRoute<T> {
   static const _enterDuration = Duration(milliseconds: 320);
   static const _exitDuration = Duration(milliseconds: 260);
 
-  /// A strong ease-out: the page arrives quickly and settles gently. The
-  /// reverse is its mirror, so a pop also starts fast and lands softly.
+  /// A strong ease-out: the page arrives quickly and settles gently. Its
+  /// reverse is used when a pop interrupts that entrance.
   static const Curve _curve = Cubic(0.23, 1, 0.32, 1);
   static const Curve _reverseCurve = Cubic(0.68, 0, 0.77, 0);
 
   /// The fade finishes in the first 40% of the zoom, close to how the zoom
   /// curve looks. A translucent page costs a full-screen offscreen layer
-  /// every frame, so it is translucent only while the fade shows. A pop
-  /// fades out over its first 40% and draws nothing after.
+  /// every frame, so it is translucent only while the fade shows. Reduced-
+  /// motion and interrupted-entry pops use the fade's reverse.
   static const Curve _fadeCurve = Interval(0, 0.4, curve: Curves.easeOut);
   static const Curve _reverseFadeCurve = Interval(0.6, 1, curve: Curves.easeIn);
 
@@ -96,10 +97,18 @@ class MobilePageRoute<T> extends PageRoute<T> {
 
   @override
   bool didPop(T? result) {
+    // An interrupted entrance reverses in place so it does not jump from a
+    // partly transparent, smaller page to a full-size opaque slide.
+    final fullyEntered = animation!.isCompleted;
     final popped = super.didPop(result);
-    if (popped) unawaited(AppHaptics.pageTransition());
+    if (popped) {
+      _slideOnPop = fullyEntered;
+      unawaited(AppHaptics.pageTransition());
+    }
     return popped;
   }
+
+  bool _slideOnPop = false;
 
   @override
   Duration get transitionDuration =>
@@ -151,6 +160,7 @@ class MobilePageRoute<T> extends PageRoute<T> {
     transition: _page.transition,
     animation: animation,
     secondaryAnimation: secondaryAnimation,
+    slideOnPop: _slideOnPop,
     // A back swipe drives the animation from the finger, so it must map
     // 1:1 rather than through the curves.
     followsFinger: popGestureInProgress,
@@ -223,6 +233,7 @@ class _MobileTransition extends StatefulWidget {
     required this.transition,
     required this.animation,
     required this.secondaryAnimation,
+    required this.slideOnPop,
     required this.followsFinger,
     required this.child,
   });
@@ -230,6 +241,7 @@ class _MobileTransition extends StatefulWidget {
   final MobilePageTransition transition;
   final Animation<double> animation;
   final Animation<double> secondaryAnimation;
+  final bool slideOnPop;
   final bool followsFinger;
   final Widget child;
 
@@ -248,7 +260,7 @@ class _MobileTransitionState extends State<_MobileTransition> {
     super.initState();
     _entering = _curved(widget.animation);
     _fading = _faded(widget.animation);
-    _covered = _curved(widget.secondaryAnimation);
+    _covered = _cover(widget.secondaryAnimation);
     _sliding = _slide(widget.animation);
   }
 
@@ -265,7 +277,7 @@ class _MobileTransitionState extends State<_MobileTransition> {
     }
     if (oldWidget.secondaryAnimation != widget.secondaryAnimation) {
       _covered.dispose();
-      _covered = _curved(widget.secondaryAnimation);
+      _covered = _cover(widget.secondaryAnimation);
     }
   }
 
@@ -290,6 +302,15 @@ class _MobileTransitionState extends State<_MobileTransition> {
     reverseCurve: MobilePageRoute._reverseFadeCurve,
   );
 
+  // Keep the entrance's zoom, then restore the previous page in step with
+  // the outgoing page's slide. CurvedAnimation preserves the entrance curve
+  // if a push reverses before completing, avoiding a discontinuity.
+  static CurvedAnimation _cover(Animation<double> parent) => CurvedAnimation(
+    parent: parent,
+    curve: MobilePageRoute._curve,
+    reverseCurve: MobilePageRoute._swipeSettleCurve.flipped,
+  );
+
   static CurvedAnimation _slide(Animation<double> parent) => CurvedAnimation(
     parent: parent,
     curve: MobilePageRoute._swipeSettleCurve,
@@ -301,11 +322,12 @@ class _MobileTransitionState extends State<_MobileTransition> {
     final followsFinger = widget.followsFinger;
     final onboarding = widget.transition == MobilePageTransition.onboarding;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    // Under the finger the page only slides, opaque and at full size, so the
-    // page below shows beside it rather than through it. The fade and zoom
-    // are for opening and closing.
-    final entering = followsFinger ? 1.0 : _entering.value;
-    final opacity = followsFinger || (onboarding && !reduceMotion)
+    // Button Back and a back swipe share the opaque, full-size slide. Only
+    // the gesture uses raw progress; the button-driven slide is eased.
+    final slides =
+        followsFinger || (!reduceMotion && (onboarding || widget.slideOnPop));
+    final entering = slides ? 1.0 : _entering.value;
+    final opacity = slides
         ? 1.0
         : onboarding
         ? _sliding.value
@@ -320,7 +342,6 @@ class _MobileTransitionState extends State<_MobileTransition> {
         : 1.0;
     // Keep the same widget structure through a gesture, including settling.
     // Replacing the detector's ancestors could dispose an active drag.
-    final slides = followsFinger || (onboarding && !reduceMotion);
     final shift = slides
         ? (1 - (followsFinger ? widget.animation.value : _sliding.value)) *
               (Directionality.of(context) == TextDirection.rtl ? -1 : 1)
