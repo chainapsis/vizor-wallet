@@ -39,6 +39,7 @@ import '../src/features/payment_links/services/payment_link_received_store.dart'
 import '../src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/config/swap_feature_config.dart';
+import '../src/core/config/zcash_explorer.dart';
 import '../src/core/navigation/mobile_routes.dart';
 import '../src/core/layout/app_layout.dart';
 import '../src/features/activity/activity_eta_provider.dart';
@@ -1089,8 +1090,22 @@ Widget buildSettingsExplorerCustomUseCase(BuildContext context) {
   );
 }
 
+Widget buildSettingsExplorerPrivateUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/explorer',
+    const SettingsExplorerScreen(),
+    explorerUrlTemplate: kZecBlockPrivateExplorerTemplate,
+  );
+}
+
 Widget buildMobileExplorerUseCase(BuildContext context) {
   return _buildMobileExplorerUseCase();
+}
+
+Widget buildMobileExplorerPrivateUseCase(BuildContext context) {
+  return _buildMobileExplorerUseCase(
+    explorerUrlTemplate: kZecBlockPrivateExplorerTemplate,
+  );
 }
 
 Widget buildMobileExplorerCustomUseCase(BuildContext context) {

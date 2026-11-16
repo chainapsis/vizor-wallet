@@ -18,8 +18,6 @@ import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
 
-enum _ExplorerChoice { zecblock, custom }
-
 /// Mobile explorer settings — ZecBlock by default, or any other
 /// explorer URL the user prefers for transaction links.
 class MobileExplorerScreen extends ConsumerStatefulWidget {
@@ -33,7 +31,7 @@ class MobileExplorerScreen extends ConsumerStatefulWidget {
 class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
   final _customController = TextEditingController();
   final _customFocusNode = FocusNode();
-  late _ExplorerChoice _choice;
+  late ZcashExplorerChoice _choice;
   bool _isSubmitting = false;
   String? _submitError;
 
@@ -41,12 +39,17 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
   void initState() {
     super.initState();
     final current = ref.read(zcashExplorerProvider);
-    _choice = current.trim().isEmpty
-        ? _ExplorerChoice.zecblock
-        : _ExplorerChoice.custom;
-    if (_choice == _ExplorerChoice.custom) {
+    _choice = _savedChoice(current);
+    if (_choice == ZcashExplorerChoice.custom) {
       _customController.text = current;
     }
+  }
+
+  ZcashExplorerChoice _savedChoice(String current) {
+    return zcashExplorerChoice(
+      current,
+      networkName: ref.read(rpcEndpointProvider).networkName,
+    );
   }
 
   @override
@@ -59,8 +62,8 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
   bool _canUpdate(String current) {
     if (_isSubmitting) return false;
     return switch (_choice) {
-      _ExplorerChoice.zecblock => current.trim().isNotEmpty,
-      _ExplorerChoice.custom => _customTemplateChanged(current),
+      ZcashExplorerChoice.custom => _customTemplateChanged(current),
+      _ => _choice != _savedChoice(current),
     };
   }
 
@@ -74,7 +77,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
   }
 
   String? _customMessageText() {
-    if (_choice != _ExplorerChoice.custom) return null;
+    if (_choice != ZcashExplorerChoice.custom) return null;
     if (_customController.text.trim().isEmpty) return null;
     try {
       normalizeExplorerUrlTemplate(_customController.text);
@@ -95,15 +98,20 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
 
     try {
       final notifier = ref.read(zcashExplorerProvider.notifier);
-      if (_choice == _ExplorerChoice.zecblock) {
-        await notifier.resetToDefault();
-      } else {
-        await notifier.setCustom(_customController.text);
+      switch (_choice) {
+        case ZcashExplorerChoice.zecBlock:
+          await notifier.resetToDefault();
+        case ZcashExplorerChoice.zecBlockPrivate:
+          await notifier.setZecBlockPrivate();
+        case ZcashExplorerChoice.custom:
+          await notifier.setCustom(_customController.text);
       }
       if (!mounted) return;
       final next = ref.read(zcashExplorerProvider);
       setState(() {
-        _customController.text = next;
+        _customController.text = _choice == ZcashExplorerChoice.custom
+            ? next
+            : '';
         _isSubmitting = false;
       });
     } on FormatException catch (e) {
@@ -128,6 +136,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
     final networkName = ref.watch(rpcEndpointProvider).networkName;
     final colors = context.colors;
     final customMessage = _customMessageText();
+    final savedChoice = _savedChoice(current);
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -148,7 +157,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                 ),
                 children: [
                   Text(
-                    current.trim().isEmpty
+                    savedChoice == ZcashExplorerChoice.zecBlock
                         ? context.l10n.settingsExplorerCurrentDefault(
                             defaultZcashExplorerHost(networkName),
                           )
@@ -172,33 +181,51 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                     iconName: AppIcons.globe,
                     label: kDefaultZcashExplorerLabel,
                     subtitle: defaultZcashExplorerHost(networkName),
-                    selected: _choice == _ExplorerChoice.zecblock,
+                    selected: _choice == ZcashExplorerChoice.zecBlock,
                     onTap: _isSubmitting
                         ? null
                         : () => setState(() {
-                            _choice = _ExplorerChoice.zecblock;
+                            _choice = ZcashExplorerChoice.zecBlock;
                             _submitError = null;
                           }),
                   ),
                   const SizedBox(height: AppSpacing.xs),
+                  if (zecBlockPrivateExplorerAvailable(networkName)) ...[
+                    _ExplorerOptionCard(
+                      key: const ValueKey(
+                        'mobile_explorer_option_zecblock_private',
+                      ),
+                      iconName: AppIcons.eyeClosed,
+                      label: kZecBlockPrivateExplorerLabel,
+                      subtitle: context.l10n.settingsExplorerPrivateSubtitle,
+                      selected: _choice == ZcashExplorerChoice.zecBlockPrivate,
+                      onTap: _isSubmitting
+                          ? null
+                          : () => setState(() {
+                              _choice = ZcashExplorerChoice.zecBlockPrivate;
+                              _submitError = null;
+                            }),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                  ],
                   _ExplorerOptionCard(
                     key: const ValueKey('mobile_explorer_option_custom'),
                     iconName: AppIcons.edit,
                     label: context.l10n.settingsExplorerCustom,
                     subtitle: context.l10n.settingsExplorerCustomSubtitle,
-                    selected: _choice == _ExplorerChoice.custom,
+                    selected: _choice == ZcashExplorerChoice.custom,
                     onTap: _isSubmitting
                         ? null
                         : () => setState(() {
-                            _choice = _ExplorerChoice.custom;
+                            _choice = ZcashExplorerChoice.custom;
                             _submitError = null;
                             if (_customController.text.trim().isEmpty &&
-                                current.trim().isNotEmpty) {
+                                savedChoice == ZcashExplorerChoice.custom) {
                               _customController.text = current;
                             }
                           }),
                   ),
-                  if (_choice == _ExplorerChoice.custom) ...[
+                  if (_choice == ZcashExplorerChoice.custom) ...[
                     const SizedBox(height: AppSpacing.md),
                     MobileTextField(
                       key: const ValueKey('mobile_explorer_custom_field_shell'),
@@ -233,21 +260,33 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                     ),
                   ],
                   const SizedBox(height: AppSpacing.md),
-                  AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: AppIcon(
+                      AppIcons.book,
+                      size: 20,
+                      color: colors.icon.accent,
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    context.l10n.settingsExplorerPrivacyCopy,
+                    _choice == ZcashExplorerChoice.zecBlockPrivate
+                        ? context.l10n.settingsExplorerPrivateCopy
+                        : context.l10n.settingsExplorerPrivacyCopy,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
                   ),
                   if (_submitError != null) ...[
                     const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      _submitError!,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.destructive,
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _submitError!,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: colors.text.destructive,
+                        ),
                       ),
                     ),
                   ],
@@ -293,28 +332,41 @@ class _ExplorerOptionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final radius = BorderRadius.circular(AppRadii.medium);
+    final onTap = this.onTap;
+    final handleTap = onTap == null
+        ? null
+        : () {
+            if (!selected) unawaited(AppHaptics.selection());
+            onTap();
+          };
     return Semantics(
       button: true,
       selected: selected,
-      label: label,
+      label: '$label, $subtitle', // l10n-ignore: joins two labels
+      // excludeSemantics drops the detector's tap action, so restate it.
+      onTap: handleTap,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap == null
-            ? null
-            : () {
-                if (!selected) unawaited(AppHaptics.selection());
-                onTap!();
-              },
+        onTap: handleTap,
         child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.s,
+          ),
           decoration: BoxDecoration(
             color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
+            borderRadius: radius,
+          ),
+          // Drawn over the card so a thicker selected border moves nothing.
+          foregroundDecoration: BoxDecoration(
+            borderRadius: radius,
             border: Border.all(
               color: selected ? colors.border.strong : colors.border.subtle,
               width: selected ? 1.5 : 1,
+              strokeAlign: BorderSide.strokeAlignInside,
             ),
           ),
           child: Row(
@@ -337,7 +389,7 @@ class _ExplorerOptionCard extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.text.secondary,
@@ -346,6 +398,7 @@ class _ExplorerOptionCard extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: AppSpacing.s),
               if (selected)
                 Container(
                   width: 24,
