@@ -158,6 +158,13 @@ Widget buildMobilePayAmountUseCase(BuildContext context) {
   );
 }
 
+/// Android-sized reference for text-scaling review captures.
+Widget buildMobilePayAmountScaleReviewUseCase(BuildContext context) =>
+    const _MobilePayFrame(
+      size: Size(360, 800),
+      child: _MobilePayAmountPreview(),
+    );
+
 Widget buildMobilePayAmountEmptyUseCase(BuildContext context) {
   return const _MobilePayFrame(
     child: _MobilePayAmountPreview(
@@ -253,18 +260,22 @@ class _WidgetbookPaySubmittedNotifier extends SwapNotifier {
 }
 
 class _MobilePayFrame extends StatelessWidget {
-  const _MobilePayFrame({required this.child});
+  const _MobilePayFrame({
+    required this.child,
+    this.size = const Size(393, 852),
+  });
 
   final Widget child;
+  final Size size;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey('mobile_pay_preview_frame'),
-      width: 393,
-      height: 852,
+      width: size.width,
+      height: size.height,
       child: MediaQuery(
-        data: MediaQuery.of(context).copyWith(size: const Size(393, 852)),
+        data: MediaQuery.of(context).copyWith(size: size),
         child: child,
       ),
     );

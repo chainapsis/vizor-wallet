@@ -146,6 +146,18 @@ Widget buildRequestMobileComposeMessageUseCase(BuildContext context) =>
 Widget buildRequestMobileMessageSheetUseCase(BuildContext context) =>
     _mobileMessageSheet();
 
+Widget buildRequestMobileAmountScaleReviewUseCase(BuildContext context) =>
+    _mobileCompose(_amountWithMessageRequest, size: const Size(360, 800));
+
+Widget buildRequestMobileMemoScaleReviewUseCase(BuildContext context) =>
+    _mobileMessageSheet(
+      size: const Size(360, 800),
+      memo: List.generate(
+        12,
+        (index) => 'Item ${index + 1}: coffee and pastries.',
+      ).join('\n'),
+    );
+
 Widget buildRequestMobileMessageSheetKeyboardUseCase(BuildContext context) =>
     MediaQuery(
       data: MediaQuery.of(
@@ -189,9 +201,13 @@ Widget _desktop(
   );
 }
 
-Widget _mobileCompose(ZecRequestView request, {bool toggleEnabled = true}) {
+Widget _mobileCompose(
+  ZecRequestView request, {
+  bool toggleEnabled = true,
+  Size size = const Size(393, 852),
+}) {
   return _frame(
-    const Size(393, 852),
+    size,
     RequestAmountPreviewPage(
       child: RequestAmountComposeStep(
         request: request,
@@ -204,9 +220,9 @@ Widget _mobileCompose(ZecRequestView request, {bool toggleEnabled = true}) {
   );
 }
 
-Widget _mobileMessageSheet() {
+Widget _mobileMessageSheet({String? memo, Size size = const Size(393, 852)}) {
   return _frame(
-    const Size(393, 852),
+    size,
     Builder(
       builder: (context) => Stack(
         fit: StackFit.expand,
@@ -227,7 +243,7 @@ Widget _mobileMessageSheet() {
               alignment: Alignment.bottomCenter,
               child: MobileModalCard(
                 child: MobileMemoSheet(
-                  initial: _amountWithMessageRequest.messageText ?? '',
+                  initial: memo ?? _amountWithMessageRequest.messageText ?? '',
                   title: context.l10n.commonAddAMessage,
                   hintText: context.l10n.receiveRequestMessageHint,
                   clearLabel: context.l10n.commonClear,
