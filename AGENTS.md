@@ -1375,6 +1375,11 @@ change. The subsections below this list carry the detailed rules.
   60-high bar (`kMobileTabBarHeight`), hugging its tabs, with 24px icons. Code that
   clears it reads `kMobileTabBarHeight` or
   `MobileNavigationScope.bottomClearanceOf`, never a literal.
+  Its horizontal bar previews the touched tab over 100ms, adding finger travel
+  during that arrival; navigation commits only on tap/drag release. Cancel
+  restores the actual selection. Keep the first pointer in control, one haptic
+  per selection boundary, and instant arrivals under Reduce Motion. The vertical
+  bar retains its selected-tab drag origin.
 - iOS 26+ uses the native Liquid Glass tab bar when available. Preserve the
   native root host, registration and `nativeBar` precedence in `AppMobileShell`.
   UIKit owns its sizing, safe area, selection lens, motion and press haptics;

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../feedback/app_haptics.dart';
@@ -69,6 +69,7 @@ class AppMobileTabBar extends StatefulWidget {
   /// lowering the second control point: ~5% past the target instead of
   /// the stock ~10%, which read as too springy.
   static const selectDuration = Duration(milliseconds: 240);
+  static const _touchDuration = Duration(milliseconds: 100);
   static const _selectCurve = Cubic(0.34, 1.40, 0.64, 1.0);
 
   /// Settle after a drag: strong ease-out with no overshoot, so the pill
@@ -82,12 +83,20 @@ class AppMobileTabBar extends StatefulWidget {
   State<AppMobileTabBar> createState() => _AppMobileTabBarState();
 }
 
-/// Dragging along the bar moves the pill 1:1 with the finger, from wherever
-/// the drag starts. It ticks a strong haptic as it crosses into each tab, and
+/// A horizontal touch previews its tab before dragging from that location.
+/// Dragging ticks a strong haptic as it crosses into each tab, and
 /// on release it projects the flick's momentum, snaps to the nearest tab and
 /// selects it. The settle reuses the selection transition, starting from
 /// wherever the finger let go.
-class _AppMobileTabBarState extends State<AppMobileTabBar> {
+class _AppMobileTabBarState extends State<AppMobileTabBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _horizontalPill =
+      AnimationController.unbounded(
+        vsync: this,
+        value: widget.currentIndex.toDouble(),
+      )..addListener(_animatePill);
+  _TabBarTouch? _touch;
+
   /// Pill position in tab units while a drag is in progress.
   double? _dragPosition;
   double _dragOrigin = 0;
@@ -110,15 +119,165 @@ class _AppMobileTabBarState extends State<AppMobileTabBar> {
 
   double _along(Offset position) => _vertical ? position.dy : position.dx;
 
+  bool get _motion => !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+
+  double get _horizontalPosition {
+    final touch = _touch;
+    final position = _horizontalPill.value + (touch?.delta ?? 0);
+    return touch == null
+        ? position
+        : position.clamp(0.0, widget.items.length - 1.0);
+  }
+
+  void _animatePill() => setState(() {});
+
+  void _movePill(double target, Duration duration, Curve curve) {
+    if (_motion) {
+      unawaited(
+        _horizontalPill.animateTo(target, duration: duration, curve: curve),
+      );
+    } else {
+      _horizontalPill.value = target;
+    }
+  }
+
+  @override
+  void dispose() {
+    _horizontalPill.dispose();
+    super.dispose();
+  }
+
   @override
   void didUpdateWidget(covariant AppMobileTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     // The caller has answered the drop: follow its selection from here on.
+    final releasedIndex = _releasedIndex;
     _releasedIndex = null;
+    final destinationsChanged =
+        oldWidget.axis != widget.axis ||
+        oldWidget.items.length != widget.items.length ||
+        List.generate(widget.items.length, (i) => i).any(
+          (i) =>
+              oldWidget.items[i].iconName != widget.items[i].iconName ||
+              oldWidget.items[i].label != widget.items[i].label,
+        );
+    if (destinationsChanged ||
+        (_touch != null && oldWidget.currentIndex != widget.currentIndex)) {
+      final position = _horizontalPosition;
+      _touch = null;
+      _dragPosition = null;
+      _horizontalPill.value = position;
+    }
+    if (!_vertical &&
+        (destinationsChanged ||
+            (oldWidget.currentIndex != widget.currentIndex &&
+                widget.currentIndex != releasedIndex) ||
+            (releasedIndex != null && widget.currentIndex != releasedIndex))) {
+      _movePill(
+        widget.currentIndex.toDouble(),
+        AppMobileTabBar.selectDuration,
+        _settlingFromDrag
+            ? AppMobileTabBar._releaseCurve
+            : AppMobileTabBar._selectCurve,
+      );
+    }
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if (_touch != null ||
+        widget.items.isEmpty ||
+        event.buttons != kPrimaryButton) {
+      return;
+    }
+    final position = _horizontalPosition;
+    final index = (event.localPosition.dx / _itemExtent).floor().clamp(
+      0,
+      widget.items.length - 1,
+    );
+    _horizontalPill.stop();
+    _horizontalPill.value = position;
+    setState(() {
+      _touch = _TabBarTouch(event.pointer, index, event.localPosition.dx);
+    });
+    _movePill(
+      index.toDouble(),
+      AppMobileTabBar._touchDuration,
+      AppMobileTabBar._releaseCurve,
+    );
+  }
+
+  void _cancelTouch() {
+    if (_touch == null) return;
+    final position = _horizontalPosition;
+    setState(() => _touch = null);
+    _horizontalPill.value = position;
+    _movePill(
+      widget.currentIndex.toDouble(),
+      AppMobileTabBar.selectDuration,
+      AppMobileTabBar._releaseCurve,
+    );
+  }
+
+  void _cancelUnclaimedTouch(_TabBarTouch? touch) {
+    // Tap cancellation also happens when the drag wins. Let the arena finish
+    // dispatching before deciding whether neither recognizer owns this touch.
+    scheduleMicrotask(() {
+      if (mounted &&
+          touch != null &&
+          identical(_touch, touch) &&
+          !touch.dragging) {
+        _cancelTouch();
+      }
+    });
+  }
+
+  void _handlePointerUp(PointerUpEvent event) {
+    if (_touch?.pointer == event.pointer) _cancelUnclaimedTouch(_touch);
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    if (_touch?.pointer == event.pointer) _cancelTouch();
+  }
+
+  void _handleTap(int index, {bool semantics = false}) {
+    if (!_vertical) {
+      final touch = _touch;
+      if (!semantics &&
+          (touch == null || touch.index != index || touch.dragging)) {
+        return;
+      }
+      final position = _horizontalPosition;
+      setState(() {
+        _touch = null;
+        _releasedIndex = index;
+        _settlingFromDrag = false;
+      });
+      // A quick tap completes the already-running 100ms arrival. Restarting
+      // the normal 240ms selection here would make that arrival feel slow.
+      if (semantics) {
+        _horizontalPill.value = position;
+        _movePill(
+          index.toDouble(),
+          AppMobileTabBar.selectDuration,
+          AppMobileTabBar._selectCurve,
+        );
+      }
+    } else {
+      setState(() => _settlingFromDrag = false);
+    }
+    unawaited(AppHaptics.tabSwitch());
+    widget.onSelect(index);
   }
 
   void _handleDragStart(DragStartDetails details) {
     if (widget.items.length < 2) return;
+    if (!_vertical) {
+      final touch = _touch;
+      if (touch == null) return;
+      touch.dragging = true;
+      if (touch.index != widget.currentIndex) unawaited(AppHaptics.tabSwitch());
+      return;
+    }
     _pointerOrigin = _along(details.localPosition);
     _hoveredIndex = _selectedIndex;
     setState(() {
@@ -128,6 +287,20 @@ class _AppMobileTabBarState extends State<AppMobileTabBar> {
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
+    if (!_vertical) {
+      final touch = _touch;
+      if (touch == null || !touch.dragging) return;
+      touch.delta = (details.localPosition.dx - touch.origin) / _itemExtent;
+      final hovered = (touch.index + touch.delta)
+          .clamp(0.0, widget.items.length - 1.0)
+          .round();
+      if (hovered != touch.hoveredIndex) {
+        touch.hoveredIndex = hovered;
+        unawaited(AppHaptics.tabSwitch());
+      }
+      setState(() {});
+      return;
+    }
     if (_dragPosition == null) return;
     final position =
         (_dragOrigin +
@@ -142,7 +315,12 @@ class _AppMobileTabBarState extends State<AppMobileTabBar> {
   }
 
   void _handleDragEnd(DragEndDetails details) {
-    final position = _dragPosition;
+    final touch = _touch;
+    final position = _vertical
+        ? _dragPosition
+        : touch == null || !touch.dragging
+        ? null
+        : (touch.index + touch.delta).clamp(0.0, widget.items.length - 1.0);
     if (position == null) return;
     // Apple's momentum projection (deceleration rate 0.99): where a flick
     // would come to rest, so a quick throw carries the pill a tab further.
@@ -150,12 +328,24 @@ class _AppMobileTabBarState extends State<AppMobileTabBar> {
     final projected =
         position + velocity / 1000 * 0.99 / (1 - 0.99) / _itemExtent;
     final target = projected.round().clamp(0, widget.items.length - 1);
-    if (target != _hoveredIndex) unawaited(AppHaptics.tabSwitch());
+    if (target != (touch?.hoveredIndex ?? _hoveredIndex)) {
+      unawaited(AppHaptics.tabSwitch());
+    }
+    final displayedPosition = _horizontalPosition;
     setState(() {
+      _touch = null;
       _dragPosition = null;
       _releasedIndex = target;
       _settlingFromDrag = true;
     });
+    if (!_vertical) {
+      _horizontalPill.value = displayedPosition;
+      _movePill(
+        target.toDouble(),
+        AppMobileTabBar.selectDuration,
+        AppMobileTabBar._releaseCurve,
+      );
+    }
     if (target != widget.currentIndex) widget.onSelect(target);
   }
 
@@ -167,6 +357,14 @@ class _AppMobileTabBarState extends State<AppMobileTabBar> {
   }
 
   void _handleDragCancel() {
+    if (!_vertical) {
+      if (_touch?.dragging ?? false) {
+        _cancelTouch();
+      } else {
+        _cancelUnclaimedTouch(_touch);
+      }
+      return;
+    }
     if (_dragPosition == null) return;
     setState(() => _dragPosition = null);
   }
@@ -175,12 +373,14 @@ class _AppMobileTabBarState extends State<AppMobileTabBar> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final radius = BorderRadius.circular(AppRadii.full);
-    final motion = !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    final motion = _motion;
     final vertical = _vertical;
     final items = widget.items;
     final selectedIndex = _selectedIndex;
     final dragging = _dragPosition != null;
-    final pillPosition = _dragPosition ?? selectedIndex.toDouble();
+    final pillPosition = vertical
+        ? _dragPosition ?? selectedIndex.toDouble()
+        : _horizontalPosition;
     final selection = items.length > 1
         ? -1 + 2 * pillPosition / (items.length - 1)
         : 0.0;
@@ -226,69 +426,91 @@ class _AppMobileTabBarState extends State<AppMobileTabBar> {
               ),
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.xxs),
-                child: GestureDetector(
-                  // Count from touch-down so the pill stays under the
-                  // finger instead of trailing it by the drag slop.
-                  dragStartBehavior: DragStartBehavior.down,
-                  onHorizontalDragStart: vertical ? null : _handleDragStart,
-                  onHorizontalDragUpdate: vertical ? null : _handleDragUpdate,
-                  onHorizontalDragEnd: vertical ? null : _handleDragEnd,
-                  onHorizontalDragCancel: vertical ? null : _handleDragCancel,
-                  onVerticalDragStart: vertical ? _handleDragStart : null,
-                  onVerticalDragUpdate: vertical ? _handleDragUpdate : null,
-                  onVerticalDragEnd: vertical ? _handleDragEnd : null,
-                  onVerticalDragCancel: vertical ? _handleDragCancel : null,
-                  child: Stack(
-                    children: [
-                      AnimatedAlign(
-                        key: AppMobileTabBar.activePillKey,
-                        // The pill tracks a drag 1:1, then settles on release.
-                        duration: motion && !dragging
-                            ? AppMobileTabBar.selectDuration
-                            : Duration.zero,
-                        curve: _settlingFromDrag
-                            ? AppMobileTabBar._releaseCurve
-                            : AppMobileTabBar._selectCurve,
-                        alignment: pillAlignment,
-                        child: FractionallySizedBox(
-                          widthFactor: vertical ? 1 : 1 / items.length,
-                          heightFactor: vertical ? 1 / items.length : null,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: colors.navPanel.tabBarActiveBg,
-                              borderRadius: BorderRadius.circular(
-                                AppRadii.full,
-                              ),
+                child: Listener(
+                  onPointerDown: vertical ? null : _handlePointerDown,
+                  onPointerUp: vertical ? null : _handlePointerUp,
+                  onPointerCancel: vertical ? null : _handlePointerCancel,
+                  child: RawGestureDetector(
+                    gestures: {
+                      if (!vertical)
+                        _SinglePointerHorizontalDragRecognizer:
+                            GestureRecognizerFactoryWithHandlers<
+                              _SinglePointerHorizontalDragRecognizer
+                            >(
+                              () => _SinglePointerHorizontalDragRecognizer(),
+                              (instance) => instance
+                                ..dragStartBehavior = DragStartBehavior.down
+                                ..onStart = _handleDragStart
+                                ..onUpdate = _handleDragUpdate
+                                ..onEnd = _handleDragEnd
+                                ..onCancel = _handleDragCancel,
                             ),
-                            child: SizedBox(
-                              height: vertical
-                                  ? double.infinity
-                                  : AppMobileTabBar._itemHeight,
+                    },
+                    child: GestureDetector(
+                      // Count from touch-down so the pill stays under the
+                      // finger instead of trailing it by the drag slop.
+                      dragStartBehavior: DragStartBehavior.down,
+                      onVerticalDragStart: vertical ? _handleDragStart : null,
+                      onVerticalDragUpdate: vertical ? _handleDragUpdate : null,
+                      onVerticalDragEnd: vertical ? _handleDragEnd : null,
+                      onVerticalDragCancel: vertical ? _handleDragCancel : null,
+                      child: Stack(
+                        children: [
+                          AnimatedAlign(
+                            key: AppMobileTabBar.activePillKey,
+                            // The pill tracks a drag 1:1, then settles on release.
+                            duration: vertical && motion && !dragging
+                                ? AppMobileTabBar.selectDuration
+                                : Duration.zero,
+                            curve: _settlingFromDrag
+                                ? AppMobileTabBar._releaseCurve
+                                : AppMobileTabBar._selectCurve,
+                            alignment: pillAlignment,
+                            child: FractionallySizedBox(
+                              widthFactor: vertical ? 1 : 1 / items.length,
+                              heightFactor: vertical ? 1 / items.length : null,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: colors.navPanel.tabBarActiveBg,
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.full,
+                                  ),
+                                ),
+                                child: SizedBox(
+                                  height: vertical
+                                      ? double.infinity
+                                      : AppMobileTabBar._itemHeight,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      Flex(
-                        direction: widget.axis,
-                        children: [
-                          for (var i = 0; i < items.length; i++)
-                            Expanded(
-                              child: _TabBarItem(
-                                item: items[i],
-                                active: i == selectedIndex,
-                                motion: motion,
-                                highlight: dragging
-                                    ? _pillCoverage(pillPosition, i)
-                                    : null,
-                                onTap: () {
-                                  setState(() => _settlingFromDrag = false);
-                                  widget.onSelect(i);
-                                },
-                              ),
-                            ),
+                          Flex(
+                            direction: widget.axis,
+                            children: [
+                              for (var i = 0; i < items.length; i++)
+                                Expanded(
+                                  child: _TabBarItem(
+                                    item: items[i],
+                                    active: i == selectedIndex,
+                                    motion: motion,
+                                    highlight: dragging || !vertical
+                                        ? _pillCoverage(pillPosition, i)
+                                        : null,
+                                    onTap: () => _handleTap(i),
+                                    onSemanticsTap: () =>
+                                        _handleTap(i, semantics: true),
+                                    onTapCancel: () {
+                                      if (!vertical && _touch?.index == i) {
+                                        _cancelUnclaimedTouch(_touch);
+                                      }
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -302,12 +524,54 @@ class _AppMobileTabBarState extends State<AppMobileTabBar> {
   }
 }
 
+class _TabBarTouch {
+  _TabBarTouch(this.pointer, this.index, this.origin) : hoveredIndex = index;
+
+  final int pointer;
+  final int index;
+  final double origin;
+  double delta = 0;
+  bool dragging = false;
+  int hoveredIndex;
+}
+
+/// A second finger must not take over the first finger's position or velocity.
+class _SinglePointerHorizontalDragRecognizer
+    extends HorizontalDragGestureRecognizer {
+  int? _pointer;
+
+  @override
+  bool isPointerAllowed(PointerEvent event) =>
+      _pointer == null && super.isPointerAllowed(event);
+
+  @override
+  void handleNonAllowedPointer(PointerDownEvent event) {
+    // OneSequenceGestureRecognizer's default rejects every tracked pointer.
+    // Ignoring a second finger must leave the first finger's arena intact.
+    if (_pointer == null) super.handleNonAllowedPointer(event);
+  }
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _pointer = event.pointer;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    super.didStopTrackingLastPointer(pointer);
+    _pointer = null;
+  }
+}
+
 class _TabBarItem extends StatefulWidget {
   const _TabBarItem({
     required this.item,
     required this.active,
     required this.motion,
     required this.onTap,
+    required this.onSemanticsTap,
+    required this.onTapCancel,
     this.highlight,
   });
 
@@ -315,6 +579,8 @@ class _TabBarItem extends StatefulWidget {
   final bool active;
   final bool motion;
   final VoidCallback onTap;
+  final VoidCallback onSemanticsTap;
+  final VoidCallback onTapCancel;
 
   /// While the pill is dragged, how much of it covers this item (0 → 1);
   /// the icon tint follows it directly. Null when nothing is dragged.
@@ -399,13 +665,17 @@ class _TabBarItemState extends State<_TabBarItem>
       label: widget.item.label,
       button: true,
       selected: widget.active,
+      onTap: widget.onSemanticsTap,
       child: GestureDetector(
+        excludeFromSemantics: true,
         behavior: HitTestBehavior.opaque,
         onTapDown: (_) => _setPressed(true),
-        onTapCancel: () => _setPressed(false),
+        onTapCancel: () {
+          _setPressed(false);
+          widget.onTapCancel();
+        },
         onTapUp: (_) => _setPressed(false),
         onTap: () {
-          unawaited(AppHaptics.tabSwitch());
           widget.onTap();
         },
         child: SizedBox(
