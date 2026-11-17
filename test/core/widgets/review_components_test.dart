@@ -12,7 +12,12 @@ import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import 'support/review_info_row_trailing_cases.dart';
+
 void main() {
+  // The mobile lane runs these from mobile_swap_review_content_test.dart.
+  reviewInfoRowTrailingTests();
+
   group('ReviewInfoRow', () {
     testWidgets('renders label, headline value, badge, and ghost action', (
       tester,

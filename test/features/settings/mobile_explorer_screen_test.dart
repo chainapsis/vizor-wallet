@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -103,9 +104,67 @@ void main() {
     );
     await tester.pump();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_explorer_update')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mobile_explorer_update')));
     await tester.pump();
 
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileExplorerScreen)),
+    );
+    expect(
+      container.read(zcashExplorerProvider),
+      'https://privacy.example/tx/{txid}',
+    );
     expect(find.textContaining('privacy.example'), findsWidgets);
+  });
+
+  testWidgets('saves ZecBlock Private from the mobile settings screen', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(393, 852)
+      ..devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    expect(find.text('Current: zecblock.com (default)'), findsOneWidget);
+    final card = find.bySemanticsLabel('ZecBlock Private, Explore privately');
+    expect(card, findsOneWidget);
+    expect(
+      tester
+          .getSemantics(card)
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    semantics.dispose();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_explorer_option_zecblock_private')),
+    );
+    await tester.pump();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_explorer_update')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_explorer_update')));
+    await tester.pump();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileExplorerScreen)),
+    );
+    expect(
+      container.read(zcashExplorerProvider),
+      kZecBlockPrivateExplorerTemplate,
+    );
+    expect(find.text('Current: ZecBlock Private'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

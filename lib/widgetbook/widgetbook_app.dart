@@ -943,8 +943,16 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSettingsExplorerCustomUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Explorer private',
+                      builder: buildSettingsExplorerPrivateUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Mobile explorer',
                       builder: buildMobileExplorerUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile explorer private',
+                      builder: buildMobileExplorerPrivateUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Mobile explorer custom',
@@ -1189,6 +1197,35 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookFolder(
               name: 'Pay',
               children: [
+                WidgetbookComponent(
+                  name: 'Confidential pay prototype',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Amount - Standard',
+                      builder: buildConfidentialPayAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount - Confidential',
+                      builder: buildConfidentialPayAmountOnUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No standard liquidity',
+                      builder: buildConfidentialPayLiquidityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review - Confidential',
+                      builder: buildConfidentialPayReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'In progress - Confidential',
+                      builder: buildConfidentialPayInProgressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Completed - Confidential',
+                      builder: buildConfidentialPayCompletedUseCase,
+                    ),
+                  ],
+                ),
                 WidgetbookComponent(
                   name: 'Desktop wizard',
                   useCases: [
@@ -1740,6 +1777,67 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookFolder(
               name: 'Swap',
               children: [
+                WidgetbookComponent(
+                  name: 'Confidential swap prototype',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Standard quote ready',
+                      builder: buildConfidentialSwapStandardUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Slippage settings',
+                      builder: buildConfidentialSwapSettingsOnUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No standard liquidity',
+                      builder: buildConfidentialSwapLiquidityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'No confidential liquidity',
+                      builder: buildConfidentialSwapNoLiquidityUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Amount below minimum',
+                      builder: buildConfidentialSwapMinimumUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Connection error',
+                      builder: buildConfidentialSwapNetworkUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Unknown quote error',
+                      builder: buildConfidentialSwapUnknownUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Confidential unavailable',
+                      builder: buildConfidentialSwapDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Confidential quote ready',
+                      builder: buildConfidentialSwapReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Requesting confidential quote',
+                      builder: buildConfidentialSwapLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review - Confidential',
+                      builder: buildConfidentialSwapReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Review - Standard',
+                      builder: buildConfidentialSwapStandardReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Awaiting deposit - Confidential',
+                      builder: buildConfidentialSwapStatusUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Completed - Confidential',
+                      builder: buildConfidentialSwapCompletedUseCase,
+                    ),
+                  ],
+                ),
                 WidgetbookComponent(
                   name: 'Swap Page',
                   useCases: [
@@ -2392,6 +2490,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Swap receive absorb',
                       builder: buildSwapReceiveAbsorbUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Confidential swap and pay',
+                      builder: buildConfidentialActivityPageUseCase,
                     ),
                   ],
                 ),

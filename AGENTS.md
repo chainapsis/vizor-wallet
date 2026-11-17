@@ -755,6 +755,12 @@ a sync's large block download (below).
   network-capable entry points and extend the routing table and service tests
   in `rust/src/wallet/voting/README.md`. The Rust suite includes a supplemental
   constructor guard; it does not replace checking actual network behavior.
+- **A Tor connection that could not open is a `SocketException` in Dart.**
+  The Rust Tor HTTP bridge retries an exit's DNS failure or Arti's
+  `RemoteNetworkTimeout` once on a fresh circuit (`tor_stream_open_recovery`),
+  then marks any stream-opening failure so `RustTorHttpBridge` rethrows it as
+  the direct route would. Voting retry, vote-server failover, and config-mirror
+  classification depend on that type; a raw Tor error string skips them all.
 - **iOS background migration transport is pinned direct**
   (`open_background_direct_lwd_channel`), bypassing the route policy as a
   product decision. A background pass never brings Tor up or borrows the

@@ -18,10 +18,15 @@ import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
+import '../src/features/send/screens/mobile/mobile_send_status_screen.dart';
+import '../src/features/send/services/send_flow.dart';
 import '../src/features/send/services/recent_send_recipients.dart';
 import '../src/features/send/services/send_proving_key_warmup.dart';
 import '../src/features/send/widgets/send_compose_view.dart';
+import '../src/core/zcash/spendable_wait.dart';
 import '../src/features/send/widgets/send_recipient_resolver.dart';
+import '../src/features/send/widgets/spendable_wait_breakdown.dart';
+import '../src/providers/spendable_wait_provider.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
@@ -228,6 +233,105 @@ Widget _mobileSendAmountCaptureFrame(BuildContext context, Widget child) {
   );
 }
 
+final _receivedWaiting = SpendableWait(
+  availableNow: BigInt.from(120000000),
+  changeWaiting: BigInt.zero,
+  receivedWaiting: BigInt.from(130000000),
+  receivedWait: const AvailableIn.minutes(1, 3),
+);
+
+final _changeAndReceivedWaiting = SpendableWait(
+  availableNow: BigInt.from(100000000),
+  changeWaiting: BigInt.from(120000000),
+  receivedWaiting: BigInt.from(130000000),
+  changeWait: const AvailableIn.minutes(1, 2),
+  receivedWait: const AvailableIn.minutes(1, 3),
+);
+
+/// An amount above what is spendable now but within funds still confirming:
+/// the balance row says how much more arrives, and the button says when.
+Widget buildMobileSendAmountWaitingUseCase(BuildContext context) {
+  return _mobileSendAmountCaptureFrame(
+    context,
+    _MobileSendHarness(
+      contacts: _mobileSendContacts,
+      initialRecipient: _mobileShieldedAddress,
+      initialAmount: '2',
+      spendableWait: _receivedWaiting,
+    ),
+  );
+}
+
+/// The success screen after a payment used the whole spendable balance.
+Widget buildMobileSendStatusSendAgainUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_mobileSendBootstrap),
+      syncProvider.overrideWith(() => _WidgetbookSendSyncNotifier(BigInt.zero)),
+      spendableWaitProvider.overrideWith(
+        (ref, accountUuid) => SpendableWait(
+          availableNow: BigInt.zero,
+          changeWaiting: BigInt.from(120000000),
+          receivedWaiting: BigInt.zero,
+          changeWait: const AvailableIn.minutes(1, 2),
+        ),
+      ),
+    ],
+    child: SizedBox(
+      width: 393,
+      height: 852,
+      child: MobileSendStatusScreen(
+        args: SendReviewArgs(
+          proposalId: BigInt.one,
+          sendFlowId: 'preview-send-again',
+          proposalAccountUuid: _mobileSendAccountState.activeAccountUuid!,
+          address: _mobileShieldedAddress,
+          addressType: 'unified',
+          amountZatoshi: BigInt.from(100000000),
+          feeZatoshi: BigInt.from(2000),
+          needsSaplingParams: false,
+        ),
+        broadcastRunner:
+            ({
+              required ref,
+              required l10n,
+              required args,
+              keystone,
+              ledger,
+              required confirmSaplingParamsDownload,
+              shouldAbort,
+            }) => Future.value(
+              const SendBroadcastOutcome(
+                phase: SendBroadcastPhase.succeeded,
+                proposalConsumed: true,
+              ),
+            ),
+      ),
+    ),
+  );
+}
+
+/// The sheet the balance row opens, with change and a receipt both waiting.
+Widget buildMobileSpendableWaitSheetUseCase(BuildContext context) {
+  return _MobileSendScanFrame(
+    child: SpendableWaitSheetContent(
+      wait: _changeAndReceivedWaiting,
+      onClose: _noop,
+    ),
+  );
+}
+
+/// The desktop popover the clock beside Use Max opens.
+Widget buildSendSpendableWaitPopoverUseCase(BuildContext context) {
+  return Padding(
+    padding: const EdgeInsets.all(AppSpacing.xl),
+    child: Align(
+      alignment: Alignment.topLeft,
+      child: SpendableWaitPopoverSurface(wait: _receivedWaiting),
+    ),
+  );
+}
+
 Widget buildMobileSendAmountErrorUseCase(BuildContext context) {
   return const _MobileSendHarness(
     initialRecipient: _mobileShieldedAddress,
@@ -403,6 +507,7 @@ class _MobileSendHarness extends StatelessWidget {
     this.initialContactLabel,
     this.initialContactPictureId,
     this.initialRecipientFocused = false,
+    this.spendableWait,
   });
 
   final List<AddressBookContact> contacts;
@@ -420,17 +525,26 @@ class _MobileSendHarness extends StatelessWidget {
   final String? initialContactPictureId;
   final bool initialRecipientFocused;
 
+  /// Funds still confirming; its spendable amount becomes the balance.
+  final SpendableWait? spendableWait;
+
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
       overrides: [
+        if (spendableWait != null)
+          spendableWaitProvider.overrideWith(
+            (ref, accountUuid) => spendableWait,
+          ),
         appBootstrapProvider.overrideWithValue(_mobileSendBootstrap),
         sendProvingKeyWarmupProvider.overrideWithValue(() {}),
         ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
         recentSendRecipientsProvider.overrideWith(
           (ref, accountUuid) async => recents,
         ),
-        syncProvider.overrideWith(() => _WidgetbookSendSyncNotifier()),
+        syncProvider.overrideWith(
+          () => _WidgetbookSendSyncNotifier(spendableWait?.availableNow),
+        ),
         zecLiveUsdUnitPriceProvider.overrideWithValue(70),
         addressBookRepositoryProvider.overrideWithValue(
           _WidgetbookAddressBookRepository(contacts),
@@ -653,12 +767,16 @@ Future<BigInt> _widgetbookEstimateFee({
 }
 
 class _WidgetbookSendSyncNotifier extends SyncNotifier {
+  _WidgetbookSendSyncNotifier([this.spendable]);
+
+  final BigInt? spendable;
+
   @override
   Future<SyncState> build() async => SyncState(
     accountUuid: _mobileSendAccountState.activeAccountUuid,
     hasAccountScopedData: true,
-    spendableBalance: BigInt.from(14312120000),
-    totalBalance: BigInt.from(14312120000),
+    spendableBalance: spendable ?? BigInt.from(14312120000),
+    totalBalance: spendable ?? BigInt.from(14312120000),
     percentage: 1,
   );
 }

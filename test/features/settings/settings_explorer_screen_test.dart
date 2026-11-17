@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -21,20 +22,22 @@ const _accountState = AccountState(
   activeAddress: 'u1exploreraddress',
 );
 
-AppBootstrapState _bootstrap({String explorerUrlTemplate = ''}) =>
-    AppBootstrapState(
-      initialLocation: '/settings/explorer',
-      initialAccountState: _accountState,
-      initialSyncSnapshot: AppSyncSnapshot.empty,
-      network: 'main',
-      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-      explorerUrlTemplate: explorerUrlTemplate,
-      themeMode: ThemeMode.light,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: true,
-      passwordRotationRecoveryFailed: false,
-    );
+AppBootstrapState _bootstrap({
+  String explorerUrlTemplate = '',
+  String network = 'main',
+}) => AppBootstrapState(
+  initialLocation: '/settings/explorer',
+  initialAccountState: _accountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
+  explorerUrlTemplate: explorerUrlTemplate,
+  themeMode: ThemeMode.light,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
 
 class _FakeExplorerNotifier extends ZcashExplorerNotifier {
   _FakeExplorerNotifier(this.initial);
@@ -55,7 +58,11 @@ class _FakeExplorerNotifier extends ZcashExplorerNotifier {
   }
 }
 
-Widget _harness({String explorerUrlTemplate = ''}) {
+Widget _harness({
+  String explorerUrlTemplate = '',
+  String network = 'main',
+  double textScale = 1,
+}) {
   final router = GoRouter(
     initialLocation: '/settings/explorer',
     routes: [
@@ -71,7 +78,7 @@ Widget _harness({String explorerUrlTemplate = ''}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
-        _bootstrap(explorerUrlTemplate: explorerUrlTemplate),
+        _bootstrap(explorerUrlTemplate: explorerUrlTemplate, network: network),
       ),
       syncProvider.overrideWith(FakeSyncNotifier.new),
       zcashExplorerProvider.overrideWith(
@@ -81,7 +88,12 @@ Widget _harness({String explorerUrlTemplate = ''}) {
     child: MaterialApp.router(
       localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: AppTheme(data: AppThemeData.light, child: child!),
+      ),
     ),
   );
 }
@@ -136,5 +148,131 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('(default)'), findsOneWidget);
+  });
+
+  testWidgets('saves ZecBlock Private and describes its trade-off', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_harness());
+    await tester.pump();
+
+    expect(find.text('Current: zecblock.com (default)'), findsOneWidget);
+    expect(find.text(testL10n.settingsExplorerPrivateCopy), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('explorer_option_zecblock_private')),
+    );
+    await tester.pump();
+
+    expect(find.text(testL10n.settingsExplorerPrivateCopy), findsOneWidget);
+    expect(find.text(testL10n.settingsExplorerPrivacyCopy), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('explorer_update')));
+    await tester.pump();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SettingsExplorerScreen)),
+    );
+    expect(
+      container.read(zcashExplorerProvider),
+      kZecBlockPrivateExplorerTemplate,
+    );
+    expect(find.text('Current: ZecBlock Private'), findsOneWidget);
+  });
+
+  testWidgets('a saved ZecBlock Private is not offered as a custom URL', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _harness(explorerUrlTemplate: kZecBlockPrivateExplorerTemplate),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('explorer_option_custom')));
+    await tester.pump();
+
+    expect(find.textContaining('private.zecblock.com'), findsNothing);
+  });
+
+  testWidgets('offers ZecBlock Private on mainnet only', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _harness(
+        explorerUrlTemplate: kZecBlockPrivateExplorerTemplate,
+        network: 'test',
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('explorer_option_zecblock_private')),
+      findsNothing,
+    );
+    expect(
+      find.text('Current: testnet.zecblock.com (default)'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('option cards announce their subtitle and grow with large text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final semantics = tester.ensureSemantics();
+    // The sidebar and the button overflow at this scale on their own; only
+    // errors raised from this screen's widgets count here.
+    final layoutErrors = <String>[];
+    final reportError = FlutterError.onError;
+    FlutterError.onError = (details) => layoutErrors.add(details.toString());
+
+    await tester.pumpWidget(_harness(textScale: 2));
+    await tester.pump();
+    FlutterError.onError = reportError;
+
+    expect(
+      layoutErrors.where((e) => e.contains('settings_explorer_screen.dart')),
+      isEmpty,
+    );
+    final card = find.byKey(const ValueKey('explorer_option_zecblock_private'));
+    expect(tester.getSize(card).height, greaterThan(64));
+    expect(
+      tester
+          .getRect(
+            find.descendant(
+              of: card,
+              matching: find.text(testL10n.settingsExplorerPrivateSubtitle),
+            ),
+          )
+          .bottom,
+      lessThan(tester.getRect(card).bottom),
+    );
+    final announced = find.bySemanticsLabel(
+      'ZecBlock Private, ${testL10n.settingsExplorerPrivateSubtitle}',
+    );
+    expect(announced, findsOneWidget);
+    expect(
+      tester
+          .getSemantics(announced)
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    semantics.dispose();
   });
 }

@@ -53,6 +53,10 @@ SwapFailureCategory swapFailureCategory(
   }
 
   if (operation == SwapFailureOperation.sendZecDeposit &&
+      _isIronwoodFundingError(error)) {
+    return SwapFailureCategory.zecDepositIronwoodFunding;
+  }
+  if (operation == SwapFailureOperation.sendZecDeposit &&
       _isZecDepositFundingError(error)) {
     return SwapFailureCategory.zecDepositFunding;
   }
@@ -164,6 +168,14 @@ bool _isNoQuoteOrLiquidityError(OneClickApiException error) {
       message.contains('market maker') ||
       message.contains('cannot fulfill') ||
       message.contains("can't fulfill");
+}
+
+/// Matches the Rust error for a private swap deposit that Ironwood notes alone
+/// cannot fund (`SWAP_FUNDING_NEEDS_IRONWOOD` in `rust/src/wallet/sync/send.rs`).
+bool _isIronwoodFundingError(Object error) {
+  return error.toString().toLowerCase().contains(
+    'swap funding needs ironwood funds',
+  );
 }
 
 bool _isZecDepositFundingError(Object error) {

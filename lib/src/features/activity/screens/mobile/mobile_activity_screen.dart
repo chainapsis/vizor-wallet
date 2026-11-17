@@ -19,6 +19,7 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/pending_activity_evidence_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -27,6 +28,7 @@ import '../../activity_eta_provider.dart';
 import '../../activity_row_mapper.dart';
 import '../../gift_card_activity_index.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
+import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
 import '../../swap_activity_row_mapper.dart';
@@ -248,6 +250,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
+        spendableWaits: ref.watch(activeReceivedSpendableWaitsProvider),
         privateQueriesEnabled: ref.watch(enhancePirProvider),
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
@@ -406,6 +409,13 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
               null => null,
               final tx => () => _openLoadedTransactionStatus(context, tx),
             },
+            findingPayout:
+                swapReceiveTxByIntent[item.intentId] == null &&
+                watchSwapFindingPayout(
+                  ref,
+                  accountUuid: accountUuid,
+                  awaitingTxid: item.payoutAwaitingDiscovery,
+                ),
           ),
         ),
     ];

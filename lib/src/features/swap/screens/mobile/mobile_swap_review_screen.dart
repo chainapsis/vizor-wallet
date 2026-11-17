@@ -14,17 +14,19 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../pay/widgets/mobile/mobile_pay_review_content.dart';
 import '../../../pay/models/pay_recent_recipients.dart';
 import '../../../address_book/providers/address_book_provider.dart';
-import '../../../migration/providers/ironwood_migration_state_provider.dart';
+import '../../providers/swap_funding_balance_provider.dart';
 import '../../domain/swap_direction.dart';
 import '../../domain/swap_quote.dart';
 import '../../models/swap_activity_navigation.dart';
 import '../../models/swap_state.dart';
 import '../../providers/swap_state_provider.dart';
 import '../../widgets/mobile/mobile_swap_review_content.dart';
+import '../../widgets/swap_confidential_ui.dart';
 import '../swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import 'mobile_swap_keystone_sign_screen.dart';
@@ -317,11 +319,16 @@ class _MobileSwapReviewScreenState
     _hadReviewState = true;
 
     final accountState = ref.watch(accountProvider).value;
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(
-        swapState.reviewAccountUuid ?? accountState?.activeAccountUuid,
-      ),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid:
+            swapState.reviewAccountUuid ?? accountState?.activeAccountUuid,
+        oneTimeRefund:
+            addressPlan.oneTimeZecAddress && quote.direction.sendsZec,
+      )),
     );
+    bool exceeds(BigInt available) =>
+        swapReviewQuoteExceedsAvailableZec(quote, available);
     final accountLabel = _accountLabelFor(
       accountState,
       swapState.reviewAccountUuid,
@@ -331,11 +338,18 @@ class _MobileSwapReviewScreenState
       swapState.reviewAccountUuid,
     );
     final startBlockedReason =
-        swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
-        ? widget.payMode
-              ? context.l10n.commonPayInsufficientZec
-              : context.l10n.swapReviewInsufficientZecSwap
-        : null;
+        swapIronwoodOnlyShortfallMessage(
+          context.l10n,
+          funding,
+          exceeds,
+          payment: widget.payMode,
+          privacyModeEnabled: ref.watch(privacyModeProvider),
+        ) ??
+        (exceeds(funding.spendable)
+            ? widget.payMode
+                  ? context.l10n.commonPayInsufficientZec
+                  : context.l10n.swapReviewInsufficientZecSwap
+            : null);
     _ensureExpiryTicker(widget.payMode ? quote : null);
     final paymentQuoteExpired =
         swapState.quoteExpired ||
@@ -401,6 +415,11 @@ class _MobileSwapReviewScreenState
                             convertedFiatText: convertedFiatText,
                             expiresInText: _expiresInText,
                             expired: paymentQuoteExpired,
+                            flowConnector: quote.confidential
+                                ? const SwapConfidentialRouteConnector.pay(
+                                    review: true,
+                                  )
+                                : null,
                           ),
                           for (final message in [
                             swapState.reviewAmountDifferenceWarning(
@@ -425,6 +444,9 @@ class _MobileSwapReviewScreenState
                       )
                     : MobileSwapReviewContent(
                         quote: quote,
+                        flowConnector: quote.confidential
+                            ? const SwapConfidentialRouteConnector.swap()
+                            : null,
                         addressPlan: addressPlan,
                         addressBookContacts: addressBookContacts,
                         userExternalContactId: swapState.userExternalContactId,

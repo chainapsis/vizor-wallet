@@ -103,7 +103,7 @@ const LOCAL_ORIGIN: i64 = 1;
 /// Matched as a prefix of `table:<name>`, `view:<name>`, `index:<name>`,
 /// `column:<table or view>.<column>`, or `unique:<table>(<sorted columns>)`.
 /// A removed table's indexes and unique keys go with it.
-const REMOVED_FOR_ALL_BUILDS: [&str; 9] = [
+const REMOVED_FOR_ALL_BUILDS: [&str; 17] = [
     // The ZIP 318 pool-migration engine. Published builds reference these
     // tables only through `ON DELETE CASCADE` from `accounts`, which is inert
     // once the tables are gone.
@@ -118,6 +118,16 @@ const REMOVED_FOR_ALL_BUILDS: [&str; 9] = [
     "table:ironwood_nullifier_scan_blocks",
     "table:ironwood_one_time_spend_retention",
     "table:ironwood_one_time_sweeps",
+    // The PIR recovery cutover drops unlaunched one-time discovery state. No
+    // published build issued one-time addresses, so none reads it.
+    "table:ironwood_one_time_discovery",
+    "table:ironwood_one_time_fresh_accounts",
+    "table:ironwood_one_time_lookup_reads",
+    "table:ironwood_one_time_publications",
+    "column:ironwood_one_time_keys.",
+    "column:ironwood_one_time_lookups.",
+    "column:ironwood_one_time_payment_recovery.",
+    "index:idx_ironwood_one_time_keys_",
     // Marker-based one-time recovery drops obsolete progress fields and
     // renames candidate bindings from payments/witnesses to directory/companion.
     "column:ironwood_one_time_recovery.skipped_height",

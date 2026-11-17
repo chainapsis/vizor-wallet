@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart'
     show kPaymentLinkMobileCardHeight, kPaymentLinkMobileCardWidth;
 import 'package:zcash_wallet/src/features/activity/widgets/mobile/transaction_type_hero.dart';
@@ -29,6 +30,7 @@ import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.d
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -189,11 +191,14 @@ Widget _app(
   bool privateQueriesEnabled = false,
   String? routeTxid,
   List<rust_sync.TransactionInfo>? history,
+  Map<String, ReceivedSpendableWait>? spendableWaits,
   double? zecUsdPrice,
 }) {
   final resolvedDetail = detail ?? _detail(kind: tx.txKind);
   return ProviderScope(
     overrides: [
+      if (spendableWaits != null)
+        activeReceivedSpendableWaitsProvider.overrideWithValue(spendableWaits),
       if (zecUsdPrice != null)
         zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice),
       swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
@@ -422,6 +427,39 @@ void main() {
       expect(find.text('0.00015 ZEC'), findsNothing);
     });
   }
+
+  testWidgets('a receipt that cannot be spent yet says when and counts its '
+      'confirmations', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final received = _tx(
+      kind: 'received',
+      fee: BigInt.zero,
+      minedHeight: BigInt.from(2500000),
+    );
+    await tester.pumpWidget(
+      _app(
+        received,
+        spendableWaits: {
+          received.txidHex: (
+            wait: const AvailableIn.minutes(1, 2),
+            confirmations: 2,
+            requiredConfirmations: 6,
+          ),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Available in 1–2 min'), findsOneWidget);
+    expect(find.text('Completed'), findsNothing);
+    expect(find.text('Confirmations'), findsOneWidget);
+    expect(find.text('2 of 6'), findsOneWidget);
+    expect(
+      find.text('New funds can be spent after 6 confirmations.'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('ordinary receive shows no fee even when history is enriched', (
     tester,

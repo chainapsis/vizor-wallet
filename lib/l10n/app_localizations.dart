@@ -855,6 +855,18 @@ abstract class AppLocalizations {
   /// **'Card fee'**
   String get activityReceiptCardFee;
 
+  /// Label of a row on the receipt of a received transaction that cannot be spent yet: how many network confirmations it has.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmations'**
+  String get activityReceiptConfirmations;
+
+  /// Value of the Confirmations row on a received transaction receipt: confirmations so far out of those needed before the funds can be spent.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of {required}'**
+  String activityReceiptConfirmationsProgress(String count, String required);
+
   /// Label of a row on a transaction receipt: a notice about transaction details.
   ///
   /// In en, this message translates to:
@@ -926,6 +938,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Latest transaction status could not be refreshed.'**
   String get activityReceiptRefreshFailed;
+
+  /// Caption under the detail card of a received transaction that cannot be spent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'New funds can be spent after {count} confirmations.'**
+  String activityReceiptSpendableAfter(String count);
 
   /// Label of a row on a transaction receipt: the transaction status.
   ///
@@ -1948,6 +1966,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Amount'**
   String get commonAmount;
+
+  /// Shown beside a clock icon on an activity row, as the Status of a received transaction, and as the disabled Review button on the send amount step: the funds have arrived but cannot be spent for about this many minutes. Keep it short; the row truncates. Shared by: activity, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Available in {min}–{max} min'**
+  String commonAvailableInMinutes(String min, String max);
+
+  /// Same places as commonAvailableInMinutes, when the wait is under a minute. Shared by: activity, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Available in under 1 min'**
+  String get commonAvailableInUnderMinute;
 
   /// Screen-reader label of a back button.
   ///
@@ -3203,7 +3233,7 @@ abstract class AppLocalizations {
   /// **'Toggle flashlight'**
   String get commonToggleFlashlight;
 
-  /// Label of the last row on the mobile donation summary showing amount plus fee. Shared by: donation, voting.
+  /// Label of the last row on the mobile donation summary showing amount plus fee, and of the total row in the Available now sheet and popover on Send. Shared by: donation, send, voting.
   ///
   /// In en, this message translates to:
   /// **'Total'**
@@ -3310,6 +3340,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Welcome Back'**
   String get commonWelcomeBack;
+
+  /// Title of a short explanation, and the label of the info icon that opens it, next to a setting.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s this?'**
+  String get commonWhatsThis;
 
   /// Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings.
   ///
@@ -10235,6 +10271,12 @@ abstract class AppLocalizations {
   /// **'Vote'**
   String get navVote;
 
+  /// Status line under the Enhance swap privacy switch when the saved setting was unreadable and the new choice applies for this session but could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save this choice. It applies until you close Vizor.'**
+  String get nearSwapPrivacyUnsaved;
+
   /// Toast when the user turns off Tor while a software update is in progress.
   ///
   /// In en, this message translates to:
@@ -11569,6 +11611,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Fetching quote'**
   String get payFetchingQuote;
+
+  /// Pay error under the amount when a payment with a one-time refund address needs more than the Ironwood balance, though the whole balance would cover it. {amount} is the Ironwood balance, which privacy mode may mask.
+  ///
+  /// In en, this message translates to:
+  /// **'Private payments use Ironwood ZEC only. You have {amount} there.'**
+  String payIronwoodOnlyShortfall(String amount);
 
   /// Heading of the warning shown when the pasted Pay recipient address is not in the address book or recents.
   ///
@@ -14288,6 +14336,30 @@ abstract class AppLocalizations {
   /// **'Enter amount to continue'**
   String get sendAmountCtaEnterAmount;
 
+  /// Row label in the Available now sheet (mobile) and popover (desktop) on Send: change coming back from the last payment this wallet sent, which cannot be spent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing your last payment'**
+  String get sendAvailableChangeRow;
+
+  /// Footnote of the Available now sheet (mobile) and popover (desktop) on Send.
+  ///
+  /// In en, this message translates to:
+  /// **'Funds are available after a few network confirmations.'**
+  String get sendAvailableFootnote;
+
+  /// Row label in the Available now sheet (mobile) and popover (desktop) on Send: funds received from someone else that cannot be spent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Just received'**
+  String get sendAvailableReceivedRow;
+
+  /// Heading above the spendable amount in the sheet (mobile) and popover (desktop) that Send opens to show which funds cannot be spent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Available now'**
+  String get sendAvailableTitle;
+
   /// Error when the user declined the proving-parameter download during a send.
   ///
   /// In en, this message translates to:
@@ -15434,6 +15506,12 @@ abstract class AppLocalizations {
   /// **'Return to settings'**
   String get sendStatusMobileReturnToSettings;
 
+  /// Body of the mobile send success screen when the payment used the whole spendable balance and the change comes back in a few minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'It will confirm on-chain shortly. You can send again in {min}–{max} min.'**
+  String sendStatusMobileSendAgainIn(String min, String max);
+
   /// Title on the mobile status screen while a donation is being sent.
   ///
   /// In en, this message translates to:
@@ -15523,6 +15601,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =1{1 previous transaction} other{{count} previous transactions}}'**
   String sendVerifyAddressPreviousTransactions(int count);
+
+  /// Line under the spendable balance on the mobile send amount step: more funds become spendable in about this many minutes. Opens the Available now sheet. Keep it short; it shares a row with the Max button.
+  ///
+  /// In en, this message translates to:
+  /// **'+{amount} in {min}–{max} min'**
+  String sendWaitingMoreInMinutes(String amount, String min, String max);
+
+  /// Same line as sendWaitingMoreInMinutes, when the wait is under a minute.
+  ///
+  /// In en, this message translates to:
+  /// **'+{amount} in under 1 min'**
+  String sendWaitingMoreInUnderMinute(String amount);
 
   /// [security] Error shown when the selected account changed while a passcode-protected secret screen was open.
   ///
@@ -15788,6 +15878,18 @@ abstract class AppLocalizations {
   /// **'Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.'**
   String get settingsExplorerPrivacyCopy;
 
+  /// [security] Privacy note under the block explorer setting while the ZecBlock Private card is selected, saved or not, so describe the option rather than saying links already open there. Claim only that ZecBlock is not sent the transaction; it still sees the IP address. Also say it loads slower and that unmined transactions are not found.
+  ///
+  /// In en, this message translates to:
+  /// **'ZecBlock isn\'t told which transaction you open, though it still sees your IP address. Pages take longer to load, and a new transaction shows up only after it\'s in a block.'**
+  String get settingsExplorerPrivateCopy;
+
+  /// Subtitle of the ZecBlock Private option card in the block explorer setting: one short, friendly line; the note below it carries the trade-offs.
+  ///
+  /// In en, this message translates to:
+  /// **'Explore privately'**
+  String get settingsExplorerPrivateSubtitle;
+
   /// Error shown under the custom explorer URL field when saving it failed.
   ///
   /// In en, this message translates to:
@@ -15797,7 +15899,7 @@ abstract class AppLocalizations {
   /// Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation.
   ///
   /// In en, this message translates to:
-  /// **'Use {txid} or {txHash} in the path, or enter just the origin.'**
+  /// **'Put {txid} or {txHash} where the transaction ID goes, or enter just the domain.'**
   String settingsExplorerTemplateHint(String txid, String txHash);
 
   /// Title of the block explorer setting, used as the Settings row label and the screen heading; the explorer is the website used to look up transactions.
@@ -15889,6 +15991,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t update language.'**
   String get settingsLanguageUpdateFailed;
+
+  /// Progress line with a loader under the Enhance swap privacy setting while the wallet looks for past one-time swap payments.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking past swaps'**
+  String get settingsNearSwapPrivacyCheckingPastSwaps;
+
+  /// Subtitle under the Enhance swap privacy setting while a hardware wallet account is active.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.'**
+  String get settingsNearSwapPrivacyHardware;
+
+  /// Body of the "What changes" section of the Enhance swap privacy explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Swaps that send ZEC are paid from your Ironwood balance only. A swap can take a few minutes to prepare while Vizor checks its address\'s history.'**
+  String get settingsNearSwapPrivacyInfoChangesBody;
+
+  /// Section heading in the Enhance swap privacy explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'What changes'**
+  String get settingsNearSwapPrivacyInfoChangesTitle;
+
+  /// [security] First paragraph of the Enhance swap privacy explanation, opened from Learn more in Settings. NEAR Intents is a brand name.
+  ///
+  /// In en, this message translates to:
+  /// **'Each swap gives NEAR Intents a one-time Zcash address for its ZEC side, the payout when you receive ZEC or the refund when you send it. Even a future quantum computer can\'t tie it to this wallet.'**
+  String get settingsNearSwapPrivacyInfoLead;
+
+  /// [security] Body of the "What it doesn't cover" section of the Enhance swap privacy explanation. Ethereum is a brand name.
+  ///
+  /// In en, this message translates to:
+  /// **'It keeps these addresses from being tied to your wallet; it doesn\'t change how your funds are secured. Addresses you enter yourself, like an Ethereum address you reuse, can still link your swaps. Hardware wallet accounts use regular addresses.'**
+  String get settingsNearSwapPrivacyInfoLimitsBody;
+
+  /// Section heading in the Enhance swap privacy explanation, about what the setting does not protect.
+  ///
+  /// In en, this message translates to:
+  /// **'What it doesn\'t cover'**
+  String get settingsNearSwapPrivacyInfoLimitsTitle;
+
+  /// [security] Body of the "After a restore, or while it is off" section of the Enhance swap privacy explanation. "Check swap history" is the button name.
+  ///
+  /// In en, this message translates to:
+  /// **'After a restore, your wallet finds these payments privately on its own. If this is off when you restore, payouts of swaps into ZEC show up once you turn it on or run Check swap history. Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.'**
+  String get settingsNearSwapPrivacyInfoRestore;
+
+  /// Section heading in the Enhance swap privacy explanation, about restoring the wallet and turning the setting off.
+  ///
+  /// In en, this message translates to:
+  /// **'After a restore, or while it is off'**
+  String get settingsNearSwapPrivacyInfoRestoreTitle;
+
+  /// [security] Body of the "When a payout address is shared" section of the Enhance swap privacy explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.'**
+  String get settingsNearSwapPrivacyInfoReuse;
+
+  /// Section heading in the Enhance swap privacy explanation, about a payout address used by more than one quote.
+  ///
+  /// In en, this message translates to:
+  /// **'When a payout address is shared'**
+  String get settingsNearSwapPrivacyInfoReuseTitle;
+
+  /// Name of the setting that gives NEAR Intents swaps one-time Zcash addresses. NEAR is a brand name.
+  ///
+  /// In en, this message translates to:
+  /// **'Enhance swap privacy'**
+  String get settingsNearSwapPrivacyLabel;
+
+  /// Button under the Enhance swap privacy setting that opens its explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Learn more'**
+  String get settingsNearSwapPrivacyLearnMore;
+
+  /// Screen reader label of the Learn more button under the Enhance swap privacy setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Learn more about Enhance swap privacy'**
+  String get settingsNearSwapPrivacyLearnMoreSemantics;
+
+  /// Subtitle under the Enhance swap privacy setting while it is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Swaps use regular Zcash addresses.'**
+  String get settingsNearSwapPrivacyOff;
+
+  /// Subtitle under the Enhance swap privacy setting while it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Swaps use one-time Zcash addresses.'**
+  String get settingsNearSwapPrivacyOn;
+
+  /// Status shown in place of the Enhance swap privacy switch for a hardware wallet account. Short.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available'**
+  String get settingsNearSwapPrivacyUnavailable;
+
+  /// Subtitle under the Enhance swap privacy setting when its saved value could not be read. Swaps are blocked until the user chooses again.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t read your saved choice. Set it again to swap.'**
+  String get settingsNearSwapPrivacyUnknown;
 
   /// Small pill next to a Settings row label that flags a recently added feature (gift cards).
   ///
@@ -16363,6 +16573,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On'**
   String get settingsStatusOn;
+
+  /// Button in the swap history check after a check has run.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get settingsSwapHistoryCheckAgainButton;
+
+  /// Button that starts the swap history check.
+  ///
+  /// In en, this message translates to:
+  /// **'Check swap history'**
+  String get settingsSwapHistoryCheckButton;
+
+  /// Status under the swap history check button while it runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking… this can take a few minutes.'**
+  String get settingsSwapHistoryChecking;
+
+  /// Status under the swap history check button when the check takes longer and continues in later rounds while the app is open.
+  ///
+  /// In en, this message translates to:
+  /// **'The check will keep going while Vizor is open.'**
+  String get settingsSwapHistoryContinuing;
+
+  /// Status under the swap history check button when it finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Check complete.'**
+  String get settingsSwapHistoryDone;
+
+  /// Status under the swap history check button when a round could not finish, such as when the service can't be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap history can\'t be checked right now. Try again later.'**
+  String get settingsSwapHistoryFailed;
+
+  /// Status under the swap history check button before it has run.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing a payout or refund?'**
+  String get settingsSwapHistoryIdle;
+
+  /// Status under the swap history check button when another change was running or the wallet was locked.
+  ///
+  /// In en, this message translates to:
+  /// **'The check couldn\'t start. Try again in a moment.'**
+  String get settingsSwapHistoryNotStarted;
+
+  /// Button that pauses a running swap history check.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get settingsSwapHistoryPauseButton;
+
+  /// Status under the swap history check button when pausing did not reach the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t pause the check. Try again.'**
+  String get settingsSwapHistoryPauseFailed;
+
+  /// Status under the swap history check button after the user paused it.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused. Check again to resume.'**
+  String get settingsSwapHistoryPaused;
+
+  /// Status under the swap history check button while the server that finds swap payments has not reached this wallet's start height yet.
+  ///
+  /// In en, this message translates to:
+  /// **'The swap recovery service hasn\'t caught up with this wallet yet. Try again in a few minutes.'**
+  String get settingsSwapHistoryWaitingForService;
+
+  /// Status under the swap history check button while the wallet must sync first.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for wallet sync. Try again in a few minutes.'**
+  String get settingsSwapHistoryWaitingForSync;
+
+  /// Status under the swap history check button when an account or wallet change interrupted it.
+  ///
+  /// In en, this message translates to:
+  /// **'The check stopped because the wallet changed. Try again.'**
+  String get settingsSwapHistoryWalletChanged;
 
   /// Dark color theme option and row value.
   ///
@@ -17096,6 +17390,12 @@ abstract class AppLocalizations {
   /// **'Add refund address'**
   String get swapActionAddRefundAddress;
 
+  /// Swap and Pay primary button shown when the standard route has no quote; it requests a quote on the NEAR Intents confidential route. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Get confidential quote'**
+  String get swapActionGetConfidentialQuote;
+
   /// Primary button label on the swap screen while a quote is loading.
   ///
   /// In en, this message translates to:
@@ -17514,6 +17814,12 @@ abstract class AppLocalizations {
   /// **'Depositing {symbol}...'**
   String swapActivityStepDepositing(String symbol);
 
+  /// Description of the last swap status step while the wallet looks for a payout NEAR sent to a one-time address.
+  ///
+  /// In en, this message translates to:
+  /// **'NEAR sent it to your one-time address. Vizor is finding it.'**
+  String get swapActivityStepFindingPayoutDescription;
+
   /// Title of the last payment progress step.
   ///
   /// In en, this message translates to:
@@ -17694,6 +18000,18 @@ abstract class AppLocalizations {
   /// **'Remember this address for refunds'**
   String get swapAddressRememberRefund;
 
+  /// Swap and Pay button label when preparing a one-time address needs a private query server. Opens the server picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a server'**
+  String get swapAddressWaitServer;
+
+  /// Disabled Swap and Pay button label while a one-time refund address waits for wallet sync.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for sync…'**
+  String get swapAddressWaitSync;
+
   /// Empty-state text in the swap asset picker when the search has no match.
   ///
   /// In en, this message translates to:
@@ -17735,6 +18053,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You receive'**
   String get swapComposerYouReceive;
+
+  /// Name of the NEAR Intents confidential route: the settings toggle label and the badge on swap and Pay review and status screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidential'**
+  String get swapConfidentialLabel;
+
+  /// Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.'**
+  String get swapConfidentialRouteTooltip;
+
+  /// Description under the Confidential toggle in the swap and Pay settings modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit and payout can\'t be tracked to each other. Quotes can differ from the standard route.'**
+  String get swapConfidentialSettingDescription;
 
   /// Toast on mobile after the user tries to save a swap address that is already in the address book.
   ///
@@ -17982,6 +18318,18 @@ abstract class AppLocalizations {
   /// **'Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.'**
   String get swapFailureZecDepositFunding;
 
+  /// [security] Swap error when preparing a private swap's ZEC deposit: the Ironwood balance alone cannot cover the amount plus the network fee. The line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Private swaps use Ironwood ZEC only, which can\'t cover this swap and its network fee.\nMove funds to Ironwood or try a smaller amount.'**
+  String get swapFailureZecDepositIronwoodFunding;
+
+  /// [security] Pay error when preparing a private payment's ZEC deposit: the Ironwood balance alone cannot cover the amount plus the network fee. The line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Private payments use Ironwood ZEC only, which can\'t cover this payment and its network fee.\nMove funds to Ironwood or try a smaller amount.'**
+  String get swapFailureZecDepositIronwoodFundingPay;
+
   /// Swap error: the wallet could not build the ZEC deposit transaction before starting the swap.
   ///
   /// In en, this message translates to:
@@ -17993,6 +18341,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'ZEC deposit could not be sent.\nTry again later.'**
   String get swapFailureZecDepositSendFailed;
+
+  /// Swap status on the status page, Activity and Home while the wallet looks for a payout NEAR sent to a one-time address.
+  ///
+  /// In en, this message translates to:
+  /// **'Finding your ZEC…'**
+  String get swapFindingPayout;
+
+  /// Swap error under the composer when a swap with a one-time refund address needs more than the Ironwood balance, though the whole balance would cover it. {amount} is the Ironwood balance, which privacy mode may mask.
+  ///
+  /// In en, this message translates to:
+  /// **'Private swaps use Ironwood ZEC only. You have {amount} there.'**
+  String swapIronwoodOnlyShortfall(String amount);
 
   /// [security] Error in swap Keystone signing when broadcasting failed.
   ///
@@ -18222,6 +18582,24 @@ abstract class AppLocalizations {
   /// **'Maintenance window: {networks}'**
   String swapNoticeMaintenanceWindow(String networks);
 
+  /// Swap quote error when the saved Enhance swap privacy setting could not be read. Enhance swap privacy is the name of the setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t read Enhance swap privacy. Set it again in Settings.'**
+  String get swapNoticeNearSwapPrivacyUnknown;
+
+  /// Swap or Pay quote error shown above the primary button when the confidential route has no quote for the entered amount. Up to two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'No confidential quote for this amount'**
+  String get swapNoticeNoConfidentialQuoteForAmount;
+
+  /// Swap or Pay quote error shown above the primary button when the standard route has no quote for the entered amount. Up to two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'No quote for this amount'**
+  String get swapNoticeNoQuoteForAmount;
+
   /// Button that dismisses the NEAR Intents service notice.
   ///
   /// In en, this message translates to:
@@ -18233,6 +18611,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Payments may not work right now.'**
   String get swapNoticePaymentsMayFail;
+
+  /// Swap quote error when open quotes hold every one-time receive address. A View swaps link follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many swaps are waiting. Try again after one finishes or expires.'**
+  String get swapNoticePrivateReceiveAddressLimit;
+
+  /// Swap quote error with Enhance swap privacy on: the wallet could not reserve a one-time receive address for the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare a fresh wallet receive address. Try again after wallet sync.'**
+  String get swapNoticePrivateReceiveAddressPreparationFailed;
+
+  /// Swap quote or start error with Enhance swap privacy on while the wallet is still checking the next one-time address's history or waiting for sync.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing a private swap address. Try again in a moment.'**
+  String get swapNoticePrivateReceiveAddressPreparing;
+
+  /// Swap quote or start error when the one-time address reserved for the quote expired or was retired.
+  ///
+  /// In en, this message translates to:
+  /// **'This swap address is no longer available. Request a new quote.'**
+  String get swapNoticePrivateReceiveAddressStale;
+
+  /// Swap quote error with Enhance swap privacy on: no one-time receive address is available even after the wallet checked its swap history. Enhance swap privacy is the name of the setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Private swaps aren\'t available right now. Try again in a few minutes.'**
+  String get swapNoticePrivateReceiveAddressUnavailable;
 
   /// Swap or Pay quote error: the wallet could not reserve a new receive address for the swap.
   ///
@@ -18252,6 +18660,12 @@ abstract class AppLocalizations {
   /// **'Start: {time}'**
   String swapNoticeStart(String time);
 
+  /// Shown for a swap whose wallet start couldn't be confirmed, in place of its funding instructions and as its activity status. Its deposit instructions may have been shown, so the user may already have paid it.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t confirm this swap started. Check whether you already sent its deposit before starting another.'**
+  String get swapNoticeStartNotFinished;
+
   /// Button that opens the NEAR Intents status web page.
   ///
   /// In en, this message translates to:
@@ -18263,6 +18677,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Swaps may not work right now.'**
   String get swapNoticeSwapsMayFail;
+
+  /// Label with a link-off icon on the payout side of the swap composer, review and status, and on the refund side of the composer. Opens an explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'One-time address'**
+  String get swapOneTimeAddressLabel;
+
+  /// [security] Tooltip of the One-time address label on a swap's payout side.
+  ///
+  /// In en, this message translates to:
+  /// **'A one-time Zcash address for this swap. Even a future quantum computer can\'t tie it to your wallet.'**
+  String get swapOneTimeAddressPayoutExplanation;
+
+  /// Disabled Swap and Pay button label, and the composer's address label, while the wallet checks a one-time address's history.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing address…'**
+  String get swapOneTimeAddressPreparing;
+
+  /// Tooltip of the composer's address label while the wallet checks a one-time address's history.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is checking this address\'s history before using it. This can take a few minutes.'**
+  String get swapOneTimeAddressPreparingExplanation;
+
+  /// Screen reader label of the composer's address label while the wallet checks a one-time address's history.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing one-time address'**
+  String get swapOneTimeAddressPreparingSemantics;
+
+  /// [security] Tooltip of the one-time refund address label on a swap that sends ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'If this swap is refunded, the ZEC comes back to a one-time Zcash address. Even a future quantum computer can\'t tie it to your wallet.'**
+  String get swapOneTimeAddressRefundExplanation;
+
+  /// Label on the refund side of swap review and status for a swap that sends ZEC. Opens an explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'One-time refund address'**
+  String get swapOneTimeRefundAddressLabel;
 
   /// Page title on the desktop swap screen.
   ///
@@ -18318,11 +18774,23 @@ abstract class AppLocalizations {
   /// **'Source amount'**
   String get swapPayStatusSourceAmount;
 
+  /// Notice on a pending private swap into ZEC while the swap recovery service needs a newer app version.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Vizor to keep checking this swap\'s payout. Your funds are safe.'**
+  String get swapPayoutUpdateRequired;
+
   /// Accessibility label of the "Powered by" artwork in the NEAR Intents attribution.
   ///
   /// In en, this message translates to:
   /// **'Powered by'**
   String get swapPoweredByLabel;
+
+  /// Link under the swap quote error when too many swaps are waiting. Opens Activity.
+  ///
+  /// In en, this message translates to:
+  /// **'View swaps'**
+  String get swapQuoteErrorViewSwaps;
 
   /// Swap and Pay review, value of the row that says how long the quote holds. {time} is a 24-hour local time such as 14:05.
   ///
@@ -18341,6 +18809,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Rate pending'**
   String get swapQuoteRatePending;
+
+  /// Shown in the swap history check and as a swap quote error when the swap recovery service needs a newer app version.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Vizor to keep using private swaps.'**
+  String get swapRecoveryUpdateRequired;
+
+  /// Notice on a pending private swap that sends ZEC while the swap recovery service needs a newer app version.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Vizor to keep checking this swap\'s refund. Your funds are safe.'**
+  String get swapRefundUpdateRequired;
 
   /// Back link label on the review screen that returns to the Pay composer.
   ///
@@ -18432,6 +18912,18 @@ abstract class AppLocalizations {
   /// **'To: {address}'**
   String swapReviewToAddress(String address);
 
+  /// Title of the Pay settings modal, which holds the Confidential toggle and slippage.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment settings'**
+  String get swapSettingsTitlePay;
+
+  /// Title of the swap settings modal, which holds the Confidential toggle and slippage.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap settings'**
+  String get swapSettingsTitleSwap;
+
   /// Mobile Ledger signing screen title when the operation is a payment.
   ///
   /// In en, this message translates to:
@@ -18450,17 +18942,29 @@ abstract class AppLocalizations {
   /// **'Custom'**
   String get swapSlippageCustom;
 
-  /// Slippage modal explanation shown in pay mode: extra ZEC allowed when the quote moves.
+  /// Screen-reader label of the custom slippage input in the desktop swap settings modal.
   ///
   /// In en, this message translates to:
-  /// **'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'**
-  String get swapSlippageDescriptionPay;
+  /// **'Custom slippage tolerance, percent'**
+  String get swapSlippageCustomValueSemantics;
 
-  /// Slippage modal explanation shown in swap mode: maximum rate change accepted.
+  /// Screen-reader label of the minus button in the mobile slippage stepper.
   ///
   /// In en, this message translates to:
-  /// **'Sets the maximum rate change you\'ll accept. Network fees are separate.'**
-  String get swapSlippageDescriptionSwap;
+  /// **'Decrease slippage'**
+  String get swapSlippageDecrease;
+
+  /// Screen-reader label of the plus button in the mobile slippage stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Increase slippage'**
+  String get swapSlippageIncrease;
+
+  /// Screen-reader label of a slippage preset option in the desktop swap settings modal; {value} is a percentage such as 0.5%.
+  ///
+  /// In en, this message translates to:
+  /// **'{value} slippage'**
+  String swapSlippagePresetSemantics(String value);
 
   /// Validation error in the slippage modal when the custom value is outside 0.1 to 5 percent.
   ///
@@ -18473,6 +18977,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Slippage'**
   String get swapSlippageTitle;
+
+  /// Screen-reader label of the slippage value input in the mobile slippage stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage tolerance, percent'**
+  String get swapSlippageValueSemantics;
+
+  /// Shown in place of a swap's funding instructions, and as its activity status, while the wallet is still reserving its private address.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting swap…'**
+  String get swapStartPending;
 
   /// Status text on the mobile status screen when the operation needs user action.
   ///

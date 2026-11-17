@@ -77,7 +77,6 @@ pub(crate) use pczt::{
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
-pub(crate) use send::propose_send;
 pub(crate) use send::{
     abandon_orchard_migration, complete_orchard_migration_batch_pczt,
     complete_orchard_migration_denominations_pczt, complete_orchard_migration_immediate_pczt,
@@ -101,6 +100,7 @@ pub(crate) use send::{
     create_shield_transparent_pczt, get_ledger_shielding_progress, get_shield_transparent_status,
     shield_transparent_balance,
 };
+pub(crate) use send::{estimate_fee_with_swap_refund, propose_send, propose_send_with_swap_refund};
 pub(crate) use send::{
     estimate_send_max_for_purpose, propose_payment_link_batch, propose_send_for_purpose,
     SendPurpose,
@@ -133,11 +133,11 @@ pub(crate) use transactions::{
     get_export_birthday_anchor, get_local_block_time, get_oldest_mined_transaction_anchor,
     get_transaction_data_requests, get_transaction_detail, get_transaction_history,
     get_transaction_rows, get_transaction_rows_for_txids,
-    get_unmined_txids_with_mined_output_evidence, get_wallet_balance, get_wallet_balances,
-    history_pages, ExportBirthdayAnchor, TransactionDetail, TransactionDetailOutput,
-    TransactionFeeState, TransactionInfo, TransparentBalanceAuthority, TransparentDetailsView,
-    TransparentRecipientRow, TransparentStopReason, TxDataRequest, WalletBalance,
-    WalletBalanceAvailability,
+    get_unmined_txids_with_mined_output_evidence, get_wallet_balance,
+    get_wallet_balance_with_pending, get_wallet_balances, history_pages, ExportBirthdayAnchor,
+    TransactionDetail, TransactionDetailOutput, TransactionFeeState, TransactionInfo,
+    TransparentBalanceAuthority, TransparentDetailsView, TransparentRecipientRow,
+    TransparentStopReason, TxDataRequest, WalletBalance, WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(

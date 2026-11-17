@@ -14,6 +14,7 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
 static ENHANCE_PIR_ENABLED: AtomicBool = AtomicBool::new(false);
+static NEAR_SWAP_PRIVACY: AtomicBool = AtomicBool::new(false);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
@@ -59,6 +60,14 @@ pub fn set_active_sync_account(account_uuid: Option<String>) {
 #[frb(sync)]
 pub fn set_enhance_pir_enabled(enabled: bool) {
     ENHANCE_PIR_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+/// The account [`set_active_sync_account`] last named, whose swap recovery work goes first.
+pub(crate) fn active_sync_account() -> Option<String> {
+    ACTIVE_SYNC_ACCOUNT
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 pub(crate) fn enhance_pir_enabled() -> bool {
@@ -917,6 +926,29 @@ pub struct WalletBalance {
     pub locked: u64,
     /// Sum of spendable + locked + pending balances across all pools.
     pub total: u64,
+    /// The shielded pending value that waits only on confirmations, by
+    /// transaction, read in the same snapshot as the amounts above. Empty
+    /// while the wallet still has older blocks to scan; pending value it does
+    /// not list has no known wait.
+    pub pending_spendable: Vec<PendingSpendableEntry>,
+    /// The wallet's chain tip when the entries were read: their block counts
+    /// and confirmations are measured from it.
+    pub pending_spendable_tip_height: u32,
+}
+
+/// Shielded funds one transaction gave the account that are short of
+/// confirmations: its change, or what it received.
+pub struct PendingSpendableEntry {
+    /// As [`TransactionInfo::txid_hex`].
+    pub txid_hex: String,
+    /// Change from the account's own transaction, not funds received.
+    pub is_change: bool,
+    pub value: u64,
+    /// Blocks after [`WalletBalance::pending_spendable_tip_height`] before
+    /// the funds can be spent.
+    pub blocks_until_spendable: u32,
+    /// Confirmations the transaction has at that tip; zero while unmined.
+    pub confirmations: u32,
 }
 
 pub struct ScanRangeInfo {
@@ -964,7 +996,10 @@ fn catch<T, E: From<String>>(f: impl FnOnce() -> Result<T, E> + panic::UnwindSaf
     }
 }
 
-fn parse_network_and_migrate(db_path: &str, network: &str) -> Result<WalletNetwork, String> {
+pub(crate) fn parse_network_and_migrate(
+    db_path: &str,
+    network: &str,
+) -> Result<WalletNetwork, String> {
     let network = keys::parse_network(network)?;
     keys::ensure_db_migrated_once(db_path, network)?;
     Ok(network)
@@ -1132,7 +1167,8 @@ pub fn get_balance(
 ) -> Result<WalletBalance, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let b = wallet_sync::get_wallet_balance(&db_path, network, &account_uuid)?;
+        let (b, pending_spendable) =
+            wallet_sync::get_wallet_balance_with_pending(&db_path, network, &account_uuid)?;
         let availability = match b.availability {
             wallet_sync::WalletBalanceAvailability::Available => {
                 WalletBalanceAvailability::Available
@@ -1198,6 +1234,18 @@ pub fn get_balance(
             spendable,
             locked,
             total: total_spendable + locked + pending,
+            pending_spendable_tip_height: pending_spendable.tip_height,
+            pending_spendable: pending_spendable
+                .entries
+                .into_iter()
+                .map(|entry| PendingSpendableEntry {
+                    txid_hex: hex::encode(&entry.txid),
+                    is_change: entry.is_change,
+                    value: entry.value,
+                    blocks_until_spendable: entry.blocks_until_spendable,
+                    confirmations: entry.confirmations,
+                })
+                .collect(),
         })
     })
 }
@@ -4006,4 +4054,66 @@ pub fn get_enhance_recovery_status(
 ) -> Result<EnhanceRecoveryStatus, String> {
     let network = keys::parse_network(&network)?;
     sync_engine::enhance_recovery_status(&db_path, network)
+}
+
+/// Allow new private swap addresses (see `require_new_address`). Private queries don't
+/// affect it, and payments to addresses already handed out are found either way.
+#[frb(sync)]
+pub fn set_near_swap_privacy_enabled(enabled: bool) {
+    NEAR_SWAP_PRIVACY.store(enabled, Ordering::SeqCst);
+}
+
+/// Whether new private swap addresses are allowed (see [`set_near_swap_privacy_enabled`]).
+pub(crate) fn near_swap_privacy_enabled() -> bool {
+    NEAR_SWAP_PRIVACY.load(Ordering::SeqCst)
+}
+
+/// Same software send lifecycle, with an authenticated refund record on change.
+pub fn propose_swap_funding(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    send_flow_id: String,
+    deposit_address: String,
+    amount_zatoshi: u64,
+    refund_index: u64,
+) -> Result<ProposalResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let r = wallet_sync::propose_send_with_swap_refund(
+            &db_path,
+            network,
+            &account_uuid,
+            &send_flow_id,
+            &deposit_address,
+            amount_zatoshi,
+            refund_index,
+        )?;
+        Ok(ProposalResult {
+            proposal_id: r.proposal_id,
+            needs_sapling_params: r.needs_sapling_params,
+            fee_zatoshi: r.fee_zatoshi,
+        })
+    })
+}
+
+/// The fee [`propose_swap_funding`] would pay for any refund index: the refund memo
+/// does not change the fee, so this also sizes a swap before its refund quote exists.
+pub fn estimate_swap_funding_fee(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    deposit_address: String,
+    amount_zatoshi: u64,
+) -> Result<u64, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::estimate_fee_with_swap_refund(
+            &db_path,
+            network,
+            &account_uuid,
+            &deposit_address,
+            amount_zatoshi,
+        )
+    })
 }
