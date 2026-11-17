@@ -353,6 +353,27 @@ Widget buildSendSpendableWaitPopoverUseCase(BuildContext context) {
   );
 }
 
+/// The sheet while a long amount is confirming: its rows are cut to fit.
+Widget buildMobileSpendableWaitSheetLongUseCase(BuildContext context) {
+  return _MobileSendScanFrame(
+    child: SpendableWaitSheetContent(
+      wait: _longReceivedWaiting,
+      onClose: _noop,
+    ),
+  );
+}
+
+/// The desktop popover while a long amount is confirming.
+Widget buildSendSpendableWaitPopoverLongUseCase(BuildContext context) {
+  return Padding(
+    padding: const EdgeInsets.all(AppSpacing.xl),
+    child: Align(
+      alignment: Alignment.topLeft,
+      child: SpendableWaitPopoverSurface(wait: _longReceivedWaiting),
+    ),
+  );
+}
+
 Widget buildMobileSendAmountErrorUseCase(BuildContext context) {
   return const _MobileSendHarness(
     initialRecipient: _mobileShieldedAddress,
