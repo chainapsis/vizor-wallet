@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
+import '../../../providers/sync_provider.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import 'swap_activity_tracker.dart';
+import 'swap_payout_discovery_provider.dart';
 
 const _swapActivityKey = 'zcash_swap_activities_v1';
 const _swapActivityStorageVersion = 1;
@@ -64,7 +66,7 @@ final swapPendingIntentCountProvider = FutureProvider.family<int, String>((
   // deposit. Resolving first means false claims and unbroadcast deposits expire
   // on their deadline rather than blocking forever.
   final intents = swapIntentsFromRecords(records);
-  return intents
+  final open = intents
       .where(
         (intent) =>
             !intent.status.isTerminal &&
@@ -73,6 +75,32 @@ final swapPendingIntentCountProvider = FutureProvider.family<int, String>((
                 intent.depositClaimedAt != null),
       )
       .length;
+  // A one-time payout NEAR reports sent isn't in the balance until receiver
+  // recovery finds it, so it blocks removal too until the wallet has its
+  // transaction (see [swapPayoutAwaitingDiscovery]). A failed read throws,
+  // which the gates treat as a failed check.
+  final awaiting = {
+    for (final intent in intents)
+      if (swapPayoutAwaitingDiscovery(
+            privateAddress: intent.privateAddress,
+            direction: intent.direction,
+            status: intent.status,
+            walletTxid: swapChainTxidToWalletTxidHex(
+              intent.destinationChainTxHash,
+            ),
+          )
+          case final txid?)
+        txid.toLowerCase(),
+  };
+  if (awaiting.isEmpty) return open;
+  // Counts again once sync brings in new transactions.
+  ref.watch(syncProvider.select((value) => value.value?.recentTransactions));
+  final rows = await ref.read(swapPayoutRowsLoaderProvider)(
+    accountUuid,
+    awaiting.toList(),
+  );
+  final found = {for (final row in rows) row.txidHex.toLowerCase()};
+  return open + awaiting.difference(found).length;
 });
 
 abstract interface class SwapActivityStore {
