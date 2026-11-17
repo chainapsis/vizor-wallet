@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_status.dart';
 import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
 import 'support/service_status_fixture.dart';
@@ -525,10 +526,27 @@ void main() {
         find.byKey(const ValueKey('swap_slippage_update_button')),
       );
       expect(update().onPressed, isNull);
-      // The whole row flips it, its text included.
+      final feedback = <Object?>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            feedback.add(call.arguments);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      // The whole row flips it, its text included, with a selection tick.
       await tester.tap(find.textContaining("can't be tracked to each other"));
       await tester.pumpAndSettle();
       expect(update().onPressed, isNotNull);
+      expect(feedback, ['HapticFeedbackType.selectionClick']);
       await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
       await tester.pumpAndSettle();
       expect(update().onPressed, isNull);

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
@@ -84,7 +87,13 @@ class SwapConfidentialSetting extends StatelessWidget {
       ),
     );
     if (kAppFormFactor == AppFormFactor.mobile) {
-      // The whole row flips it, like a Settings toggle row.
+      // The whole row flips it, like a Settings toggle row, and ticks as it
+      // flips.
+      void flip() {
+        unawaited(AppHaptics.selection());
+        toggle();
+      }
+
       return Semantics(
         container: true,
         button: true,
@@ -92,12 +101,12 @@ class SwapConfidentialSetting extends StatelessWidget {
         toggled: confidential,
         label: l10n.swapConfidentialLabel,
         hint: l10n.swapConfidentialSettingDescription,
-        onTap: toggle,
+        onTap: flip,
         excludeSemantics: true,
         child: GestureDetector(
           key: const ValueKey('swap_confidential_setting'),
           behavior: HitTestBehavior.opaque,
-          onTap: toggle,
+          onTap: flip,
           child: Row(
             children: [
               text,
