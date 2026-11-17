@@ -8,6 +8,15 @@ enum ZcashExplorerTxidOrder { protocol, display }
 typedef ZcashExplorerLauncher = Future<bool> Function(Uri uri);
 
 const kDefaultZcashExplorerLabel = 'ZecBlock';
+const kZecBlockPrivateExplorerLabel =
+    'ZecBlock Private'; // l10n-ignore: product name
+
+/// ZecBlock's private explorer. The txid sits in the URL fragment, which a
+/// browser never sends, so no request carries it.
+const kZecBlockPrivateExplorerTemplate =
+    'https://private.zecblock.com/#tx={txid}';
+
+enum ZcashExplorerChoice { zecBlock, zecBlockPrivate, custom }
 
 final _txidHexPattern = RegExp(r'^[0-9a-f]{64}$');
 final _txidHexPathTailPattern = RegExp(r'/[0-9a-fA-F]{64}/?$');
@@ -25,14 +34,44 @@ String defaultZcashExplorerHost(String networkName) {
   };
 }
 
-/// Settings-row label: ZecBlock when unset, otherwise the custom host.
+/// The private explorer serves mainnet only.
+bool zecBlockPrivateExplorerAvailable(String networkName) {
+  return zcashNetworkFromName(networkName) == ZcashNetwork.mainnet;
+}
+
+/// Which explorer option a stored template selects on [networkName].
+ZcashExplorerChoice zcashExplorerChoice(
+  String? storedTemplate, {
+  required String networkName,
+}) {
+  final template = _templateForNetwork(storedTemplate, networkName);
+  if (template.isEmpty) return ZcashExplorerChoice.zecBlock;
+  return template == kZecBlockPrivateExplorerTemplate
+      ? ZcashExplorerChoice.zecBlockPrivate
+      : ZcashExplorerChoice.custom;
+}
+
+/// The private preset falls back to the default explorer off mainnet.
+String _templateForNetwork(String? storedTemplate, String networkName) {
+  final template = storedTemplate?.trim() ?? '';
+  if (template == kZecBlockPrivateExplorerTemplate &&
+      !zecBlockPrivateExplorerAvailable(networkName)) {
+    return '';
+  }
+  return template;
+}
+
+/// Settings-row label: a built-in explorer's name, otherwise the custom host.
 String explorerSettingsLabel(
   AppLocalizations l10n,
   String? customTemplate, {
   required String networkName,
 }) {
-  final template = customTemplate?.trim() ?? '';
+  final template = _templateForNetwork(customTemplate, networkName);
   if (template.isEmpty) return kDefaultZcashExplorerLabel;
+  if (template == kZecBlockPrivateExplorerTemplate) {
+    return kZecBlockPrivateExplorerLabel;
+  }
   try {
     return Uri.parse(normalizeExplorerUrlTemplate(template)).host;
   } on FormatException {
@@ -126,7 +165,7 @@ Uri zcashExplorerTransactionUri({
   String? customTemplate,
 }) {
   final displayTxid = zcashDisplayTxidHex(txidHex, txidOrder);
-  final template = customTemplate?.trim() ?? '';
+  final template = _templateForNetwork(customTemplate, networkName);
   if (template.isNotEmpty) {
     return applyExplorerUrlTemplate(template, displayTxid);
   }
