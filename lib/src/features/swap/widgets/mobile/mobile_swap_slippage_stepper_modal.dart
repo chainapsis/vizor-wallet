@@ -166,6 +166,7 @@ class _MobileSwapSlippageStepperModalState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SwapConfidentialSetting(
+                      mobile: true,
                       confidential: _confidential,
                       onChanged: (value) =>
                           setState(() => _confidential = value),

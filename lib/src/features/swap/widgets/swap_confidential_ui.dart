@@ -44,11 +44,16 @@ class SwapConfidentialSetting extends StatelessWidget {
   const SwapConfidentialSetting({
     required this.confidential,
     required this.onChanged,
+    this.mobile = false,
     super.key,
   });
 
   final bool confidential;
   final ValueChanged<bool> onChanged;
+
+  /// The mobile settings sheet's row, set by the sheet rather than the build's
+  /// form factor so the desktop modal keeps its own row in every test lane.
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
@@ -77,16 +82,13 @@ class SwapConfidentialSetting extends StatelessWidget {
           Text(
             l10n.swapConfidentialSettingDescription,
             // Mobile text stays at 16px or more, like the Settings descriptions.
-            style:
-                (kAppFormFactor == AppFormFactor.mobile
-                        ? AppTypography.bodyMedium
-                        : AppTypography.bodySmall)
-                    .copyWith(color: colors.text.secondary),
+            style: (mobile ? AppTypography.bodyMedium : AppTypography.bodySmall)
+                .copyWith(color: colors.text.secondary),
           ),
         ],
       ),
     );
-    if (kAppFormFactor == AppFormFactor.mobile) {
+    if (mobile) {
       // The whole row flips it, like a Settings toggle row, and ticks as it
       // flips.
       void flip() {
