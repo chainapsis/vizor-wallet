@@ -195,6 +195,7 @@
   "addressBookInvalidBitcoin": "无效的 Bitcoin 地址",
   "addressBookInvalidEvm": "无效的 EVM 地址",
   "addressBookInvalidNear": "无效的 NEAR 地址",
+  "addressBookInvalidNetworkAddress": "无效的 {network} 地址",
   "addressBookInvalidSolana": "无效的 Solana 地址",
   "addressBookInvalidZcash": "无效的 Zcash 地址",
   "addressBookLabelLength": "请使用 1-20 个字符",

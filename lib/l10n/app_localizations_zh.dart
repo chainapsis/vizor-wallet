@@ -650,6 +650,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressBookInvalidNear => '无效的 NEAR 地址';
 
   @override
+  String addressBookInvalidNetworkAddress(String network) {
+    return '无效的 $network 地址';
+  }
+
+  @override
   String get addressBookInvalidSolana => '无效的 Solana 地址';
 
   @override

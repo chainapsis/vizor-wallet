@@ -955,6 +955,14 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     if (_labelController.text.trim().isEmpty) return false;
     final address = _addressController.text.trim();
     if (address.isEmpty) return false;
+    // A saved address stays as it was saved, so renaming a contact is not
+    // blocked by a format check added after it, as on desktop.
+    final saved = widget.contact;
+    if (saved != null &&
+        saved.network == _network &&
+        saved.address.trim() == address) {
+      return true;
+    }
     return addressFormatIssue(_network, address) == null;
   }
 

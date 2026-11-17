@@ -666,6 +666,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get addressBookInvalidNear => '올‍바‍르‍지 않‍은 NEAR 주‍소‍예‍요';
 
   @override
+  String addressBookInvalidNetworkAddress(String network) {
+    return '올‍바‍르‍지 않‍은 $network 주‍소‍예‍요';
+  }
+
+  @override
   String get addressBookInvalidSolana => '올‍바‍르‍지 않‍은 Solana 주‍소‍예‍요';
 
   @override

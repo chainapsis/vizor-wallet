@@ -195,6 +195,7 @@
   "addressBookInvalidBitcoin": "올‍바‍르‍지 않‍은 Bitcoin 주‍소‍예‍요",
   "addressBookInvalidEvm": "올‍바‍르‍지 않‍은 EVM 주‍소‍예‍요",
   "addressBookInvalidNear": "올‍바‍르‍지 않‍은 NEAR 주‍소‍예‍요",
+  "addressBookInvalidNetworkAddress": "올‍바‍르‍지 않‍은 {network} 주‍소‍예‍요",
   "addressBookInvalidSolana": "올‍바‍르‍지 않‍은 Solana 주‍소‍예‍요",
   "addressBookInvalidZcash": "올‍바‍르‍지 않‍은 Zcash 주‍소‍예‍요",
   "addressBookLabelLength": "1~20‍자‍로 입‍력‍해 주‍세‍요",

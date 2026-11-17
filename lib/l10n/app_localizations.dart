@@ -1275,6 +1275,12 @@ abstract class AppLocalizations {
   /// **'Invalid NEAR address'**
   String get addressBookInvalidNear;
 
+  /// Error under an address field when the text is not a valid mainnet address for the named chain. Used for chains without a wording of their own (Litecoin, Dogecoin, Dash, Bitcoin Cash, TON, Cardano).
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid {network} address'**
+  String addressBookInvalidNetworkAddress(String network);
+
   /// Error under an address field when the text is not a valid Solana address.
   ///
   /// In en, this message translates to:

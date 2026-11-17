@@ -686,6 +686,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressBookInvalidNear => 'Invalid NEAR address';
 
   @override
+  String addressBookInvalidNetworkAddress(String network) {
+    return 'Invalid $network address';
+  }
+
+  @override
   String get addressBookInvalidSolana => 'Invalid Solana address';
 
   @override

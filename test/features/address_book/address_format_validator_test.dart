@@ -24,12 +24,10 @@ void main() {
 
     test('unsupported networks always pass', () {
       for (final network in [
-        AddressBookNetwork.ton,
-        AddressBookNetwork.cardano,
         AddressBookNetwork.stellar,
         AddressBookNetwork.xrp,
         AddressBookNetwork.sui,
-        AddressBookNetwork.dogecoin,
+        AddressBookNetwork.tron,
       ]) {
         expect(
           _issue(network, 'literally anything goes here'),
