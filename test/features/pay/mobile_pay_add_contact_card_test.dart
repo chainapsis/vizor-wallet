@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -42,14 +43,16 @@ void main() {
             body: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Spacer(),
-                MobileModalCard(
-                  child: MobilePayAddContactCard(
-                    network: AddressBookNetwork.ethereum,
-                    address: _address,
-                    onCancel: () {},
-                    onSave: onSave,
-                    profilePictureIdGenerator: profilePictureIdGenerator,
+                // Bounded like the sheet route that presents the card.
+                Expanded(
+                  child: MobileModalCard(
+                    child: MobilePayAddContactCard(
+                      network: AddressBookNetwork.ethereum,
+                      address: _address,
+                      onCancel: () {},
+                      onSave: onSave,
+                      profilePictureIdGenerator: profilePictureIdGenerator,
+                    ),
                   ),
                 ),
               ],
@@ -125,8 +128,8 @@ void main() {
     for (final label in ['Address label', 'Chain & address']) {
       final text = tester.widget<Text>(find.text(label));
       expect(text.style?.fontWeight, FontWeight.w500);
-      expect(text.style?.fontSize, AppTypography.labelMedium.fontSize);
-      expect(text.style?.height, AppTypography.labelMedium.height);
+      expect(text.style?.fontSize, AppTypography.labelLarge.fontSize);
+      expect(text.style?.height, AppTypography.labelLarge.height);
     }
 
     expect(tester.getSize(find.byType(MobileTextField)).height, 60);
@@ -187,6 +190,26 @@ void main() {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump();
     expect(find.bySemanticsLabel('Clear contact label'), findsNothing);
+  });
+
+  testWidgets('Tab leaves a filled label field instead of bouncing back', (
+    tester,
+  ) async {
+    await pumpCard(tester, onSave: (_, _) async {});
+    final field = find.byKey(const ValueKey('mobile_pay_add_contact_label'));
+    await tester.enterText(field, 'Alice');
+    await tester.pump();
+    bool fieldFocused() => tester
+        .widget<EditableText>(
+          find.descendant(of: field, matching: find.byType(EditableText)),
+        )
+        .focusNode
+        .hasFocus;
+    expect(fieldFocused(), isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(fieldFocused(), isFalse);
   });
 
   testWidgets('scrolls inside the card on a compact keyboard viewport', (

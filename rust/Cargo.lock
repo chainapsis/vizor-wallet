@@ -3135,13 +3135,17 @@ dependencies = [
  "zakura-client-sqlite",
  "zakura-jubjub",
  "zakura-keys",
+ "zakura-near-intents",
  "zakura-note-encryption",
+ "zakura-one-time-ivk",
  "zakura-orchard",
  "zakura-pasta-curves",
  "zakura-pczt",
  "zakura-pir-client",
  "zakura-pir-config",
  "zakura-pir-protocol",
+ "zakura-pir-publisher",
+ "zakura-pir-query-server",
  "zakura-primitives",
  "zakura-proofs",
  "zakura-protocol",
@@ -4973,6 +4977,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zakura-near-intents"
+version = "0.0.1-rc6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b221344f8e7d7b388f03c31118bfc76f570c64cb08717f0ed461a599d916893"
+dependencies = [
+ "zakura-one-time-ivk",
+ "zakura-protocol",
+]
+
+[[package]]
 name = "zakura-note-encryption"
 version = "5.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5153,6 +5167,7 @@ dependencies = [
  "base64",
  "hex",
  "http",
+ "incrementalmerkletree",
  "rand 0.8.8",
  "rand_chacha 0.3.1",
  "reinspiring",
@@ -5160,7 +5175,10 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
+ "zakura-address",
  "zakura-filters",
+ "zakura-note-encryption",
+ "zakura-orchard",
  "zakura-protocol",
  "zakura-transparent",
 ]
@@ -5172,8 +5190,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6bec423269e5311849eee61c1203c0dbea3c5ea268fb77daee42eb2ccfdf65da"
 dependencies = [
  "hex",
+ "incrementalmerkletree",
  "sha2 0.10.9",
  "thiserror 2.0.21",
+ "zakura-orchard",
  "zakura-pir-protocol",
  "zakura-pir-server-core",
 ]
@@ -5186,6 +5206,7 @@ checksum = "47f9f9dca489ec5a8edcc8f2430582815d46a5efc85ebc12c2c86b9386b15290"
 dependencies = [
  "rayon",
  "reinspiring",
+ "sha2 0.10.9",
  "zakura-pir-protocol",
  "zakura-pir-server-core",
 ]

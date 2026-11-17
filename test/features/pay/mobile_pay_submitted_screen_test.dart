@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -236,6 +237,75 @@ void main() {
     );
   });
 
+  testWidgets('a deposit landing on screen plays the success haptic once', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    final nativeHaptics = _recordNativeHaptics(tester);
+    final router = _router(AppThemeData.light);
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      _app(router, _state(intent: _intent(), depositSubmitting: true)),
+    );
+    await tester.pump();
+    expect(nativeHaptics, isEmpty);
+
+    final notifier =
+        ProviderScope.containerOf(
+              tester.element(find.byType(MobilePaySubmittedScreen)),
+            ).read(swapStateProvider.notifier)
+            as _PayStatusNotifier;
+    notifier.emit(
+      _state(
+        intent: _intent(
+          depositTxHash: 'txid-1',
+          broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(nativeHaptics, ['sendSuccess']);
+
+    // A rebuild on the same outcome does not play it again.
+    notifier.emit(
+      _state(
+        intent: _intent(
+          depositTxHash: 'txid-1',
+          broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+        ),
+        selectedIntentId: null,
+      ),
+    );
+    await tester.pump();
+    expect(nativeHaptics, ['sendSuccess']);
+  });
+
+  testWidgets('opening an already finished payment plays no haptic', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    final nativeHaptics = _recordNativeHaptics(tester);
+    final router = _router(AppThemeData.light);
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      _app(
+        router,
+        _state(
+          intent: _intent(
+            depositTxHash: 'txid-1',
+            broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('pay_submitted_done')), findsOneWidget);
+    expect(nativeHaptics, isEmpty);
+  });
+
   testWidgets('missing intent releases the restoring screen after a grace', (
     tester,
   ) async {
@@ -363,6 +433,25 @@ void main() {
   );
 }
 
+/// Records the native haptic patterns (`AppHaptics.sendSuccess` and the like).
+List<String> _recordNativeHaptics(WidgetTester tester) {
+  final calls = <String>[];
+  const channel = MethodChannel('com.zcash.wallet/haptics');
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+    call,
+  ) async {
+    calls.add(call.method);
+    return true;
+  });
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      null,
+    ),
+  );
+  return calls;
+}
+
 Widget _app(GoRouter router, SwapState state) {
   return ProviderScope(
     overrides: [
@@ -434,4 +523,6 @@ class _PayStatusNotifier extends SwapNotifier {
 
   @override
   SwapState build() => initialState;
+
+  void emit(SwapState next) => state = next;
 }

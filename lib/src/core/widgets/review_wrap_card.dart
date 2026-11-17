@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 
+import '../layout/app_form_factor.dart';
 import '../theme/app_theme.dart';
+import 'mobile/mobile_surface_card.dart';
 
 /// The [ReviewWrapCard] inner inset shared by every default instance.
 const kReviewWrapCardPadding = EdgeInsets.symmetric(
@@ -52,7 +54,10 @@ class ReviewWrapCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: surfaceColor ?? colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appSurfaceShadow(colors),
+        // Mobile surfaces share the soft lift; desktop keeps its outline.
+        boxShadow: kAppFormFactor == AppFormFactor.mobile
+            ? mobileSurfaceShadows(colors)
+            : appSurfaceShadow(colors),
       ),
       padding: padding,
       child: Column(

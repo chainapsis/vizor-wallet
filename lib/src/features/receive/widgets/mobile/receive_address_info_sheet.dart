@@ -7,9 +7,6 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../receive_address_widgets.dart';
 
-const _closeButtonHeight = AppButtonSizing.largeHeight;
-const _modalCloseIconSize = 20.0;
-
 /// Opens the address-type explainer sheet — Figma `Shielded Address` /
 /// `Transparent Address` modals (4562:97619 / 4562:100793).
 Future<void> showReceiveAddressInfoSheet(
@@ -34,112 +31,47 @@ class ReceiveAddressInfoSheet extends StatelessWidget {
     final isShielded = type == ReceiveAddressType.shielded;
     final itemMaxLines = isShielded ? const [3, 3, 3] : const [2, 4, 5, 4];
 
-    return Stack(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.base,
-            AppSpacing.sm,
-            AppSpacing.base,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
-                  width: 184,
-                  height: 51,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        receiveAddressInfoTitle(context.l10n, type),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.bodyLarge.copyWith(
-                          color: colors.text.accent,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        receiveAddressInfoSubtitle(context.l10n, type),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < items.length; i++) ...[
-                    _ReceiveAddressInfoSheetItem(
-                      key: ValueKey('receive_address_info_item_$i'),
-                      iconName: items[i].iconName,
-                      text: items[i].text,
-                      maxLines: itemMaxLines[i],
-                    ),
-                    if (i != items.length - 1)
-                      const SizedBox(height: AppSpacing.xs),
-                  ],
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              SizedBox(
-                height: _closeButtonHeight,
-                child: AppButton(
-                  key: const ValueKey('receive_address_info_close'),
-                  variant: AppButtonVariant.secondary,
-                  expand: true,
-                  height: _closeButtonHeight,
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(context.l10n.commonClose),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Positioned(
-          top: 16,
-          right: 16,
-          child: Semantics(
-            button: true,
-            label: context.l10n.commonClose,
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                key: const ValueKey('receive_address_info_modal_close'),
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: colors.background.raised,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: AppIcon(
-                    key: const ValueKey(
-                      'receive_address_info_modal_close_icon',
-                    ),
-                    AppIcons.cross,
-                    size: _modalCloseIconSize,
-                    color: colors.icon.accent,
-                  ),
-                ),
-              ),
+    // The shared sheet template; the subtitle reads as part of the title.
+    return MobileModalScaffold(
+      title: receiveAddressInfoTitle(context.l10n, type),
+      onClose: () => Navigator.of(context).pop(),
+      bodyGap: AppSpacing.xxs,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            receiveAddressInfoSubtitle(context.l10n, type),
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: AppSpacing.md),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < items.length; i++) ...[
+                _ReceiveAddressInfoSheetItem(
+                  key: ValueKey('receive_address_info_item_$i'),
+                  iconName: items[i].iconName,
+                  text: items[i].text,
+                  maxLines: itemMaxLines[i],
+                ),
+                if (i != items.length - 1)
+                  const SizedBox(height: AppSpacing.xs),
+              ],
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('receive_address_info_close'),
+            variant: AppButtonVariant.secondary,
+            expand: true,
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(context.l10n.commonClose),
+          ),
+        ],
+      ),
     );
   }
 }

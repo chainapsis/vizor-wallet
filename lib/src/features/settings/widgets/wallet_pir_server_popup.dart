@@ -9,6 +9,7 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import 'wallet_pir_server_settings.dart';
 
@@ -51,7 +52,8 @@ Future<void> showWalletPirServerPopup(BuildContext context) async {
   );
 }
 
-/// A quiet settings action beside Private queries, unavailable while off.
+/// A quiet settings action beside Private queries, unavailable while nothing
+/// uses the server.
 class WalletPirServerSettingsButton extends StatelessWidget {
   const WalletPirServerSettingsButton({required this.enabled, super.key});
 
@@ -83,6 +85,39 @@ class WalletPirServerSettingsButton extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Mobile's way into the server settings: a chevron row under the Private
+/// queries description, shown while private queries or swap recovery use the
+/// server. Desktop keeps the cog beside the toggle
+/// ([WalletPirServerSettingsButton]).
+class WalletPirServerSettingsRow extends StatelessWidget {
+  const WalletPirServerSettingsRow({required this.enabled, super.key});
+
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: MobileListRow(
+        key: const ValueKey('wallet_pir_server_settings_button'),
+        leading: AppIcon(
+          AppIcons.cog,
+          size: 20,
+          color: enabled ? colors.icon.accent : colors.icon.disabled,
+        ),
+        label: context.l10n.settingsPirServerTitle,
+        textStyle: AppTypography.labelLarge,
+        showChevron: true,
+        chevronSize: 20,
+        enabled: enabled,
+        onTap: () => unawaited(showWalletPirServerPopup(context)),
+      ),
+    );
+  }
 }
 
 class _DesktopServerPanel extends StatelessWidget {

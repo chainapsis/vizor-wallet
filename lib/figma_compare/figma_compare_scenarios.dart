@@ -1,4 +1,5 @@
 import 'endpoint_selection_capture.dart';
+import 'deferred_creation_capture.dart';
 import 'near_intents_service_notice_capture.dart';
 import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
@@ -14,6 +15,8 @@ import 'desktop_onboarding_recovery_capture.dart';
 import 'desktop_backup_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
+import 'mobile_swap_address_capture.dart';
+import 'scaled_mobile_rows_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'ledger_pairing_capture.dart';
 import 'caps_lock_capture.dart';
@@ -55,6 +58,7 @@ import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_book_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
+import '../widgetbook/wallet_pir_server_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
 import 'gift_card_artwork_capture.dart';
@@ -64,6 +68,7 @@ import 'mobile_onboarding_intro_capture.dart';
 import 'ledger_recovery_capture.dart';
 import 'ledger_onboarding_guidance_capture.dart';
 import 'review_info_capture.dart';
+import 'slippage_ux_capture.dart';
 import 'swap_asset_icons_capture.dart';
 import 'swap_activity_capture.dart';
 
@@ -174,6 +179,88 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     outsideScaffold: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-contact-chain-scale-review',
+    description: 'Contact chain row with deterministic contact artwork',
+    builder: buildMobileContactChainCapture,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-contact-long-chain-scale-review',
+    description: 'Contact chain row with a long network name',
+    builder: buildMobileLongContactChainCapture,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-swap-status-row-scale-review',
+    description: 'Swap completed status row at accessibility text sizes',
+    builder: buildMobileSwapStatusRowCapture,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-warning-status-row-scale-review',
+    description: 'Swap warning status row at accessibility text sizes',
+    builder: buildMobileWarningStatusRowCapture,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-pay-status-row-scale-review',
+    description: 'Pay completed details status row at accessibility text sizes',
+    builder: buildMobilePayStatusRowCapture,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-swap-address-scale-review',
+    description: 'Swap recipient address feedback at accessibility text sizes',
+    builder: buildMobileSwapAddressCapture,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-swap-refund-address-scale-review',
+    description: 'Swap refund address feedback at accessibility text sizes',
+    builder: buildMobileSwapRefundAddressCapture,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-account-edit-scale-review',
+    description: 'Account edit sheet for localized validation and text scaling',
+    builder: buildMobileAccountsEditAccountUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-account-removal-passcode',
     description: 'Passcode confirmation before account removal',
     builder: buildMobilePasscodeAccountRemovalCapture,
@@ -258,6 +345,110 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
     allowPointer: true,
     platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-amount',
+    description: 'Confidential pay prototype: standard mode on the amount step',
+    builder: buildConfidentialPayAmountUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-amount-on',
+    description:
+        'Confidential pay prototype: confidential mode on the amount step',
+    builder: buildConfidentialPayAmountOnUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-liquidity',
+    description:
+        'Confidential pay prototype: no standard quote on the recipient step',
+    builder: buildConfidentialPayLiquidityUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-review',
+    description: 'Confidential pay prototype: confidential review',
+    builder: buildConfidentialPayReviewUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-in-progress',
+    description: 'Confidential pay prototype: confidential payment in progress',
+    builder: buildConfidentialPayInProgressUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-completed',
+    description: 'Confidential pay prototype: confidential payment completed',
+    builder: buildConfidentialPayCompletedUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-standard',
+    description: 'Confidential swap prototype: standard quote ready',
+    builder: buildConfidentialSwapStandardUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-settings',
+    description: 'Confidential swap prototype: settings',
+    builder: buildConfidentialSwapSettingsUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-settings-on',
+    description: 'Confidential swap prototype: settings-on',
+    builder: buildConfidentialSwapSettingsOnUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-liquidity',
+    description: 'Confidential swap prototype: liquidity',
+    builder: buildConfidentialSwapLiquidityUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-minimum',
+    description: 'Confidential swap prototype: minimum',
+    builder: buildConfidentialSwapMinimumUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-network',
+    description: 'Confidential swap prototype: network',
+    builder: buildConfidentialSwapNetworkUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-ready',
+    description: 'Confidential swap prototype: ready',
+    builder: buildConfidentialSwapReadyUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-loading',
+    description: 'Confidential swap prototype: loading',
+    builder: buildConfidentialSwapLoadingUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-review',
+    description: 'Confidential swap prototype: review',
+    builder: buildConfidentialSwapReviewUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-status',
+    description: 'Confidential swap prototype: status',
+    builder: buildConfidentialSwapStatusUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-completed',
+    description: 'Confidential swap prototype: completed',
+    builder: buildConfidentialSwapCompletedUseCase,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'ledger-onboarding-access-preparing',
@@ -678,18 +869,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
-    id: 'desktop-gift-customise',
-    description: 'Gift Card first-wallet customise',
-    builder: buildDesktopGiftCustomiseUseCase,
-    platform: TargetPlatform.macOS,
-  ),
-  FigmaCompareScenario(
-    id: 'desktop-gift-additional-customise',
-    description: 'Gift Card additional-account customise',
-    builder: buildDesktopGiftAdditionalCustomiseUseCase,
-    platform: TargetPlatform.macOS,
-  ),
-  FigmaCompareScenario(
     id: 'desktop-gift-check-error',
     description: 'Gift Card inspection failure and retry',
     builder: buildDesktopGiftCheckErrorUseCase,
@@ -775,6 +954,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'desktop-settings-phrase',
     description: 'Existing desktop Settings reveal with no pending backup',
     builder: buildDesktopSettingsPhraseCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-create-password',
+    description:
+        'First account password with backup and education deferred to Home',
+    builder: buildDeferredCreationPasswordCapture,
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
@@ -901,7 +1087,8 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'desktop-onboarding-customise',
-    description: 'Desktop account name and profile picture customisation',
+    description:
+        'Desktop imported-account name and profile picture customisation',
     builder: buildCustomiseAccountUseCase,
     platform: TargetPlatform.macOS,
   ),
@@ -1011,9 +1198,10 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-gift-onboarding-customise',
-    description: 'Gift wallet customisation before committing setup',
-    builder: buildMobileGiftOnboardingCustomise,
+    id: 'mobile-gift-onboarding-passcode',
+    description:
+        'Gift Card passcode setup with an automatically generated persona',
+    builder: buildMobileGiftOnboardingPasscode,
     desktop: false,
     mobile: true,
   ),
@@ -1132,7 +1320,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-onboarding-intro',
-    description: 'Mobile Introduction: The Shielded World',
+    description: 'Mobile Introduction: About Zcash',
     builder: buildMobileOnboardingIntroCapture,
     desktop: false,
     mobile: true,
@@ -1513,6 +1701,65 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     desktop: false,
     mobile: true,
     allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-received-waiting',
+    description: 'Mobile Home with a receipt that cannot be spent yet',
+    builder: buildMobileHomeReceivedWaitingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-received-waiting',
+    description: 'Home with a receipt that cannot be spent yet',
+    builder: buildDesktopHomeReceivedWaitingUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-send-amount-waiting',
+    description: 'Desktop Send while received funds are confirming',
+    builder: buildDesktopSendAmountWaitingUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receipt-spendable-wait',
+    description: 'Mobile receipt whose funds cannot be spent yet',
+    builder: buildMobileReceiptSpendableWaitUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-status-send-again',
+    description: 'Mobile send success saying when the account can send again',
+    builder: buildMobileSendStatusSendAgainUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-amount-waiting',
+    description: 'Mobile amount step while received funds are confirming',
+    builder: buildMobileSendAmountWaitingUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-available-sheet',
+    description: 'Sheet listing what can be sent now and what is waiting',
+    builder: buildMobileSpendableWaitSheetUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'send-spendable-wait-popover',
+    description: 'Desktop popover listing what can be sent now',
+    builder: buildSendSpendableWaitPopoverUseCase,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'received-receipt-spendable-wait',
+    description: 'Received receipt whose funds cannot be spent yet',
+    builder: buildReceivedReceiptSpendableWaitUseCase,
   ),
   FigmaCompareScenario(
     id: 'mobile-send-amount-own-account',
@@ -2095,6 +2342,30 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ui-scale-review-pay',
+    description: 'Pay amount at a 360 by 800 Android viewport for scale review',
+    builder: buildMobilePayAmountScaleReviewUseCase,
+    desktop: false,
+    mobile: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ui-scale-review-request',
+    description: 'Request amount at a 360 by 800 viewport for scale review',
+    builder: buildRequestMobileAmountScaleReviewUseCase,
+    desktop: false,
+    mobile: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ui-scale-review-memo',
+    description: 'Shared memo sheet with scrollable text for scale review',
+    builder: buildRequestMobileMemoScaleReviewUseCase,
+    desktop: false,
+    mobile: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-pay-recipient',
     description: 'Mobile Pay recipient selection with recent contacts',
     builder: buildMobilePayRecipientUseCase,
@@ -2181,6 +2452,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'activity-gift-cards',
     description: 'Desktop Activity with Gift Card creation and redemption',
     builder: buildActivityPageUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-confidential-rows',
+    description: 'Desktop Activity with confidential swap and pay rows',
+    builder: buildConfidentialActivityPageUseCase,
   ),
   FigmaCompareScenario(
     id: 'activity-gift-card-created-detail',
@@ -2676,6 +2952,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-payment-link-qr-fullscreen',
+    description: 'Mobile Gift Card full-screen QR viewer',
+    builder: buildMobilePaymentLinkQrFullscreenUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-payment-link-claim-many-accounts',
     description: 'Mobile Gift Card confirmation with a scrolling account list',
     builder: buildMobilePaymentLinkClaimManyAccountsUseCase,
@@ -2710,6 +2993,19 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'settings-hide-balance',
+    description: 'Desktop hide balance on unlock preference enabled',
+    builder: buildSettingsHideBalanceUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-hide-balance',
+    description:
+        'Mobile balance hiding preferences with hide on unlock enabled',
+    builder: buildMobileSettingsHideBalanceUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'settings-main',
     description: 'Desktop settings with Tor privacy control',
     builder: buildSettingsMainUseCase,
@@ -2737,6 +3033,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsExplorerCustomUseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-explorer-private',
+    description: 'Desktop explorer settings with ZecBlock Private selected',
+    builder: buildSettingsExplorerPrivateUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-settings-explorer',
     description: 'Mobile settings scrolled to the Explorer row',
     builder: buildMobileSettingsExplorerUseCase,
@@ -2747,6 +3048,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-explorer',
     description: 'Mobile explorer settings with ZecBlock selected',
     builder: buildMobileExplorerUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-explorer-private',
+    description: 'Mobile explorer settings with ZecBlock Private selected',
+    builder: buildMobileExplorerPrivateUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -2832,8 +3140,33 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'swap-guidance-slippage-desktop',
-    description: 'Swap slippage rate-change guidance',
-    builder: buildSwapSlippageModalUseCase,
+    description: 'Desktop Swap slippage modal at 0.5% with refund guidance',
+    builder: buildSwapSlippageLowDesktopCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-default-desktop',
+    description: 'Desktop Swap slippage modal at the 2% default',
+    builder: buildSwapSlippageDefaultDesktopCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-invalid-desktop',
+    description: 'Desktop custom slippage with an out-of-range error',
+    builder: buildSwapSlippageModalInvalidUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-low-desktop',
+    description: 'Desktop Pay slippage modal at 0.5% with refund guidance',
+    builder: buildPaySlippageLowDesktopCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-default-desktop',
+    description: 'Desktop Pay slippage modal at the 2% default',
+    builder: buildPaySlippageDefaultDesktopCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-low-text-scale-2-desktop',
+    description: 'Desktop low-slippage modal at 200% text scaling',
+    builder: buildSwapSlippageLowDesktopTextScale2Capture,
   ),
   FigmaCompareScenario(
     id: 'swap-guidance-failed-desktop',
@@ -2863,8 +3196,50 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'swap-slippage-low-mobile',
+    description: 'Mobile Swap slippage sheet at 0.5% with refund guidance',
+    builder: buildSwapSlippageLowMobileCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-default-mobile',
+    description: 'Mobile Swap slippage sheet at the 2% default',
+    builder: buildSwapSlippageDefaultMobileCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-low-text-scale-2-mobile',
+    description: 'Mobile low-slippage sheet at 200% text scaling',
+    builder: buildSwapSlippageLowMobileTextScale2Capture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-low-mobile',
+    description: 'Mobile Pay slippage sheet at 0.5% with refund guidance',
+    builder: buildPaySlippageLowMobileCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-default-mobile',
+    description: 'Mobile Pay slippage sheet at the 2% default',
+    builder: buildPaySlippageDefaultMobileCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-low-text-scale-2-mobile',
+    description: 'Mobile Pay low-slippage sheet at 200% text scaling',
+    builder: buildPaySlippageLowMobileTextScale2Capture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-customise-account',
-    description: 'Mobile account personalisation onboarding screen',
+    description: 'Mobile imported-account personalisation screen',
     builder: buildMobileCustomiseAccountUseCase,
     desktop: false,
     mobile: true,
@@ -2951,6 +3326,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-voting-config',
     description: 'Mobile voting config source modal',
     builder: buildMobileVotingConfigUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-source',
+    description: 'Mobile voting Source sheet under Vote config',
+    builder: buildMobileVotingSourceUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-custom-source',
+    description: 'Mobile voting custom source sheet editing a saved source',
+    builder: buildMobileVotingCustomSourceUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -3973,6 +4362,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-wallet-pir-server-sheet',
+    description: 'Mobile private query server sheet with two servers',
+    builder: buildWalletPirServerMobileSheetUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-options-sheet',
+    description: 'Mobile Home Receive sheet: receive, request, redeem',
+    builder: buildReceiveMobileOptionsSheetUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-transparent',
     description: 'Mobile receive screen on the transparent pool',
     builder: buildReceiveMobileTransparentUseCase,
@@ -3997,37 +4400,37 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-compose-no-price',
-    description: 'Mobile request sheet step one with no live price',
+    description: 'Mobile request page step one with no live price',
     builder: buildRequestMobileComposePriceUnavailableUseCase,
     desktop: false,
     mobile: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-compose',
-    description: 'Mobile request sheet step one with an amount and a message',
+    description: 'Mobile request page step one with an amount and a message',
     builder: buildRequestMobileComposeMessageUseCase,
     desktop: false,
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-receive-request-compose-expanded-message',
-    description: 'Mobile request sheet with a two-line memo editor',
-    builder: buildRequestMobileComposeExpandedMessageUseCase,
+    id: 'mobile-receive-request-message-sheet',
+    description: 'Mobile request page with the message sheet open',
+    builder: buildRequestMobileMessageSheetUseCase,
     desktop: false,
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-receive-request-compose-expanded-message-keyboard',
+    id: 'mobile-receive-request-message-sheet-keyboard',
     description:
-        'Mobile two-line memo editor with Gboard-sized keyboard insets',
-    builder: buildRequestMobileComposeExpandedMessageKeyboardUseCase,
+        'Mobile request message sheet with Gboard-sized keyboard insets',
+    builder: buildRequestMobileMessageSheetKeyboardUseCase,
     desktop: false,
     mobile: true,
     platform: TargetPlatform.android,
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-compose-error',
-    description: 'Mobile request sheet step one with an invalid amount',
+    description: 'Mobile request page step one with an invalid amount',
     builder: buildRequestMobileComposeAmountErrorUseCase,
     desktop: false,
     mobile: true,
@@ -4066,7 +4469,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-request-result',
-    description: 'Mobile request sheet step two with the shielded request QR',
+    description: 'Mobile request page step two with the shielded request QR',
     builder: buildRequestMobileResultShieldedUseCase,
     desktop: false,
     mobile: true,

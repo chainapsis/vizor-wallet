@@ -248,10 +248,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsUpdatePicture => 'Update picture';
 
   @override
-  String get accountsViewSecretPhrase => 'View secret phrase';
+  String get accountsViewSecretPhrase => 'Show secret phrase';
 
   @override
-  String get accountsViewViewingKey => 'View viewing key';
+  String get accountsViewViewingKey => 'Show viewing key';
+
+  @override
+  String get activityAddAddressToContacts => 'Add address to contacts';
 
   @override
   String get activityAddressUnified => 'Unified address';
@@ -267,6 +270,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityBalanceOrchard => 'Orchard balance';
+
+  @override
+  String get activityBalanceTransparent => 'Transparent balance';
 
   @override
   String get activityDetailsLoadFailed => 'Failed — try again';
@@ -451,6 +457,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptCardFee => 'Card fee';
 
   @override
+  String get activityReceiptConfirmations => 'Confirmations';
+
+  @override
+  String activityReceiptConfirmationsProgress(String count, String required) {
+    return '$count of $required';
+  }
+
+  @override
   String get activityReceiptDetails => 'Details';
 
   @override
@@ -482,8 +496,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptOutput => 'Output';
 
   @override
+  String get activityReceiptRecipient => 'Recipient';
+
+  @override
   String get activityReceiptRefreshFailed =>
       'Latest transaction status could not be refreshed.';
+
+  @override
+  String activityReceiptSpendableAfter(String count) {
+    return 'New funds can be spent after $count confirmations.';
+  }
 
   @override
   String get activityReceiptStatus => 'Status';
@@ -579,7 +601,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityTitleReceiveInProgress => 'Receive in progress...';
 
   @override
+  String get activityTitleReceiveZecFailed => 'Receive ZEC failed';
+
+  @override
   String get activityTitleReceivedSuccessfully => 'Received successfully';
+
+  @override
+  String get activityTitleReceivedZec => 'Received ZEC';
 
   @override
   String get activityTitleReceiving => 'Receiving...';
@@ -588,10 +616,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityTitleReceivingVerb => 'Receiving';
 
   @override
+  String get activityTitleReceivingZec => 'Receiving ZEC...';
+
+  @override
+  String get activityTitleSendZecFailed => 'Send ZEC failed';
+
+  @override
   String get activityTitleSendingVerb => 'Sending';
 
   @override
+  String get activityTitleSendingZec => 'Sending ZEC...';
+
+  @override
   String get activityTitleSent => 'Sent';
+
+  @override
+  String get activityTitleSentZec => 'Sent ZEC';
 
   @override
   String get activityTitleShielded => 'Shielded';
@@ -1142,6 +1182,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonAmount => 'Amount';
 
   @override
+  String commonAvailableInMinutes(String min, String max) {
+    return 'Available in $min–$max min';
+  }
+
+  @override
+  String get commonAvailableInUnderMinute => 'Available in under 1 min';
+
+  @override
   String get commonBack => 'Back';
 
   @override
@@ -1151,6 +1199,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonBackToWallet => 'Back to wallet';
+
+  @override
+  String get commonBalanceHidden => 'Balance hidden';
+
+  @override
+  String get commonBalanceShown => 'Balance shown';
 
   @override
   String get commonCalculatingEllipsis => 'Calculating…';
@@ -1862,6 +1916,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonWelcomeBack => 'Welcome Back';
 
   @override
+  String get commonWhatsThis => 'What\'s this?';
+
+  @override
   String get commonWizard => 'Wizard';
 
   @override
@@ -2191,6 +2248,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeReceiveFirstZec => 'Receive your first ZEC';
+
+  @override
+  String get homeReceiveReceiveSubtitle => 'Share your address or QR code';
+
+  @override
+  String get homeReceiveRedeemGiftCard => 'Redeem gift card';
+
+  @override
+  String get homeReceiveRedeemGiftCardSubtitle => 'Add a card someone sent you';
+
+  @override
+  String get homeReceiveRequestSubtitle => 'Ask for an exact amount';
 
   @override
   String get homeRecentActivity => 'Recent activity';
@@ -6225,6 +6294,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navVote => 'Vote';
 
   @override
+  String get nearSwapPrivacyUnsaved =>
+      'Couldn\'t save this choice. It applies until you close Vizor.';
+
+  @override
   String get networkPrivacyFinishUpdateBeforeTorOff =>
       'Finish the current software update before turning off Tor.';
 
@@ -6628,6 +6701,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingIntroTitle => 'The Shielded World';
 
   @override
+  String get onboardingIntroTitleMobile => 'About Zcash';
+
+  @override
   String get onboardingLinkVizorDesktop => 'Link Vizor Desktop';
 
   @override
@@ -7000,6 +7076,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payFetchingQuote => 'Fetching quote';
 
   @override
+  String payIronwoodOnlyShortfall(String amount) {
+    return 'Private payments use Ironwood ZEC only. You have $amount there.';
+  }
+
+  @override
   String get payNewAddressDetected => 'New address detected.';
 
   @override
@@ -7065,9 +7146,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paySaveContactError => 'Couldn\'t save this contact. Try again.';
-
-  @override
-  String get payScanBarrierDismiss => 'Dismiss';
 
   @override
   String get payScanCaption => 'Scan the recipient address QR code';
@@ -8083,6 +8161,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'QR code could not be generated';
 
   @override
+  String get paymentLinkQrExpandSemantic =>
+      'Show gift card QR code full screen';
+
+  @override
   String get paymentLinkQrSaveFailed => 'Gift card QR could not be saved.';
 
   @override
@@ -8482,6 +8564,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get poolTransparent => 'Transparent';
 
   @override
+  String get privacyBalanceHiddenSaveFailed =>
+      'Balance hidden, but the setting couldn\'t be saved.';
+
+  @override
+  String get privacyBalanceShowFailed =>
+      'Couldn\'t show your balance. Try again.';
+
+  @override
   String get privateQueriesOptOutUnfinished =>
       'Turning off Private queries didn\'t finish. Turn it off again in Settings to use transparent funds.';
 
@@ -8653,9 +8743,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveRequestZecButton => 'Request ZEC';
 
   @override
-  String get receiveShareAddress => 'Share address';
-
-  @override
   String get receiveShareFailed =>
       'Couldn\'t share this address. Copy it instead.';
 
@@ -8695,6 +8782,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sendAmountCtaEnterAmount => 'Enter amount to continue';
+
+  @override
+  String get sendAvailableChangeRow => 'Finishing your last payment';
+
+  @override
+  String get sendAvailableFootnote =>
+      'Funds are available after a few network confirmations.';
+
+  @override
+  String get sendAvailableReceivedRow => 'Just received';
+
+  @override
+  String get sendAvailableTitle => 'Available now';
 
   @override
   String get sendBroadcastCancelledBeforeParams =>
@@ -9208,6 +9308,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendRecipientLabel => 'Send to';
 
   @override
+  String sendRecipientOwnAccountName(String name) {
+    return '$name (you)';
+  }
+
+  @override
   String get sendRecipientUnreadableRequestLink =>
       'This request link couldn\'t be read';
 
@@ -9393,6 +9498,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendStatusMobileReturnToSettings => 'Return to settings';
 
   @override
+  String sendStatusMobileSendAgainIn(String min, String max) {
+    return 'It will confirm on-chain shortly. You can send again in $min–$max min.';
+  }
+
+  @override
   String get sendStatusMobileSendingDonation => 'Sending donation...';
 
   @override
@@ -9449,6 +9559,16 @@ class AppLocalizationsEn extends AppLocalizations {
       one: '1 previous transaction',
     );
     return '$_temp0';
+  }
+
+  @override
+  String sendWaitingMoreInMinutes(String amount, String min, String max) {
+    return '+$amount in $min–$max min';
+  }
+
+  @override
+  String sendWaitingMoreInUnderMinute(String amount) {
+    return '+$amount in under 1 min';
   }
 
   @override
@@ -9616,11 +9736,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.';
 
   @override
+  String get settingsExplorerPrivateCopy =>
+      'ZecBlock isn\'t told which transaction you open, though it still sees your IP address. Pages take longer to load, and a new transaction shows up only after it\'s in a block.';
+
+  @override
+  String get settingsExplorerPrivateSubtitle => 'Explore privately';
+
+  @override
   String get settingsExplorerSaveFailed => 'Couldn\'t save that explorer URL.';
 
   @override
   String settingsExplorerTemplateHint(String txid, String txHash) {
-    return 'Use $txid or $txHash in the path, or enter just the origin.';
+    return 'Put $txid or $txHash where the transaction ID goes, or enter just the domain.';
   }
 
   @override
@@ -9631,6 +9758,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsExplorerUrlLabel => 'Explorer URL';
+
+  @override
+  String get settingsFlipToHide => 'Flip to hide';
+
+  @override
+  String get settingsFlipToHideDescription =>
+      'Turn your phone screen-down to hide amounts on any screen. To show them again, flip it down and back up within 2 seconds.';
+
+  @override
+  String get settingsFlipToHideUpdateFailed =>
+      'Couldn\'t update flip to hide setting.';
+
+  @override
+  String get settingsHideBalanceOnUnlock => 'Hide balance on unlock';
+
+  @override
+  String get settingsHideBalanceOnUnlockDescription =>
+      'Hide your balance every time you unlock. Tap the eye icon to show it again.';
+
+  @override
+  String get settingsHideBalanceOnUnlockUpdateFailed =>
+      'Couldn\'t update hide balance on unlock setting.';
+
+  @override
+  String get settingsHideBalanceTitle => 'Hide balance';
 
   @override
   String get settingsIncorrectPasscode => 'Incorrect passcode';
@@ -9648,6 +9800,70 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsLanguageUpdateFailed => 'Couldn\'t update language.';
+
+  @override
+  String get settingsNearSwapPrivacyCheckingPastSwaps => 'Checking past swaps';
+
+  @override
+  String get settingsNearSwapPrivacyHardware =>
+      'Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoChangesBody =>
+      'Swaps that send ZEC are paid from your Ironwood balance only. A swap can take a few minutes to prepare while Vizor checks its address\'s history.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoChangesTitle => 'What changes';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLead =>
+      'Each swap gives NEAR Intents a one-time Zcash address for its ZEC side, the payout when you receive ZEC or the refund when you send it. Even a future quantum computer can\'t tie it to this wallet.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLimitsBody =>
+      'It keeps these addresses from being tied to your wallet; it doesn\'t change how your funds are secured. Addresses you enter yourself, like an Ethereum address you reuse, can still link your swaps. Hardware wallet accounts use regular addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLimitsTitle => 'What it doesn\'t cover';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestore =>
+      'After a restore, your wallet finds these payments privately on its own. If this is off when you restore, payouts of swaps into ZEC show up once you turn it on or run Check swap history. Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestoreTitle =>
+      'After a restore, or while it is off';
+
+  @override
+  String get settingsNearSwapPrivacyInfoReuse =>
+      'A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoReuseTitle =>
+      'When a payout address is shared';
+
+  @override
+  String get settingsNearSwapPrivacyLabel => 'Enhance swap privacy';
+
+  @override
+  String get settingsNearSwapPrivacyLearnMore => 'Learn more';
+
+  @override
+  String get settingsNearSwapPrivacyLearnMoreSemantics =>
+      'Learn more about Enhance swap privacy';
+
+  @override
+  String get settingsNearSwapPrivacyOff => 'Swaps use regular Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyOn => 'Swaps use one-time Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyUnavailable => 'Not available';
+
+  @override
+  String get settingsNearSwapPrivacyUnknown =>
+      'Vizor couldn\'t read your saved choice. Set it again to swap.';
 
   @override
   String get settingsNewBadge => 'New';
@@ -9917,6 +10133,56 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsStatusOn => 'On';
+
+  @override
+  String get settingsSwapHistoryCheckAgainButton => 'Check again';
+
+  @override
+  String get settingsSwapHistoryCheckButton => 'Check swap history';
+
+  @override
+  String get settingsSwapHistoryChecking =>
+      'Checking… this can take a few minutes.';
+
+  @override
+  String get settingsSwapHistoryContinuing =>
+      'The check will keep going while Vizor is open.';
+
+  @override
+  String get settingsSwapHistoryDone => 'Check complete.';
+
+  @override
+  String get settingsSwapHistoryFailed =>
+      'Swap history can\'t be checked right now. Try again later.';
+
+  @override
+  String get settingsSwapHistoryIdle => 'Missing a payout or refund?';
+
+  @override
+  String get settingsSwapHistoryNotStarted =>
+      'The check couldn\'t start. Try again in a moment.';
+
+  @override
+  String get settingsSwapHistoryPauseButton => 'Pause';
+
+  @override
+  String get settingsSwapHistoryPauseFailed =>
+      'Couldn\'t pause the check. Try again.';
+
+  @override
+  String get settingsSwapHistoryPaused => 'Paused. Check again to resume.';
+
+  @override
+  String get settingsSwapHistoryWaitingForService =>
+      'The swap recovery service hasn\'t caught up with this wallet yet. Try again in a few minutes.';
+
+  @override
+  String get settingsSwapHistoryWaitingForSync =>
+      'Waiting for wallet sync. Try again in a few minutes.';
+
+  @override
+  String get settingsSwapHistoryWalletChanged =>
+      'The check stopped because the wallet changed. Try again.';
 
   @override
   String get settingsThemeDark => 'Dark';
@@ -10210,7 +10476,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Confirm access again to try loading this key.';
 
   @override
+  String get settingsViewingKeyCopied => 'Viewing key copied';
+
+  @override
   String get settingsViewingKeyCopy => 'Copy viewing key';
+
+  @override
+  String get settingsViewingKeyCopyFailed =>
+      'Couldn\'t copy the viewing key. Try again.';
 
   @override
   String get settingsViewingKeyExplanation =>
@@ -10339,6 +10612,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapActionAddRefundAddress => 'Add refund address';
+
+  @override
+  String get swapActionGetConfidentialQuote => 'Get confidential quote';
 
   @override
   String get swapActionGettingQuote => 'Getting quote';
@@ -10619,6 +10895,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepFindingPayoutDescription =>
+      'NEAR sent it to your one-time address. Vizor is finding it.';
+
+  @override
   String get swapActivityStepRecipientReceives => 'Recipient receives';
 
   @override
@@ -10742,6 +11022,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapAddressRememberRefund => 'Remember this address for refunds';
 
   @override
+  String get swapAddressWaitServer => 'Choose a server';
+
+  @override
+  String get swapAddressWaitSync => 'Waiting for sync…';
+
+  @override
   String get swapAssetSelectorEmpty => 'No tokens or chains found';
 
   @override
@@ -10764,6 +11050,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapComposerYouReceive => 'You receive';
+
+  @override
+  String get swapConfidentialLabel => 'Confidential';
+
+  @override
+  String get swapConfidentialRouteTooltip =>
+      'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.';
+
+  @override
+  String get swapConfidentialSettingDescription =>
+      'Your deposit and payout can\'t be tracked to each other. Quotes can differ from the standard route.';
 
   @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';
@@ -10822,9 +11119,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapDepositZecButton => 'Deposit ZEC';
-
-  @override
-  String get swapDismissBarrierLabel => 'Dismiss';
 
   @override
   String get swapFailureAmountPrecision =>
@@ -10923,12 +11217,28 @@ class AppLocalizationsEn extends AppLocalizations {
       'Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.';
 
   @override
+  String get swapFailureZecDepositIronwoodFunding =>
+      'Private swaps use Ironwood ZEC only, which can\'t cover this swap and its network fee.\nMove funds to Ironwood or try a smaller amount.';
+
+  @override
+  String get swapFailureZecDepositIronwoodFundingPay =>
+      'Private payments use Ironwood ZEC only, which can\'t cover this payment and its network fee.\nMove funds to Ironwood or try a smaller amount.';
+
+  @override
   String get swapFailureZecDepositPreflight =>
       'ZEC deposit could not be prepared.\nCheck your balance and try again.';
 
   @override
   String get swapFailureZecDepositSendFailed =>
       'ZEC deposit could not be sent.\nTry again later.';
+
+  @override
+  String get swapFindingPayout => 'Finding your ZEC…';
+
+  @override
+  String swapIronwoodOnlyShortfall(String amount) {
+    return 'Private swaps use Ironwood ZEC only. You have $amount there.';
+  }
 
   @override
   String get swapKeystoneBroadcastFailed =>
@@ -11067,10 +11377,41 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapNoticeNearSwapPrivacyUnknown =>
+      'Vizor couldn\'t read Enhance swap privacy. Set it again in Settings.';
+
+  @override
+  String get swapNoticeNoConfidentialQuoteForAmount =>
+      'No confidential quote for this amount';
+
+  @override
+  String get swapNoticeNoQuoteForAmount => 'No quote for this amount';
+
+  @override
   String get swapNoticeOk => 'Ok';
 
   @override
   String get swapNoticePaymentsMayFail => 'Payments may not work right now.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressLimit =>
+      'Too many swaps are waiting. Try again after one finishes or expires.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparationFailed =>
+      'Could not prepare a fresh wallet receive address. Try again after wallet sync.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparing =>
+      'Preparing a private swap address. Try again in a moment.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale =>
+      'This swap address is no longer available. Request a new quote.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressUnavailable =>
+      'Private swaps aren\'t available right now. Try again in a few minutes.';
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>
@@ -11085,10 +11426,39 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapNoticeStartNotFinished =>
+      'Vizor couldn\'t confirm this swap started. Check whether you already sent its deposit before starting another.';
+
+  @override
   String get swapNoticeStatusPage => 'NEAR Intents status page';
 
   @override
   String get swapNoticeSwapsMayFail => 'Swaps may not work right now.';
+
+  @override
+  String get swapOneTimeAddressLabel => 'One-time address';
+
+  @override
+  String get swapOneTimeAddressPayoutExplanation =>
+      'A one-time Zcash address for this swap. Even a future quantum computer can\'t tie it to your wallet.';
+
+  @override
+  String get swapOneTimeAddressPreparing => 'Preparing address…';
+
+  @override
+  String get swapOneTimeAddressPreparingExplanation =>
+      'Vizor is checking this address\'s history before using it. This can take a few minutes.';
+
+  @override
+  String get swapOneTimeAddressPreparingSemantics =>
+      'Preparing one-time address';
+
+  @override
+  String get swapOneTimeAddressRefundExplanation =>
+      'If this swap is refunded, the ZEC comes back to a one-time Zcash address. Even a future quantum computer can\'t tie it to your wallet.';
+
+  @override
+  String get swapOneTimeRefundAddressLabel => 'One-time refund address';
 
   @override
   String get swapPageTitle => 'Swap';
@@ -11122,7 +11492,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapPayStatusSourceAmount => 'Source amount';
 
   @override
+  String get swapPayoutUpdateRequired =>
+      'Update Vizor to keep checking this swap\'s payout. Your funds are safe.';
+
+  @override
   String get swapPoweredByLabel => 'Powered by';
+
+  @override
+  String get swapQuoteErrorViewSwaps => 'View swaps';
 
   @override
   String swapQuoteExpiresAt(String time) {
@@ -11134,6 +11511,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapQuoteRatePending => 'Rate pending';
+
+  @override
+  String get swapRecoveryUpdateRequired =>
+      'Update Vizor to keep using private swaps.';
+
+  @override
+  String get swapRefundUpdateRequired =>
+      'Update Vizor to keep checking this swap\'s refund. Your funds are safe.';
 
   @override
   String get swapReviewBackPay => 'Pay';
@@ -11189,6 +11574,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapSettingsTitlePay => 'Payment settings';
+
+  @override
+  String get swapSettingsTitleSwap => 'Swap settings';
+
+  @override
   String get swapSignPayment => 'Sign payment';
 
   @override
@@ -11198,18 +11589,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapSlippageCustom => 'Custom';
 
   @override
-  String get swapSlippageDescriptionPay =>
-      'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.';
+  String get swapSlippageCustomValueSemantics =>
+      'Custom slippage tolerance, percent';
 
   @override
-  String get swapSlippageDescriptionSwap =>
-      'Sets the maximum rate change you\'ll accept. Network fees are separate.';
+  String get swapSlippageDecrease => 'Decrease slippage';
+
+  @override
+  String get swapSlippageIncrease => 'Increase slippage';
+
+  @override
+  String swapSlippagePresetSemantics(String value) {
+    return '$value slippage';
+  }
 
   @override
   String get swapSlippageRangeError => 'Slippage must be 0.1 - 5%';
 
   @override
   String get swapSlippageTitle => 'Slippage';
+
+  @override
+  String get swapSlippageValueSemantics => 'Slippage tolerance, percent';
+
+  @override
+  String get swapStartPending => 'Starting swap…';
 
   @override
   String get swapStatusBadgeNeedsAttention => 'Needs attention';
@@ -11219,6 +11623,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapStatusRowLabel => 'Status';
+
+  @override
+  String get swapSwitchDirection => 'Switch swap direction';
 
   @override
   String get swapTimeoutBody => 'Please, start another swap transaction.';
@@ -11475,11 +11882,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingConfigCustomSource => 'Custom source';
 
   @override
-  String votingConfigDeleteNamed(String name) {
-    return 'Delete $name';
-  }
-
-  @override
   String get votingConfigDeleteSaved => 'Delete saved source';
 
   @override
@@ -11548,7 +11950,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Display authenticated rounds whose titles begin with [TEST].';
 
   @override
-  String get votingConfigSources => 'Sources';
+  String get votingConfigSource => 'Source';
 
   @override
   String get votingConfigTestVisibilityFailed =>

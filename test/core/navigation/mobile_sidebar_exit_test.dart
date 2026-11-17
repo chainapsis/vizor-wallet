@@ -36,6 +36,7 @@ void main() {
         '/settings',
         '/settings/endpoint',
         '/receive',
+        '/receive/request',
         '/about',
         '/voting',
         '/voting/poll/round/results',

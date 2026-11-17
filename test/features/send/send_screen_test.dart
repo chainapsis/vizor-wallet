@@ -13,8 +13,10 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
+import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
@@ -27,6 +29,8 @@ import 'package:zcash_wallet/src/features/send/services/payment_request_precheck
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
@@ -175,6 +179,190 @@ void main() {
       expect(flow(tester)?.prefill.address, _shieldedAddress);
       expect(_fieldText(tester, 'send_address_field'), isEmpty);
     });
+  });
+
+  testWidgets(
+    'an amount covered by confirming funds states the wait instead of a shortfall',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _sendHarness(
+          spendableBalance: BigInt.from(120000000),
+          spendableWait: _receivedWaiting,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Use Max states the balance it fills; the clock beside it opens what
+      // is waiting, in place of the help tooltip.
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('send_max_spendable')))
+            .data,
+        '1.2 ZEC',
+      );
+      expect(
+        find.byKey(const ValueKey('send_spendable_tooltip')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('send_spendable_wait_button')),
+      );
+      await tester.pumpAndSettle();
+      final popover = find.byKey(const ValueKey('send_spendable_wait_popover'));
+      expect(popover, findsOneWidget);
+      expect(
+        find.descendant(of: popover, matching: find.text('1.2 ZEC')),
+        findsOneWidget,
+      );
+      expect(find.text('Just received'), findsOneWidget);
+      expect(find.text('+1.3 ZEC'), findsOneWidget);
+      expect(find.text('2.5 ZEC'), findsOneWidget);
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(popover, findsNothing);
+
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.enterText(_editableIn('send_amount_field'), '2');
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsNothing);
+      expect(find.text('Available in 1–3 min'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(find.byKey(const ValueKey('send_review_button')))
+            .onPressed,
+        isNull,
+      );
+
+      // An amount the whole balance cannot cover is still a shortfall.
+      await tester.enterText(_editableIn('send_amount_field'), '9');
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsOneWidget);
+
+      // The wait does not outlive the amount that caused it.
+      await tester.enterText(_editableIn('send_amount_field'), '2');
+      await tester.pumpAndSettle();
+      expect(find.text('Available in 1–3 min'), findsOneWidget);
+      await tester.enterText(_editableIn('send_amount_field'), '');
+      await tester.pumpAndSettle();
+      expect(find.text('Available in 1–3 min'), findsNothing);
+    },
+  );
+
+  testWidgets('funds that start or stop confirming re-read an amount above the '
+      'spendable balance', (tester) async {
+    await _setDesktopViewport(tester);
+    final source = NotifierProvider<_SpendableWaitSource, SpendableWait?>(
+      _SpendableWaitSource.new,
+    );
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(120000000),
+        spendableWaitSource: source,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.enterText(_editableIn('send_amount_field'), '2');
+    await tester.pumpAndSettle();
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+    );
+    container.read(source.notifier).set(_receivedWaiting);
+    await tester.pumpAndSettle();
+    expect(find.text('Insufficient shielded balance'), findsNothing);
+    expect(find.text('Available in 1–3 min'), findsOneWidget);
+
+    container.read(source.notifier).set(null);
+    await tester.pumpAndSettle();
+    expect(find.text('Available in 1–3 min'), findsNothing);
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+  });
+
+  testWidgets('a wait that changes leaves an amount that already fits alone', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final source = NotifierProvider<_SpendableWaitSource, SpendableWait?>(
+      _SpendableWaitSource.new,
+    );
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(120000000),
+        spendableWaitSource: source,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.enterText(_editableIn('send_amount_field'), '1');
+    await tester.pumpAndSettle();
+    AppButton review() => tester.widget<AppButton>(
+      find.byKey(const ValueKey('send_review_button')),
+    );
+    expect(review().onPressed, isNotNull);
+
+    ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+    ).read(source.notifier).set(_receivedWaiting);
+    // The frame after the change, before any re-quote could finish.
+    await tester.pump();
+    await tester.pump();
+    expect(review().onPressed, isNotNull);
+  });
+
+  testWidgets('Use Max keeps its plain tooltip when nothing is waiting', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendHarness(spendableBalance: BigInt.from(120000000)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('send_max_spendable')), findsOneWidget);
+    final tooltip = _spendableTooltipText(tester);
+    expect(
+      tooltip,
+      startsWith(
+        'Your spendable balance may be lower than your total balance.',
+      ),
+    );
+    expect(tooltip, isNot(contains('Available now')));
+  });
+
+  testWidgets('Use Max masks its balance and popover in privacy mode', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(120000000),
+        spendableWait: _receivedWaiting,
+        privacyModeEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('send_max_spendable')))
+          .data,
+      '•••••• ZEC',
+    );
+    await tester.tap(find.byKey(const ValueKey('send_spendable_wait_button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('send_spendable_wait_popover')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('1.2'), findsNothing);
+    expect(find.textContaining('1.3'), findsNothing);
+    expect(find.textContaining('2.5'), findsNothing);
   });
 
   testWidgets(
@@ -1840,6 +2028,9 @@ Widget _sendHarness({
   void Function(SendReviewArgs?)? onReviewArgs,
   bool realReview = false,
   PaymentRequestPrecheck? precheck,
+  SpendableWait? spendableWait,
+  NotifierProvider<_SpendableWaitSource, SpendableWait?>? spendableWaitSource,
+  bool privacyModeEnabled = false,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1864,6 +2055,14 @@ Widget _sendHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      if (spendableWait != null)
+        spendableWaitProvider.overrideWith((ref, accountUuid) => spendableWait),
+      if (spendableWaitSource != null)
+        spendableWaitProvider.overrideWith(
+          (ref, accountUuid) => ref.watch(spendableWaitSource),
+        ),
+      if (privacyModeEnabled)
+        privacyModeProvider.overrideWith(() => _FixedPrivacy(true)),
       if (realReview)
         ownAccountAddressesProvider.overrideWith((ref) async => {}),
       if (realReview)
@@ -1967,6 +2166,35 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 String _fieldText(WidgetTester tester, String keyValue) {
   final editable = tester.widget<EditableText>(_editableIn(keyValue));
   return editable.controller.text;
+}
+
+final _receivedWaiting = SpendableWait(
+  availableNow: BigInt.from(120000000),
+  changeWaiting: BigInt.zero,
+  receivedWaiting: BigInt.from(130000000),
+  receivedWait: const AvailableIn.minutes(1, 3),
+);
+
+class _SpendableWaitSource extends Notifier<SpendableWait?> {
+  @override
+  SpendableWait? build() => null;
+
+  void set(SpendableWait? wait) => state = wait;
+}
+
+/// The plain text of the tooltip beside Use Max.
+String _spendableTooltipText(WidgetTester tester) => tester
+    .widget<AppTooltip>(find.byKey(const ValueKey('send_spendable_tooltip')))
+    .richMessage!
+    .toPlainText();
+
+class _FixedPrivacy extends PrivacyModeNotifier {
+  _FixedPrivacy(this.enabled);
+
+  final bool enabled;
+
+  @override
+  bool build() => enabled;
 }
 
 Finder _editableIn(String keyValue) {

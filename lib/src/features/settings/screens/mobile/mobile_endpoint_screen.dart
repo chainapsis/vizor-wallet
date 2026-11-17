@@ -10,9 +10,11 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/mobile/mobile_radio_card.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/rpc_endpoint_latency_provider.dart';
@@ -36,8 +38,6 @@ class MobileEndpointScreen extends ConsumerStatefulWidget {
 }
 
 class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
-  static const _floatingCtaClearance = AppSpacing.xl2 + AppSpacing.md;
-
   final _customController = TextEditingController();
   final _customFocusNode = FocusNode();
   _EndpointTab _activeTab = _EndpointTab.list;
@@ -181,20 +181,14 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
       backgroundColor: colors.background.window,
       body: AppToastHost(
         child: SafeArea(
+          // The list runs to the bottom edge under the floating Update.
+          bottom: false,
           child: Column(
             children: [
               MobileTopNav.back(
                 title: context.l10n.settingsEndpointsTitle,
                 onBack: _isSubmitting ? null : () => context.pop(),
               ),
-              if (!isAutomaticRpcEndpointConfig(current) ||
-                  _activeTab == _EndpointTab.custom) ...[
-                const SizedBox(height: AppSpacing.xs),
-                _MobileCurrentEndpointText(
-                  current: current,
-                  latencyState: latencyState,
-                ),
-              ],
               const SizedBox(height: AppSpacing.sm),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -222,16 +216,27 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                   ),
                 ],
               ),
+              // The endpoint in use sits under the tabs, so showing it on
+              // one tab and not the other leaves the tabs in place.
+              if (!isAutomaticRpcEndpointConfig(current) ||
+                  _activeTab == _EndpointTab.custom) ...[
+                const SizedBox(height: AppSpacing.s),
+                _MobileCurrentEndpointText(
+                  current: current,
+                  latencyState: latencyState,
+                ),
+              ],
               const SizedBox(height: AppSpacing.s),
-              if (_submitError != null) ...[
+              // The custom tab shows its error under the endpoint card.
+              if (_submitError != null && _activeTab == _EndpointTab.list) ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
+                    horizontal: kMobilePageMargin,
                   ),
                   child: Text(
                     _submitError!,
                     textAlign: TextAlign.center,
-                    style: AppTypography.bodySmall.copyWith(
+                    style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.destructive,
                     ),
                   ),
@@ -240,48 +245,19 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
               ],
               Expanded(
                 child: switch (_activeTab) {
-                  _EndpointTab.list => Stack(
-                    children: [
-                      Positioned.fill(
-                        child: _buildPresetList(current, latencyState),
-                      ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        height: 112,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  colors.background.window.withValues(alpha: 0),
-                                  colors.background.window,
-                                ],
-                              ),
-                            ),
-                          ),
+                  _EndpointTab.list => MobileStickyBottomAction(
+                    action: Center(
+                      child: AppButton(
+                        key: const ValueKey('mobile_endpoint_update'),
+                        onPressed: _canUpdate(current) ? _submit : null,
+                        child: Text(
+                          _isSubmitting
+                              ? context.l10n.commonUpdating
+                              : context.l10n.endpointUpdate,
                         ),
                       ),
-                      Positioned(
-                        left: AppSpacing.sm,
-                        right: AppSpacing.sm,
-                        bottom: AppSpacing.s,
-                        child: Center(
-                          child: AppButton(
-                            key: const ValueKey('mobile_endpoint_update'),
-                            onPressed: _canUpdate(current) ? _submit : null,
-                            child: Text(
-                              _isSubmitting
-                                  ? context.l10n.commonUpdating
-                                  : context.l10n.endpointUpdate,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
+                    child: _buildPresetList(current, latencyState),
                   ),
                   _EndpointTab.custom => _buildCustomForm(colors, current),
                 },
@@ -311,11 +287,11 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+      padding: EdgeInsets.fromLTRB(
+        kMobilePageMargin,
         AppSpacing.xs,
-        AppSpacing.sm,
-        _floatingCtaClearance,
+        kMobilePageMargin,
+        MobileStickyBottomAction.contentInset(context),
       ),
       children: [
         for (final entry in groups.entries) ...[
@@ -326,7 +302,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
             ),
             child: Text(
               entry.key.label(context.l10n),
-              style: AppTypography.labelMedium.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
             ),
@@ -355,13 +331,13 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
   }
 
   Widget _buildCustomForm(AppColors colors, RpcEndpointConfig current) {
-    final customMessage = _customMessageText();
+    final customMessage = _customMessageText() ?? _submitError;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+      padding: EdgeInsets.fromLTRB(
+        kMobilePageMargin,
         AppSpacing.xs,
-        AppSpacing.sm,
-        AppSpacing.lg,
+        kMobilePageMargin,
+        AppSpacing.lg + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
         // Dark hero card with the host:port field — Figma `Custom
@@ -415,11 +391,11 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                           focusNode: _customFocusNode,
                           backgroundColor: colors.background.ground,
                           restingBorderColor: colors.border.subtle,
-                          textStyle: AppTypography.labelMedium.copyWith(
+                          textStyle: AppTypography.labelLarge.copyWith(
                             fontWeight: FontWeight.w400,
                             color: colors.text.accent,
                           ),
-                          hintStyle: AppTypography.labelMedium.copyWith(
+                          hintStyle: AppTypography.labelLarge.copyWith(
                             fontWeight: FontWeight.w400,
                             color: colors.text.muted,
                           ),
@@ -452,7 +428,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
           const SizedBox(height: AppSpacing.xs),
           Text(
             customMessage,
-            style: AppTypography.bodySmall.copyWith(
+            style: AppTypography.bodyMedium.copyWith(
               color: colors.text.destructive,
             ),
           ),
@@ -602,14 +578,14 @@ class _MobileCurrentEndpointText extends ConsumerWidget {
     return Text.rich(
       TextSpan(
         text: automatic ? '' : context.l10n.settingsEndpointCurrentPrefix,
-        style: AppTypography.labelMedium.copyWith(
+        style: AppTypography.labelLarge.copyWith(
           fontWeight: FontWeight.w500,
           color: colors.text.primary,
         ),
         children: [
           TextSpan(
             text: hostLabel,
-            style: AppTypography.labelMedium.copyWith(
+            style: AppTypography.labelLarge.copyWith(
               fontWeight: FontWeight.w400,
               color: colors.text.accent,
             ),
@@ -617,7 +593,7 @@ class _MobileCurrentEndpointText extends ConsumerWidget {
           if (suffix.isNotEmpty)
             TextSpan(
               text: ' $suffix',
-              style: AppTypography.labelMedium.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 fontWeight: FontWeight.w500,
                 color: colors.text.primary,
               ),
@@ -646,119 +622,14 @@ class _PresetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final titleStyle = AppTypography.labelMedium.copyWith(
-      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-      color: colors.text.accent,
-    );
-    final detailStyle = AppTypography.labelMedium.copyWith(
-      fontWeight: FontWeight.w400,
-      color: selected ? colors.text.accent : colors.text.secondary,
-    );
-    return Semantics(
-      button: true,
+    final title = preset.displayLabel(context.l10n);
+    return MobileRadioCard(
+      iconName: AppIcons.endpoint,
+      title: title,
+      details: [?detailLabel],
       selected: selected,
-      label: [preset.displayLabel(context.l10n), ?detailLabel].join(', '),
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap == null
-            ? null
-            : () {
-                if (!selected) unawaited(AppHaptics.selection());
-                onTap!();
-              },
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 64),
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.xs,
-            AppSpacing.xxs,
-            AppSpacing.s,
-            AppSpacing.xxs,
-          ),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: selected
-                ? Border.all(color: colors.border.strong, width: 2)
-                : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 32,
-                height: 32,
-                child: Center(
-                  child: Opacity(
-                    opacity: selected ? 1 : 0.5,
-                    child: AppIcon(
-                      AppIcons.endpoint,
-                      size: 20,
-                      color: colors.icon.accent,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xs,
-                    vertical: AppSpacing.xxs,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        preset.displayLabel(context.l10n),
-                        overflow: TextOverflow.ellipsis,
-                        style: titleStyle,
-                      ),
-                      if (detailLabel != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          detailLabel!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: detailStyle,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              if (selected)
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: colors.background.inverse,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.check,
-                      size: 14,
-                      color: colors.text.inverse,
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.background.raised,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+      onTap: onTap,
+      semanticsLabel: [title, ?detailLabel].join(', '),
     );
   }
 }

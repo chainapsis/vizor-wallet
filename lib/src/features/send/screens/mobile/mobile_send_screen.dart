@@ -15,6 +15,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_bottom_scroll_fade.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/external_action_guard_provider.dart';
@@ -29,14 +30,17 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/mobile/mobile_memo_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../core/widgets/review_info_row.dart';
+import '../../../../core/zcash/spendable_wait.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -58,6 +62,7 @@ import '../../services/recent_send_recipients.dart';
 import '../../services/send_proving_key_warmup.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
+import '../../widgets/spendable_wait_breakdown.dart';
 import 'mobile_send_scan_screen.dart';
 
 enum _SendStep { recipient, amount, review }
@@ -381,9 +386,6 @@ class MobileSendReviewScreen extends StatelessWidget {
 
 const _kMobileSendRecipientLineHeight = 17.0;
 
-/// The memo error is the one message here that does not fit on a line at
-/// phone width, so its slot holds two.
-const _kMobileSendMemoErrorHeight = _kMobileSendRecipientLineHeight * 2;
 const _kMobileSendAddressActionHeight = 36.0;
 const _kMobileSendAddressActionSlotWidth = 96.0;
 const _kMobileSendAddressPasteWidth = 76.0;
@@ -407,6 +409,8 @@ const _kMobileSendAmountUnitFontSize = 38.0;
 const _kMobileSendAmountUsdPrefixFontSize = 40.0;
 const _kMobileSendAmountUsdPrefixOpticalOffsetY = -2.0;
 const _kMobileSendAmountTopContentHeight = 285.0;
+// Most extra height the amount takes when the page has room for it.
+const _kMobileSendAmountBreathingRoom = AppSpacing.lg;
 const _kMobileSendAmountRecipientBlockHeight = 97.0;
 const _kMobileSendAmountRecipientLabelHeight = 25.0;
 const _kMobileSendAmountRecipientRowHeight = 68.0;
@@ -569,6 +573,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   int _validateSeq = 0;
   bool _isMaxMode = false;
   bool _isResolvingMax = false;
+
+  /// The total the last validation found above the spendable balance but
+  /// within reach of funds still confirming; null when it fit or cannot.
+  BigInt? _amountWaitTarget;
   int _maxSeq = 0;
   _MobileSendMaxQuote? _maxQuote;
 
@@ -1471,6 +1479,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   /// mobile copy is the design's "Not enough ZEC".
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
+    _amountWaitTarget = null;
     final text = _amountText.trim();
     if (text.isEmpty || text == '.' || text == '0.') {
       setState(() => _amountError = '');
@@ -1482,7 +1491,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       return;
     }
     if (zatoshi > _spendable) {
-      setState(() => _amountError = _notEnoughZecText);
+      setState(() => _setAmountShortfall(zatoshi, includesFee: false));
       return;
     }
     if (_isUsingCompletedSpendableSnapshot) {
@@ -1515,7 +1524,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       );
       if (!mounted || seq != _validateSeq) return;
       if (zatoshi + fee > _spendable) {
-        setState(() => _amountError = _notEnoughZecText);
+        setState(() => _setAmountShortfall(zatoshi + fee));
       } else {
         setState(() {
           _amountError = null;
@@ -1539,12 +1548,40 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       // never fired and this warning could not reach the composer at all.
       final msg = e.toString().toLowerCase();
       if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
+        // The amount fits but its fee does not. How much more it needs is
+        // unknown, so no wait is promised for it.
         setState(() => _amountError = _notEnoughZecText);
       } else {
         log('MobileSend: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
       }
     }
+  }
+
+  SpendableWait? get _spendableWait =>
+      ref.read(spendableWaitProvider(_activeAccountUuid));
+
+  /// Marks [needed] as more than the account can spend: a wait when funds
+  /// still confirming will cover it, otherwise the shortfall error.
+  void _setAmountShortfall(BigInt needed, {bool includesFee = true}) {
+    final target = includesFee ? needed : needed + kSpendableWaitFeeReserve;
+    final waits = _spendableWait?.waitFor(target) != null;
+    _amountWaitTarget = waits ? target : null;
+    _amountError = waits ? '' : _notEnoughZecText;
+  }
+
+  /// When the entered amount becomes sendable, while it waits on funds. The
+  /// target outlives a cleared field or a switch to Max, so it counts only
+  /// for an entered amount the last validation left silently invalid.
+  AvailableIn? get _amountWait {
+    final target = _amountWaitTarget;
+    if (target == null ||
+        _isMaxMode ||
+        _amountError != '' ||
+        _amountText.trim().isEmpty) {
+      return null;
+    }
+    return _spendableWait?.waitFor(target);
   }
 
   bool get _amountReady =>
@@ -1559,6 +1596,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String get _amountCtaLabel {
     if (_isResolvingMax) return context.l10n.sendCalculatingMax;
     if (_amountReady) return context.l10n.commonReviewAndFinish;
+
+    final wait = _amountWait;
+    if (wait != null) return availableInLabel(context.l10n, wait);
 
     final error = _amountError;
     if (error != null && error.isNotEmpty) {
@@ -1781,10 +1821,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     // A bottom sheet, not a top-pinned card: the modal rises from the
     // bottom and the sheet frame floats it 16px above the software
     // keyboard (Figma `Review Add Memo`, 4638:74505).
-    final next = await showAppMobileSheet<String>(
-      context: context,
-      builder: (_) => _MemoSheet(initial: _memo),
-    );
+    final next = await showMobileMemoSheet(context, initial: _memo);
     if (next == null || !mounted) return;
     setState(() {
       _memo = next;
@@ -2225,6 +2262,24 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
     ref.watch(_mobileSendSpendableStateProvider(accountUuid));
+    ref.watch(spendableWaitProvider(accountUuid));
+    // Funds that start or stop confirming change what an amount above the
+    // spendable balance means, without changing that balance.
+    // An amount that already fits is unaffected, and is not re-quoted.
+    ref.listen(spendableWaitProvider(accountUuid), (previous, next) {
+      if (previous == next || _isConfirmingSend || _isMaxMode) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _isConfirmingSend ||
+            _isMaxMode ||
+            _amountError == null ||
+            _step != _SendStep.amount ||
+            _amountText.trim().isEmpty) {
+          return;
+        }
+        unawaited(_validateAmount());
+      });
+    });
     ref.listen(_mobileSendSpendableStateProvider(accountUuid), (
       previous,
       next,
@@ -2339,8 +2394,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         MediaQuery.paddingOf(context).top +
                         kMobileTopNavHeight +
                         AppSpacing.s,
-                    left: AppSpacing.sm,
-                    right: AppSpacing.sm,
+                    left: kMobilePageMargin,
+                    right: kMobilePageMargin,
                     child: _buildAddressFieldGroup(context),
                   ),
                 if (showRecipientFocusOverlay) ...[
@@ -2349,10 +2404,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       key: const ValueKey(
                         'mobile_send_recipient_focus_continue_layer',
                       ),
-                      left: AppSpacing.sm,
-                      right: AppSpacing.sm,
+                      left: kMobilePageMargin,
+                      right: kMobilePageMargin,
                       bottom:
-                          MediaQuery.paddingOf(context).bottom + AppSpacing.s,
+                          MediaQuery.paddingOf(context).bottom +
+                          kMobileFooterGap,
                       child: _buildRecipientContinueButton(
                         context,
                         useBackdropColors: true,
@@ -2472,12 +2528,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         name: named?.name,
         profilePictureId: named?.profilePictureId,
         addressText: _truncateAddress(recent.address),
-        detail: recent.isShielded
-            ? context.l10n.poolShielded
-            : context.l10n.poolTransparent,
-        detailColor: recent.isShielded
-            ? colors.text.brandCrimson
-            : colors.text.secondary,
+        isShielded: recent.isShielded,
         onTap: () => _selectRecent(recent),
       );
     }
@@ -2495,9 +2546,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               child: MobileBottomScrollFade(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
+                    kMobilePageMargin,
                     AppSpacing.md,
-                    AppSpacing.sm,
+                    kMobilePageMargin,
                     AppSpacing.md,
                   ),
                   children: [
@@ -2603,10 +2654,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         if (_showRecipientContinue && !hasFocusedRecipient)
           Padding(
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sm,
+              kMobilePageMargin,
               0,
-              AppSpacing.sm,
-              AppSpacing.s,
+              kMobilePageMargin,
+              kMobileFooterGap,
             ),
             child: _buildRecipientContinueButton(context),
           ),
@@ -2708,17 +2759,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ),
       );
     } else if (_hasValidAddress) {
+      final address = _addressController.text.trim();
+      final ownAccounts =
+          ref.watch(ownAccountAddressesProvider).value ?? const {};
       final recipient = sendReviewRecipientFor(
         contacts:
             ref.watch(addressBookProvider).value?.contacts ??
             const <AddressBookContact>[],
-        address: _addressController.text.trim(),
-        ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
+        address: address,
+        ownAccounts: ownAccounts,
       );
       if (recipient is SendReviewContactRecipient) {
         line = ContactNameInline(
           key: const ValueKey('mobile_send_address_contact_match'),
-          name: recipient.name,
+          // An address of one of the user's own accounts is marked as theirs.
+          name: ownAccounts.containsKey(address)
+              ? context.l10n.sendRecipientOwnAccountName(recipient.name)
+              : recipient.name,
           textStyle: AppTypography.labelLarge.copyWith(
             color: colors.text.secondary,
           ),
@@ -2809,120 +2866,136 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
+              kMobilePageMargin,
               AppSpacing.sm,
-              AppSpacing.sm,
-              AppSpacing.sm,
+              kMobilePageMargin,
               0,
             ),
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: SizedBox(
-                key: const ValueKey('mobile_send_amount_top_content'),
-                height: _kMobileSendAmountTopContentHeight,
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildAmountField(
-                      context,
-                      showError: showError,
-                      spendableText: spendableText,
-                      zecUsdUnitPrice: zecUsdUnitPrice,
-                      amountStyle: amountStyle,
-                      amountUnitStyle: amountUnitStyle,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    SizedBox(
-                      key: const ValueKey('mobile_send_amount_recipient_block'),
-                      height: _kMobileSendAmountRecipientBlockHeight,
-                      width: double.infinity,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            height: _kMobileSendAmountRecipientLabelHeight,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                context.l10n.sendSendingToLabel,
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.secondary,
+            // Spare height gives the amount breathing room, split above and
+            // below it. A short phone with the keyboard up keeps the compact
+            // layout.
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final room =
+                    (constraints.maxHeight - _kMobileSendAmountTopContentHeight)
+                        .clamp(0.0, _kMobileSendAmountBreathingRoom)
+                        .toDouble();
+                return Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    key: const ValueKey('mobile_send_amount_top_content'),
+                    height: _kMobileSendAmountTopContentHeight + room,
+                    width: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildAmountField(
+                          context,
+                          showError: showError,
+                          spendableText: spendableText,
+                          zecUsdUnitPrice: zecUsdUnitPrice,
+                          amountStyle: amountStyle,
+                          amountUnitStyle: amountUnitStyle,
+                          room: room,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        SizedBox(
+                          key: const ValueKey(
+                            'mobile_send_amount_recipient_block',
+                          ),
+                          height: _kMobileSendAmountRecipientBlockHeight,
+                          width: double.infinity,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                height: _kMobileSendAmountRecipientLabelHeight,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    context.l10n.sendSendingToLabel,
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color: colors.text.secondary,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          SizedBox(
-                            key: const ValueKey(
-                              'mobile_send_amount_recipient_row',
-                            ),
-                            height: _kMobileSendAmountRecipientRowHeight,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: AppSpacing.s,
-                              ),
-                              child: Row(
-                                children: [
-                                  AppProfilePicture(
-                                    key: const ValueKey(
-                                      'mobile_send_amount_recipient_picture',
-                                    ),
-                                    profilePictureId: recipientPictureId ?? '',
-                                    size: AppProfilePictureSize.navLarge,
+                              const SizedBox(height: AppSpacing.xxs),
+                              SizedBox(
+                                key: const ValueKey(
+                                  'mobile_send_amount_recipient_row',
+                                ),
+                                height: _kMobileSendAmountRecipientRowHeight,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: AppSpacing.s,
                                   ),
-                                  const SizedBox(width: AppSpacing.s),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: recipientLabel == null
-                                          ? [
-                                              _RecipientLineText(
-                                                _truncateAddress(
-                                                  _addressController.text,
-                                                ),
-                                                color: colors.text.accent,
-                                              ),
-                                            ]
-                                          : [
-                                              _RecipientLineText(
-                                                recipientLabel,
-                                                color: colors.text.accent,
-                                              ),
-                                              const SizedBox(
-                                                height: AppSpacing.xxs,
-                                              ),
-                                              _RecipientLineText(
-                                                _truncateAddress(
-                                                  _addressController.text,
-                                                ),
-                                                color: colors.text.secondary,
-                                              ),
-                                            ],
-                                    ),
+                                  child: Row(
+                                    children: [
+                                      AppProfilePicture(
+                                        key: const ValueKey(
+                                          'mobile_send_amount_recipient_picture',
+                                        ),
+                                        profilePictureId:
+                                            recipientPictureId ?? '',
+                                        size: AppProfilePictureSize.navLarge,
+                                      ),
+                                      const SizedBox(width: AppSpacing.s),
+                                      Expanded(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: recipientLabel == null
+                                              ? [
+                                                  _RecipientLineText(
+                                                    _truncateAddress(
+                                                      _addressController.text,
+                                                    ),
+                                                    color: colors.text.accent,
+                                                  ),
+                                                ]
+                                              : [
+                                                  _RecipientLineText(
+                                                    recipientLabel,
+                                                    color: colors.text.accent,
+                                                  ),
+                                                  const SizedBox(
+                                                    height: AppSpacing.xxs,
+                                                  ),
+                                                  _RecipientLineText(
+                                                    _truncateAddress(
+                                                      _addressController.text,
+                                                    ),
+                                                    color:
+                                                        colors.text.secondary,
+                                                  ),
+                                                ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
         Padding(
           padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
+            kMobilePageMargin,
             0,
-            AppSpacing.sm,
-            AppSpacing.s,
+            kMobilePageMargin,
+            kMobileFooterGap,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2952,10 +3025,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     required double? zecUsdUnitPrice,
     required TextStyle amountStyle,
     required TextStyle amountUnitStyle,
+    double room = 0,
   }) {
     return SizedBox(
       key: const ValueKey('mobile_send_amount_field'),
-      height: _kMobileSendAmountFieldHeight,
+      // [room] is spare height: half above the amount, half below it.
+      height: _kMobileSendAmountFieldHeight + room,
       width: double.infinity,
       child: Column(
         children: [
@@ -2964,7 +3039,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             showError: showError,
             spendableText: spendableText,
           ),
-          const SizedBox(height: AppSpacing.md),
+          SizedBox(height: AppSpacing.md + room / 2),
           _buildAmountInputPanel(
             context,
             zecUsdUnitPrice: zecUsdUnitPrice,
@@ -2976,6 +3051,26 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
+  /// "+1.30 ZEC in 1–3 min" while funds are confirming, with the amount
+  /// masked like the balance above it.
+  String? _spendableWaitLine(SpendableWait? spendableWait) {
+    final wait = spendableWait?.wait;
+    if (spendableWait == null || wait == null) return null;
+    final amount = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        spendableWait.waiting,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
+    return wait.isUnderMinute
+        ? context.l10n.sendWaitingMoreInUnderMinute(amount)
+        : context.l10n.sendWaitingMoreInMinutes(
+            amount,
+            wait.minMinutes.toString(),
+            wait.maxMinutes.toString(),
+          );
+  }
+
   Widget _buildAmountBalanceRow(
     BuildContext context, {
     required bool showError,
@@ -2983,6 +3078,18 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }) {
     final colors = context.colors;
     final textColor = showError ? colors.text.destructive : colors.text.accent;
+    final accountUuid = _activeAccountUuid;
+    final spendableWait = ref.watch(spendableWaitProvider(accountUuid));
+    final waitLine = _spendableWaitLine(spendableWait);
+    final spendable = Text(
+      spendableText,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.labelLarge.copyWith(
+        color: textColor,
+        fontWeight: FontWeight.w600,
+      ),
+    );
     return SizedBox(
       key: const ValueKey('mobile_send_amount_balance_row'),
       height: _kMobileSendAmountBalanceRowHeight,
@@ -2991,15 +3098,52 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           const _ReviewZecIcon(),
           const SizedBox(width: AppSpacing.s),
           Expanded(
-            child: Text(
-              spendableText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: textColor,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: waitLine == null
+                ? spendable
+                : Semantics(
+                    button: true,
+                    child: GestureDetector(
+                      key: const ValueKey('mobile_send_spendable_wait_line'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => unawaited(
+                        showMobileSpendableWaitSheet(
+                          context,
+                          accountUuid: accountUuid!,
+                        ),
+                      ),
+                      child: SizedBox(
+                        height: _kMobileSendAmountBalanceRowHeight,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            spendable,
+                            const SizedBox(height: AppSpacing.xxs),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    waitLine,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color: colors.text.secondary,
+                                    ),
+                                  ),
+                                ),
+                                AppIcon(
+                                  AppIcons.chevronForward,
+                                  size: 14,
+                                  color: colors.icon.muted,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
           ),
           const SizedBox(width: AppSpacing.xs),
           Semantics(
@@ -3350,16 +3494,20 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final isLedger = hardwareSignerKind == HardwareSignerKind.ledger;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.s,
-        AppSpacing.sm,
-        AppSpacing.s,
+      // The bottom gap is the shared footer gap above the safe area.
+      padding: const EdgeInsets.only(
+        top: AppSpacing.s,
+        bottom: kMobileFooterGap,
       ),
       child: Column(
         children: [
           Expanded(
+            // The side margins sit inside the scroll view, so the cards'
+            // soft lift isn't clipped at their edges.
             child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: kMobilePageMargin,
+              ),
               child: Column(
                 children: [
                   if (_isDonation)
@@ -3424,7 +3572,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       ),
                       key: const ValueKey('mobile_send_review_requested'),
                       textAlign: TextAlign.center,
-                      style: AppTypography.bodySmall.copyWith(
+                      style: AppTypography.bodyMedium.copyWith(
                         color: context.colors.text.secondary,
                       ),
                     ),
@@ -3448,7 +3596,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       _reviewFeeNotice!,
                       key: const ValueKey('mobile_send_review_fee_notice'),
                       textAlign: TextAlign.center,
-                      style: AppTypography.bodySmall.copyWith(
+                      style: AppTypography.bodyMedium.copyWith(
                         color: context.colors.text.secondary,
                       ),
                     ),
@@ -3458,76 +3606,84 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          SizedBox(
-            key: const ValueKey('mobile_send_review_buttons'),
-            height: _isDonation ? AppButtonSizing.largeHeight : 112,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AppButton(
-                  key: const ValueKey('mobile_send_confirm'),
-                  expand: true,
-                  constrainContent: _isDonation,
-                  onPressed:
-                      _isConfirmingSend ||
-                          (_pendingCancellation == null &&
-                              (_isResolvingMax ||
-                                  (_isMaxMode && !_hasCurrentMaxQuote) ||
-                                  (!_hasCurrentReviewFeeQuote &&
-                                      !_reviewFeeRetryAvailable)))
-                      ? null
-                      : () => unawaited(
-                          _pendingCancellation != null
-                              ? _retryCancelledProposal()
-                              : _reviewFeeRetryAvailable
-                              ? _refreshReviewQuote()
-                              : _confirmAndSend(),
-                        ),
-                  leading: AppIcon(
-                    isKeystone
-                        ? AppIcons.qr
-                        : isLedger
-                        ? AppIcons.ledger
-                        : _isDonation
-                        ? AppIcons.donation
-                        : AppIcons.plane,
-                    size: 20,
-                  ),
-                  child: Text(
-                    _isConfirmingSend
-                        ? context.l10n.commonPreparingDots
-                        : _pendingCancellation != null ||
-                              _reviewFeeRetryAvailable
-                        ? context.l10n.commonTryAgain
-                        : _isUsingCompletedSpendableSnapshot &&
-                              !_hasCurrentReviewFeeQuote
-                        ? context.l10n.sendReviewFinishingSyncButton
-                        : _isRefreshingReviewFee
-                        ? context.l10n.sendReviewCalculatingFee
-                        : !_hasCurrentReviewFeeQuote
-                        ? context.l10n.sendReviewFeeUnavailable
-                        : isLedger
-                        ? context.l10n.sendReviewConfirmWithLedger
-                        : isKeystone
-                        ? context.l10n.commonConfirmWithKeystone
-                        : _isDonation
-                        ? context.l10n.sendReviewConfirmDonation
-                        : context.l10n.sendReviewConfirmAndSendMobile,
-                  ),
-                ),
-                if (!_isDonation) ...[
-                  const SizedBox(height: AppSpacing.s),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: kMobilePageMargin),
+            child: SizedBox(
+              key: const ValueKey('mobile_send_review_buttons'),
+              height: _isDonation ? AppButtonSizing.largeHeight : 112,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   AppButton(
-                    key: const ValueKey('mobile_send_cancel'),
+                    key: const ValueKey('mobile_send_confirm'),
                     expand: true,
-                    variant: AppButtonVariant.ghost,
-                    onPressed: _isConfirmingSend || _pendingCancellation != null
+                    // Keeps a long status label on one line inside the page
+                    // margins, like the amount step's button.
+                    constrainContent: true,
+                    onPressed:
+                        _isConfirmingSend ||
+                            (_pendingCancellation == null &&
+                                (_isResolvingMax ||
+                                    (_isMaxMode && !_hasCurrentMaxQuote) ||
+                                    (!_hasCurrentReviewFeeQuote &&
+                                        !_reviewFeeRetryAvailable)))
                         ? null
-                        : _cancelSend,
-                    child: Text(context.l10n.commonCancel),
+                        : () => unawaited(
+                            _pendingCancellation != null
+                                ? _retryCancelledProposal()
+                                : _reviewFeeRetryAvailable
+                                ? _refreshReviewQuote()
+                                : _confirmAndSend(),
+                          ),
+                    leading: AppIcon(
+                      isKeystone
+                          ? AppIcons.qr
+                          : isLedger
+                          ? AppIcons.ledger
+                          : _isDonation
+                          ? AppIcons.donation
+                          : AppIcons.plane,
+                      size: 20,
+                    ),
+                    child: Text(
+                      _isConfirmingSend
+                          ? context.l10n.commonPreparingDots
+                          : _pendingCancellation != null ||
+                                _reviewFeeRetryAvailable
+                          ? context.l10n.commonTryAgain
+                          : _isUsingCompletedSpendableSnapshot &&
+                                !_hasCurrentReviewFeeQuote
+                          ? context.l10n.sendReviewFinishingSyncButton
+                          : _isRefreshingReviewFee
+                          ? context.l10n.sendReviewCalculatingFee
+                          : !_hasCurrentReviewFeeQuote
+                          ? context.l10n.sendReviewFeeUnavailable
+                          : isLedger
+                          ? context.l10n.sendReviewConfirmWithLedger
+                          : isKeystone
+                          ? context.l10n.commonConfirmWithKeystone
+                          : _isDonation
+                          ? context.l10n.sendReviewConfirmDonation
+                          : context.l10n.sendReviewConfirmAndSendMobile,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  if (!_isDonation) ...[
+                    const SizedBox(height: AppSpacing.s),
+                    AppButton(
+                      key: const ValueKey('mobile_send_cancel'),
+                      expand: true,
+                      variant: AppButtonVariant.ghost,
+                      onPressed:
+                          _isConfirmingSend || _pendingCancellation != null
+                          ? null
+                          : _cancelSend,
+                      child: Text(context.l10n.commonCancel),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],
@@ -3546,7 +3702,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
     return Padding(
       key: ValueKey('mobile_send_status_${_phase.name}'),
-      padding: const EdgeInsets.all(AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kMobilePageMargin,
+        vertical: AppSpacing.sm,
+      ),
       child: Column(
         children: [
           Expanded(
@@ -3936,9 +4095,9 @@ class _ReviewWrap extends StatelessWidget {
                 rightLabel: memo.isEmpty
                     ? context.l10n.sendMemoAddShortEncrypted
                     : memo,
-                rightIcon: memo.isEmpty
-                    ? AppIcons.edit
-                    : AppIcons.doubleArrowVertical,
+                // A written message shows the expand chevrons, as the record's
+                // Message row does.
+                rightIcon: memo.isEmpty ? AppIcons.edit : AppIcons.expand,
                 centered: memo.isEmpty,
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -4053,504 +4212,6 @@ class _ReviewListRow extends StatelessWidget {
   }
 }
 
-/// Memo entry sheet — Figma `Review Add Memo` (4484:62917). Pops the
-/// new memo text; popping an empty string clears it.
-class _MemoSheet extends StatefulWidget {
-  const _MemoSheet({required this.initial});
-
-  final String initial;
-
-  @override
-  State<_MemoSheet> createState() => _MemoSheetState();
-}
-
-class _MemoSheetState extends State<_MemoSheet> {
-  static const _memoByteLimit = 512;
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initial,
-  );
-  late final FocusNode _focusNode = FocusNode()..addListener(_handleFocus);
-
-  String get _initialMemo => widget.initial.trim();
-
-  String get _currentMemo => _controller.text.trim();
-
-  bool get _showClearMemo =>
-      _initialMemo.isNotEmpty && _currentMemo == _initialMemo;
-
-  @override
-  void dispose() {
-    _focusNode
-      ..removeListener(_handleFocus)
-      ..dispose();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _handleFocus() {
-    if (mounted) setState(() {});
-  }
-
-  int get _usedBytes => utf8.encode(_currentMemo).length;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final overLimit = _usedBytes > _memoByteLimit;
-    final error = overLimit ? context.l10n.commonMessageIsTooLong : null;
-    final labelStyle = AppTypography.labelLarge.copyWith(
-      color: colors.text.secondary,
-      fontWeight: FontWeight.w400,
-    );
-    final primaryIsClear = _showClearMemo;
-    final primaryDisabled = error != null && !primaryIsClear;
-
-    return MobileModalScaffold(
-      title: context.l10n.sendMemoSheetAdd,
-      onClose: () => Navigator.of(context).pop(),
-      bodyGap: AppSpacing.s,
-      bottomPadding: AppSpacing.base,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            key: const ValueKey('mobile_send_memo_text_area'),
-            height: 222,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: _kMobileSendRecipientLineHeight,
-                    child: Row(
-                      children: [
-                        Text(context.l10n.commonMessage, style: labelStyle),
-                        const Spacer(),
-                        Text(
-                          // Used/total bytes, like the Add Memo frame's
-                          // "51/512".
-                          '$_usedBytes/$_memoByteLimit',
-                          style: labelStyle.copyWith(
-                            color: overLimit
-                                ? colors.text.destructive
-                                : colors.text.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  _MemoTextArea(
-                    key: const ValueKey('mobile_send_memo_field'),
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    hintText: context.l10n.sendMemoRecipientOnly,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  SizedBox(
-                    height: _kMobileSendMemoErrorHeight,
-                    child: Align(
-                      // Top, so a one-line message keeps the position it had
-                      // before this slot grew.
-                      alignment: Alignment.topLeft,
-                      child: error != null
-                          ? Text(
-                              error,
-                              maxLines: 2,
-                              style: labelStyle.copyWith(
-                                color: colors.text.destructive,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          SizedBox(
-            key: const ValueKey('mobile_send_memo_buttons'),
-            height: 112,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AppButton(
-                  key: ValueKey(
-                    primaryIsClear
-                        ? 'mobile_send_memo_clear'
-                        : 'mobile_send_memo_save',
-                  ),
-                  expand: true,
-                  leading: primaryIsClear
-                      ? const AppIcon(AppIcons.trash)
-                      : null,
-                  onPressed: primaryDisabled
-                      ? null
-                      : () => Navigator.of(
-                          context,
-                        ).pop(primaryIsClear ? '' : _currentMemo),
-                  child: Text(
-                    primaryIsClear
-                        ? context.l10n.sendMemoClear
-                        : context.l10n.sendMemoSheetAdd,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s),
-                AppButton(
-                  key: const ValueKey('mobile_send_memo_cancel'),
-                  expand: true,
-                  variant: AppButtonVariant.ghost,
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(context.l10n.commonCancel),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MemoTextArea extends StatefulWidget {
-  const _MemoTextArea({
-    required this.controller,
-    required this.focusNode,
-    required this.hintText,
-    required this.onChanged,
-    super.key,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final String hintText;
-  final ValueChanged<String> onChanged;
-
-  @override
-  State<_MemoTextArea> createState() => _MemoTextAreaState();
-}
-
-class _MemoTextAreaState extends State<_MemoTextArea> {
-  late final ScrollController _scrollController = ScrollController();
-  bool _canScroll = false;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_scheduleCanScrollUpdate);
-    _scrollController.addListener(_scheduleCanScrollUpdate);
-    _scheduleCanScrollUpdate();
-  }
-
-  @override
-  void didUpdateWidget(covariant _MemoTextArea oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_scheduleCanScrollUpdate);
-      widget.controller.addListener(_scheduleCanScrollUpdate);
-      _scheduleCanScrollUpdate();
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_scheduleCanScrollUpdate);
-    _scrollController.removeListener(_scheduleCanScrollUpdate);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _scheduleCanScrollUpdate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final nextCanScroll =
-          _scrollController.hasClients &&
-          _scrollController.position.hasContentDimensions &&
-          _scrollController.position.maxScrollExtent > 0.5;
-      if (_canScroll == nextCanScroll) return;
-      setState(() {
-        _canScroll = nextCanScroll;
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final focused = widget.focusNode.hasFocus;
-
-    return Container(
-      // The memo error slot below holds two lines, and the sheet keeps its
-      // height: the second line comes from here. This area scrolls.
-      height: 148 - _kMobileSendRecipientLineHeight,
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.small),
-        border: Border.all(
-          color: focused
-              ? colors.background.inverse
-              : colors.background.ground.withValues(alpha: 0),
-          width: 1.5,
-          strokeAlign: BorderSide.strokeAlignInside,
-        ),
-        boxShadow: [
-          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-          BoxShadow(
-            color: colors.shadows.subtle,
-            offset: const Offset(0, 2),
-            blurRadius: 4,
-          ),
-          BoxShadow(
-            color: colors.shadows.subtle,
-            offset: const Offset(0, 1),
-            blurRadius: 2,
-          ),
-          BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: NotificationListener<ScrollMetricsNotification>(
-              onNotification: (_) {
-                _scheduleCanScrollUpdate();
-                return false;
-              },
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 40, 12),
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(
-                    context,
-                  ).copyWith(scrollbars: false),
-                  child: TextField(
-                    key: const ValueKey('mobile_send_memo_editable'),
-                    controller: widget.controller,
-                    focusNode: widget.focusNode,
-                    scrollController: _scrollController,
-                    autofocus: true,
-                    expands: true,
-                    maxLines: null,
-                    minLines: null,
-                    keyboardType: TextInputType.multiline,
-                    textInputAction: TextInputAction.newline,
-                    textAlignVertical: TextAlignVertical.top,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                    cursorColor: colors.text.accent,
-                    decoration: InputDecoration.collapsed(
-                      hintText: widget.hintText,
-                      hintStyle: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.muted,
-                      ),
-                    ),
-                    onChanged: widget.onChanged,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: 12,
-            child: _MemoTextAreaScrollbar(
-              visible: _canScroll,
-              controller: _scrollController,
-              thumbColor: colors.background.overlay,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MemoTextAreaScrollbar extends StatefulWidget {
-  const _MemoTextAreaScrollbar({
-    required this.visible,
-    required this.controller,
-    required this.thumbColor,
-  });
-
-  final bool visible;
-  final ScrollController controller;
-  final Color thumbColor;
-
-  @override
-  State<_MemoTextAreaScrollbar> createState() => _MemoTextAreaScrollbarState();
-}
-
-class _MemoTextAreaScrollbarState extends State<_MemoTextAreaScrollbar> {
-  static const _horizontalInset = 3.0;
-  static const _topInset = 8.0;
-  static const _bottomInset = 8.0;
-  static const _minThumbHeight = 24.0;
-  static const _maxThumbHeight = 62.0;
-  static const _thumbWidth = 6.0;
-
-  double? _dragThumbOffset;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_handleScrollChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _MemoTextAreaScrollbar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_handleScrollChanged);
-      widget.controller.addListener(_handleScrollChanged);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_handleScrollChanged);
-    super.dispose();
-  }
-
-  void _handleScrollChanged() {
-    if (mounted) setState(() {});
-  }
-
-  _MemoScrollbarGeometry? _geometry(double height) {
-    if (!widget.visible) return null;
-    if (height <= 0) return null;
-    if (!widget.controller.hasClients) return null;
-    final position = widget.controller.position;
-    if (!position.hasContentDimensions) return null;
-    final maxScrollExtent = position.maxScrollExtent;
-    if (maxScrollExtent <= 0) return null;
-
-    final trackHeight = height - _topInset - _bottomInset;
-    final viewportExtent = position.viewportDimension;
-    final contentExtent = viewportExtent + maxScrollExtent;
-    if (trackHeight <= 0 || viewportExtent <= 0 || contentExtent <= 0) {
-      return null;
-    }
-
-    final maxThumbHeight = trackHeight < _maxThumbHeight
-        ? trackHeight
-        : _maxThumbHeight;
-    if (maxThumbHeight <= 0) return null;
-    final thumbHeight = (trackHeight * viewportExtent / contentExtent)
-        .clamp(_minThumbHeight, maxThumbHeight)
-        .toDouble();
-    final thumbTravel = trackHeight - thumbHeight;
-    final scrollFraction = thumbTravel <= 0
-        ? 0.0
-        : (position.pixels / maxScrollExtent).clamp(0.0, 1.0).toDouble();
-    final thumbTop = _topInset + scrollFraction * thumbTravel;
-
-    return _MemoScrollbarGeometry(
-      trackHeight: trackHeight,
-      thumbTop: thumbTop,
-      thumbHeight: thumbHeight,
-      thumbTravel: thumbTravel,
-      maxScrollExtent: maxScrollExtent,
-    );
-  }
-
-  void _jumpToLocalY(double localY, _MemoScrollbarGeometry geometry) {
-    if (geometry.thumbTravel <= 0) return;
-    final dragOffset = _dragThumbOffset ?? geometry.thumbHeight / 2;
-    final targetThumbTop = localY - dragOffset;
-    final scrollFraction = ((targetThumbTop - _topInset) / geometry.thumbTravel)
-        .clamp(0.0, 1.0)
-        .toDouble();
-    widget.controller.jumpTo(scrollFraction * geometry.maxScrollExtent);
-  }
-
-  void _handlePointerDown(PointerDownEvent event, double height) {
-    final geometry = _geometry(height);
-    if (geometry == null) return;
-    final localY = event.localPosition.dy;
-    final hitThumb =
-        localY >= geometry.thumbTop &&
-        localY <= geometry.thumbTop + geometry.thumbHeight;
-    _dragThumbOffset = hitThumb
-        ? localY - geometry.thumbTop
-        : geometry.thumbHeight / 2;
-    _jumpToLocalY(localY, geometry);
-  }
-
-  void _handlePointerMove(PointerMoveEvent event, double height) {
-    final geometry = _geometry(height);
-    if (geometry == null) return;
-    _jumpToLocalY(event.localPosition.dy, geometry);
-  }
-
-  void _clearDrag() {
-    _dragThumbOffset = null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final height = constraints.maxHeight;
-        final geometry = _geometry(height);
-        if (geometry == null) return const SizedBox.shrink();
-
-        return Listener(
-          key: const ValueKey('mobile_send_memo_scrollbar'),
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: (event) => _handlePointerDown(event, height),
-          onPointerMove: (event) => _handlePointerMove(event, height),
-          onPointerUp: (_) => _clearDrag(),
-          onPointerCancel: (_) => _clearDrag(),
-          child: Stack(
-            children: [
-              Positioned(
-                key: const ValueKey('mobile_send_memo_scrollbar_thumb'),
-                left: _horizontalInset,
-                top: geometry.thumbTop,
-                width: _thumbWidth,
-                height: geometry.thumbHeight,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: widget.thumbColor,
-                    borderRadius: BorderRadius.circular(AppRadii.full),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _MemoScrollbarGeometry {
-  const _MemoScrollbarGeometry({
-    required this.trackHeight,
-    required this.thumbTop,
-    required this.thumbHeight,
-    required this.thumbTravel,
-    required this.maxScrollExtent,
-  });
-
-  final double trackHeight;
-  final double thumbTop;
-  final double thumbHeight;
-  final double thumbTravel;
-  final double maxScrollExtent;
-}
-
 /// Mobile counterpart of the desktop Sapling params prompt — same copy,
 /// presented as a sheet. Pops true to download.
 /// Shared with the Keystone signing screen, which needs the same
@@ -4561,24 +4222,16 @@ class MobileSaplingParamsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.md,
-      ),
+    // Closing declines the download, like Cancel.
+    void cancel() => Navigator.of(context).pop(false);
+    return MobileModalScaffold(
+      title: context.l10n.sendSaplingDownloadTitle,
+      titleMaxLines: 2,
+      onClose: cancel,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            context.l10n.sendSaplingDownloadTitle,
-            style: AppTypography.headlineSmall.copyWith(
-              color: colors.text.accent,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
           Text(
             context.l10n.sendSaplingDownloadBody,
             style: AppTypography.bodyMedium.copyWith(
@@ -4595,27 +4248,16 @@ class MobileSaplingParamsSheet extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('mobile_send_sapling_download'),
+            expand: true,
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(context.l10n.commonDownload),
           ),
-          const SizedBox(height: AppSpacing.xs),
-          Semantics(
-            button: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).pop(false),
-              child: SizedBox(
-                height: 44,
-                child: Center(
-                  child: Text(
-                    context.l10n.commonCancel,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          const SizedBox(height: AppSpacing.s),
+          AppButton(
+            variant: AppButtonVariant.ghost,
+            expand: true,
+            onPressed: cancel,
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),

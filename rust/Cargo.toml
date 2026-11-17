@@ -10,7 +10,9 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 zakura-pir-protocol = { version = "=0.0.1-rc7", default-features = false, features = ["http-endpoint"] }
 zakura-pir-config = "=0.1.3"
 zakura-service-config = "=0.1.0"
-zakura-pir-client = { version = "=0.0.1-rc7", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
+zakura-pir-client = { version = "=0.0.1-rc7", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd", "receiver-wallet"] }
+zakura-one-time-ivk = "=0.0.1-rc5"
+zakura-near-intents = "=0.0.1-rc6"
 zcash_note_encryption = { package = "zakura-note-encryption", version = "=5.4.0" }
 # The app installs its own redacting logger and panic hook.
 # Supported targets provide the atomic widths used by FRB.
@@ -240,6 +242,14 @@ features = ["test-fixtures"]
 version = "=0.0.1-rc7"
 default-features = false
 features = ["testing"]
+
+[dev-dependencies.zakura-pir-query-server]
+version = "=0.0.1-rc7"
+features = ["receiver"]
+
+[dev-dependencies.zakura-pir-publisher]
+version = "=0.0.1-rc7"
+features = ["receiver-crypto"]
 
 [dev-dependencies.ipir-sp]
 version = "=0.1.0-rc.8"

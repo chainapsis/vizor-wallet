@@ -4,6 +4,10 @@ import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provi
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_payout_discovery_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   test('exposes persisted swap records as activity row items', () async {
@@ -143,6 +147,84 @@ void main() {
     },
   );
 
+  test(
+    'a private payout the wallet has not found yet blocks removal',
+    () async {
+      final payoutHash = 'ab' * 32;
+      final walletTxid = swapChainTxidToWalletTxidHex(payoutHash)!;
+      final store = _FakeSwapActivityStore({
+        'account-1': [
+          _pendingCountRecord(
+            id: 'private-payout',
+            status: SwapIntentStatus.complete,
+          ).copyWith(
+            direction: SwapDirection.externalToZec,
+            privateAddress: true,
+            destinationChainTxHash: payoutHash,
+          ),
+          // An ordinary payout settles when NEAR reports it complete.
+          _pendingCountRecord(
+            id: 'ordinary-payout',
+            status: SwapIntentStatus.complete,
+          ).copyWith(
+            direction: SwapDirection.externalToZec,
+            destinationChainTxHash: 'cd' * 32,
+          ),
+        ],
+      });
+      Future<int> count({required bool found}) async {
+        final container = ProviderContainer(
+          overrides: [
+            swapActivityStoreProvider.overrideWithValue(store),
+            syncProvider.overrideWith(_Sync.new),
+            swapPayoutRowsLoaderProvider.overrideWithValue(
+              (_, txids) async => [
+                if (found && txids.contains(walletTxid)) _tx(walletTxid),
+              ],
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(syncProvider.future);
+        return container.read(
+          swapPendingIntentCountProvider('account-1').future,
+        );
+      }
+
+      expect(await count(found: false), 1);
+      expect(await count(found: true), 0);
+    },
+  );
+
+  test('a swap whose start finished still shows starting when saving it '
+      'failed', () async {
+    final store = _FakeSwapActivityStore({
+      'account-1': [
+        _pendingCountRecord(id: 'private').copyWith(startPending: true),
+      ],
+    });
+    final container = ProviderContainer(
+      overrides: [swapActivityStoreProvider.overrideWithValue(store)],
+    );
+    addTearDown(container.dispose);
+    final starting = await container.read(
+      swapActivityRowItemsProvider('account-1').future,
+    );
+    expect(starting.single.startPending, isTrue);
+
+    // This store refuses every save.
+    await expectLater(
+      container
+          .read(swapActivityTrackerProvider)
+          .finishStart(accountUuid: 'account-1', intentId: 'private'),
+      throwsUnsupportedError,
+    );
+    final unsaved = await container.read(
+      swapActivityRowItemsProvider('account-1').future,
+    );
+    expect(unsaved.single.startPending, isTrue, reason: 'no instructions');
+  });
+
   test('row items use resolved status so the list agrees with the panel', () async {
     final past = DateTime.utc(2020, 1, 1);
     final store = _FakeSwapActivityStore({
@@ -232,3 +314,27 @@ class _FakeSwapActivityStore implements SwapActivityStore {
     throw UnsupportedError('deleteForAccount is not used by this test');
   }
 }
+
+/// A synced wallet with no recent transactions.
+class _Sync extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+}
+
+rust_sync.TransactionInfo _tx(String txidHex) => rust_sync.TransactionInfo(
+  txidHex: txidHex,
+  minedHeight: BigInt.one,
+  expiredUnmined: false,
+  accountBalanceDelta: 0,
+  fee: BigInt.zero,
+  feeState: rust_sync.TransactionFeeState.notApplicable,
+  detailsComplete: true,
+  provisional: false,
+  amountIncludesFee: false,
+  blockTime: BigInt.from(1800000000),
+  isTransparent: false,
+  txKind: 'received',
+  displayAmount: BigInt.one,
+  displayPool: 'shielded',
+  createdTime: BigInt.from(1800000000),
+);

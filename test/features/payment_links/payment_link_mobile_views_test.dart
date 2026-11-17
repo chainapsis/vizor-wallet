@@ -211,8 +211,8 @@ void main() {
     final summary = find.byKey(
       const ValueKey('payment_link_mobile_review_summary'),
     );
-    expect(tester.getSize(summary).width, 361);
-    expect(tester.getTopLeft(summary).dx, 16);
+    expect(tester.getSize(summary).width, 353);
+    expect(tester.getTopLeft(summary).dx, 20);
 
     final container = tester.widget<Container>(summary);
     expect(
@@ -320,8 +320,8 @@ void main() {
     final pasteZone = find.byKey(
       const ValueKey('payment_link_mobile_redeem_drop_zone'),
     );
-    expect(tester.getSize(pasteZone), const Size(361, 225.625));
-    expect(tester.getTopLeft(pasteZone), const Offset(16, 218));
+    expect(tester.getSize(pasteZone), const Size(353, 225.625));
+    expect(tester.getTopLeft(pasteZone), const Offset(20, 218));
     expect(find.text('Paste card link'), findsOneWidget);
 
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.loading);
@@ -337,7 +337,7 @@ void main() {
     );
 
     await _pumpRedeem(tester, PaymentLinkRedeemMobileState.invalid);
-    expect(tester.getTopLeft(pasteZone), const Offset(16, 218));
+    expect(tester.getTopLeft(pasteZone), const Offset(20, 218));
     expect(find.text('The link doesn’t look legit.'), findsOneWidget);
     expect(find.text('Clear clipboard'), findsOneWidget);
   });

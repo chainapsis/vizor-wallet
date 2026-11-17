@@ -6,6 +6,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../swap/domain/swap_quote.dart';
@@ -26,6 +27,7 @@ class MobilePayReviewContent extends StatefulWidget {
     required this.convertedFiatText,
     required this.expiresInText,
     required this.expired,
+    this.flowConnector,
     super.key,
   });
 
@@ -36,6 +38,9 @@ class MobilePayReviewContent extends StatefulWidget {
   final String? convertedFiatText;
   final String? expiresInText;
   final bool expired;
+
+  /// Optional replacement for the gap between the paying and recipient rows.
+  final Widget? flowConnector;
 
   @override
   State<MobilePayReviewContent> createState() => _MobilePayReviewContentState();
@@ -67,6 +72,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
           decoration: BoxDecoration(
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(_reviewCardRadius),
+            boxShadow: mobileSurfaceShadows(colors),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -84,7 +90,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
                 ),
                 bottomLeftText: widget.payingFiatText,
               ),
-              const SizedBox(height: AppSpacing.md),
+              widget.flowConnector ?? const SizedBox(height: AppSpacing.md),
               ReviewInfoRow(
                 key: const ValueKey('mobile_pay_review_recipient_row'),
                 label: context.l10n.commonTo,
@@ -134,6 +140,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
           decoration: BoxDecoration(
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(_reviewCardRadius),
+            boxShadow: mobileSurfaceShadows(colors),
           ),
           child: Opacity(
             key: const ValueKey('mobile_pay_review_converted_opacity'),

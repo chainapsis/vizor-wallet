@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -22,6 +23,7 @@ import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart'
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
@@ -30,6 +32,9 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/full_text_expectations.dart';
+import '../../support/widget_test_viewport.dart';
+import '../../support/app_test_fonts.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -44,14 +49,14 @@ const _accountState = AccountState(
   activeAddress: 'u1payaddress',
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
+AppBootstrapState _bootstrap({bool privacyMode = false}) => AppBootstrapState(
   initialLocation: '/pay',
   initialAccountState: _accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyMode,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
@@ -62,10 +67,16 @@ Widget _app({
   bool preservePreparedComposer = false,
   bool usePreparedComposer = false,
   SyncState? syncState,
+  bool oneTimeZecAddress = false,
+  bool privacyMode = false,
 }) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(privacyMode: privacyMode),
+      ),
+      if (oneTimeZecAddress)
+        swapUsesOneTimeAddressProvider.overrideWithValue(true),
       nearIntentsServiceStatusProvider.overrideWith(
         () => FixtureServiceStatusNotifier(serviceStatus),
       ),
@@ -282,6 +293,37 @@ class _TorBlockablePayNotifier extends SwapNotifier {
   }
 }
 
+/// Standard quotes fail for lack of liquidity, as 1Click does when only the
+/// confidential route can fill the amount.
+class _NoStandardLiquidityPayNotifier extends SwapNotifier {
+  int confidentialReviews = 0;
+
+  @override
+  SwapState build() => const SwapState(
+    direction: SwapDirection.zecToExternal,
+    quoteMode: SwapQuoteMode.exactOutput,
+    amountText: '0.025',
+    receiveAmountText: '10',
+    destinationText: '0x1111111111111111111111111111111111111111',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: [],
+    payMode: true,
+  );
+
+  @override
+  Future<void> showReview({bool preserveCurrentReview = false}) async {
+    if (state.confidential) {
+      confidentialReviews++;
+      return;
+    }
+    state = state.copyWith(
+      quoteError: const SwapNotice(SwapNoticeKind.noQuoteForAmount),
+      quoteNoLiquidity: true,
+    );
+  }
+}
+
 Widget _routedPayApp(
   GoRouter router,
   SwapNotifier notifier, {
@@ -352,6 +394,7 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  setUpAll(loadAppTestFonts);
   testWidgets(
     'service notice keeps mobile Pay usable with multiple windows and keyboard',
     (tester) async {
@@ -494,6 +537,72 @@ void main() {
     },
   );
 
+  testWidgets('privacy mode masks the Ironwood balance in a private '
+      'payment shortfall', (tester) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    await tester.pumpWidget(
+      _app(
+        oneTimeZecAddress: true,
+        privacyMode: true,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+          ironwoodBalance: BigInt.from(10_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_pay_amount_input')),
+      '1000',
+    );
+    await tester.pump();
+
+    expect(
+      find.text(
+        'Private payments use Ironwood ZEC only. '
+        'You have ${fixedPrivacyMask()}\u00A0ZEC there.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the Ironwood shortfall wraps in full with large text on a '
+      'narrow screen', (tester) async {
+    await ignoringFlexOverflows(() async {
+      await setWidgetTestViewport(tester, const Size(320, 568));
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        _app(
+          oneTimeZecAddress: true,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            spendableBalance: BigInt.from(14_312_000_000),
+            totalBalance: BigInt.from(14_312_000_000),
+            ironwoodBalance: BigInt.from(10_000_000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+        '1000',
+      );
+      await tester.pumpAndSettle();
+
+      await expectTextFullyShown(
+        tester,
+        'Private payments use Ironwood ZEC only. You have 0.1\u00A0ZEC there.',
+      );
+    });
+  });
+
   testWidgets('mobile pay follows the amount to recipient flow', (
     tester,
   ) async {
@@ -515,7 +624,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_pay_amount_card'))),
-      const Size(361, 240),
+      const Size(353, 240),
     );
     expect(
       tester.getRect(find.byKey(const ValueKey('mobile_pay_amount_card'))).top,
@@ -583,7 +692,8 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('mobile_pay_add_to_contacts_button')),
     );
-    await tester.pump();
+    // The sheet slides in; let it finish before typing.
+    await tester.pumpAndSettle();
 
     expect(
       find.byKey(const ValueKey('mobile_pay_add_contact_card')),
@@ -882,12 +992,6 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_pay_slippage_button')));
     await tester.pump();
     expect(find.byType(MobileSwapSlippageStepperModal), findsOneWidget);
-    expect(
-      find.text(
-        'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.',
-      ),
-      findsOneWidget,
-    );
 
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
@@ -940,7 +1044,8 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('mobile_pay_asset_selector')));
-    await tester.pump();
+    // The sheet slides in; let it finish before tapping a row.
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(ValueKey('swap_asset_row_${SwapAsset.sol.identityKey}')),
     );
@@ -1051,6 +1156,46 @@ void main() {
     expect(find.text('Unable to fetch a quote. Try again.'), findsOneWidget);
     expect(find.text('Continue'), findsOneWidget);
     expect(find.text('Pay review route'), findsNothing);
+  });
+
+  testWidgets('a missing standard quote offers the confidential route', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final notifier = _NoStandardLiquidityPayNotifier();
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) =>
+              const MobilePayScreen(preservePreparedComposer: true),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_routedPayApp(router, notifier));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    final cta = find.byKey(
+      const ValueKey('mobile_pay_recipient_continue_button'),
+    );
+    await tester.tap(cta);
+    await tester.pumpAndSettle();
+
+    expect(find.text('No quote for this amount'), findsOneWidget);
+    expect(
+      find.descendant(of: cta, matching: find.text('Get confidential quote')),
+      findsOneWidget,
+    );
+    await tester.tap(cta);
+    await tester.pumpAndSettle();
+    expect(notifier.confidentialReviews, 1);
+    expect(notifier.state.confidential, isTrue);
   });
 
   testWidgets('a Tor-blocked token list closes the recipient CTA', (

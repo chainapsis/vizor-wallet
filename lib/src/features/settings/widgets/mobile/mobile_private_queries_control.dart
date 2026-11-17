@@ -11,6 +11,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../private_queries_turn_off.dart';
 import '../wallet_pir_server_popup.dart';
+import '../../../../core/widgets/mobile/mobile_section.dart';
 import 'mobile_tor_control.dart';
 
 /// Private queries row and explanation shared by mobile Settings and Welcome.
@@ -19,11 +20,17 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
   const MobilePrivateQueriesControl({
     this.enabled = true,
     this.onRequest,
+    this.divided = false,
     super.key,
   });
 
   final bool enabled;
   final Future<void> Function()? onRequest;
+
+  /// Draws a hairline above the row, as Settings splits its items. The
+  /// control draws it, not the caller, so it goes with the control when
+  /// private queries are unavailable.
+  final bool divided;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -42,6 +49,10 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: AppSpacing.md),
+        if (divided) ...[
+          const MobileSectionDivider(),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         Row(
           children: [
             Expanded(
@@ -56,25 +67,23 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
                   key: const ValueKey('mobile_settings_enhance_pir_row'),
                   behavior: HitTestBehavior.opaque,
                   onTap: !interactive ? null : onToggle,
-                  child: SizedBox(
-                    height: 44,
+                  // A floor, not a fixed height, so a two-line label at large
+                  // text sizes is not clipped.
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 44),
+                    // Same icon and label edges as the Settings chevron rows.
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.xxs,
+                      padding: const EdgeInsetsDirectional.only(
+                        end: AppSpacing.xxs,
                       ),
                       child: Row(
                         children: [
-                          SizedBox.square(
-                            dimension: 32,
-                            child: Center(
-                              child: AppIcon(
-                                AppIcons.eye,
-                                size: 20,
-                                color: enhancePirEnabled
-                                    ? colors.icon.brandCrimson
-                                    : colors.icon.muted,
-                              ),
-                            ),
+                          // Like the other Settings row icons; the status
+                          // and the toggle carry the state.
+                          AppIcon(
+                            AppIcons.eye,
+                            size: 20,
+                            color: colors.icon.accent,
                           ),
                           const SizedBox(width: AppSpacing.s),
                           Expanded(
@@ -119,10 +128,6 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(width: AppSpacing.xxs),
-            WalletPirServerSettingsButton(
-              enabled: enhancePirEnabled && interactive,
-            ),
           ],
         ),
         // Feedback for the user's own toggle only; recovery queue counts are
@@ -145,6 +150,14 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
             color: colors.text.secondary,
           ),
         ),
+        // The server settings matter only while private queries are on, or
+        // while swap recovery queries the server without them.
+        if (enhancePirEnabled ||
+            ref.watch(swapRecoveryUsesServerProvider).value == true) ...[
+          const SizedBox(height: AppSpacing.sm),
+          const MobileSectionDivider(),
+          WalletPirServerSettingsRow(enabled: interactive),
+        ],
       ],
     );
   }

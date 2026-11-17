@@ -6,7 +6,8 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/receipt_loading_skeleton.dart';
 
-/// Matches the 44px Activity row, including icon and text-line slots.
+/// Matches the Activity row (44px on desktop, 56px on mobile), including icon
+/// and text-line slots.
 /// Static placeholders avoid adding animation work to a local wallet read.
 class ActivitySkeletonRow extends StatelessWidget {
   const ActivitySkeletonRow({super.key});
@@ -14,7 +15,7 @@ class ActivitySkeletonRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const mobile = kAppFormFactor == AppFormFactor.mobile;
-    const iconSize = mobile ? AppAssetSize.size : 32.0;
+    const iconSize = mobile ? 44.0 : 32.0;
     final titleHeight = _lineHeight(AppTypography.labelLarge);
     final subtitleHeight = math.max(
       titleHeight,
@@ -25,7 +26,7 @@ class ActivitySkeletonRow extends StatelessWidget {
     );
     return ExcludeSemantics(
       child: SizedBox(
-        height: 44,
+        height: mobile ? 56 : 44,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Row(

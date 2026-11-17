@@ -1,6 +1,5 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
-
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -10,9 +9,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../../swap/widgets/near_intents_service_notice_host.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
@@ -20,8 +21,11 @@ import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../address_book/providers/address_book_provider.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../swap/providers/swap_address_wait_provider.dart';
+import '../../../swap/providers/swap_funding_balance_provider.dart';
+import '../../../swap/providers/swap_zec_staging_address_service.dart';
 import '../../../swap/models/swap_intent_presentation_mapper.dart'
     show swapIntentsFromRecords;
 import '../../../swap/models/swap_models.dart';
@@ -30,6 +34,8 @@ import '../../../swap/providers/swap_activity_store.dart'
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../../swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
+import '../../models/pay_amount_input.dart';
+import '../../../swap/widgets/swap_confidential_ui.dart';
 import '../../models/pay_recent_recipients.dart';
 import '../../widgets/mobile/mobile_pay_add_contact_card.dart';
 import '../../widgets/mobile/mobile_pay_amount_step.dart';
@@ -55,9 +61,15 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   late final FocusNode _amountFocusNode;
   late final TextEditingController _recipientController;
   bool _modalRouteOpen = false;
+
+  /// The last surface the modal drew, kept while the sheet slides out (its
+  /// future completes on pop, before the exit animation ends).
+  _PayModalSurface? _lastModalSurface;
   bool _reviewRequestInFlight = false;
   int _reviewRequestGeneration = 0;
   var _step = _MobilePayStep.amount;
+
+  final _confidentialReveal = SwapConfidentialRevealCounter();
 
   @override
   void initState() {
@@ -96,20 +108,20 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     setState(() => _payModal.value = surface);
     if (_modalRouteOpen) return;
     _modalRouteOpen = true;
-    final appTheme = context.appTheme;
+    // The shared mobile sheet: same entrance, exit, scrim and
+    // drag-to-dismiss as the other mobile modals.
     unawaited(
-      showGeneralDialog<void>(
+      showAppMobileSheet<void>(
         context: context,
-        useRootNavigator: true,
-        barrierDismissible: true,
-        barrierLabel: context.l10n.payScanBarrierDismiss,
-        barrierColor: context.colors.background.neutralScrim,
-        transitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) =>
-            AppTheme(data: appTheme, child: _buildPayModal()),
+        builder: (_) => _buildPayModal(),
       ).whenComplete(() {
         _modalRouteOpen = false;
-        if (mounted) setState(() => _payModal.value = null);
+        if (mounted) {
+          setState(() {
+            _settingsClosed();
+            _payModal.value = null;
+          });
+        }
       }),
     );
   }
@@ -120,8 +132,19 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       return;
     }
     if (_payModal.value != null) {
-      setState(() => _payModal.value = null);
+      setState(() {
+        _settingsClosed();
+        _payModal.value = null;
+      });
     }
+  }
+
+  /// Plays a reveal held back while the settings covered the amount step.
+  void _settingsClosed() {
+    if (_payModal.value != _PayModalSurface.slippage) return;
+    _confidentialReveal.settingsClosed(
+      confidential: ref.read(swapStateProvider).confidential,
+    );
   }
 
   void _handleAssetSelected(SwapAsset asset) {
@@ -158,6 +181,13 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     await _openReview(selection);
   }
 
+  Future<void> _reviewRecipientConfidentially(
+    PayRecipientSelection selection,
+  ) async {
+    ref.read(swapStateProvider.notifier).selectConfidential(true);
+    await _reviewRecipient(selection);
+  }
+
   Future<void> _saveContact(
     AddressBookNetwork network,
     String label,
@@ -179,8 +209,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   Widget _buildPayModal() {
     return ValueListenableBuilder<_PayModalSurface?>(
       valueListenable: _payModal,
-      builder: (context, surface, _) {
+      builder: (context, current, _) {
+        final surface = current ?? _lastModalSurface;
         if (surface == null) return const SizedBox.shrink();
+        _lastModalSurface = surface;
         return Consumer(
           builder: (context, ref, _) {
             final swapState = ref.watch(swapStateProvider);
@@ -223,33 +255,20 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                       ),
               _PayModalSurface.slippage => MobileSwapSlippageStepperModal(
                 slippageBps: swapState.slippageBps,
+                confidential: swapState.confidential,
                 paymentMode: true,
-                onSubmitted: (value) {
-                  swapNotifier.updateSlippageBps(value);
+                onSubmitted: (slippageBps, confidential) {
+                  swapNotifier.updateQuoteSettings(
+                    slippageBps: slippageBps,
+                    confidential: confidential,
+                  );
                   _closePayModal();
                 },
                 onCancel: _closePayModal,
               ),
             };
-            // Match the Swap modal route exactly: only the bottom card is
-            // hit-testable, so taps in the empty area reach the dismissible
-            // dialog barrier instead of being swallowed by a full-screen
-            // scroll view.
-            return SafeArea(
-              bottom: false,
-              child: surface == _PayModalSurface.slippage
-                  ? Align(
-                      alignment: Alignment.bottomCenter,
-                      child: MobileModalCard(child: content),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Spacer(),
-                        MobileModalCard(child: content),
-                      ],
-                    ),
-            );
+            // showAppMobileSheet supplies the card, margins and safe area.
+            return content;
           },
         );
       },
@@ -281,6 +300,17 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(swapStateProvider.select((state) => state.confidential), (
+      previous,
+      next,
+    ) {
+      if (previous != false || !next) return;
+      unawaited(AppHaptics.privacyToggle());
+      final changed = _confidentialReveal.turnedOn(
+        settingsOpen: _payModal.value == _PayModalSurface.slippage,
+      );
+      if (changed) setState(() {});
+    });
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -325,6 +355,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
               contactId: swapState.userExternalContactId,
             ),
     );
+    final offersConfidential =
+        swapState.externalAssetSupportError(context.l10n) == null &&
+        swapState.offersConfidentialQuote;
 
     void back() {
       if (_step == _MobilePayStep.recipient) {
@@ -345,8 +378,13 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       ),
       _MobilePayStep.recipient => context.l10n.commonSelectRecipient,
     };
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    // A payment sends ZEC, so a one-time refund address may wait for sync.
+    final addressWait = ref.watch(swapAddressWaitProvider(true));
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: ref.watch(swapUsesOneTimeAddressProvider),
+      )),
     );
 
     return MobileSidebarExitScope(
@@ -372,13 +410,23 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 MobileTopNav.back(title: title, onBack: back),
                 Expanded(
                   child: MobileBottomSafeArea(
-                    bottomPadding: AppSpacing.md,
+                    bottomPadding: kMobileFooterGap,
                     child: switch (_step) {
                       _MobilePayStep.amount => MobilePayAmountStep(
                         state: swapState,
                         controller: _amountController,
                         focusNode: _amountFocusNode,
-                        zecAvailableZatoshi: migrationSpendable,
+                        zecAvailableZatoshi: funding.spendable,
+                        balanceMessage: swapIronwoodOnlyShortfallMessage(
+                          context.l10n,
+                          funding,
+                          (available) => payAmountExceedsAvailableZec(
+                            swapState,
+                            available,
+                          ),
+                          payment: true,
+                          privacyModeEnabled: ref.watch(privacyModeProvider),
+                        ),
                         onAmountChanged: swapNotifier.updateReceiveAmount,
                         onFiatAmountChanged:
                             swapNotifier.updateReceiveAmountFiat,
@@ -389,6 +437,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                         slippageLabel: formatSwapSlippage(
                           swapState.slippageBps,
                         ),
+                        confidentialReveal: _confidentialReveal.value,
                         onOpenSlippage: () =>
                             _openModal(_PayModalSurface.slippage),
                         onContinue: () {
@@ -410,14 +459,27 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                         enabled:
                             swapState.externalAssetIsAvailable &&
                             !addressBookInitialLoading,
+                        waitLabel: addressWait == null
+                            ? null
+                            : swapAddressWaitLabel(context.l10n, addressWait),
                         selectedContactId: swapState.userExternalContactId,
                         externalAsset: swapState.externalAsset,
                         onAddressChanged: _handleAddressChanged,
                         onOpenScanner: () =>
                             _openModal(_PayModalSurface.addressScanner),
                         onChooseRecipient: _chooseRecipient,
-                        onSelectRecipient: () =>
-                            unawaited(_reviewRecipient(effectiveSelection)),
+                        // A missing standard quote offers the confidential
+                        // route, as desktop Pay does.
+                        selectLabel: offersConfidential
+                            ? context.l10n.swapActionGetConfidentialQuote
+                            : null,
+                        onSelectRecipient: () => unawaited(
+                          offersConfidential
+                              ? _reviewRecipientConfidentially(
+                                  effectiveSelection,
+                                )
+                              : _reviewRecipient(effectiveSelection),
+                        ),
                         onAddToContacts: () =>
                             _openModal(_PayModalSurface.addContact),
                       ),

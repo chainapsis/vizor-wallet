@@ -5,6 +5,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../domain/swap_address_plan.dart';
@@ -16,6 +17,7 @@ import '../../models/swap_quote_text.dart';
 import '../swap_review_page_content.dart'
     show swapReviewMinimumReceiveText, swapReviewSlippageToleranceText;
 import '../swap_amount_text.dart' show compactSwapAmountText;
+import '../one_time_address_label.dart';
 import 'mobile_swap_review_header.dart';
 
 /// Mobile swap review — Figma `Review Qoute` (4731:85401): the serif
@@ -38,6 +40,7 @@ class MobileSwapReviewContent extends StatelessWidget {
     this.inactiveMessage,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
+    this.flowConnector,
     super.key,
   });
 
@@ -54,6 +57,9 @@ class MobileSwapReviewContent extends StatelessWidget {
   final String? inactiveMessage;
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
+
+  /// Optional replacement for the paying/receiving flow arrow row.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +95,9 @@ class MobileSwapReviewContent extends StatelessWidget {
       ),
       asset: quote.sellAsset,
       bottomText: sendsZec ? payFiatTextOverride : null,
+      oneTimeAddress: sendsZec && addressPlan.oneTimeZecAddress
+          ? OneTimeAddressRole.refund
+          : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
       label: context.l10n.commonYoureReceiving,
@@ -98,13 +107,20 @@ class MobileSwapReviewContent extends StatelessWidget {
       asset: quote.receiveAsset,
       bottomText: sendsZec ? externalBottom : receiveFiatTextOverride,
       fullAddress: sendsZec ? externalAddress : null,
+      oneTimeAddress: !sendsZec && addressPlan.oneTimeZecAddress
+          ? OneTimeAddressRole.payout
+          : null,
     );
 
     return Column(
       key: const ValueKey('mobile_swap_review_content'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MobileSwapReviewHeader(pay: payRow, receive: receiveRow),
+        MobileSwapReviewHeader(
+          pay: payRow,
+          receive: receiveRow,
+          flowConnector: flowConnector,
+        ),
         const SizedBox(height: AppSpacing.sm),
         _ReviewCard(quote: quote),
         if (amountWarning != null) ...[
@@ -155,6 +171,7 @@ class _ReviewCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: mobileSurfaceShadows(colors),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -244,7 +261,7 @@ class _ReviewRow extends StatelessWidget {
                       child: AppIcon(
                         AppIcons.help,
                         size: 20,
-                        color: colors.icon.regular.withValues(alpha: 0.72),
+                        color: colors.icon.muted,
                       ),
                     ),
                   ],
@@ -282,7 +299,7 @@ class _MobileReviewNotice extends StatelessWidget {
         Expanded(
           child: Text(
             message,
-            style: AppTypography.bodySmall.copyWith(
+            style: AppTypography.bodyMedium.copyWith(
               color: colors.text.destructive,
             ),
           ),

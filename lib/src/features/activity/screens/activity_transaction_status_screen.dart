@@ -21,10 +21,12 @@ import '../../../core/widgets/review_info_row.dart';
 import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
+import '../../../core/zcash/spendable_wait.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/spendable_wait_provider.dart';
 import '../../../providers/zcash_explorer_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
@@ -299,6 +301,8 @@ class _ActivityTransactionStatusScreenState
       ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[],
     );
 
+    final spendableWaits = ref.watch(activeReceivedSpendableWaitsProvider);
+
     return _ReceiptContentColumn(
       child: ReceivedReceiptView(
         status: _receivedStatusFor(tx),
@@ -326,6 +330,7 @@ class _ActivityTransactionStatusScreenState
         memoText: memo,
         memoExpanded: _messageExpanded,
         detailsLoading: receiptDetailsLoading,
+        spendableWait: receivedSpendableWaitFor(tx, spendableWaits),
         onShowFullAddress: hasFromAddress
             ? () => _showVerifyAddress(fromAddress)
             : null,
@@ -664,7 +669,7 @@ class _ActivityTransactionStatusScreenState
                 ReviewListRow(
                   label: context.l10n.commonTo,
                   value: context.l10n.activityBalanceIronwood,
-                  leadingIconName: AppIcons.shieldKeyholeOutline,
+                  leadingIconName: AppIcons.shieldKeyhole,
                 ),
                 const ReviewWrapDivider(),
               ],

@@ -4,6 +4,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../src/core/theme/app_theme.dart';
+import '../src/core/zcash/spendable_wait.dart';
 import '../src/features/activity/widgets/received_receipt_view.dart';
 import '../src/features/send/widgets/send_review_layout.dart';
 
@@ -40,6 +41,27 @@ Widget buildReceivedReceiptTransparentToTransparentUseCase(
       txIdText: '0123123124512512',
       onShowFullAddress: () {},
       onExpandMemo: () {},
+      onTxIdPressed: () {},
+    ),
+  );
+}
+
+/// A shielded receipt with two of its six confirmations: the Status says
+/// when the funds can be spent.
+Widget buildReceivedReceiptSpendableWaitUseCase(BuildContext context) {
+  return _ReceivedReceiptFrame(
+    child: ReceivedReceiptView(
+      unknownFromKind: ReceivedReceiptUnknownFromKind.shieldedSender,
+      isShieldedSource: true,
+      amountText: '1.3 ZEC',
+      isShieldedReceivingAddress: true,
+      timestampText: '16 Nov, 14:02',
+      txIdText: '9c41e0…7ab2f1',
+      spendableWait: (
+        wait: const AvailableIn.minutes(1, 2),
+        confirmations: 2,
+        requiredConfirmations: 6,
+      ),
       onTxIdPressed: () {},
     ),
   );

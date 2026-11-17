@@ -76,6 +76,8 @@ class CachedWalletBalance {
         orchardPending: amount('orchardPending'),
         ironwoodPending: amount('ironwoodPending'),
         changePendingConfirmation: amount('changePendingConfirmation'),
+        pendingSpendable: const [],
+        pendingSpendableTipHeight: 0,
         valuePendingSpendability: amount('valuePendingSpendability'),
         uneconomicValue: amount('uneconomicValue'),
         spendable: amount('spendable'),

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
@@ -26,6 +27,7 @@ import '../models/swap_address_book_helpers.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/pay_deposit_transaction_provider.dart';
+import '../providers/swap_payout_discovery_provider.dart';
 import '../providers/swap_state_provider.dart';
 import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../screens/mobile/mobile_swap_ledger_sign_screen.dart';
@@ -36,6 +38,8 @@ import 'mobile/mobile_swap_review_header.dart';
 import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
 import 'pay_activity_status_content.dart';
+import 'one_time_address_label.dart';
+import 'swap_confidential_ui.dart';
 import 'swap_status_page_content.dart';
 import '../../../core/l10n/l10n.dart';
 
@@ -664,17 +668,23 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     if (layout == SwapActivityDetailLayout.mobile) {
       return Container(
         key: const ValueKey('swap_activity_detail_page'),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         child: LayoutBuilder(
           builder: (context, constraints) {
             return _ActivityDetailScrollArea(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Align(
-                  alignment: isDepositPage
-                      ? Alignment.center
-                      : Alignment.topCenter,
-                  child: flowContent,
+              // The side margins sit inside the scroll view, so the cards'
+              // soft lift isn't clipped at their edges.
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kMobilePageMargin,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Align(
+                    alignment: isDepositPage
+                        ? Alignment.center
+                        : Alignment.topCenter,
+                    child: flowContent,
+                  ),
                 ),
               ),
             );
@@ -729,6 +739,23 @@ class _SwapActivityFlowContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Nothing that could fund the swap shows before the wallet locks its
+    // reservation (see [SwapIntent.startPending]).
+    if (intent.startPending) {
+      final failed = intent.status.isTerminal;
+      final mobile = layout == SwapActivityDetailLayout.mobile;
+      return SizedBox(
+        key: const ValueKey('swap_activity_start_pending'),
+        width: mobile ? null : 400,
+        child: _ActivityStatusErrorPanel(
+          message: failed
+              ? context.l10n.swapNoticeStartNotFinished
+              : context.l10n.swapStartPending,
+          iconName: failed ? AppIcons.warningCircle : AppIcons.loader,
+          iconColor: failed ? context.colors.icon.destructive : null,
+        ),
+      );
+    }
     final depositInstruction = SwapActivityDepositInstruction.fromIntent(
       context.l10n,
       intent,
@@ -809,7 +836,42 @@ class _SwapActivityFlowContent extends StatelessWidget {
               ),
             ),
         ],
+        _SwapUpdateRequiredNotice(intent: intent, mobile: mobile),
       ],
+    );
+  }
+}
+
+/// Tells the user why a private swap's payout or refund stopped being looked
+/// up while receiver recovery needs a newer app (see
+/// [swapRecoveryUpdateRequiredProvider] and [swapUpdateRequiredText]).
+/// Renders nothing otherwise.
+class _SwapUpdateRequiredNotice extends ConsumerWidget {
+  const _SwapUpdateRequiredNotice({required this.intent, required this.mobile});
+
+  final SwapIntent intent;
+  final bool mobile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final required =
+        intent.privateAddress &&
+        (ref.watch(swapRecoveryUpdateRequiredProvider).value ?? false);
+    final message = required
+        ? swapUpdateRequiredText(
+            context.l10n,
+            intent,
+            findingPayout: watchIntentFindingPayout(ref, intent),
+          )
+        : null;
+    if (message == null) return const SizedBox.shrink();
+    final panel = _ActivityStatusErrorPanel(
+      message: message,
+      iconName: AppIcons.warningCircle,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.md),
+      child: mobile ? panel : SizedBox(width: 400, child: panel),
     );
   }
 }
@@ -891,10 +953,12 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           )
           .value;
     }
+    final findingPayout = watchIntentFindingPayout(ref, intent);
     final presentation = swapActivityStatusPresentationForIntent(
       context.l10n,
       state,
       intent,
+      findingPayout: findingPayout,
       accountDetail: accountInfo == null
           ? null
           : SwapActivityAccountDetail(
@@ -938,6 +1002,12 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
                 recipientAddress: recipient,
                 recipientName: recipientContact?.label,
                 recipientProfilePictureId: recipientContact?.profilePictureId,
+                flowConnector: intent.confidential
+                    ? SwapConfidentialRouteConnector.pay(
+                        review: false,
+                        flowing: swapConfidentialRouteFlows(intent.status),
+                      )
+                    : null,
               )
             : null,
         payHeaderRow: MobileSwapReviewHeaderRow(
@@ -945,6 +1015,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
           bottomText: presentation.payDetailText,
+          oneTimeAddress:
+              presentation.oneTimeAddress == OneTimeAddressRole.refund
+              ? OneTimeAddressRole.refund
+              : null,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
           label: presentation.receiveLabel,
@@ -961,7 +1035,16 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
                 )
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
+          oneTimeAddress:
+              presentation.oneTimeAddress == OneTimeAddressRole.payout
+              ? OneTimeAddressRole.payout
+              : null,
         ),
+        flowConnector: intent.confidential
+            ? SwapConfidentialRouteConnector.swap(
+                flowing: swapConfidentialRouteFlows(intent.status),
+              )
+            : null,
         activeTab: _activeTab,
         detailsExpanded: _detailsExpanded,
         onTabChanged: (tab) {
@@ -998,6 +1081,12 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
         progressPresentation: presentation,
         activeTab: _activeTab,
         onTabChanged: (tab) => setState(() => _activeTab = tab),
+        flowConnector: intent.confidential
+            ? SwapConfidentialRouteConnector.pay(
+                review: false,
+                flowing: swapConfidentialRouteFlows(intent.status),
+              )
+            : null,
         onShowFullAddress: () => widget.onShowPayRecipientAddress?.call(
           recipientAddress,
           recipientContact,
@@ -1030,7 +1119,13 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       details: presentation.details,
       progressTabLabel: presentation.progressTabLabel,
       paymentMode: presentation.paymentMode,
+      flowConnector: intent.confidential
+          ? SwapConfidentialRouteConnector.swap(
+              flowing: swapConfidentialRouteFlows(intent.status),
+            )
+          : null,
       showTabs: presentation.showTabs,
+      oneTimeAddress: presentation.oneTimeAddress,
       explorerUri: presentation.explorerUri,
       onTabChanged: (tab) {
         setState(() {
@@ -1217,9 +1312,17 @@ class _ActivityDetailScrollAreaState extends State<_ActivityDetailScrollArea> {
 }
 
 class _ActivityStatusErrorPanel extends StatelessWidget {
-  const _ActivityStatusErrorPanel({required this.message});
+  const _ActivityStatusErrorPanel({
+    required this.message,
+    this.iconName = AppIcons.sync,
+    this.iconColor,
+  });
 
   final String message;
+  final String iconName;
+
+  /// Defaults to the muted icon color.
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1237,9 +1340,9 @@ class _ActivityStatusErrorPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AppIcon(
-            AppIcons.sync,
+            iconName,
             size: AppIconSize.large,
-            color: colors.icon.muted,
+            color: iconColor ?? colors.icon.muted,
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(

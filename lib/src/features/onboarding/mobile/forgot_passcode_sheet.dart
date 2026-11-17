@@ -40,8 +40,6 @@ class ForgotPasscodeSheet extends ConsumerWidget {
     return MobileModalScaffold(
       title: context.l10n.onboardingForgotPasscodeTitle,
       onClose: () => Navigator.of(context).pop(false),
-      bodyGap: AppSpacing.md,
-      bottomPadding: AppSpacing.base,
       constrainBody: true,
       child: SingleChildScrollView(
         child: Column(
@@ -157,8 +155,6 @@ class _ForgotPasscodeLastWarningContentState
     return MobileModalScaffold(
       title: context.l10n.onboardingForgotPasscodeAreYouSure,
       onClose: () => Navigator.of(context).pop(false),
-      bodyGap: AppSpacing.md,
-      bottomPadding: AppSpacing.base,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

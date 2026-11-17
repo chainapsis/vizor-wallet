@@ -103,6 +103,90 @@ void main() {
     expect(launched, isFalse);
   });
 
+  group('ZecBlock Private preset', () {
+    const protocolTxid =
+        'd6e03b5276de779d532791a82a28da7fb6b60524bf5996f4d7629cd794682c01';
+    const displayTxid =
+        '012c6894d79c62d7f49659bf2405b6b67fda282aa89127539d77de76523be0d6';
+
+    test('survives normalization unchanged', () {
+      expect(
+        normalizeExplorerUrlTemplate(kZecBlockPrivateExplorerTemplate),
+        kZecBlockPrivateExplorerTemplate,
+      );
+    });
+
+    test('carries the txid only in the URL fragment', () {
+      for (final (txid, order) in [
+        (protocolTxid, ZcashExplorerTxidOrder.protocol),
+        (displayTxid, ZcashExplorerTxidOrder.display),
+      ]) {
+        final uri = zcashExplorerTransactionUri(
+          networkName: 'main',
+          txidHex: txid,
+          txidOrder: order,
+          customTemplate: kZecBlockPrivateExplorerTemplate,
+        );
+
+        expect(uri.host, 'private.zecblock.com');
+        expect(uri.fragment, 'tx=$displayTxid');
+        expect(uri.path, '/');
+        expect(uri.hasQuery, isFalse);
+        expect(uri.removeFragment().toString(), isNot(contains(displayTxid)));
+      }
+    });
+
+    test('is an opt-in, mainnet-only choice', () {
+      expect(
+        zcashExplorerChoice('', networkName: 'main'),
+        ZcashExplorerChoice.zecBlock,
+      );
+      expect(
+        zcashExplorerChoice(
+          kZecBlockPrivateExplorerTemplate,
+          networkName: 'main',
+        ),
+        ZcashExplorerChoice.zecBlockPrivate,
+      );
+      expect(
+        explorerSettingsLabel(
+          testL10n,
+          kZecBlockPrivateExplorerTemplate,
+          networkName: 'main',
+        ),
+        kZecBlockPrivateExplorerLabel,
+      );
+
+      // Off mainnet a saved preset behaves as the default explorer.
+      expect(
+        zcashExplorerChoice(
+          kZecBlockPrivateExplorerTemplate,
+          networkName: 'test',
+        ),
+        ZcashExplorerChoice.zecBlock,
+      );
+      expect(
+        zcashExplorerTransactionUri(
+          networkName: 'test',
+          txidHex: displayTxid,
+          txidOrder: ZcashExplorerTxidOrder.display,
+          customTemplate: kZecBlockPrivateExplorerTemplate,
+        ).toString(),
+        'https://testnet.zecblock.com/tx/$displayTxid',
+      );
+    });
+
+    test('any other template is a custom explorer', () {
+      expect(
+        zcashExplorerChoice(
+          'https://privacy.example/tx/{txid}',
+          networkName: 'main',
+        ),
+        ZcashExplorerChoice.custom,
+      );
+    });
+  });
+
   test('origin-only custom template appends /tx/{txid}', () {
     expect(
       normalizeExplorerUrlTemplate('https://explorer.example'),

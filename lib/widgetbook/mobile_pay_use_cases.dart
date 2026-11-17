@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/layout/mobile/mobile_bottom_safe_area.dart';
+import '../src/core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../src/core/layout/mobile/mobile_top_nav.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
@@ -157,6 +158,13 @@ Widget buildMobilePayAmountUseCase(BuildContext context) {
   );
 }
 
+/// Android-sized reference for text-scaling review captures.
+Widget buildMobilePayAmountScaleReviewUseCase(BuildContext context) =>
+    const _MobilePayFrame(
+      size: Size(360, 800),
+      child: _MobilePayAmountPreview(),
+    );
+
 Widget buildMobilePayAmountEmptyUseCase(BuildContext context) {
   return const _MobilePayFrame(
     child: _MobilePayAmountPreview(
@@ -252,18 +260,22 @@ class _WidgetbookPaySubmittedNotifier extends SwapNotifier {
 }
 
 class _MobilePayFrame extends StatelessWidget {
-  const _MobilePayFrame({required this.child});
+  const _MobilePayFrame({
+    required this.child,
+    this.size = const Size(393, 852),
+  });
 
   final Widget child;
+  final Size size;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey('mobile_pay_preview_frame'),
-      width: 393,
-      height: 852,
+      width: size.width,
+      height: size.height,
       child: MediaQuery(
-        data: MediaQuery.of(context).copyWith(size: const Size(393, 852)),
+        data: MediaQuery.of(context).copyWith(size: size),
         child: child,
       ),
     );
@@ -331,6 +343,7 @@ class _MobilePayAmountPreviewState extends State<_MobilePayAmountPreview> {
                 onToggleFiatInputMode: _toggleAmountMode,
                 onOpenAssetSelector: _noop,
                 slippageLabel: '0.5%',
+                confidentialReveal: 0,
                 onOpenSlippage: _noop,
                 onContinue: _noop,
               ),
@@ -463,13 +476,13 @@ class _MobilePayReviewPreview extends StatelessWidget {
               ),
             ),
             MobileBottomSafeArea(
-              bottomPadding: AppSpacing.md,
+              bottomPadding: kMobileFooterGap,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.sm,
                   AppSpacing.s,
                   AppSpacing.sm,
-                  AppSpacing.md,
+                  kMobileFooterGap,
                 ),
                 child: MobilePayReviewActions(
                   expired: expired,

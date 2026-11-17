@@ -180,8 +180,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 600));
         MobileShieldScene scene() =>
             tester.widget<MobileShieldScene>(find.byType(MobileShieldScene));
-        final amount = privacyModeEnabled ? '******' : '0.01';
-        final resultAmount = privacyModeEnabled ? '******' : '0.0099';
+        final amount = privacyModeEnabled ? '••••••' : '0.01';
+        final resultAmount = privacyModeEnabled ? '••••••' : '0.0099';
 
         expect(scene().amount, amount);
         expect(find.bySemanticsLabel('$amount ZEC'), findsOneWidget);

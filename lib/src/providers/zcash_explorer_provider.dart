@@ -23,6 +23,10 @@ class ZcashExplorerNotifier extends Notifier<String> {
     state = normalized;
   }
 
+  Future<void> setZecBlockPrivate() {
+    return setCustom(kZecBlockPrivateExplorerTemplate);
+  }
+
   Future<void> resetToDefault() async {
     await _store.delete(kZcashExplorerUrlKey);
     state = '';

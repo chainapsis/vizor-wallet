@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/navigation/route_owned_redirect.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -317,9 +318,9 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
                 key: const ValueKey('mobile_voting_review_scroll'),
                 maxWidth: 560,
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   0,
                 ),
                 scrollPadding: const EdgeInsets.only(
@@ -334,9 +335,9 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
                 child: Padding(
                   key: const ValueKey('mobile_voting_review_action'),
                   padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
+                    kMobilePageMargin,
                     AppSpacing.xs,
-                    AppSpacing.sm,
+                    kMobilePageMargin,
                     AppSpacing.md,
                   ),
                   child: submitButton,

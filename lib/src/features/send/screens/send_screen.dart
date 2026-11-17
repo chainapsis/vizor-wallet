@@ -27,10 +27,12 @@ import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../../core/zcash/spendable_wait.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/spendable_wait_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
@@ -46,6 +48,7 @@ import '../services/send_flow.dart';
 import '../services/send_proving_key_warmup.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
+import '../widgets/spendable_wait_breakdown.dart';
 
 final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
   return getWalletDbPath;
@@ -116,6 +119,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       activeHardwareSignerKind: activeHardwareSignerKind,
       spendableBalance: spendableBalance,
       displaySpendableBalance: displaySpendableBalance,
+      hasDisplayBalance: sync.hasDisplayBalance,
       isUsingCompletedSpendableSnapshot: isUsingCompletedSpendableSnapshot,
       prefill: prefill,
     );
@@ -130,6 +134,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     required this.activeHardwareSignerKind,
     required this.spendableBalance,
     required this.displaySpendableBalance,
+    required this.hasDisplayBalance,
     required this.isUsingCompletedSpendableSnapshot,
     this.prefill,
   });
@@ -139,6 +144,9 @@ class _SendComposeBody extends ConsumerStatefulWidget {
   final HardwareSignerKind? activeHardwareSignerKind;
   final BigInt spendableBalance;
   final BigInt displaySpendableBalance;
+
+  /// Whether a balance has been read; an unread one is not shown as zero.
+  final bool hasDisplayBalance;
   final bool isUsingCompletedSpendableSnapshot;
   final SendPrefillArgs? prefill;
 
@@ -735,7 +743,47 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
 
-  String get _reviewButtonLabel => context.l10n.sendReviewAction;
+  /// The total the last validation found above the spendable balance but
+  /// within reach of funds still confirming; null when it fit or cannot.
+  BigInt? _amountWaitTarget;
+
+  SpendableWait? get _spendableWait =>
+      ref.read(spendableWaitProvider(widget.activeAccountUuid));
+
+  /// Marks [needed] as more than the account can spend: a silent wait when
+  /// funds still confirming will cover it, otherwise [error].
+  void _setAmountShortfall(
+    BigInt needed,
+    String error, {
+    bool includesFee = true,
+  }) {
+    final target = includesFee ? needed : needed + kSpendableWaitFeeReserve;
+    final waits = _spendableWait?.waitFor(target) != null;
+    _amountWaitTarget = waits ? target : null;
+    _amountError = waits ? '' : error;
+  }
+
+  /// When the entered amount becomes sendable, while it waits on funds. The
+  /// target outlives a cleared field or a switch to Max, so it counts only
+  /// for an entered amount the last validation left silently invalid.
+  AvailableIn? get _amountWait {
+    final target = _amountWaitTarget;
+    if (target == null ||
+        _isMaxMode ||
+        _isResolvingMax ||
+        _amountError != '' ||
+        _amountText.trim().isEmpty) {
+      return null;
+    }
+    return _spendableWait?.waitFor(target);
+  }
+
+  String get _reviewButtonLabel {
+    final wait = _amountWait;
+    return wait == null
+        ? context.l10n.sendReviewAction
+        : availableInLabel(context.l10n, wait);
+  }
 
   String? _amountConversionText({
     required BigInt? amountZatoshi,
@@ -893,6 +941,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
     final text = _amountText.trim();
+    _amountWaitTarget = null;
 
     // Empty, incomplete, or zero amounts are silently invalid: no error text,
     // just keep Review disabled.
@@ -913,7 +962,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     final available = _availableBalanceForCurrentAddress;
     if (zatoshi > available && !_hasValidAddress) {
-      setState(() => _amountError = _insufficientBalanceText);
+      setState(
+        () => _setAmountShortfall(
+          zatoshi,
+          _insufficientBalanceText,
+          includesFee: false,
+        ),
+      );
       return;
     }
 
@@ -927,7 +982,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
 
     if (zatoshi > available) {
-      setState(() => _amountError = _insufficientBalanceText);
+      setState(
+        () => _setAmountShortfall(
+          zatoshi,
+          _insufficientBalanceText,
+          includesFee: false,
+        ),
+      );
       return;
     }
     if (widget.isUsingCompletedSpendableSnapshot) {
@@ -971,7 +1032,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final totalNeeded = zatoshi + fee;
       if (totalNeeded > _availableBalanceForCurrentAddress) {
         final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
-        setState(() => _amountError = _insufficientBalanceWithFeeText(feeText));
+        setState(
+          () => _setAmountShortfall(
+            totalNeeded,
+            _insufficientBalanceWithFeeText(feeText),
+          ),
+        );
       } else {
         setState(() => _amountError = null);
       }
@@ -983,6 +1049,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       // fired and this warning could not reach the composer at all.
       final msg = e.toString().toLowerCase();
       if (msg.contains('insufficientfunds') || msg.contains('insufficient')) {
+        // The amount fits but its fee does not. How much more it needs is
+        // unknown, so no wait is promised for it.
         setState(() => _amountError = _insufficientBalanceIncludingFeeText);
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
@@ -1138,6 +1206,24 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         });
       },
     );
+    // Funds that start or stop confirming change what an amount above the
+    // spendable balance means, without changing that balance.
+    ref.listen(spendableWaitProvider(widget.activeAccountUuid), (
+      previous,
+      next,
+    ) {
+      if (previous == next || _isMaxMode) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // An amount that already fits is unaffected, and is not re-quoted.
+        if (!mounted ||
+            _isMaxMode ||
+            _amountError == null ||
+            _amountText.trim().isEmpty) {
+          return;
+        }
+        _validateAmount();
+      });
+    });
 
     final available = _availableBalanceForCurrentAddress;
     final visibleSpendableText = ZecAmount.fromZatoshi(
@@ -1447,6 +1533,18 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             inlineSuffixStyle: amountAffixStyle,
                             rightSlot: _SendMaxBalanceControl(
                               spendableText: spendableText,
+                              showSpendable: widget.hasDisplayBalance,
+                              spendableWaitAccountUuid:
+                                  (ref
+                                          .watch(
+                                            spendableWaitProvider(
+                                              widget.activeAccountUuid,
+                                            ),
+                                          )
+                                          ?.hasWait ??
+                                      false)
+                                  ? widget.activeAccountUuid
+                                  : null,
                               onMaxPressed: _isResolvingMax
                                   ? null
                                   : _activateMaxMode,
@@ -2038,31 +2136,37 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
   }
 }
 
+/// "Use Max" with the balance it fills, and a help icon whose tooltip
+/// explains why that balance can be below the total. While funds are
+/// confirming, a clock takes the icon's place and opens their breakdown.
 class _SendMaxBalanceControl extends StatelessWidget {
   const _SendMaxBalanceControl({
     required this.spendableText,
     required this.onMaxPressed,
+    this.showSpendable = true,
+    this.spendableWaitAccountUuid,
   });
 
+  /// The spendable balance, already masked in privacy mode.
   final String spendableText;
   final VoidCallback? onMaxPressed;
+  final bool showSpendable;
+
+  /// The account whose funds are still confirming, or null when none are.
+  final String? spendableWaitAccountUuid;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final tooltipTitle = context.l10n.sendSpendableTooltipTitle;
-    final tooltipBody = context.l10n.sendSpendableTooltipBody;
-    final maxLabel = Text(
-      context.l10n.sendUseMax,
-      style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
-    );
+    final l10n = context.l10n;
+    final waitAccountUuid = spendableWaitAccountUuid;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Semantics(
           button: true,
-          label: context.l10n.sendUseMaxSemantics(spendableText),
+          label: l10n.sendUseMaxSemantics(spendableText),
           child: MouseRegion(
             cursor: onMaxPressed == null
                 ? SystemMouseCursors.basic
@@ -2070,34 +2174,61 @@ class _SendMaxBalanceControl extends StatelessWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onMaxPressed,
-              child: maxLabel,
+              child: ExcludeSemantics(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      l10n.sendUseMax,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                    if (showSpendable) ...[
+                      const SizedBox(width: AppSpacing.xxs),
+                      Text(
+                        spendableText,
+                        key: const ValueKey('send_max_spendable'),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),
         const SizedBox(width: AppSpacing.xxs),
-        AppTooltip(
-          richMessage: TextSpan(
-            children: [
-              TextSpan(
-                text: tooltipTitle,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              TextSpan(text: '\n\n$tooltipBody'),
-            ],
-          ),
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: Center(
-              child: AppIcon(
-                AppIcons.help,
-                size: 16,
-                color: colors.icon.muted,
-                semanticLabel: context.l10n.sendSpendableInfoLabel,
+        if (waitAccountUuid != null)
+          SendSpendableWaitButton(accountUuid: waitAccountUuid)
+        else
+          AppTooltip(
+            key: const ValueKey('send_spendable_tooltip'),
+            richMessage: TextSpan(
+              children: [
+                TextSpan(
+                  text: l10n.sendSpendableTooltipTitle,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                TextSpan(text: '\n\n${l10n.sendSpendableTooltipBody}'),
+              ],
+            ),
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: Center(
+                child: AppIcon(
+                  AppIcons.help,
+                  size: 16,
+                  color: colors.icon.muted,
+                  semanticLabel: l10n.sendSpendableInfoLabel,
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

@@ -24,7 +24,7 @@ import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
-import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
+import '../../../../core/layout/mobile/mobile_tab_root_scroll_fades.dart';
 import '../../../../core/navigation/mobile_sidebar_route_observer.dart';
 import '../../../../core/navigation/route_stack.dart';
 import '../../../../core/privacy/privacy_mask.dart';
@@ -32,6 +32,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
+import '../../../../core/widgets/mobile/mobile_serif_amount.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
@@ -44,6 +46,7 @@ import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_failure.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_display_progress_provider.dart';
+import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/pending_activity_evidence_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -51,6 +54,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/gift_card_activity_index.dart';
+import '../../../activity/models/activity_row_data.dart';
 import '../../../activity/activity_eta_provider.dart';
 import '../../../activity/activity_row_mapper.dart';
 import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
@@ -63,7 +67,10 @@ import '../../../migration/providers/ironwood_migration_announcement_provider.da
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
+import '../../../receive/widgets/mobile/receive_options_sheet.dart';
+import '../../../receive/screens/mobile/mobile_receive_request_screen.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
+import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_balance_display.dart';
@@ -108,11 +115,14 @@ class MobileHomeScreen extends ConsumerWidget {
             bottom: false,
             child: Column(
               children: [
-                const SizedBox(height: AppSpacing.s),
                 Builder(
                   builder: (context) =>
                       MobileNavigationScope.isSidebarOf(context)
-                      ? MobileTopNav.back(title: context.l10n.navHome)
+                      ? MobileTopNav.back(
+                          title: context.l10n.navHome,
+                          // Tab roots keep the large serif title.
+                          titleStyle: AppTypography.headlineLarge,
+                        )
                       : MobileTopNavAccount(
                           showSyncStatus: !isImporting,
                           onAccountTap: () => showMobileAccountsSheet(context),
@@ -120,8 +130,9 @@ class MobileHomeScreen extends ConsumerWidget {
                 ),
                 Expanded(
                   // VZR-74: dissolve scrolled content under the top nav
-                  // with a soft eased fade instead of a hard clip line.
-                  child: MobileTopScrollFade(
+                  // with a soft eased fade instead of a hard clip line, and
+                  // let rows fade out as they pass under the tab bar.
+                  child: MobileTabRootScrollFades(
                     child: isImporting
                         ? const _MobileHomeImportingProgress()
                         : _HomeContent(
@@ -140,6 +151,10 @@ class MobileHomeScreen extends ConsumerWidget {
           const _SyncKeepAwakePromptHost(),
           const _IronwoodMigrationAnnouncementHost(),
           const _Nu7AnnouncementHost(),
+          // TODO(backup-reminder): mount the backup reminder here. Tony Yoon
+          // is building the version that asks a new user to back up their
+          // secret passphrase; integrate it beside the NU7 announcement, which
+          // already waits for Home to be the visible route.
           _IronwoodMigrationAttentionMountGate(
             isHomeCurrent: isCurrentHomeRoute,
           ),
@@ -636,31 +651,23 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
   }
 }
 
-const _mobileHomeLabelMStyle = TextStyle(
+// The balance card's labels: the 16 / 17 mobile label metrics at regular
+// weight. Tabular figures keep the live fiat value and 24h change from
+// shifting width as their digits update.
+const _mobileHomeCardLabelStyle = TextStyle(
   fontFamily: 'Geist',
   fontWeight: FontWeight.w400,
-  fontSize: 14,
-  height: 16 / 14,
+  fontSize: 16,
+  height: 17 / 16,
   letterSpacing: -0.06,
+  fontFeatures: [FontFeature.tabularFigures()],
 );
 
-const _mobileHomeBalanceAmountStyle = TextStyle(
-  fontFamily: 'Young Serif',
-  fontWeight: FontWeight.w400,
-  fontSize: 45,
-  height: 48 / 45,
-  letterSpacing: -1.35,
-  fontFeatures: [FontFeature.enable('case')],
-);
-
-const _mobileHomeBalanceTickerStyle = TextStyle(
-  fontFamily: 'Young Serif',
-  fontWeight: FontWeight.w400,
-  fontSize: 32,
-  height: 33 / 32,
-  letterSpacing: -1.35,
-  fontFeatures: [FontFeature.enable('case')],
-);
+// The balance at 40 / 44 and its ticker at 28 / 31 (were 45 / 48 and
+// 32 / 33): a calmer hero that leaves the card more air. Shared with the
+// Request ZEC QR step.
+const _mobileHomeBalanceAmountStyle = kMobileSerifAmountStyle;
+const _mobileHomeBalanceTickerStyle = kMobileSerifTickerStyle;
 
 const _mobileHomeActionButtonHeight = AppButtonSizing.largeHeight;
 
@@ -784,7 +791,6 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
       title: context.l10n.homeKeepAwakeTitle,
       onClose: onMaybeLater,
       bodyGap: AppSpacing.xxs,
-      bottomPadding: AppSpacing.base,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -980,6 +986,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
+        spendableWaits: ref.watch(activeReceivedSpendableWaitsProvider),
         privateQueriesEnabled: ref.watch(enhancePirProvider),
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
@@ -1027,6 +1034,20 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         sourceAccountUuid: ref.read(accountProvider).value?.activeAccountUuid,
       ),
     );
+  }
+
+  Future<void> _openReceiveOptions() async {
+    unawaited(AppHaptics.action());
+    final option = await showReceiveOptionsSheet(context);
+    if (!mounted || option == null) return;
+    switch (option) {
+      case ReceiveOption.receive:
+        _pushUsedScreen('/receive');
+      case ReceiveOption.request:
+        await openActiveAccountReceiveRequest(context, ref);
+      case ReceiveOption.redeemGiftCard:
+        _pushUsedScreen('/payment-links?redeem=1');
+    }
   }
 
   Future<void> _openPay() async {
@@ -1155,6 +1176,36 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             transactions: sync.recentTransactions,
           );
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
+    // Home checks the payout only of a swap it shows, so it builds that row
+    // again with the check once sorting shows which rows those are.
+    ActivityRowData swapRow(SwapActivityRowItem item, {bool shown = false}) =>
+        buildSwapActivityRow(
+          context: context,
+          item: item,
+          privacyModeEnabled: privacyModeEnabled,
+          dateOnlyTimestamp: true,
+          onTap: () => _pushUsedScreen(
+            swapActivityDetailUri(
+              intentId: item.intentId,
+              returnTarget: SwapActivityReturnTarget.home,
+            ).toString(),
+          ),
+          receivedAmountText: _absorbedReceiveAmountText(
+            swapReceiveTxByIntent[item.intentId],
+          ),
+          onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
+            null => null,
+            final tx => () => _openLoadedTransactionStatus(tx),
+          },
+          findingPayout:
+              shown &&
+              swapReceiveTxByIntent[item.intentId] == null &&
+              watchSwapFindingPayout(
+                ref,
+                accountUuid: uuid,
+                awaitingTxid: item.payoutAwaitingDiscovery,
+              ),
+        );
     final entries = <ActivityEntry>[
       for (final tx in giftCardActivityIndex.withPendingClaims(
         sync.recentTransactions,
@@ -1171,32 +1222,17 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             privacyModeEnabled: privacyModeEnabled,
           ),
       for (final item in swapItems)
-        ActivityEntry(
-          timestamp: item.activityTimestamp,
-          row: buildSwapActivityRow(
-            context: context,
-            item: item,
-            privacyModeEnabled: privacyModeEnabled,
-            dateOnlyTimestamp: true,
-            onTap: () => _pushUsedScreen(
-              swapActivityDetailUri(
-                intentId: item.intentId,
-                returnTarget: SwapActivityReturnTarget.home,
-              ).toString(),
-            ),
-            receivedAmountText: _absorbedReceiveAmountText(
-              swapReceiveTxByIntent[item.intentId],
-            ),
-            onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
-              null => null,
-              final tx => () => _openLoadedTransactionStatus(tx),
-            },
-          ),
-        ),
+        ActivityEntry(timestamp: item.activityTimestamp, row: swapRow(item)),
     ]..sort(compareActivityEntries);
+    final swapItemsByRowId = {
+      for (final item in swapItems) item.stableId: item,
+    };
     final recentRows = [
       for (final entry in entries.take(MobileHomeScreen._recentActivityLimit))
-        entry.row,
+        switch (swapItemsByRowId[entry.row.stableId]) {
+          final item? => swapRow(item, shown: true),
+          null => entry.row,
+        },
     ];
 
     final initialPresentation = ref.watch(
@@ -1214,10 +1250,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final activityLoading = activityState == HomeActivityState.loading;
 
     final content = ListView(
+      // Same insets as the other tab roots: 12px under the top nav, so the
+      // header and the first card hold still when switching tabs.
       padding: EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.sm,
+        kMobilePageMargin,
+        AppSpacing.s,
+        kMobilePageMargin,
         MobileNavigationScope.bottomClearanceOf(
           context,
           kMobileTabBarHeight + AppSpacing.lg,
@@ -1304,10 +1342,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       expand: true,
                       constrainContent: true,
                       variant: AppButtonVariant.secondary,
-                      onPressed: () {
-                        unawaited(AppHaptics.action());
-                        _pushUsedScreen('/receive');
-                      },
+                      onPressed: () => unawaited(_openReceiveOptions()),
                       leading: const _ButtonIcon(AppIcons.arrowDownCircle),
                       height: _mobileHomeActionButtonHeight,
                       child: Text(
@@ -1350,10 +1385,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 key: const ValueKey('mobile_home_receive'),
                 expand: true,
                 constrainContent: true,
-                onPressed: () {
-                  unawaited(AppHaptics.action());
-                  _pushUsedScreen('/receive');
-                },
+                onPressed: () => unawaited(_openReceiveOptions()),
                 leading: const _ButtonIcon(AppIcons.addNew),
                 height: _mobileHomeActionButtonHeight,
                 child: Text(
@@ -1400,10 +1432,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         else
           Padding(
             key: const ValueKey('mobile_home_activity_list'),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xs,
-              vertical: AppSpacing.s,
-            ),
+            // Rows and their header share the page margin with the
+            // balance card and the action buttons above.
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1475,6 +1506,7 @@ class _PrivateStatusCoverageNotice extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: mobileSurfaceShadows(colors),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1750,7 +1782,9 @@ class _MobileHomeEntryCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: emphasized ? colors.surface.card : colors.background.ground,
             borderRadius: BorderRadius.circular(AppRadii.large),
-            boxShadow: emphasized ? appSurfaceShadow(colors) : null,
+            boxShadow: emphasized
+                ? appSurfaceShadow(colors)
+                : mobileSurfaceShadows(colors),
           ),
           foregroundDecoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadii.large),
@@ -1805,7 +1839,7 @@ class _MobileHomeEntryCard extends StatelessWidget {
                           if (showChevron)
                             AppIcon(
                               AppIcons.chevronForward,
-                              size: 20,
+                              size: AppIconSize.medium,
                               color: colors.icon.accent,
                             ),
                         ],
@@ -1815,10 +1849,13 @@ class _MobileHomeEntryCard extends StatelessWidget {
                         subtitle,
                         maxLines: emphasized ? null : 1,
                         overflow: emphasized ? null : TextOverflow.ellipsis,
+                        // A one-line subtitle keeps the Figma 17px line; a
+                        // wrapping one (the emphasized card) keeps the token's
+                        // reading leading so its lines don't crowd.
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.secondary,
-                          height: 17 / 16,
-                          letterSpacing: -0.04,
+                          height: emphasized ? null : 17 / 16,
+                          letterSpacing: emphasized ? null : -0.04,
                         ),
                       ),
                     ],
@@ -1906,15 +1943,15 @@ class _BalanceCard extends StatelessWidget {
     final priceChangeColor = roundedPriceChangePct == null
         ? null
         : roundedPriceChangePct > 0
-        ? colors.text.positiveStrong
+        ? colors.text.homeCardPositive
         : roundedPriceChangePct < 0
-        ? colors.text.destructive
+        ? colors.text.homeCardNegative
         : cardText;
     return Container(
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: cardRadius,
-        boxShadow: appSurfaceShadow(colors),
+        boxShadow: mobileSurfaceShadows(colors),
       ),
       child: ClipRRect(
         borderRadius: cardRadius,
@@ -1922,20 +1959,31 @@ class _BalanceCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 200,
+              // 200px in Figma; grows by however much its text lines grow
+              // under a larger text size, so nothing clips.
+              height:
+                  _mobileHomeBalanceCardHeight +
+                  MediaQuery.textScalerOf(
+                    context,
+                  ).scale(_mobileHomeBalanceCardTextHeight) -
+                  _mobileHomeBalanceCardTextHeight,
+              // No outline: the card's own fill separates it in both themes.
               decoration: BoxDecoration(
                 color: colors.background.homeCard,
                 borderRadius: cardRadius,
-                border: Border.all(
-                  color: const Color(0xFFFFFFFF).withValues(alpha: 0.07),
-                  width: 1.5,
-                ),
               ),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    // 24px under the balance, 8px more than the sides, so the
+                    // figure sits clear of the card's lower edge.
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.sm,
+                      AppSpacing.sm,
+                      AppSpacing.sm,
+                      AppSpacing.md,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1958,7 +2006,7 @@ class _BalanceCard extends StatelessWidget {
                               Expanded(
                                 child: Text(
                                   context.l10n.commonShieldedBalance,
-                                  style: _mobileHomeLabelMStyle.copyWith(
+                                  style: _mobileHomeCardLabelStyle.copyWith(
                                     color: cardText,
                                   ),
                                 ),
@@ -1982,7 +2030,7 @@ class _BalanceCard extends StatelessWidget {
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: _mobileHomeLabelMStyle.copyWith(
+                                  style: _mobileHomeCardLabelStyle.copyWith(
                                     color: cardText.withValues(
                                       alpha: balanceDisabled ? 0.4 : 0.8,
                                     ),
@@ -1998,7 +2046,7 @@ class _BalanceCard extends StatelessWidget {
                                   key: const ValueKey(
                                     'mobile_home_balance_price_change_text',
                                   ),
-                                  style: _mobileHomeLabelMStyle.copyWith(
+                                  style: _mobileHomeCardLabelStyle.copyWith(
                                     color: priceChangeColor,
                                   ),
                                 ),
@@ -2011,9 +2059,9 @@ class _BalanceCard extends StatelessWidget {
                           key: const ValueKey('mobile_home_shielded_balance'),
                           TextSpan(
                             children: [
-                              TextSpan(
-                                text: '$balanceText ',
-                                style: _mobileHomeBalanceAmountStyle.copyWith(
+                              serifPrivacyMaskSpan(
+                                '$balanceText ',
+                                _mobileHomeBalanceAmountStyle.copyWith(
                                   color: cardText.withValues(
                                     alpha: balanceDisabled ? 0.4 : 1,
                                   ),
@@ -2110,7 +2158,9 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
                   context.l10n.homeMigrationRequired,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
+                  style: _mobileHomeCardLabelStyle.copyWith(
+                    color: contentColor,
+                  ),
                 ),
               ),
             ],
@@ -2122,6 +2172,14 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
 }
 
 const _mobileTransparentBalanceStripHeight = 57.0;
+
+/// 216px (Figma's 200 plus 16): with the smaller balance and the deeper
+/// bottom padding, the gap under the "Shielded balance" label grows by 12px.
+const _mobileHomeBalanceCardHeight = 216.0;
+
+/// Line heights of the card's text at 1x: the label row (17), the fiat line
+/// (17) and the balance (44).
+const _mobileHomeBalanceCardTextHeight = 78.0;
 const _mobileTransparentBalanceMotionDuration = Duration(milliseconds: 280);
 const _mobileTransparentBalanceMotionReverseDuration = Duration(
   milliseconds: 240,
@@ -2307,14 +2365,18 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
       key: const ValueKey('mobile_home_transparent_balance_text'),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: _mobileHomeLabelMStyle.copyWith(
+      style: _mobileHomeCardLabelStyle.copyWith(
         color: colors.text.primary,
         fontWeight: FontWeight.w500,
       ),
     );
 
     return SizedBox(
-      height: _mobileTransparentBalanceStripHeight,
+      // Grows with its text line under a larger text size.
+      height:
+          _mobileTransparentBalanceStripHeight +
+          MediaQuery.textScalerOf(context).scale(17) -
+          17,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,
@@ -2398,7 +2460,8 @@ class _MobileShieldBalanceButton extends StatelessWidget {
                 isLoading
                     ? context.l10n.commonShielding
                     : context.l10n.homeShield,
-                style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
+                // An action: same label token as "See all" and the buttons.
+                style: AppTypography.labelLarge.copyWith(color: contentColor),
               ),
               const SizedBox(width: AppSpacing.xxs),
               AppIcon(
@@ -2478,6 +2541,7 @@ class _RecentActivityHeader extends StatelessWidget {
         Expanded(
           child: Text(
             context.l10n.homeRecentActivity,
+            // The rows' 16px line, as See all beside it.
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.accent,
               fontWeight: FontWeight.w600,
@@ -2489,8 +2553,8 @@ class _RecentActivityHeader extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onSeeAll,
-            child: SizedBox(
-              height: 24,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 24),
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.xxs),
                 child: Row(
@@ -2613,7 +2677,7 @@ class _MobileRestImage extends StatelessWidget {
 class _ImportingView extends StatelessWidget {
   const _ImportingView({required this.progress});
 
-  static const _horizontalPadding = AppSpacing.sm;
+  static const _horizontalPadding = kMobilePageMargin;
   static const _topGap = AppSpacing.sm;
   static const _contentToRestGap = AppSpacing.lg;
 

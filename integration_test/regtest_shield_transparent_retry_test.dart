@@ -14,7 +14,6 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_activity_flow.dart';
-import 'support/desktop_onboarding_flow.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 final _network = kZcashDefaultNetworkName;
@@ -225,17 +224,6 @@ Future<void> _createFirstWallet(WidgetTester tester) async {
       matching: find.byType(AppButton),
     ),
   );
-  await _tapText(tester, 'I know how to use Zcash');
-  await _tapAppButton(
-    tester,
-    const ValueKey('create_secret_phrase_primary_button'),
-    timeout: const Duration(minutes: 1),
-  );
-  await _tapAppButton(
-    tester,
-    const ValueKey('create_secret_phrase_primary_button'),
-  );
-  await finishDesktopAccountCustomisation(tester);
   await _enterText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -556,20 +544,6 @@ Future<void> _tapWidget(WidgetTester tester, Key key) async {
   await tester.tap(finder);
   await tester.pump(const Duration(milliseconds: 250));
   _log('tapped $key');
-}
-
-Future<void> _tapText(WidgetTester tester, String text) async {
-  final finder = find.text(text);
-  await _pumpUntil(
-    tester,
-    () => tester.any(finder),
-    description: '$text text to render',
-  );
-  await tester.ensureVisible(finder);
-  await tester.pump(const Duration(milliseconds: 50));
-  await tester.tap(finder);
-  await tester.pump(const Duration(milliseconds: 250));
-  _log('tapped text "$text"');
 }
 
 Future<void> _enterText(WidgetTester tester, Key key, String text) async {

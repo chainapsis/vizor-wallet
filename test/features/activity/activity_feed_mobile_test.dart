@@ -13,7 +13,7 @@ import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
-  testWidgets('mobile leading activity avatar uses the mobile asset size', (
+  testWidgets('mobile leading activity avatar is a 44px circle', (
     tester,
   ) async {
     await _pumpActivityFeed(tester, rows: [_row(title: 'Sent')]);
@@ -26,13 +26,10 @@ void main() {
             (widget.decoration as BoxDecoration).shape == BoxShape.circle,
       ),
     );
-    expect(avatar.width, AppAssetSizeMobile.size);
-    expect(avatar.height, AppAssetSizeMobile.size);
+    expect(avatar, const Size.square(44));
   });
 
-  testWidgets('mobile leading activity icon uses the mobile asset icon size', (
-    tester,
-  ) async {
+  testWidgets('mobile leading activity icon is a 20px glyph', (tester) async {
     await _pumpActivityFeed(
       tester,
       rows: [_row(title: 'Sent', leadingIconName: AppIcons.plane)],
@@ -43,13 +40,13 @@ void main() {
         (widget) =>
             widget is AppIcon &&
             widget.name == AppIcons.plane &&
-            widget.size == AppAssetSizeMobile.icon,
+            widget.size == 20,
       ),
       findsOneWidget,
     );
   });
 
-  testWidgets('mobile sub-line icon uses the medium icon token', (
+  testWidgets('mobile sub-line shows the filled shield at the medium size', (
     tester,
   ) async {
     await _pumpActivityFeed(
@@ -58,7 +55,7 @@ void main() {
         _row(
           title: 'Sent',
           subtitle: 'Shielded',
-          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          subtitleIconName: AppIcons.shieldKeyhole,
         ),
       ],
     );
@@ -67,7 +64,7 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is AppIcon &&
-            widget.name == AppIcons.shieldKeyholeOutline &&
+            widget.name == AppIcons.shieldKeyhole &&
             widget.size == AppIconSize.medium,
       ),
       findsOneWidget,
@@ -84,12 +81,12 @@ void main() {
     expect(subtitle.style?.fontSize, AppTypographyMobile.labelLarge.fontSize);
   });
 
-  testWidgets('mobile activity card surface has no drop shadow', (
+  testWidgets('mobile activity rows sit on the page with no card', (
     tester,
   ) async {
     await _pumpActivityFeed(tester, rows: [_row(title: 'Sent')]);
 
-    final card = tester.widget<DecoratedBox>(
+    expect(
       find.byWidgetPredicate((widget) {
         if (widget is! DecoratedBox || widget.decoration is! BoxDecoration) {
           return false;
@@ -98,10 +95,9 @@ void main() {
         return decoration.color ==
                 AppThemeData.light.colors.background.ground &&
             decoration.borderRadius == BorderRadius.circular(AppRadii.large);
-      }).first,
+      }),
+      findsNothing,
     );
-    final decoration = card.decoration as BoxDecoration;
-    expect(decoration.boxShadow ?? const <BoxShadow>[], isEmpty);
   });
 
   test('mobile outgoing amount color matches the title accent', () {

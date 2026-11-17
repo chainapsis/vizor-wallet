@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
@@ -43,6 +44,7 @@ class MobileSwapStatusContent extends StatelessWidget {
     required this.onTabChanged,
     required this.onToggleDetails,
     this.paymentHeader,
+    this.flowConnector,
     super.key,
   });
 
@@ -55,6 +57,9 @@ class MobileSwapStatusContent extends StatelessWidget {
   final VoidCallback onToggleDetails;
   final Widget? paymentHeader;
 
+  /// Optional replacement for the paying/receiving flow arrow row.
+  final Widget? flowConnector;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -66,6 +71,7 @@ class MobileSwapStatusContent extends StatelessWidget {
             MobileSwapReviewHeader(
               pay: payHeaderRow,
               receive: receiveHeaderRow,
+              flowConnector: flowConnector,
             ),
         const SizedBox(height: _mobileStatusHeaderToBodyGap),
         if (presentation.showTabs) ...[
@@ -136,6 +142,7 @@ class MobilePayStatusHeader extends StatelessWidget {
     this.label,
     this.recipientName,
     this.recipientProfilePictureId,
+    this.flowConnector,
     super.key,
   });
 
@@ -146,6 +153,9 @@ class MobilePayStatusHeader extends StatelessWidget {
   final String? label;
   final String? recipientName;
   final String? recipientProfilePictureId;
+
+  /// Optional replacement for the amount-to-recipient arrow.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -164,6 +174,7 @@ class MobilePayStatusHeader extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
         child: ReviewInfoFlow(
+          connector: flowConnector,
           rows: [
             ReviewInfoRow(
               key: const ValueKey('mobile_pay_status_asset_row'),
@@ -255,6 +266,7 @@ class _StatusCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: mobileSurfaceShadows(context.colors),
       ),
       child: child,
     );
@@ -381,12 +393,12 @@ class _MobileStatusChipRow extends StatelessWidget {
     final text = defaultText;
     final textColor = paymentInProgress ? colors.text.primary : defaultColor;
     final iconColor = paymentInProgress ? colors.icon.regular : defaultColor;
-    final labelStyle = paymentMode
-        ? AppTypography.labelLarge
-        : AppTypography.labelMedium;
-    return SizedBox(
-      key: paymentMode ? const ValueKey('mobile_pay_status_row') : null,
-      height: 32,
+    const labelStyle = AppTypography.labelLarge;
+    return ConstrainedBox(
+      key: ValueKey(
+        paymentMode ? 'mobile_pay_status_row' : 'mobile_swap_status_row',
+      ),
+      constraints: const BoxConstraints(minHeight: AppSpacing.base),
       child: Row(
         children: [
           Padding(
@@ -467,6 +479,8 @@ class _MobilePaymentDetails extends StatelessWidget {
             kind: SwapStatusDetailKind.txId,
             value: payStatus.txIdText,
             linkUri: payStatus.txIdUri,
+            copyable: payStatus.txIdCopyText != null,
+            copyText: payStatus.txIdCopyText,
           );
     final convertedFrom = SwapStatusDetailRowData(
       label: context.l10n.swapPayStatusConvertedFrom,
@@ -735,11 +749,9 @@ class _MobileFinalDetailRow extends StatelessWidget {
                   Expanded(
                     child: Text(
                       displayLabel,
-                      style:
-                          (paymentMode
-                                  ? AppTypography.labelLarge
-                                  : AppTypography.labelMedium)
-                              .copyWith(color: colors.text.secondary),
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.secondary,
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.s),
@@ -876,11 +888,7 @@ class _MobileStatusDetailActionIcon extends StatelessWidget {
       cursor: tooltipMessage == null
           ? SystemMouseCursors.click
           : SystemMouseCursors.help,
-      child: AppIcon(
-        icon,
-        size: size,
-        color: color ?? colors.icon.regular.withValues(alpha: 0.72),
-      ),
+      child: AppIcon(icon, size: size, color: color ?? colors.icon.muted),
     );
     final message = tooltipMessage;
     if (message == null ||

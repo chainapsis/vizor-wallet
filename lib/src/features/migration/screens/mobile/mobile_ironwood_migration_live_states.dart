@@ -38,9 +38,9 @@ class _MobileMigrationPreparing extends StatelessWidget {
       data: data,
       showAccountNav: false,
       contentPadding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         0,
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
       ),
       child: Column(
@@ -341,9 +341,9 @@ class _MobileMigrationMigratingState
       data: widget.data,
       showAccountNav: false,
       contentPadding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         0,
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
       ),
       child: Column(

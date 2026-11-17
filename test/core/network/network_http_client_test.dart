@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/network/network_http_client.dart';
 import 'package:zcash_wallet/src/rust/api/network_privacy.dart'
     as rust_network_privacy;
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
   test('direct body budget aborts a chunked reply before EOF', () async {
@@ -698,6 +699,113 @@ void main() {
       );
     },
   );
+
+  group('RustTorHttpBridge', () {
+    final rust = _FailingTorHttpRustApi();
+    setUpAll(() => RustLib.initMock(api: rust));
+    tearDownAll(RustLib.dispose);
+
+    const bridge = RustTorHttpBridge();
+    final uri = Uri.parse('https://vote.example/shielded-vote/v1/rounds');
+
+    test(
+      'reports a connection Tor could not open as a SocketException',
+      () async {
+        rust.error = _exitLookupFailure;
+        final requests = <Future<NetworkHttpResponse> Function()>[
+          () => bridge.get(uri, headers: const {}, timeout: null),
+          () => bridge.post(
+            uri,
+            headers: const {},
+            bodyBytes: const [],
+            timeout: null,
+          ),
+          () => bridge.download(
+            uri,
+            headers: const {},
+            destinationPath: 'unused',
+          ),
+        ];
+        for (final request in requests) {
+          await expectLater(
+            request(),
+            throwsA(
+              isA<SocketException>().having(
+                (error) => error.message,
+                'message',
+                _exitLookupFailure,
+              ),
+            ),
+          );
+        }
+      },
+    );
+
+    test(
+      'keeps the timeout marker and passes other failures through',
+      () async {
+        rust.error =
+            'Tor HTTP request timed out while awaiting the response headers';
+        await expectLater(
+          bridge.get(
+            uri,
+            headers: const {},
+            timeout: const Duration(seconds: 1),
+          ),
+          throwsA(isA<TimeoutException>()),
+        );
+
+        const failure = 'HTTP-over-Tor error: Hyper error: connection closed';
+        rust.error = failure;
+        await expectLater(
+          bridge.get(uri, headers: const {}, timeout: null),
+          throwsA(failure),
+        );
+      },
+    );
+  });
+}
+
+/// What the Rust bridge reports when the exit relay cannot resolve the host.
+const _exitLookupFailure =
+    'Tor HTTP connection could not be opened: Tor error: tor: remote hostname '
+    'lookup failure: Protocol error while launching a data stream';
+
+/// Rust API whose Tor HTTP calls all fail with [error].
+class _FailingTorHttpRustApi implements RustLibApi {
+  Object error = '';
+
+  @override
+  Future<rust_network_privacy.NetworkHttpResponse>
+  crateApiNetworkPrivacyTorHttpGet({
+    required String url,
+    required List<rust_network_privacy.NetworkHttpHeader> headers,
+    BigInt? timeoutMilliseconds,
+    BigInt? requestId,
+    BigInt? maxBodyBytes,
+  }) async => throw error;
+
+  @override
+  Future<rust_network_privacy.NetworkHttpResponse>
+  crateApiNetworkPrivacyTorHttpPost({
+    required String url,
+    required List<rust_network_privacy.NetworkHttpHeader> headers,
+    required List<int> body,
+    BigInt? timeoutMilliseconds,
+    BigInt? requestId,
+    BigInt? maxBodyBytes,
+  }) async => throw error;
+
+  @override
+  Future<rust_network_privacy.NetworkHttpResponse>
+  crateApiNetworkPrivacyTorHttpDownload({
+    required String url,
+    required List<rust_network_privacy.NetworkHttpHeader> headers,
+    required String destinationPath,
+  }) async => throw error;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _StallingHttpClient implements HttpClient {

@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart' show TextInputAction;
 
 import '../../../../core/layout/mobile/mobile_bottom_scroll_fade.dart';
+import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -32,6 +34,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.recents,
     required this.busy,
     this.enabled = true,
+    this.waitLabel,
     this.selectedContactId,
     required this.externalAsset,
     required this.onAddressChanged,
@@ -39,6 +42,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.onChooseRecipient,
     required this.onSelectRecipient,
     required this.onAddToContacts,
+    this.selectLabel,
     super.key,
   });
 
@@ -50,6 +54,9 @@ class MobilePayRecipientStep extends StatefulWidget {
   final List<PayRecentRecipient> recents;
   final bool busy;
   final bool enabled;
+
+  /// Why Continue can't fetch a quote yet, as its label.
+  final String? waitLabel;
   final String? selectedContactId;
   final SwapAsset externalAsset;
   final ValueChanged<String> onAddressChanged;
@@ -57,6 +64,9 @@ class MobilePayRecipientStep extends StatefulWidget {
   final ValueChanged<PayRecipientSelection> onChooseRecipient;
   final VoidCallback onSelectRecipient;
   final VoidCallback onAddToContacts;
+
+  /// Replaces "Continue", e.g. with a quote recovery action.
+  final String? selectLabel;
 
   @override
   State<MobilePayRecipientStep> createState() => _MobilePayRecipientStepState();
@@ -139,9 +149,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
               : MobileBottomScrollFade(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.sm,
+                      kMobilePageMargin,
                       AppSpacing.s,
-                      AppSpacing.sm,
+                      kMobilePageMargin,
                       AppSpacing.md,
                     ),
                     child: Column(
@@ -217,10 +227,10 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
         if (valid)
           Padding(
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sm,
+              kMobilePageMargin,
               AppSpacing.s,
-              AppSpacing.sm,
-              AppSpacing.md,
+              kMobilePageMargin,
+              kMobileFooterGap,
             ),
             child: Column(
               key: const ValueKey('mobile_pay_recipient_actions'),
@@ -234,7 +244,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: AppTypography.bodySmall.copyWith(
+                    style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.destructive,
                     ),
                   ),
@@ -255,13 +265,23 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                   expand: true,
                   trailing: widget.busy ? const AppIcon(AppIcons.loader) : null,
                   iconGap: AppSpacing.xxs,
-                  onPressed: widget.busy || !widget.enabled
+                  onPressed:
+                      widget.busy || !widget.enabled || widget.waitLabel != null
                       ? null
                       : widget.onSelectRecipient,
-                  child: Text(
-                    widget.busy
-                        ? context.l10n.payFetchingQuote
-                        : context.l10n.commonContinue,
+                  // "Get confidential quote" outgrows the row at large text
+                  // sizes; it scales down on one line, as the Swap CTA does.
+                  constrainContent: true,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      widget.busy
+                          ? context.l10n.payFetchingQuote
+                          : widget.waitLabel ??
+                                widget.selectLabel ??
+                                context.l10n.commonContinue,
+                      maxLines: 1,
+                    ),
                   ),
                 ),
               ],
@@ -275,9 +295,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
-        AppSpacing.sm,
+        kMobilePageMargin,
         0,
       ),
       child: Column(

@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_intent_presentation_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -296,7 +297,8 @@ void main() {
       ),
     );
 
-    expect(row!.amountText, '-999.999K USDC');
+    // Mobile rows drop the outgoing minus.
+    expect(row!.amountText, '999.999K USDC');
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.amountText, '+1.234M USDC');
   }, tags: 'mobile');
@@ -372,12 +374,12 @@ void main() {
     );
 
     // Each leg keeps its own symbol: the USDC deposit is not labelled ZEC.
-    expect(row!.amountText, '*** ZEC');
+    expect(row!.amountText, '••• ZEC');
     expect(row!.statusText, 'Completed');
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.stableId, 'swap:swap-private:deposited');
-    expect(row!.childRows.single.amountText, '*** USDC');
+    expect(row!.childRows.single.amountText, '••• USDC');
   });
 
   testWidgets('masks external and Pay rows with their own symbol', (
@@ -446,8 +448,8 @@ void main() {
       ),
     );
 
-    expect(rows[0].amountText, '*** USDC');
-    expect(rows[1].amountText, '*** USDC');
+    expect(rows[0].amountText, '••• USDC');
+    expect(rows[1].amountText, '••• USDC');
     // No recorded amount: the placeholder carries no value to hide.
     expect(rows[2].amountText, '--');
     for (final row in rows) {
@@ -733,6 +735,64 @@ void main() {
     expect(row!.childRows.single.onTap, isNull);
   });
 
+  testWidgets('marks only confidential swap and pay rows', (tester) async {
+    SwapActivityRowItem item({
+      required bool confidential,
+      bool payMode = false,
+    }) {
+      return SwapActivityRowItem.fromRecord(
+        SwapIntentRecord(
+          id: 'swap-${confidential ? 'confidential' : 'standard'}-$payMode',
+          providerLabel: 'NEAR Intents',
+          pairText: 'ZEC -> USDC',
+          sellAmountText: '0.0030 ZEC',
+          receiveEstimateText: '0.21 USDC',
+          status: SwapIntentStatus.processing,
+          nextAction: 'Wait for the swap',
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          payMode: payMode,
+          confidential: confidential,
+        ),
+      );
+    }
+
+    final rows = <String, ActivityRowData>{};
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              for (final (name, entry) in [
+                ('swap', item(confidential: true)),
+                ('pay', item(confidential: true, payMode: true)),
+                ('standard', item(confidential: false)),
+              ]) {
+                rows[name] = buildSwapActivityRow(
+                  context: context,
+                  item: entry,
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(rows['swap']!.subtitleIconName, AppIcons.incognito);
+    expect(rows['pay']!.subtitleIconName, AppIcons.incognito);
+    expect(rows['pay']!.leadingIconName, AppIcons.coins);
+    expect(rows['standard']!.subtitleIconName, isNull);
+    // The label travels with the row, so every screen that draws the mark
+    // names it for screen readers.
+    expect(rows['swap']!.subtitleIconSemanticLabel, 'Confidential');
+    expect(rows['pay']!.subtitleIconSemanticLabel, 'Confidential');
+    expect(rows['standard']!.subtitleIconSemanticLabel, isNull);
+  });
+
   testWidgets(
     'completed external->ZEC swap absorbs the settled receive amount and tap',
     (tester) async {
@@ -867,8 +927,8 @@ void main() {
       expect(row!.childRows, hasLength(1));
       final child = row!.childRows.single;
       expect(child.title, 'Received ZEC');
-      expect(child.amountText, '*** ZEC');
-      expect(row!.amountText, '*** USDC');
+      expect(child.amountText, '••• ZEC');
+      expect(row!.amountText, '••• USDC');
       // The leg stays tappable so the user can still open the masked receipt.
       expect(child.onTap, isNotNull);
       child.onTap!();
@@ -918,6 +978,78 @@ void main() {
     expect(row!.statusIconName, AppIcons.uturnUp);
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, isEmpty);
+  });
+
+  testWidgets('a status-only refund shows its amount as not reported', (
+    tester,
+  ) async {
+    // A flexible incoming swap quoted 70 USDC. The user sent 35 and NEAR
+    // refunded 34, but the token left NEAR's catalog before the last status,
+    // so the status cannot state the refund.
+    final quoted = swapIntentsFromRecords([
+      const SwapIntentRecord(
+        id: 'flex-refund',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '70 USDC',
+        receiveEstimateText: '0.7 ZEC',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Swap is processing',
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: '0xdeposit',
+        privateAddress: true,
+      ),
+    ]).single;
+    final refunded = updateSwapIntentFromSnapshot(
+      quoted,
+      const SwapIntentSnapshot(
+        id: 'flex-refund',
+        providerLabel: 'NEAR Intents',
+        pairText: 'Unlisted token -> ZEC',
+        sellAmountText: kSwapNotReportedToken,
+        receiveEstimateText: kSwapNotReportedToken,
+        status: SwapIntentStatus.refunded,
+        nextAction: 'Refunded',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.usdc,
+          address: '0xdeposit',
+          expiresInLabel: 'expired',
+          reuseWarning: 'Do not reuse',
+        ),
+        providerStatusRaw: 'REFUNDED',
+        providerSwapType: 'FLEX_INPUT',
+        refundedAmountBaseUnits: '34000000',
+        statusOnly: true,
+      ),
+    );
+    ActivityRowData? row;
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: SwapActivityRowItem.fromRecord(
+                  SwapIntentRecord.fromIntent(refunded),
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.title, 'Swap refunded');
+    expect(
+      row!.amountText,
+      testL10n.swapActivityNotReported,
+      reason: 'not the 70 quoted',
+    );
   });
 
   testWidgets('refunded ZEC->external swap labels the ZEC refund', (

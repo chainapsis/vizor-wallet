@@ -98,6 +98,18 @@ void main() {
     );
   });
 
+  testWidgets('settings explorer private use case selects ZecBlock Private', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsExplorerPrivateUseCase,
+    );
+
+    _expectNoCrash(errors);
+    expect(find.text('Current: ZecBlock Private'), findsOneWidget);
+  });
+
   testWidgets('settings secret passphrase gate use case renders the gate', (
     tester,
   ) async {
