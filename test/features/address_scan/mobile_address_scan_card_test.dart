@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
@@ -11,6 +13,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
+import 'package:zcash_wallet/src/services/qr_scanner.dart';
 import '../../support/localized_test_scope.dart';
 import '../../support/test_l10n.dart';
 
@@ -190,6 +193,83 @@ void main() {
       find.byKey(const ValueKey('mobile_address_scan_cancel_button')),
     );
     expect(closed, 1);
+  });
+
+  testWidgets('a result that arrives after Close is dropped', (tester) async {
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+    final validation = Completer<MobileScanOutcome>();
+    final scanned = <String>[];
+    var closed = 0;
+
+    await tester.pumpWidget(
+      _host(
+        MobileAddressScanCard(
+          controller: controller,
+          resolve: (_) => validation.future,
+          onScanned: scanned.add,
+          onClose: () => closed++,
+        ),
+      ),
+    );
+    await tester.pump();
+    tester
+        .widget<PlainQrScannerView>(find.byKey(_cameraKey, skipOffstage: false))
+        .onComplete('0xabc');
+    await tester.pump();
+    await tester.tap(find.text('Cancel'));
+    expect(closed, 1);
+
+    validation.complete(const MobileScanOutcome.accepted('0xabc'));
+    await tester.pump();
+    expect(scanned, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a code read while covered lets the camera scan again', (
+    tester,
+  ) async {
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    final scanned = <String>[];
+    await tester.pumpWidget(
+      _host(
+        Navigator(
+          key: navigator,
+          onGenerateRoute: (_) => PageRouteBuilder<void>(
+            pageBuilder: (_, _, _) => _card(controller, onScanned: scanned.add),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    PlainQrScannerView camera() => tester.widget<PlainQrScannerView>(
+      find.byKey(_cameraKey, skipOffstage: false),
+    );
+
+    unawaited(
+      navigator.currentState!.push(
+        PageRouteBuilder<void>(
+          opaque: false,
+          pageBuilder: (_, _, _) => const SizedBox(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // The camera latches on the code it reports; the covered scanner drops it.
+    final latched = camera().scanSessionResetToken;
+    camera().onComplete('0xabc');
+    await tester.pump();
+    expect(scanned, isEmpty);
+    expect(camera().scanSessionResetToken, latched);
+
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(camera().scanSessionResetToken, isNot(latched));
+    camera().onComplete('0xdef');
+    await tester.pump();
+    expect(scanned, ['0xdef']);
   });
 
   testWidgets('custom copy replaces the default Zcash scan copy', (
