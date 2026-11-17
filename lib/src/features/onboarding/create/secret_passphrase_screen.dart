@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart' show CircularProgressIndicator;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/l10n/l10n.dart';
 import '../shared/onboarding_error_messages.dart';
+import '../shared/create_account_submission.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
@@ -42,10 +42,14 @@ class _SecretPassphraseScreenState
   bool _copied = false;
   Timer? _copyResetTimer;
   Object? _prepareError;
+  OnboardingSubmitError? _submitError;
+  bool _submitting = false;
+  late final CreateAccountSubmission _submission;
 
   @override
   void initState() {
     super.initState();
+    _submission = CreateAccountSubmission(persona: widget.args?.persona);
     final args = widget.args;
     if (args == null) {
       final existingMnemonic = ref.read(createOnboardingMnemonicProvider);
@@ -104,7 +108,7 @@ class _SecretPassphraseScreenState
   }
 
   Future<void> _handlePrimaryAction() async {
-    if (_isPreparing || _prepareError != null) return;
+    if (_isPreparing || _prepareError != null || _submitting) return;
     if (!_revealed) {
       setState(() {
         _revealed = true;
@@ -118,14 +122,23 @@ class _SecretPassphraseScreenState
     final mnemonic = _mnemonic;
     if (mnemonic == null) return;
 
-    clearCreateOnboardingSecretState(ref.read);
-
-    context.go(
-      OnboardingStep.customiseAccount.routePath,
-      extra: CustomiseAccountArgs(
-        setupArgs: SetPasswordScreenArgs.create(mnemonic: mnemonic),
-      ),
-    );
+    setState(() {
+      _submitting = true;
+      _submitError = null;
+    });
+    try {
+      await _submission.continueSetup(ref, mnemonic);
+    } catch (error, stack) {
+      log('SecretPassphraseScreen: account setup failed: $error\n$stack');
+      if (mounted) {
+        _submitError = OnboardingSubmitError.fromError(
+          error,
+          requiresRecovery: _submission.requiresRecovery,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   Future<void> _copyMnemonic() async {
@@ -153,32 +166,43 @@ class _SecretPassphraseScreenState
 
   @override
   Widget build(BuildContext context) {
-    return AppDesktopPane(
-      padding: EdgeInsets.zero,
-      paintBackground: false,
-      child: SensitivePrivacyOverlay(
-        sensitiveContentVisible: _revealed && _mnemonic != null,
-        controller: widget.privacyOverlayController,
-        borderRadius: BorderRadius.circular(
-          AppDesktopSidebarSurface.glassRadius,
-        ),
-        child: OnboardingPaneScaffold(
-          backTarget: OnboardingBackTarget.route(
-            label: OnboardingStep.thingsToKnow.label(context.l10n),
-            routePath: OnboardingStep.thingsToKnow.routePath,
+    return PopScope<void>(
+      canPop: !_submitting && !_submission.requiresRecovery,
+      child: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        paintBackground: false,
+        child: SensitivePrivacyOverlay(
+          sensitiveContentVisible: _revealed && _mnemonic != null,
+          controller: widget.privacyOverlayController,
+          borderRadius: BorderRadius.circular(
+            AppDesktopSidebarSurface.glassRadius,
           ),
-          bodyPadding: EdgeInsets.zero,
-          child: _HeroLayout(
-            mnemonic: _mnemonic,
-            isPreparing: _isPreparing,
-            revealed: _revealed,
-            copied: _copied,
-            prepareError: switch (_prepareError) {
-              final error? => onboardingSubmitErrorMessage(context.l10n, error),
-              null => null,
-            },
-            onPrimaryPressed: _handlePrimaryAction,
-            onCopyPressed: _copyMnemonic,
+          child: OnboardingPaneScaffold(
+            backTarget: _submitting || _submission.requiresRecovery
+                ? null
+                : OnboardingBackTarget.route(
+                    label: OnboardingStep.thingsToKnow.label(context.l10n),
+                    routePath: OnboardingStep.thingsToKnow.routePath,
+                  ),
+            bodyPadding: EdgeInsets.zero,
+            child: _HeroLayout(
+              mnemonic: _mnemonic,
+              isPreparing: _isPreparing,
+              revealed: _revealed,
+              copied: _copied,
+              prepareError: switch (_prepareError) {
+                final error? => onboardingSubmitErrorMessage(
+                  context.l10n,
+                  error,
+                ),
+                null => null,
+              },
+              submitError: _submitError?.resolve(context.l10n),
+              submitting: _submitting,
+              requiresRecovery: _submission.requiresRecovery,
+              onPrimaryPressed: _handlePrimaryAction,
+              onCopyPressed: _copyMnemonic,
+            ),
           ),
         ),
       ),
@@ -193,6 +217,9 @@ class _HeroLayout extends StatelessWidget {
     required this.revealed,
     required this.copied,
     required this.prepareError,
+    required this.submitError,
+    required this.submitting,
+    required this.requiresRecovery,
     required this.onPrimaryPressed,
     required this.onCopyPressed,
   });
@@ -202,6 +229,9 @@ class _HeroLayout extends StatelessWidget {
   final bool revealed;
   final bool copied;
   final String? prepareError;
+  final String? submitError;
+  final bool submitting;
+  final bool requiresRecovery;
   final Future<void> Function() onPrimaryPressed;
   final Future<void> Function() onCopyPressed;
 
@@ -234,8 +264,22 @@ class _HeroLayout extends StatelessWidget {
                         onCopyPressed: onCopyPressed,
                       ),
                     ),
+                    if (submitError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: Text(
+                          submitError!,
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: context.colors.text.destructive,
+                          ),
+                        ),
+                      ),
                     _BottomActions(
-                      isPreparing: isPreparing,
+                      isPreparing:
+                          isPreparing || submitting || prepareError != null,
+                      submitting: submitting,
+                      requiresRecovery: requiresRecovery,
                       revealed: revealed,
                       onPrimaryPressed: onPrimaryPressed,
                     ),
@@ -324,11 +368,15 @@ class _TitleBlock extends StatelessWidget {
 class _BottomActions extends StatelessWidget {
   const _BottomActions({
     required this.isPreparing,
+    required this.submitting,
+    required this.requiresRecovery,
     required this.revealed,
     required this.onPrimaryPressed,
   });
 
   final bool isPreparing;
+  final bool submitting;
+  final bool requiresRecovery;
   final bool revealed;
   final Future<void> Function() onPrimaryPressed;
 
@@ -343,7 +391,11 @@ class _BottomActions extends StatelessWidget {
       minWidth: _buttonWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
       child: Text(
-        revealed
+        requiresRecovery
+            ? context.l10n.onboardingRetrySetup
+            : submitting
+            ? context.l10n.commonCreating
+            : revealed
             ? context.l10n.commonContinue
             : context.l10n.onboardingSecretPassphraseReveal,
       ),

@@ -14,13 +14,16 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_wallet_sidebar.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_page_viewport.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_destinations.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/native_mobile_navigation_geometry.dart';
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/recording_sensitive_privacy_controller.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -105,22 +108,69 @@ class _FakeBiometricUnlock extends BiometricUnlock {
       BiometricAvailability.unavailable;
 }
 
+class _GateBiometrics extends BiometricUnlockNotifier {
+  _GateBiometrics({this.kind = BiometricKind.face});
+
+  final BiometricKind kind;
+  int reads = 0;
+  String? passcode = '111111';
+  Future<BiometricUnlockState>? availabilityResult;
+  Future<String?>? readResult;
+
+  BiometricUnlockState get available => BiometricUnlockState(
+    availability: BiometricAvailability(
+      supported: true,
+      enrolled: true,
+      kind: kind,
+    ),
+    enabled: true,
+  );
+
+  @override
+  Future<BiometricUnlockState> build() async =>
+      await availabilityResult ?? available;
+
+  @override
+  Future<String?> readPasscode({required String reason}) async {
+    reads++;
+    return readResult != null ? await readResult : passcode;
+  }
+}
+
+class _PendingConfirm extends AppSecurityNotifier {
+  _PendingConfirm(this.result);
+  final Future<bool> result;
+
+  @override
+  Future<bool> confirmPassword(String password) => result;
+}
+
 Widget _app({
   String? accountUuid,
   AccountNotifier Function()? accountNotifier,
   Future<AccountViewingKeys> Function(String accountUuid)? viewingKeysLoader,
+  SyncNotifier Function() syncNotifier = _EmptySync.new,
+  List<Override> extraOverrides = const [],
+  SensitivePrivacyOverlayController? privacyOverlayController,
+  AppSecurityNotifier Function()? securityNotifier,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       accountProvider.overrideWith(accountNotifier ?? _FakeAccountNotifier.new),
-      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      appSecurityProvider.overrideWith(
+        securityNotifier ?? _FakeSecurityNotifier.new,
+      ),
       biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
+      // The header reads the account's balance from sync.
+      syncProvider.overrideWith(syncNotifier),
+      ...extraOverrides,
     ],
     child: MaterialApp(
       localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: MobileViewingKeyScreen(
+        privacyOverlayController: privacyOverlayController,
         accountUuid: accountUuid,
         viewingKeysLoader: viewingKeysLoader,
       ),
@@ -144,6 +194,157 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  testWidgets('iOS Face ID viewing-key gate waits for its button', (
+    tester,
+  ) async {
+    final biometric = _GateBiometrics();
+    final privacy = RecordingSensitivePrivacyController();
+    addTearDown(privacy.dispose);
+    final requested = <String>[];
+    await tester.pumpWidget(
+      _app(
+        privacyOverlayController: privacy,
+        extraOverrides: [biometricUnlockProvider.overrideWith(() => biometric)],
+        viewingKeysLoader: (uuid) async {
+          requested.add(uuid);
+          return _keys;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 0);
+    expect(privacy.begins, 0);
+    expect(privacy.ends, 0);
+    expect(requested, isEmpty);
+    expect(find.byType(PasscodeNumpad), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('viewing_key_choose_incoming')),
+      findsNothing,
+    );
+    await tester.tap(find.byType(PasscodeBiometricButton));
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(privacy.begins, 1);
+    expect(privacy.ends, 1);
+    expect(requested, ['account-1']);
+    expect(
+      find.byKey(const ValueKey('viewing_key_choose_incoming')),
+      findsOneWidget,
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS Touch ID viewing-key gate still prompts automatically', (
+    tester,
+  ) async {
+    final biometric = _GateBiometrics(kind: BiometricKind.touchId);
+    final requested = <String>[];
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [biometricUnlockProvider.overrideWith(() => biometric)],
+        viewingKeysLoader: (uuid) async {
+          requested.add(uuid);
+          return _keys;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(requested, ['account-1']);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS Face ID viewing-key cancellation permits passcode entry', (
+    tester,
+  ) async {
+    final biometric = _GateBiometrics()..passcode = null;
+    final requested = <String>[];
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [biometricUnlockProvider.overrideWith(() => biometric)],
+        viewingKeysLoader: (uuid) async {
+          requested.add(uuid);
+          return _keys;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PasscodeBiometricButton));
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(requested, isEmpty);
+    expect(find.byType(PasscodeBiometricButton), findsOneWidget);
+    await _confirmPasscode(tester);
+    await tester.pumpAndSettle();
+    expect(requested, ['account-1']);
+    expect(biometric.reads, 1);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets(
+    'late iOS Face ID availability preserves manual viewing-key access',
+    (tester) async {
+      final biometric = _GateBiometrics();
+      final availability = Completer<BiometricUnlockState>();
+      final access = Completer<bool>();
+      biometric.availabilityResult = availability.future;
+      final requested = <String>[];
+      await tester.pumpWidget(
+        _app(
+          securityNotifier: () => _PendingConfirm(access.future),
+          extraOverrides: [
+            biometricUnlockProvider.overrideWith(() => biometric),
+          ],
+          viewingKeysLoader: (uuid) async {
+            requested.add(uuid);
+            return _keys;
+          },
+        ),
+      );
+      await _confirmPasscode(tester);
+      availability.complete(biometric.available);
+      await tester.pump();
+      access.complete(true);
+      await tester.pumpAndSettle();
+      expect(biometric.reads, 0);
+      expect(requested, ['account-1']);
+      expect(
+        find.text('Selected account changed. Enter your passcode again.'),
+        findsNothing,
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets('manual iOS Face ID rejects a changed viewing-key account', (
+    tester,
+  ) async {
+    final account = _FakeAccountNotifier();
+    final read = Completer<String?>();
+    final biometric = _GateBiometrics()..readResult = read.future;
+    final requested = <String>[];
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: () => account,
+        extraOverrides: [biometricUnlockProvider.overrideWith(() => biometric)],
+        viewingKeysLoader: (uuid) async {
+          requested.add(uuid);
+          return _keys;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PasscodeBiometricButton));
+    await tester.pump();
+    account.setActiveAccount('account-2');
+    await tester.pump();
+    read.complete('111111');
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(requested, isEmpty);
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsOneWidget,
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   testWidgets(
     'wide viewing key retains sidebar guards and both levels of back navigation',
@@ -279,7 +480,13 @@ void main() {
               ),
             ),
           );
-          expect(description.top, closeTo(key.bottom + AppSpacing.md, 0.01));
+          // As on Receive, the account name sits under the key, then the
+          // notice.
+          final name = tester.getRect(
+            find.byKey(const ValueKey('viewing_key_account_name')),
+          );
+          expect(name.top, closeTo(key.bottom + AppSpacing.md, 0.01));
+          expect(description.top, closeTo(name.bottom + AppSpacing.md, 0.01));
           expect(description.bottom, lessThan(footer.top));
           expect(
             find.text('Share only with people or services you trust.'),
@@ -301,7 +508,8 @@ void main() {
         }
         await tester.tap(copy);
         await tester.pumpAndSettle();
-        expect(find.text('Copied'), findsOneWidget);
+        // A toast confirms the copy; the button keeps its label and place.
+        expect(find.text('Copied'), findsNothing);
         expect(tester.getRect(copy), initial);
         await tester.pump(const Duration(seconds: 2));
         await tester.pumpAndSettle();
@@ -371,55 +579,77 @@ void main() {
     );
   }
 
-  testWidgets(
-    'copy writes the selected key and confirms without covering the title',
-    (tester) async {
-      final copied = <String>[];
-      final haptics = <Object?>[];
-      SensitiveClipboard.debugSupportsNativeClipboardOverride = true;
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      const clipboard = MethodChannel('com.zcash.wallet/sensitive_clipboard');
-      messenger.setMockMethodCallHandler(clipboard, (call) async {
-        if (call.method == 'copyText') {
-          copied.add((call.arguments as Map)['text'] as String);
-        }
-        return null;
-      });
-      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'HapticFeedback.vibrate') {
-          haptics.add(call.arguments);
-        }
-        return null;
-      });
-      addTearDown(() {
-        SensitiveClipboard.debugSupportsNativeClipboardOverride = null;
-        messenger.setMockMethodCallHandler(clipboard, null);
-        messenger.setMockMethodCallHandler(SystemChannels.platform, null);
-      });
-      await tester.pumpWidget(_app(viewingKeysLoader: (_) async => _keys));
+  testWidgets('copy writes the selected key and confirms with a toast', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    final haptics = <Object?>[];
+    SensitiveClipboard.debugSupportsNativeClipboardOverride = true;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const clipboard = MethodChannel('com.zcash.wallet/sensitive_clipboard');
+    messenger.setMockMethodCallHandler(clipboard, (call) async {
+      if (call.method == 'copyText') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') {
+        haptics.add(call.arguments);
+      }
+      return null;
+    });
+    addTearDown(() {
+      SensitiveClipboard.debugSupportsNativeClipboardOverride = null;
+      messenger.setMockMethodCallHandler(clipboard, null);
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+    await tester.pumpWidget(_app(viewingKeysLoader: (_) async => _keys));
+    await _confirmPasscode(tester);
+    await _selectFullIfNeeded(tester);
+    haptics.clear();
+    await tester.tap(find.byKey(const ValueKey('mobile_viewing_key_copy')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(copied, [_ufvk]);
+    // The standard toast confirms; the button keeps its label.
+    expect(find.text('Viewing key copied'), findsOneWidget);
+    expect(find.text('Copied'), findsNothing);
+    await _selectIncoming(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_viewing_key_copy')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(copied, [_ufvk, _uivk]);
+    expect(find.text('Viewing key copied'), findsOneWidget);
+    expect(find.text('Copied'), findsNothing);
+    expect(haptics, [
+      'HapticFeedbackType.lightImpact',
+      'HapticFeedbackType.lightImpact',
+    ]);
+  });
+  for (final privacy in [false, true]) {
+    testWidgets('the account header shows its balance, masked in privacy mode '
+        '($privacy)', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          viewingKeysLoader: (_) async => _keys,
+          syncNotifier: _BalanceSync.new,
+          extraOverrides: [
+            privacyModeProvider.overrideWith(() => _Privacy(privacy)),
+          ],
+        ),
+      );
       await _confirmPasscode(tester);
-      await _selectFullIfNeeded(tester);
-      haptics.clear();
-      await tester.tap(find.byKey(const ValueKey('mobile_viewing_key_copy')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 220));
-      expect(copied, [_ufvk]);
-      expect(find.text('Copied'), findsOneWidget);
-      expect(find.text('Viewing key copied'), findsNothing);
-      await _selectIncoming(tester);
-      await tester.tap(find.byKey(const ValueKey('mobile_viewing_key_copy')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 220));
-      expect(copied, [_ufvk, _uivk]);
-      expect(find.text('Copied'), findsOneWidget);
-      expect(find.text('Viewing key copied'), findsNothing);
-      expect(haptics, [
-        'HapticFeedbackType.lightImpact',
-        'HapticFeedbackType.lightImpact',
-      ]);
-    },
-  );
+      await tester.pumpAndSettle();
+      final balance = find.byKey(
+        const ValueKey('mobile_account_header_balance'),
+      );
+      expect(balance, findsOneWidget);
+      expect(tester.widget<Text>(balance).data!.contains('0.01'), !privacy);
+    });
+  }
+
   testWidgets('confirm gate uses the shared passcode layout', (tester) async {
     await tester.pumpWidget(_app(viewingKeysLoader: (uuid) async => _keys));
     await tester.pumpAndSettle();
@@ -873,4 +1103,30 @@ Future<GoRouter> _adaptiveApp(
   unawaited(router.push<void>('/settings/viewing-key'));
   await tester.pumpAndSettle();
   return router;
+}
+
+class _Privacy extends PrivacyModeNotifier {
+  _Privacy(this.enabled);
+
+  final bool enabled;
+
+  @override
+  bool build() => enabled;
+}
+
+/// The active account with a 0.01 ZEC balance.
+class _BalanceSync extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    transparentBalance: BigInt.from(1000000),
+    displayTotalBalance: BigInt.from(1000000),
+  );
+}
+
+/// No balance known yet, so the header shows the name alone.
+class _EmptySync extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
 }

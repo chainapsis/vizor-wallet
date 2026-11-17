@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,7 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_privacy_lock_provider.dart';
 import 'package:zcash_wallet/src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/hide_balance_on_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -25,6 +27,8 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
   var unlockCalls = 0;
 
   bool get isUnlocked => state.isUnlocked;
+
+  void replaceSession() => state = state.copyWith(isUnlocked: true);
 
   @override
   Future<bool> confirmPassword(String password) async {
@@ -361,7 +365,30 @@ void main() {
   testWidgets('confirmation only clears the virtual lock', (tester) async {
     final clock = _TestClock();
     final security = _FakeSecurityNotifier();
-    await tester.pumpWidget(_app(clock: clock, security: security));
+    final gate = Completer<void>();
+    var hideCalls = 0;
+    final container = ProviderContainer(
+      overrides: [
+        ..._overrides(security),
+        hideBalanceOnUnlockActionProvider.overrideWith(
+          (ref) => () async {
+            expect(
+              ref.read(ironwoodMigrationPrivacyLockProvider).isLocked,
+              isTrue,
+            );
+            hideCalls++;
+            await gate.future;
+          },
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _themedHost(clock),
+      ),
+    );
     await tester.pump();
     await _elapseIdleInterval(tester, clock);
 
@@ -373,10 +400,76 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('unlock_submit_button')));
     await tester.pump();
 
+    expect(hideCalls, 1);
+    expect(
+      container.read(ironwoodMigrationPrivacyLockProvider).isLocked,
+      isTrue,
+    );
+    gate.complete();
+    await tester.pump();
     expect(security.confirmedPasswords, ['password1']);
     expect(security.unlockCalls, 0);
     expect(find.text('Migration in progress'), findsNothing);
     expect(security.isUnlocked, isTrue);
+  });
+
+  testWidgets('a replaced session cannot complete an older migration unlock', (
+    tester,
+  ) async {
+    final clock = _TestClock();
+    final security = _FakeSecurityNotifier();
+    final gate = Completer<void>();
+    var hideCalls = 0;
+    final container = ProviderContainer(
+      overrides: [
+        ..._overrides(security),
+        hideBalanceOnUnlockActionProvider.overrideWith(
+          (ref) => () async {
+            expect(
+              ref.read(ironwoodMigrationPrivacyLockProvider).isLocked,
+              isTrue,
+            );
+            hideCalls++;
+            await gate.future;
+          },
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _themedHost(clock),
+      ),
+    );
+    await tester.pump();
+    await _elapseIdleInterval(tester, clock);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('unlock_password_field')),
+      'password1',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('unlock_submit_button')));
+    await tester.pump();
+
+    expect(hideCalls, 1);
+    expect(
+      container.read(ironwoodMigrationPrivacyLockProvider).isLocked,
+      isTrue,
+    );
+    security.replaceSession();
+    gate.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(security.confirmedPasswords, ['password1']);
+    expect(security.unlockCalls, 0);
+    expect(find.text('Migration in progress'), findsOneWidget);
+    expect(security.isUnlocked, isTrue);
+    await tester.tap(find.byKey(const ValueKey('unlock_submit_button')));
+    await tester.pump();
+    expect(security.confirmedPasswords, ['password1', 'password1']);
+    expect(find.text('Migration in progress'), findsNothing);
   });
 
   testWidgets('failed confirmation keeps the overlay visible', (tester) async {

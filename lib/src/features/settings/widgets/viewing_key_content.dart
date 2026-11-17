@@ -10,6 +10,9 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/mobile/mobile_account_header.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../../core/widgets/app_segmented_control.dart';
 import '../../../providers/account_models.dart';
 import '../../../rust/api/wallet.dart' show AccountViewingKeys;
 import '../../receive/widgets/request/request_qr_surface.dart';
@@ -40,6 +43,7 @@ class ViewingKeyContent extends StatefulWidget {
     this.errorText,
     this.showTitle = false,
     this.showAccountName = false,
+    this.accountBalanceText,
     required this.onSelectType,
     this.type,
     this.initialFormat = ViewingKeyFormat.qr,
@@ -56,6 +60,10 @@ class ViewingKeyContent extends StatefulWidget {
   final Key keyValueKey;
   final bool showTitle;
   final bool showAccountName;
+
+  /// Mobile: the account's balance under its name on the choice step,
+  /// already masked in privacy mode. Null leaves the line out.
+  final String? accountBalanceText;
   final ViewingKeyType? type;
   final ValueChanged<ViewingKeyType> onSelectType;
   final ViewingKeyFormat initialFormat;
@@ -104,10 +112,22 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
   Future<void> _copy() async {
     final value = _value;
     if (value == null || widget.errorText != null) return;
+    // Mobile confirms a copy with the standard toast, as Receive does; the
+    // button keeps its label.
+    const toastFeedback = kAppFormFactor == AppFormFactor.mobile;
     try {
       await widget.onCopy(value);
     } catch (_) {
       if (!mounted || value != _value) return;
+      if (toastFeedback) {
+        showAppToast(
+          context,
+          context.l10n.settingsViewingKeyCopyFailed,
+          iconName: AppIcons.warningCircle,
+          tone: AppToastTone.destructive,
+        );
+        return;
+      }
       _copyResetTimer?.cancel();
       setState(() {
         _copied = false;
@@ -116,6 +136,10 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
       return;
     }
     if (!mounted || value != _value) return;
+    if (toastFeedback) {
+      showAppToast(context, context.l10n.settingsViewingKeyCopied);
+      return;
+    }
     _copyResetTimer?.cancel();
     setState(() {
       _copied = true;
@@ -134,6 +158,7 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
     final hasKeys = widget.errorText == null && widget.viewingKeys != null;
     final incoming = widget.type == ViewingKeyType.incoming;
     final showQr = _format == ViewingKeyFormat.qr;
+    const mobile = kAppFormFactor == AppFormFactor.mobile;
 
     final content = Column(
       mainAxisSize: MainAxisSize.min,
@@ -154,7 +179,15 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
           ),
           const SizedBox(height: AppSpacing.md),
         ],
-        if (widget.showAccountName && account != null) ...[
+        if (mobile && account != null && hasKeys && widget.type == null) ...[
+          // Whose key this is: the account's picture and name, centered
+          // above the choice.
+          MobileAccountHeader(
+            account: account,
+            balanceText: widget.accountBalanceText,
+          ),
+          const SizedBox(height: AppSpacing.base),
+        ] else if (!mobile && widget.showAccountName && account != null) ...[
           Text(
             account.name,
             key: const ValueKey('viewing_key_account_name'),
@@ -172,7 +205,7 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
             selected: _format,
             onChanged: (format) => setState(() => _format = format),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: mobile ? AppSpacing.base : AppSpacing.sm),
           KeyedSubtree(
             key: widget.keyValueKey,
             child: ViewingKeyTransition(
@@ -191,15 +224,12 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
                           builder: (context, constraints) => Center(
                             child: RequestQrSurface(
                               data: value,
-                              size: (constraints.maxWidth - AppSpacing.xs * 2)
-                                  .clamp(
-                                    0.0,
-                                    kAppFormFactor == AppFormFactor.mobile
-                                        ? 240.0
-                                        : 200.0,
-                                  )
-                                  .toDouble(),
-                              padding: AppSpacing.xs,
+                              size:
+                                  (constraints.maxWidth -
+                                          _qrPadding(mobile) * 2)
+                                      .clamp(0.0, mobile ? 260.0 : 200.0)
+                                      .toDouble(),
+                              padding: _qrPadding(mobile),
                             ),
                           ),
                         ),
@@ -208,14 +238,24 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
                   : Container(
                       // A viewing key is longer than the QR surface is tall.
                       // Let all lines determine the height instead of adding
-                      // a second scroll area inside the page.
-                      constraints: const BoxConstraints(
-                        minHeight: 200 + AppSpacing.xs * 2,
+                      // a second scroll area inside the page. On mobile it
+                      // shares the QR card's column and height, so switching
+                      // tabs keeps the page in place.
+                      constraints: BoxConstraints(
+                        minHeight: mobile
+                            ? 260 + AppSpacing.sm * 2
+                            : 200 + AppSpacing.xs * 2,
+                        maxWidth: mobile
+                            ? 260 + AppSpacing.sm * 2
+                            : double.infinity,
                       ),
+                      alignment: mobile ? Alignment.topCenter : null,
                       padding: const EdgeInsets.all(AppSpacing.sm),
                       decoration: BoxDecoration(
                         color: colors.background.ground,
-                        borderRadius: BorderRadius.circular(AppRadii.medium),
+                        borderRadius: BorderRadius.circular(
+                          mobile ? AppRadii.large : AppRadii.medium,
+                        ),
                         border: Border.all(color: colors.border.subtle),
                       ),
                       child: Actions(
@@ -277,6 +317,20 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
+          if (mobile && account != null) ...[
+            Text(
+              account.name,
+              key: const ValueKey('viewing_key_account_name'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyLarge.copyWith(
+                color: colors.text.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           _ViewingKeyPrivacyNotice(incoming: incoming),
           if (widget.layoutBuilder == null) ...[
             const SizedBox(height: AppSpacing.md),
@@ -494,7 +548,7 @@ class _ViewingKeyChoice extends StatelessWidget {
         _ViewingKeyChoiceCard(
           type: ViewingKeyType.incoming,
           title: context.l10n.settingsViewingKeyIncomingOnly,
-          icon: AppIcons.arrowBottomLeft,
+          icon: AppIcons.arrowDownCircle,
           description: context.l10n.settingsViewingKeyIncomingOnlyDescription,
           onPressed: () => onSelected(ViewingKeyType.incoming),
         ),
@@ -502,7 +556,7 @@ class _ViewingKeyChoice extends StatelessWidget {
         _ViewingKeyChoiceCard(
           type: ViewingKeyType.full,
           title: context.l10n.settingsViewingKeyTypeFull,
-          icon: AppIcons.history,
+          icon: AppIcons.eye,
           description: context.l10n.settingsViewingKeyFullDescription,
           onPressed: () => onSelected(ViewingKeyType.full),
         ),
@@ -638,6 +692,38 @@ class _ViewingKeyFormatTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      // The Receive page's tab bar: icon and label, the selected pill dark.
+      return Center(
+        child: AppSegmentedControl<ViewingKeyFormat>(
+          key: const ValueKey('viewing_key_format_tabs'),
+          width: 320,
+          height: 44,
+          selected: selected,
+          onChanged: onChanged,
+          selectedBackground: colors.background.inverse,
+          selectedForeground: colors.text.inverse,
+          iconSize: 20,
+          iconGap: AppSpacing.xs,
+          labelStyle: AppTypography.labelLarge,
+          labelFontWeight: FontWeight.w500,
+          segments: [
+            AppSegment(
+              value: ViewingKeyFormat.qr,
+              label: context.l10n.settingsViewingKeyFormatQr,
+              icon: AppIcons.qr,
+              key: const ValueKey('viewing_key_format_qr'),
+            ),
+            AppSegment(
+              value: ViewingKeyFormat.text,
+              label: context.l10n.settingsViewingKeyFormatText,
+              icon: AppIcons.scroll,
+              key: const ValueKey('viewing_key_format_text'),
+            ),
+          ],
+        ),
+      );
+    }
     return Align(
       alignment: Alignment.center,
       child: SizedBox(
@@ -683,6 +769,8 @@ class _ViewingKeyFormatTabs extends StatelessWidget {
     );
   }
 }
+
+double _qrPadding(bool mobile) => mobile ? AppSpacing.sm : AppSpacing.xs;
 
 class _ViewingKeyCopyLabel extends StatelessWidget {
   const _ViewingKeyCopyLabel({required this.label});

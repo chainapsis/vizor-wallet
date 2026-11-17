@@ -12,6 +12,7 @@ class SwapQuoteErrorText extends StatelessWidget {
     required this.textKey,
     this.maxLines,
     this.action,
+    this.style,
     super.key,
   });
 
@@ -24,6 +25,10 @@ class SwapQuoteErrorText extends StatelessWidget {
   /// A link under the error to where the user can act on it.
   final ({String label, VoidCallback onPressed})? action;
 
+  /// Text style before the destructive color, [AppTypography.bodySmall] when
+  /// null. Mobile composers use [AppTypography.bodyMedium].
+  final TextStyle? style;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -33,7 +38,9 @@ class SwapQuoteErrorText extends StatelessWidget {
       maxLines: maxLines,
       overflow: maxLines == null ? null : TextOverflow.ellipsis,
       textAlign: TextAlign.center,
-      style: AppTypography.bodySmall.copyWith(color: colors.text.destructive),
+      style: (style ?? AppTypography.bodySmall).copyWith(
+        color: colors.text.destructive,
+      ),
     );
     final action = this.action;
     if (action == null) return text;

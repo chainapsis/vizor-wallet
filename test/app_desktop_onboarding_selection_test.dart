@@ -28,6 +28,7 @@ void main() {
     WidgetTester tester, {
     String location = '/import/method',
     bool hasWallet = false,
+    bool configured = true,
     String network = 'main',
     Object? extra,
   }) async {
@@ -51,7 +52,7 @@ void main() {
             ),
           ),
           walletProvider.overrideWith(() => _Wallet(hasWallet)),
-          appSecurityProvider.overrideWith(_Security.new),
+          appSecurityProvider.overrideWith(() => _Security(configured)),
           rpcEndpointFailoverProvider.overrideWith(_Rpc.new),
           ledgerAccountConnectorProvider.overrideWithValue(
             (_) async => _ledgerAccount,
@@ -69,30 +70,36 @@ void main() {
   }
 
   for (final hasWallet in [false, true]) {
-    testWidgets('Welcome create action opens the intro: hasWallet=$hasWallet', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        location: hasWallet ? '/add-account' : '/welcome',
-        hasWallet: hasWallet,
+    if (!hasWallet) {
+      testWidgets(
+        'Welcome create action opens credentials without lessons or phrase: hasWallet=$hasWallet',
+        (tester) async {
+          await pump(
+            tester,
+            location: hasWallet ? '/add-account' : '/welcome',
+            hasWallet: hasWallet,
+            configured: false,
+          );
+          await tester.tap(
+            find.descendant(
+              of: find.byKey(const ValueKey('welcome_create_wallet_button')),
+              matching: find.byType(AppButton),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('The Shielded World'), findsNothing);
+          final field = find.byKey(
+            const ValueKey('set_password_password_field'),
+          );
+          expect(field, findsOneWidget);
+          expect(
+            GoRouter.of(tester.element(field)).state.uri.path,
+            '/onboarding/set-password',
+          );
+          expect(tester.takeException(), isNull);
+        },
       );
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const ValueKey('welcome_create_wallet_button')),
-          matching: find.byType(AppButton),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('The Shielded World'), findsOneWidget);
-      expect(
-        GoRouter.of(
-          tester.element(find.text('The Shielded World')),
-        ).state.uri.path,
-        '/onboarding/intro',
-      );
-      expect(tester.takeException(), isNull);
-    });
+    }
 
     testWidgets(
       'Welcome software import reaches phrase input: hasWallet=$hasWallet',
@@ -436,9 +443,11 @@ class _Wallet extends WalletNotifier {
 }
 
 class _Security extends AppSecurityNotifier {
+  _Security(this.configured);
+  final bool configured;
   @override
   AppSecurityState build() =>
-      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+      AppSecurityState(isPasswordConfigured: configured, isUnlocked: true);
 }
 
 class _RustApiFake implements RustLibApi {

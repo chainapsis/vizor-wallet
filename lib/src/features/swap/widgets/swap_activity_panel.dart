@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
@@ -667,17 +668,23 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     if (layout == SwapActivityDetailLayout.mobile) {
       return Container(
         key: const ValueKey('swap_activity_detail_page'),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         child: LayoutBuilder(
           builder: (context, constraints) {
             return _ActivityDetailScrollArea(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Align(
-                  alignment: isDepositPage
-                      ? Alignment.center
-                      : Alignment.topCenter,
-                  child: flowContent,
+              // The side margins sit inside the scroll view, so the cards'
+              // soft lift isn't clipped at their edges.
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kMobilePageMargin,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Align(
+                    alignment: isDepositPage
+                        ? Alignment.center
+                        : Alignment.topCenter,
+                    child: flowContent,
+                  ),
                 ),
               ),
             );

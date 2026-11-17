@@ -89,10 +89,7 @@ class _MobilePasscodeCaptureState extends State<MobilePasscodeCapture> {
                 PasscodeCaptureScreen.create => MobileOnboardingProgressScope(
                   setupMode: OnboardingSetupMode.createPasscode,
                   child: MobilePasscodeScreen(
-                    args: SetPasswordScreenArgs.create(
-                      mnemonic:
-                          'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
-                    ),
+                    args: const SetPasswordScreenArgs.createDeferred(),
                   ),
                 ),
                 PasscodeCaptureScreen.unlock => const MobileUnlockScreen(

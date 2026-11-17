@@ -150,6 +150,9 @@ void main() {
       receiveFailed: 'Receive failed',
       shielded: 'Shielded successfully',
       sending: 'Send in progress...',
+      sent: 'Sent successfully',
+      sendFailed: 'Send failed',
+      recipient: 'To',
     ),
   );
   testWidgets('desktop receipt never names an output its recipient', (

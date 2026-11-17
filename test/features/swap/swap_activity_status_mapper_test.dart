@@ -1368,8 +1368,8 @@ void main() {
       privacyModeEnabled: true,
     );
 
-    expect(presentation.payAmountText, '****** USDC');
-    expect(presentation.receiveAmountText, '****** ZEC');
+    expect(presentation.payAmountText, '•••••• USDC');
+    expect(presentation.receiveAmountText, '•••••• ZEC');
     // The missing amount is still derived from the real values.
     for (final label in [
       'Required deposit',
@@ -1377,7 +1377,7 @@ void main() {
       'Missing deposit',
       'Refund fee',
     ]) {
-      expect(_detailValue(presentation.details, label), '****** USDC');
+      expect(_detailValue(presentation.details, label), '•••••• USDC');
     }
     expect(_detailValue(presentation.details, 'Memo'), 'memo-7');
     expect(
@@ -1411,7 +1411,7 @@ void main() {
     expect(_detailValue(inProgress.details, 'Slippage tolerance'), '1.5%');
     expect(
       _detailValue(inProgress.details, 'Guaranteed minimum'),
-      '****** USDC',
+      '•••••• USDC',
     );
     _expectNoRawOrMixedAmounts(inProgress, ['2.0000', '140.00']);
 
@@ -1428,14 +1428,14 @@ void main() {
       ),
       privacyModeEnabled: true,
     );
-    expect(pay.payStatus!.convertedFromText, '****** ZEC');
+    expect(pay.payStatus!.convertedFromText, '•••••• ZEC');
     // No confirmed deposit fee yet: fixed copy, nothing to mask.
     expect(pay.payStatus!.transactionFeeText, 'Not reported');
     expect(_detailValue(pay.details, 'Rate'), '1 ZEC = 70 USDC');
-    expect(_detailValue(pay.details, 'You paid'), '****** ZEC');
+    expect(_detailValue(pay.details, 'You paid'), '•••••• ZEC');
     expect(
       _detailValue(pay.details, 'Network + conversion fees'),
-      '****** ZEC',
+      '•••••• ZEC',
     );
     _expectNoRawOrMixedAmounts(pay, ['2.0000', '140.00', '0.0040']);
   });
@@ -1696,7 +1696,7 @@ String _detailValue(List<SwapStatusDetailRowData> rows, String label) {
 }
 
 /// Every display string of [presentation] hides [rawAmounts] and never pairs
-/// two symbols (`****** ZEC ZEC`) or labels one leg with another's symbol.
+/// two symbols (`•••••• ZEC ZEC`) or labels one leg with another's symbol.
 void _expectNoRawOrMixedAmounts(
   SwapActivityStatusPresentation presentation,
   List<String> rawAmounts,

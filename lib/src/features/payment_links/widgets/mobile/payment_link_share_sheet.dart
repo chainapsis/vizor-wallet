@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../services/payment_link_qr_export.dart';
 import '../payment_link_gift_card.dart';
 import '../payment_link_qr_share_card.dart';
+import 'payment_link_qr_fullscreen_view.dart';
 import '../../../../core/l10n/l10n.dart';
 
 class PaymentLinkShareSheet extends StatefulWidget {
@@ -39,6 +40,43 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
   final _shareButtonKey = GlobalKey();
   bool _sharing = false;
   bool _copying = false;
+  bool _showingQr = false;
+  RawDialogRoute<void>? _qrRoute;
+
+  @override
+  void dispose() {
+    final route = _qrRoute;
+    // Navigator may be locked while disposing the underlying sheet.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (route != null && route.isActive) route.navigator?.removeRoute(route);
+    });
+    super.dispose();
+  }
+
+  Future<void> _showQr() async {
+    if (_showingQr) return;
+    _showingQr = true;
+    final theme = context.appTheme;
+    final route = RawDialogRoute<void>(
+      barrierDismissible: false,
+      pageBuilder: (context, _, _) => AppTheme(
+        data: theme,
+        child: PaymentLinkQrFullscreenView(
+          link: widget.link,
+          onClose: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+    _qrRoute = route;
+    try {
+      // Cover the root sheet and adaptive sidebar, beneath app-level locks.
+      await Navigator.of(context, rootNavigator: true).push(route);
+      await route.completed;
+    } finally {
+      _showingQr = false;
+      _qrRoute = null;
+    }
+  }
 
   Future<void> _share() async {
     if (_sharing) return;
@@ -73,7 +111,6 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
       key: const ValueKey('payment_link_share_sheet'),
       title: context.l10n.paymentLinkShareSheetTitle,
       onClose: widget.onClose,
-      bottomPadding: AppSpacing.base,
       constrainBody: true,
       child: SingleChildScrollView(
         child: Column(
@@ -89,6 +126,7 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
                 child: PaymentLinkQrShareCard(
                   artwork: widget.artwork,
                   qrData: widget.link,
+                  onQrTap: _showQr,
                 ),
               ),
             ),

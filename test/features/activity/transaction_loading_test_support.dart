@@ -64,7 +64,14 @@ rust_sync.TransactionDetail _detail(String memo, {String kind = 'received'}) =>
 
 void transactionLoadingTests({required bool mobile}) {
   setUpAll(loadFigmaCompareFonts);
-  final receivedTitle = mobile ? 'Received' : 'Received successfully';
+  final receivedTitle = mobile ? 'Received ZEC' : 'Received successfully';
+  final sentTitle = mobile ? 'Sent ZEC' : 'Sent successfully';
+  final recipientLabel = mobile ? 'Recipient' : 'To';
+  // Mobile heads the receipt with the status chip and the amount, unlabelled.
+  final amountAnchor = mobile
+      ? find.byKey(const ValueKey('mobile_tx_status_amount'))
+      : find.text('Amount');
+  final statusAnchor = mobile ? find.text('Completed') : find.text('Status');
   testWidgets('summary appears while history and detail remain unresolved', (
     tester,
   ) async {
@@ -270,11 +277,11 @@ void transactionLoadingTests({required bool mobile}) {
           history: (_, _) => history.future,
           detail: (_, _) => detail.future,
         );
-        double y(String label) => tester.getTopLeft(find.text(label).first).dy;
-        final amountY = y('Amount');
-        final statusY = y('Status');
-        final timestampY = y('Timestamp');
-        final txidY = y('Tx ID');
+        double y(Finder finder) => tester.getTopLeft(finder.first).dy;
+        final amountY = y(amountAnchor);
+        final statusY = y(statusAnchor);
+        final timestampY = y(find.text('Timestamp'));
+        final txidY = y(find.text('Tx ID'));
         expect(find.byType(ReceiptMemoSkeleton), findsOneWidget);
         for (final element in find.byType(ReceiptValueSkeleton).evaluate()) {
           final size = tester.getSize(find.byWidget(element.widget));
@@ -283,13 +290,13 @@ void transactionLoadingTests({required bool mobile}) {
         }
         expect(find.text('Show full address'), findsNothing);
         if (kind == 'sent') {
-          expect(find.text('Sent successfully'), findsOneWidget);
+          expect(find.text(sentTitle), findsOneWidget);
           expect(find.text('Shielded'), findsNothing);
         }
         history.complete([_tx(kind: kind)]);
         await tester.pump();
         await tester.pump();
-        expect(y('Status'), statusY);
+        expect(y(statusAnchor), statusY);
         expect(find.byType(ReceiptMemoSkeleton), findsOneWidget);
         detail.complete(
           _completeDetail(kind: kind, memo: hasMemo ? 'Loaded memo' : null),
@@ -297,11 +304,11 @@ void transactionLoadingTests({required bool mobile}) {
         await tester.pump();
         await tester.pump();
         expect(find.byType(ReceiptValueSkeleton), findsNothing);
-        expect(y('Amount'), amountY);
-        expect(y('Status'), statusY);
+        expect(y(amountAnchor), amountY);
+        expect(y(statusAnchor), statusY);
         if (hasMemo) {
-          expect(y('Timestamp'), timestampY);
-          expect(y('Tx ID'), txidY);
+          expect(y(find.text('Timestamp')), timestampY);
+          expect(y(find.text('Tx ID')), txidY);
         } else {
           expect(find.text('Message'), findsNothing);
         }
@@ -321,14 +328,19 @@ void transactionLoadingTests({required bool mobile}) {
       history: (_, _) async => [_tx(kind: 'sent')],
       detail: (_, _) => detail.future,
     );
-    expect(find.byType(ReceiptCounterpartySkeleton), findsOneWidget);
+    expect(
+      mobile
+          ? find.byKey(const ValueKey('mobile_tx_status_counterparty_skeleton'))
+          : find.byType(ReceiptCounterpartySkeleton),
+      findsOneWidget,
+    );
     detail.complete(null);
     await tester.pump();
     await tester.pump();
     expect(find.byType(ReceiptValueSkeleton), findsNothing);
     expect(find.text('Show full address'), findsNothing);
     // The send keeps its To row, naming no one.
-    expect(find.text('To'), findsOneWidget);
+    expect(find.text(recipientLabel), findsOneWidget);
     expect(find.text(testL10n.activityDetailsUnknownRecipient), findsOneWidget);
     expect(find.text('Message'), findsNothing);
   });
@@ -347,18 +359,18 @@ void transactionLoadingTests({required bool mobile}) {
       detail: (_, _) => detail.future,
     );
     expect(find.byType(ReceiptValueSkeleton), findsNothing);
-    final statusY = tester.getTopLeft(find.text('Status')).dy;
+    final statusY = tester.getTopLeft(statusAnchor).dy;
     sync.emit(_sync(height: 101));
     await tester.pump();
     await tester.pump();
     expect(find.byType(ReceiptValueSkeleton), findsNothing);
-    expect(tester.getTopLeft(find.text('Status')).dy, statusY);
+    expect(tester.getTopLeft(statusAnchor).dy, statusY);
     detail.complete(null);
     await tester.pump();
     await tester.pump();
     expect(find.byType(ReceiptValueSkeleton), findsNothing);
     expect(find.text('Existing memo'), findsOneWidget);
-    expect(tester.getTopLeft(find.text('Status')).dy, statusY);
+    expect(tester.getTopLeft(statusAnchor).dy, statusY);
   });
 
   for (final kind in ['received', 'sent']) {
@@ -387,7 +399,7 @@ void transactionLoadingTests({required bool mobile}) {
           await tester.pump();
           // Desktop and mobile both keep the send title without a recipient.
           expect(
-            find.text(kind == 'received' ? receivedTitle : 'Sent successfully'),
+            find.text(kind == 'received' ? receivedTitle : sentTitle),
             findsOneWidget,
           );
           expect(find.text('Completed'), findsOneWidget);

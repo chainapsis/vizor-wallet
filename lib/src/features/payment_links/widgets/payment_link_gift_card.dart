@@ -136,6 +136,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.currencySymbol = 'ZEC', // l10n-ignore: amount format
     this.emptyAmountLabel,
     this.showCaret = true,
+    this.showAmount = true,
     this.showBack = false,
     this.message = '',
     this.messageController,
@@ -184,6 +185,10 @@ class PaymentLinkGiftCard extends StatefulWidget {
 
   /// Null is the default state; empty is active; non-empty is the value state.
   final String? amountText;
+
+  /// False draws the front's artwork alone, for a page that shows the
+  /// amount beside the card.
+  final bool showAmount;
   final TextEditingController? amountController;
   final FocusNode? amountFocusNode;
   final Key? amountEditorKey;
@@ -416,7 +421,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 onDeleteMessage: widget.onDeleteMessage,
                 semanticLabel: label,
               )
-            else
+            else if (widget.showAmount)
               _PaymentLinkGiftCardFrontContent(
                 amountText: widget.amountText,
                 amountController: widget.amountController,

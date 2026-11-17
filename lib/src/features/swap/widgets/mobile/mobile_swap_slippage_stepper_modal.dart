@@ -391,7 +391,7 @@ class _SlippageErrorSlot extends StatelessWidget {
     final message = context.l10n.swapSlippageRangeError;
     final style = withLocaleFontFallback(
       context,
-      AppTypography.labelMedium.copyWith(
+      AppTypography.labelLarge.copyWith(
         fontWeight: FontWeight.w500,
         color: color,
       ),

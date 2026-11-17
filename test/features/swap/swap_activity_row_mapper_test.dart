@@ -297,7 +297,8 @@ void main() {
       ),
     );
 
-    expect(row!.amountText, '-999.999K USDC');
+    // Mobile rows drop the outgoing minus.
+    expect(row!.amountText, '999.999K USDC');
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.amountText, '+1.234M USDC');
   }, tags: 'mobile');
@@ -373,12 +374,12 @@ void main() {
     );
 
     // Each leg keeps its own symbol: the USDC deposit is not labelled ZEC.
-    expect(row!.amountText, '*** ZEC');
+    expect(row!.amountText, '••• ZEC');
     expect(row!.statusText, 'Completed');
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.stableId, 'swap:swap-private:deposited');
-    expect(row!.childRows.single.amountText, '*** USDC');
+    expect(row!.childRows.single.amountText, '••• USDC');
   });
 
   testWidgets('masks external and Pay rows with their own symbol', (
@@ -447,8 +448,8 @@ void main() {
       ),
     );
 
-    expect(rows[0].amountText, '*** USDC');
-    expect(rows[1].amountText, '*** USDC');
+    expect(rows[0].amountText, '••• USDC');
+    expect(rows[1].amountText, '••• USDC');
     // No recorded amount: the placeholder carries no value to hide.
     expect(rows[2].amountText, '--');
     for (final row in rows) {
@@ -926,8 +927,8 @@ void main() {
       expect(row!.childRows, hasLength(1));
       final child = row!.childRows.single;
       expect(child.title, 'Received ZEC');
-      expect(child.amountText, '*** ZEC');
-      expect(row!.amountText, '*** USDC');
+      expect(child.amountText, '••• ZEC');
+      expect(row!.amountText, '••• USDC');
       // The leg stays tappable so the user can still open the masked receipt.
       expect(child.onTap, isNotNull);
       child.onTap!();

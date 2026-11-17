@@ -404,7 +404,7 @@ class _MobileUnansweredSheetState extends State<_MobileUnansweredSheet> {
           widget.unanswered.isEmpty
               ? context.l10n.votingNavReadyToReview
               : context.l10n.votingNavTapToJump,
-          style: AppTypography.bodySmall.copyWith(
+          style: AppTypography.bodyMedium.copyWith(
             color: context.colors.text.secondary,
           ),
         ),

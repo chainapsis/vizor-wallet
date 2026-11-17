@@ -221,36 +221,45 @@ class NearSwapPrivacyInfoDialog extends StatelessWidget {
 class NearSwapPrivacyInfoSheet extends ConsumerWidget {
   const NearSwapPrivacyInfoSheet({super.key});
 
+  /// The share of the screen height the sheet may take. The explanation is
+  /// longer than a phone screen, so past this the body scrolls.
+  static const double maxHeightFactor = 0.7;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    return MobileModalScaffold(
-      key: const ValueKey('near_swap_privacy_info_sheet'),
-      title: context.l10n.settingsNearSwapPrivacyLabel,
-      onClose: () => Navigator.of(context).pop(),
-      leading: AppIcon(AppIcons.linkOff, size: 20, color: colors.icon.accent),
-      constrainBody: true,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Flexible(
-            // The sheet's card paints the base surface.
-            child: _FadingScrollBody(
-              surface: colors.background.base,
-              child: const _Body(historyCheck: false),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * maxHeightFactor,
+      ),
+      child: MobileModalScaffold(
+        key: const ValueKey('near_swap_privacy_info_sheet'),
+        title: context.l10n.settingsNearSwapPrivacyLabel,
+        onClose: () => Navigator.of(context).pop(),
+        leading: AppIcon(AppIcons.linkOff, size: 20, color: colors.icon.accent),
+        constrainBody: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(
+              // The sheet's card paints the base surface.
+              child: _FadingScrollBody(
+                surface: colors.background.base,
+                child: const _Body(historyCheck: false),
+              ),
             ),
-          ),
-          // Where the sheet's buttons go, so it is in reach without scrolling,
-          // as far below the text as other sheets keep their buttons.
-          if (_showsHistoryCheck(ref)) ...[
-            const SizedBox(height: AppSpacing.md),
-            const SwapHistoryCheckControl(
-              key: ValueKey('near_swap_privacy_history_check'),
-              stacked: true,
-            ),
+            // Where the sheet's buttons go, so it is in reach without scrolling,
+            // as far below the text as other sheets keep their buttons.
+            if (_showsHistoryCheck(ref)) ...[
+              const SizedBox(height: AppSpacing.md),
+              const SwapHistoryCheckControl(
+                key: ValueKey('near_swap_privacy_history_check'),
+                stacked: true,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

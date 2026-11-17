@@ -11,10 +11,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 
+import '../src/core/l10n/l10n.dart';
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/mobile/mobile_memo_sheet.dart';
 import '../src/features/receive/widgets/request/request_amount_card.dart';
 import '../src/features/receive/widgets/request/request_amount_model.dart';
-import '../src/features/receive/widgets/request/request_amount_sheet.dart';
+import '../src/features/receive/widgets/request/request_amount_steps.dart';
 import 'receive_use_cases.dart';
 
 /// The addresses the Receive use cases already preview, so the request states
@@ -139,17 +142,29 @@ Widget buildRequestMobileComposePriceUnavailableUseCase(BuildContext context) =>
 Widget buildRequestMobileComposeMessageUseCase(BuildContext context) =>
     _mobileCompose(_amountWithMessageRequest);
 
-Widget buildRequestMobileComposeExpandedMessageUseCase(BuildContext context) =>
-    _mobileCompose(_amountWithMessageRequest, messageExpanded: true);
+/// The message sheet (Send's memo sheet) open over step one.
+Widget buildRequestMobileMessageSheetUseCase(BuildContext context) =>
+    _mobileMessageSheet();
 
-Widget buildRequestMobileComposeExpandedMessageKeyboardUseCase(
-  BuildContext context,
-) => MediaQuery(
-  data: MediaQuery.of(
-    context,
-  ).copyWith(viewInsets: const EdgeInsets.only(bottom: 332.0889)),
-  child: _mobileCompose(_amountWithMessageRequest, messageExpanded: true),
-);
+Widget buildRequestMobileAmountScaleReviewUseCase(BuildContext context) =>
+    _mobileCompose(_amountWithMessageRequest, size: const Size(360, 800));
+
+Widget buildRequestMobileMemoScaleReviewUseCase(BuildContext context) =>
+    _mobileMessageSheet(
+      size: const Size(360, 800),
+      memo: List.generate(
+        12,
+        (index) => 'Item ${index + 1}: coffee and pastries.',
+      ).join('\n'),
+    );
+
+Widget buildRequestMobileMessageSheetKeyboardUseCase(BuildContext context) =>
+    MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(viewInsets: const EdgeInsets.only(bottom: 332.0889)),
+      child: _mobileMessageSheet(),
+    );
 
 Widget buildRequestMobileComposeAmountErrorUseCase(BuildContext context) =>
     _mobileCompose(_amountErrorRequest);
@@ -189,15 +204,14 @@ Widget _desktop(
 Widget _mobileCompose(
   ZecRequestView request, {
   bool toggleEnabled = true,
-  bool messageExpanded = false,
+  Size size = const Size(393, 852),
 }) {
   return _frame(
-    const Size(393, 852),
-    RequestAmountSheetSurface(
-      child: RequestAmountSheetCompose(
+    size,
+    RequestAmountPreviewPage(
+      child: RequestAmountComposeStep(
         request: request,
-        messageExpanded: messageExpanded,
-        onClose: _noop,
+        onBack: _noop,
         onToggleAmountUnit: toggleEnabled ? _noop : null,
         onAddMessage: _noop,
         onCreateRequest: _noop,
@@ -206,14 +220,50 @@ Widget _mobileCompose(
   );
 }
 
+Widget _mobileMessageSheet({String? memo, Size size = const Size(393, 852)}) {
+  return _frame(
+    size,
+    Builder(
+      builder: (context) => Stack(
+        fit: StackFit.expand,
+        children: [
+          RequestAmountPreviewPage(
+            child: RequestAmountComposeStep(
+              request: _amountWithMessageRequest,
+              onBack: _noop,
+              onToggleAmountUnit: _noop,
+              onAddMessage: _noop,
+              onCreateRequest: _noop,
+            ),
+          ),
+          ColoredBox(color: context.colors.background.neutralScrim),
+          SafeArea(
+            bottom: false,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: MobileModalCard(
+                child: MobileMemoSheet(
+                  initial: memo ?? _amountWithMessageRequest.messageText ?? '',
+                  title: context.l10n.commonAddAMessage,
+                  hintText: context.l10n.receiveRequestMessageHint,
+                  clearLabel: context.l10n.commonClear,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 Widget _mobileResult(ZecRequestView request) {
   return _frame(
     const Size(393, 852),
-    RequestAmountSheetSurface(
-      child: RequestAmountSheetResult(
+    RequestAmountPreviewPage(
+      child: RequestAmountResultStep(
         request: request,
         onBack: _noop,
-        onClose: _noop,
         onShareRequest: (png) =>
             debugPrint('request: share ${png.length} byte PNG'),
         onCopyLink: _noop,
@@ -222,7 +272,7 @@ Widget _mobileResult(ZecRequestView request) {
   );
 }
 
-/// Fixed preview viewport so the modal is measured against a real screen
+/// Fixed preview viewport so the modal or page is measured against a real screen
 /// rather than against the Widgetbook chrome.
 Widget _frame(Size size, Widget child) {
   return Center(

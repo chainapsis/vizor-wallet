@@ -41,9 +41,9 @@ class _MobileMigrationStepScaffold extends StatelessWidget {
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   topGap,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.md,
                 ),
                 child: Column(
@@ -73,9 +73,9 @@ class _MobileMigrationStepScaffold extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
+                kMobilePageMargin,
                 0,
-                AppSpacing.sm,
+                kMobilePageMargin,
                 AppSpacing.s,
               ),
               child: bottom,
@@ -125,9 +125,9 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   topPadding,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.md,
                 ),
                 child: Column(
@@ -148,9 +148,9 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
+                kMobilePageMargin,
                 0,
-                AppSpacing.sm,
+                kMobilePageMargin,
                 AppSpacing.s,
               ),
               child: bottom,

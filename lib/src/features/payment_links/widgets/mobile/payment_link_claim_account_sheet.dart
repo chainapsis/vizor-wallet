@@ -121,7 +121,9 @@ class _PaymentLinkClaimAccountSheetState
       children: [
         Text(
           context.l10n.paymentLinkGiftAmountLabel,
-          style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
+          ),
         ),
         const SizedBox(height: AppSpacing.xxs),
         Text(
@@ -178,7 +180,7 @@ class _PaymentLinkClaimAccountSheetState
                             ),
                             label: account.name,
                             minRowHeight: _rowHeight,
-                            textStyle: AppTypography.labelMedium.copyWith(
+                            textStyle: AppTypography.labelLarge.copyWith(
                               fontWeight: FontWeight.w500,
                             ),
                             leading: MobileAccountAvatar(
@@ -215,7 +217,7 @@ class _PaymentLinkClaimAccountSheetState
             liveRegion: true,
             child: Text(
               context.l10n.paymentLinkClaimAccountPrepareFailed,
-              style: AppTypography.bodySmall.copyWith(
+              style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.destructive,
               ),
             ),

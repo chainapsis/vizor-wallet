@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,7 @@ import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/recording_sensitive_privacy_controller.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
@@ -154,6 +156,7 @@ class _FakeBiometricController {
   BiometricUnlockState initialState;
   String? passcode;
   Future<String?>? readResult;
+  Future<BiometricUnlockState>? availabilityResult;
   var reads = 0;
   String? lastReason;
 }
@@ -164,7 +167,8 @@ class _FakeBiometricNotifier extends BiometricUnlockNotifier {
   final _FakeBiometricController controller;
 
   @override
-  Future<BiometricUnlockState> build() async => controller.initialState;
+  Future<BiometricUnlockState> build() async =>
+      await controller.availabilityResult ?? controller.initialState;
 
   @override
   Future<String?> readPasscode({required String reason}) async {
@@ -205,11 +209,14 @@ Widget _app({
   Future<int> Function(int height)? birthdayBlockTimeLoader,
   TextScaler textScaler = TextScaler.noScaling,
   EdgeInsets safeAreaPadding = EdgeInsets.zero,
+  bool showBackupIntro = false,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       accountProvider.overrideWith(accountNotifier ?? _FakeAccountNotifier.new),
+      // The account header reads the balance from sync.
+      syncProvider.overrideWith(FakeSyncNotifier.new),
       appSecurityProvider.overrideWith(
         securityNotifier ?? _FakeSecurityNotifier.new,
       ),
@@ -231,6 +238,7 @@ Widget _app({
         child: AppTheme(data: AppThemeData.light, child: child!),
       ),
       home: MobileSeedPhraseScreen(
+        showBackupIntro: showBackupIntro,
         accountUuid: accountUuid,
         screenshotStream: screenshotStream,
         privacyOverlayController: privacyOverlayController,
@@ -255,10 +263,10 @@ Widget _routerApp(
       ),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
-      if (incomingUris != null) ...[
-        syncProvider.overrideWith(FakeSyncNotifier.new),
+      // The account header reads the balance from sync.
+      syncProvider.overrideWith(FakeSyncNotifier.new),
+      if (incomingUris != null)
         incomingUriServiceProvider.overrideWithValue(incomingUris),
-      ],
     ],
     child: MaterialApp.router(
       localizationsDelegates: appLocalizationsDelegates,
@@ -717,6 +725,125 @@ void main() {
     );
   });
 
+  for (final backupIntro in [false, true]) {
+    testWidgets(
+      'iOS Face ID seed gate waits for its button (backup: $backupIntro)',
+      (tester) async {
+        final biometric = _FakeBiometricController(
+          initialState: _faceBiometricState,
+        )..passcode = '111111';
+        final account = _FakeAccountNotifier();
+        final privacy = RecordingSensitivePrivacyController();
+        addTearDown(privacy.dispose);
+        await tester.pumpWidget(
+          _app(
+            biometric: biometric,
+            accountNotifier: () => account,
+            privacyOverlayController: privacy,
+            showBackupIntro: backupIntro,
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (backupIntro) {
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_seed_backup_intro_continue')),
+          );
+          await tester.pumpAndSettle();
+        }
+        expect(biometric.reads, 0);
+        expect(privacy.begins, 0);
+        expect(privacy.ends, 0);
+        expect(account.requestedMnemonicUuids, isEmpty);
+        expect(find.text('abandon'), findsNothing);
+        expect(find.byType(PasscodeNumpad), findsOneWidget);
+        await tester.tap(find.byType(PasscodeBiometricButton));
+        await tester.pumpAndSettle();
+        expect(biometric.reads, 1);
+        expect(privacy.begins, 1);
+        expect(privacy.ends, 1);
+        expect(account.requestedMnemonicUuids, ['account-1']);
+        expect(find.text('abandon'), findsOneWidget);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+    );
+  }
+
+  testWidgets('iOS Touch ID seed access still prompts automatically', (
+    tester,
+  ) async {
+    final biometric = _FakeBiometricController(
+      initialState: const BiometricUnlockState(
+        availability: BiometricAvailability(
+          supported: true,
+          enrolled: true,
+          kind: BiometricKind.touchId,
+        ),
+        enabled: true,
+      ),
+    )..passcode = '111111';
+    final account = _FakeAccountNotifier();
+    await tester.pumpWidget(
+      _app(biometric: biometric, accountNotifier: () => account),
+    );
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(account.requestedMnemonicUuids, ['account-1']);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('late iOS Face ID availability preserves manual seed access', (
+    tester,
+  ) async {
+    final availability = Completer<BiometricUnlockState>();
+    final access = Completer<bool>();
+    final biometric = _FakeBiometricController(
+      initialState: _faceBiometricState,
+    )..availabilityResult = availability.future;
+    final account = _FakeAccountNotifier();
+    await tester.pumpWidget(
+      _app(
+        biometric: biometric,
+        accountNotifier: () => account,
+        securityNotifier: () => _ControlledSecurityNotifier(access.future),
+      ),
+    );
+    await _revealSecret(tester);
+    availability.complete(_faceBiometricState);
+    await tester.pump();
+    access.complete(true);
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 0);
+    expect(account.requestedMnemonicUuids, ['account-1']);
+    expect(find.text('abandon'), findsOneWidget);
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsNothing,
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets(
+    'iOS Face ID seed cancellation keeps the keypad and retry available',
+    (tester) async {
+      final biometric = _FakeBiometricController(
+        initialState: _faceBiometricState,
+      );
+      final account = _FakeAccountNotifier();
+      await tester.pumpWidget(
+        _app(biometric: biometric, accountNotifier: () => account),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(PasscodeBiometricButton));
+      await tester.pumpAndSettle();
+      expect(biometric.reads, 1);
+      expect(account.requestedMnemonicUuids, isEmpty);
+      expect(find.byType(PasscodeBiometricButton), findsOneWidget);
+      await _revealSecret(tester);
+      await tester.pumpAndSettle();
+      expect(account.requestedMnemonicUuids, ['account-1']);
+      expect(biometric.reads, 1);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
   testWidgets('confirm gate keeps biometric retry after prompt cancel', (
     tester,
   ) async {
@@ -754,40 +881,49 @@ void main() {
     expect(find.byIcon(Icons.fingerprint), findsOneWidget);
   });
 
-  testWidgets('biometric confirmation rejects an account change', (
-    tester,
-  ) async {
-    const accountState = AccountState(
-      accounts: [
-        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
-        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
-      ],
-      activeAccountUuid: 'account-1',
-    );
-    final accountNotifier = _FakeAccountNotifier(accountState);
-    final biometricResult = Completer<String?>();
-    final biometric = _FakeBiometricController(
-      initialState: _faceBiometricState,
-    )..readResult = biometricResult.future;
+  testWidgets(
+    'biometric confirmation rejects an account change',
+    (tester) async {
+      const accountState = AccountState(
+        accounts: [
+          AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+          AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+        ],
+        activeAccountUuid: 'account-1',
+      );
+      final accountNotifier = _FakeAccountNotifier(accountState);
+      final biometricResult = Completer<String?>();
+      final biometric = _FakeBiometricController(
+        initialState: _faceBiometricState,
+      )..readResult = biometricResult.future;
 
-    await tester.pumpWidget(
-      _app(biometric: biometric, accountNotifier: () => accountNotifier),
-    );
-    await tester.pumpAndSettle();
-    expect(biometric.reads, 1);
+      await tester.pumpWidget(
+        _app(biometric: biometric, accountNotifier: () => accountNotifier),
+      );
+      await tester.pumpAndSettle();
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        await tester.tap(find.byType(PasscodeBiometricButton));
+        await tester.pump();
+      }
+      expect(biometric.reads, 1);
 
-    accountNotifier.setActiveAccount('account-2');
-    await tester.pump();
-    biometricResult.complete('111111');
-    await tester.pumpAndSettle();
+      accountNotifier.setActiveAccount('account-2');
+      await tester.pump();
+      biometricResult.complete('111111');
+      await tester.pumpAndSettle();
 
-    expect(accountNotifier.requestedMnemonicUuids, isEmpty);
-    expect(find.text('abandon'), findsNothing);
-    expect(
-      find.text('Selected account changed. Enter your passcode again.'),
-      findsOneWidget,
-    );
-  });
+      expect(accountNotifier.requestedMnemonicUuids, isEmpty);
+      expect(find.text('abandon'), findsNothing);
+      expect(
+        find.text('Selected account changed. Enter your passcode again.'),
+        findsOneWidget,
+      );
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    }),
+  );
 
   testWidgets('shows the screenshot warning after the phrase is revealed', (
     tester,

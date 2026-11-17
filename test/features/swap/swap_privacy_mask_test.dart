@@ -9,24 +9,24 @@ void main() {
       maskLength: maskLength,
     );
 
-    expect(mask('0.21 USDC'), '****** USDC');
-    expect(mask('4 SOL'), '****** SOL');
-    expect(mask('1.2500 ZEC'), '****** ZEC');
-    expect(mask('0 USDC'), '****** USDC');
-    expect(mask('-0.0030 ZEC', maskLength: 3), '*** ZEC');
-    expect(mask('+12.13 ZEC', maskLength: 3), '*** ZEC');
-    expect(mask('1,234.56 USDC'), '****** USDC');
-    expect(mask('<0.000001 USDC'), '****** USDC');
-    expect(mask('1.5'), '******');
+    expect(mask('0.21 USDC'), '•••••• USDC');
+    expect(mask('4 SOL'), '•••••• SOL');
+    expect(mask('1.2500 ZEC'), '•••••• ZEC');
+    expect(mask('0 USDC'), '•••••• USDC');
+    expect(mask('-0.0030 ZEC', maskLength: 3), '••• ZEC');
+    expect(mask('+12.13 ZEC', maskLength: 3), '••• ZEC');
+    expect(mask('1,234.56 USDC'), '•••••• USDC');
+    expect(mask('<0.000001 USDC'), '•••••• USDC');
+    expect(mask('1.5'), '••••••');
   });
 
   test('swap amount masks fail closed on unrecognized text with a number', () {
     String mask(String text) =>
         swapAmountTextForPrivacy(text, privacyModeEnabled: true);
 
-    expect(mask('≈ 1.2 USDC'), '******');
-    expect(mask(r'1.2 USDC (≈ $1.20)'), '******');
-    expect(mask('1.2 USDC refunded'), '******');
+    expect(mask('≈ 1.2 USDC'), '••••••');
+    expect(mask(r'1.2 USDC (≈ $1.20)'), '••••••');
+    expect(mask('1.2 USDC refunded'), '••••••');
   });
 
   test('swap amount masks leave fixed copy and placeholders visible', () {
@@ -56,11 +56,11 @@ void main() {
   test('swap fiat masks are bare and keep the empty placeholder', () {
     expect(
       swapFiatTextForPrivacy(r'$12.34', privacyModeEnabled: true),
-      '******',
+      '••••••',
     );
     expect(
       swapFiatTextForPrivacy(r'$1.2K', privacyModeEnabled: true),
-      '******',
+      '••••••',
     );
     expect(swapFiatTextForPrivacy(r'$--', privacyModeEnabled: true), r'$--');
   });

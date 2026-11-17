@@ -28,11 +28,15 @@ import '../../fakes/fake_sync_notifier.dart';
 
 const _recipient = '0x1111111111111111111111111111111111111111';
 
+// A 402pt phone: inside the 20px page margins, the test font (every glyph a
+// full em square) needs that width for the quote-expiry label.
+const _phoneSize = Size(402, 852);
+
 void main() {
   testWidgets(
     'payment review uses the completed spendable snapshot during sync',
     (tester) async {
-      tester.view.physicalSize = const Size(393, 852);
+      tester.view.physicalSize = _phoneSize;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -123,7 +127,7 @@ void main() {
   testWidgets(
     'payment review renders the explicitly selected duplicate contact',
     (tester) async {
-      tester.view.physicalSize = const Size(393, 852);
+      tester.view.physicalSize = _phoneSize;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -181,7 +185,7 @@ void main() {
   testWidgets('payment review expires when its countdown reaches zero', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(393, 852);
+    tester.view.physicalSize = _phoneSize;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -228,7 +232,7 @@ void main() {
   testWidgets('payment review opens expired inside the start safety window', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(393, 852);
+    tester.view.physicalSize = _phoneSize;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -265,7 +269,7 @@ void main() {
   testWidgets(
     'refresh keeps payment review visible until the replacement quote arrives',
     (tester) async {
-      tester.view.physicalSize = const Size(393, 852);
+      tester.view.physicalSize = _phoneSize;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -336,7 +340,7 @@ void main() {
   testWidgets(
     'payment start blocks cancel, top back, and system back before handoff',
     (tester) async {
-      tester.view.physicalSize = const Size(393, 852);
+      tester.view.physicalSize = _phoneSize;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
