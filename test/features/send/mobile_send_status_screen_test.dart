@@ -389,6 +389,53 @@ void main() {
     );
   });
 
+  // Change arriving in two parts: [firstValue] in 1–2 min, the rest later.
+  Future<void> pumpSentWithStaggeredChange(
+    WidgetTester tester,
+    BigInt firstValue,
+  ) async {
+    final rest = BigInt.from(120000000);
+    await tester.pumpWidget(
+      _app(
+        spendableWait: SpendableWait(
+          availableNow: BigInt.zero,
+          changeWaiting: firstValue + rest,
+          receivedWaiting: BigInt.zero,
+          changeWait: const AvailableIn.minutes(2, 4),
+          arrivals: [
+            (wait: const AvailableIn.minutes(2, 4), value: rest),
+            (wait: const AvailableIn.minutes(1, 2), value: firstValue),
+          ],
+        ),
+        broadcastRunner: _runner(
+          Future.value(
+            const SendBroadcastOutcome(
+              phase: SendBroadcastPhase.succeeded,
+              proposalConsumed: true,
+              txid: 'txid-1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+  }
+
+  testWidgets('send-again timing is the first waiting funds to arrive', (
+    tester,
+  ) async {
+    await pumpSentWithStaggeredChange(tester, BigInt.from(50000000));
+    expect(find.textContaining('send again in 1–2 min'), findsOneWidget);
+  });
+
+  testWidgets('earlier funds too small to pay a fee do not count', (
+    tester,
+  ) async {
+    await pumpSentWithStaggeredChange(tester, BigInt.from(8000));
+    expect(find.textContaining('send again in 2–4 min'), findsOneWidget);
+  });
+
   testWidgets('sending phase shows the spinner state with no exit button', (
     tester,
   ) async {

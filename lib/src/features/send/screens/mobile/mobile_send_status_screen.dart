@@ -275,14 +275,16 @@ class _MobileSendStatusScreenState
   }
 
   /// When the payment left nothing spendable and its change is on the way
-  /// back, says when the account can send again. Read in build, so the
-  /// sentence appears once the balance refresh after the send lands.
+  /// back, says when the account can send again: when the first waiting
+  /// funds that cover more than a fee arrive, not when all of them have.
+  /// Read in build, so the sentence appears once the balance refresh after
+  /// the send lands.
   String? get _sendAgainSubtitle {
     final accountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
     final spendable = ref.watch(spendableWaitProvider(accountUuid));
-    final wait = spendable?.changeWait;
+    final wait = spendable?.waitFor(BigInt.one, includesFee: false);
     if (spendable == null ||
         wait == null ||
         wait.isUnderMinute ||
