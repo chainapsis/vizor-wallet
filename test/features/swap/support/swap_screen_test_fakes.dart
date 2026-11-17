@@ -31,9 +31,17 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     BigInt? displaySpendableBalance,
     this.displaySpendableFreshness = SpendableBalanceFreshness.authoritative,
     this.recentTransactions = const [],
+    this.chainTipHeight = 0,
+    this.scannedHeight = 0,
+    this.ironwoodBalance,
   }) : displaySpendableBalance = displaySpendableBalance ?? spendableBalance;
 
   final BigInt spendableBalance;
+  final int chainTipHeight;
+  final int scannedHeight;
+
+  /// Spendable Ironwood value, which one-time refund addresses fund from.
+  final BigInt? ironwoodBalance;
   final BigInt displaySpendableBalance;
   final SpendableBalanceFreshness displaySpendableFreshness;
   final List<rust_sync.TransactionInfo> recentTransactions;
@@ -45,6 +53,21 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
 
   /// What each waited round reports: its failure, or null when it succeeded.
   Object? swapRecoveryFailure;
+
+  /// The wallet's saved swap recovery state, or null for no wallet.
+  SwapRecoveryStatus? swapRecoveryStatusResult;
+
+  @override
+  Future<SwapRecoveryStatus?> swapRecoveryStatus() async =>
+      swapRecoveryStatusResult;
+
+  /// Every account's private swap readiness, or null for no wallet.
+  SwapAccountReadiness? swapAccountReadinessResult;
+
+  @override
+  Future<SwapAccountReadiness?> swapAccountReadiness(
+    String accountUuid,
+  ) async => swapAccountReadinessResult;
 
   /// Counts recovery rounds a swap flow starts without waiting.
   @override
@@ -71,6 +94,9 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     displaySpendableFreshness: displaySpendableFreshness,
     totalBalance: spendableBalance,
     recentTransactions: recentTransactions,
+    chainTipHeight: chainTipHeight,
+    scannedHeight: scannedHeight,
+    ironwoodBalance: ironwoodBalance,
   );
 
   @override
@@ -119,6 +145,7 @@ class _FakeSwapProvider implements SwapProvider {
     this.submitDepositError,
     this.quoteExpiresAt,
     this.zecDepositMemo = 'memo-live',
+    this.standardLiquidityUnavailable = false,
   }) : supportedAssets = supportedAssets ?? swapExternalAssets;
 
   final requests = <SwapQuoteRequest>[];
@@ -142,6 +169,10 @@ class _FakeSwapProvider implements SwapProvider {
   /// The address on external deposit instructions, read once per quote.
   String get externalDepositAddress => '0xlive-deposit';
 
+  /// Standard quotes fail as 1Click does when only the confidential route
+  /// has liquidity.
+  final bool standardLiquidityUnavailable;
+
   @override
   String get providerLabel => 'NEAR Intents';
 
@@ -162,6 +193,13 @@ class _FakeSwapProvider implements SwapProvider {
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
     await send(request);
+    if (standardLiquidityUnavailable && !request.confidential) {
+      throw const OneClickApiException(
+        'No liquidity available',
+        operation: 'quote',
+        statusCode: 400,
+      );
+    }
     final estimate = SwapQuote.estimate(
       direction: request.direction,
       externalAsset: request.externalAsset,
@@ -194,6 +232,7 @@ class _FakeSwapProvider implements SwapProvider {
             )
           : null,
       fiatValueBasis: _fakeFiatValueBasis(estimate),
+      confidential: request.confidential,
       depositInstruction: SwapDepositInstruction(
         asset: estimate.sellAsset,
         address: request.direction == SwapDirection.zecToExternal
@@ -928,8 +967,21 @@ class _HeldFirstQuoteSwapProvider extends _NewDepositPerQuoteSwapProvider {
   }
 }
 
+/// A private query server picker with no servers, which opens without
+/// storage or native calls.
+class _NoWalletPirServers extends WalletPirServerNotifier {
+  @override
+  Future<WalletPirServerState> build() async =>
+      const WalletPirServerState(source: null);
+}
+
 /// NEAR swap privacy, off at first, that a test sets without the settings
 /// store or native calls.
+class _OnNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
+  @override
+  bool build() => true;
+}
+
 class _FakeNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
   @override
   bool? build() => false;

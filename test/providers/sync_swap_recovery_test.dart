@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_process_work_policy.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_address_wait_provider.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
@@ -107,6 +109,13 @@ final _unwatched = rust_swap.SwapRecoveryStatus(
 /// An account with nothing holding back issuance.
 const _ready = rust_swap.SwapAccountReadiness(
   seedWalk: false,
+  lookups: false,
+  awaitingAdmission: false,
+);
+
+/// An account whose restored seed is still being walked.
+const _restoring = rust_swap.SwapAccountReadiness(
+  seedWalk: true,
   lookups: false,
   awaitingAdmission: false,
 );
@@ -939,6 +948,42 @@ void main() {
       },
     );
 
+    test('an unfinished seed walk whose round waits for a server asks for '
+        'one, and choosing a server goes back to preparing', () async {
+      api.readiness = _restoring;
+      final sync = await atTip(
+        privacy: true,
+        overrides: [swapUsesOneTimeAddressProvider.overrideWithValue(true)],
+      );
+      container.listen(swapAddressWaitProvider(false), (_, _) {});
+      await pumpEventQueue();
+      expect(
+        container.read(swapAddressWaitProvider(false)),
+        SwapAddressWait.preparing,
+      );
+
+      sync.requestSwapRecovery();
+      await pumpEventQueue();
+      await releaseRound(_waiting(rust_swap.SwapRecoveryWait.server));
+      expect(
+        container.read(swapAddressWaitProvider(false)),
+        SwapAddressWait.server,
+        reason: 'waiting cannot finish without a server',
+      );
+
+      await container.read(walletPirServerApplierProvider)(
+        'https://pir.example',
+      );
+      await pumpEventQueue();
+      expect(
+        container.read(swapAddressWaitProvider(false)),
+        SwapAddressWait.preparing,
+      );
+      await complete(sync, 1);
+      await releaseRound(_quiet);
+      await settle(sync);
+    });
+
     test('a round that queued a rescan starts sync, and runs again once it '
         'completes', () async {
       final sync = await atTip();
@@ -1571,6 +1616,14 @@ void main() {
       await pumpEventQueue();
       expect(api.recoveries, hasLength(3), reason: 'a request asks Rust again');
       await releaseRound(_quiet);
+      await settle(sync);
+    });
+
+    test('one that ends is counted for the payout address wait', () async {
+      final sync = await stepping();
+      expect(container.read(swapFilterStepsProvider), 0);
+      await releaseStep();
+      expect(container.read(swapFilterStepsProvider), 1);
       await settle(sync);
     });
 

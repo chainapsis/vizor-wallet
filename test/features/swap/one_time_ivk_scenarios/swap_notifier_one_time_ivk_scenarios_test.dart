@@ -6,12 +6,14 @@
 // activity tracker services, without widgets or Rust.
 import 'dart:async';
 import 'dart:io' show SocketException;
+import 'dart:ui' show Locale;
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/l10n/l10n.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
@@ -34,6 +36,57 @@ const _recipient = '0x52908400098527886e0f7030069857d2e4169ee7';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  for (final (kind, notice) in [
+    (
+      api.ReceiveErrorKind.other,
+      SwapNoticeKind.privateReceiveAddressUnavailable,
+    ),
+    (api.ReceiveErrorKind.stale, SwapNoticeKind.privateReceiveAddressStale),
+    (api.ReceiveErrorKind.limit, SwapNoticeKind.privateReceiveAddressLimit),
+    (
+      api.ReceiveErrorKind.receiveHistory,
+      SwapNoticeKind.privateReceiveAddressPreparing,
+    ),
+    (
+      api.ReceiveErrorKind.upgradeRequired,
+      SwapNoticeKind.recoveryUpdateRequired,
+    ),
+    (
+      api.ReceiveErrorKind.waitingForSync,
+      SwapNoticeKind.privateReceiveAddressPreparing,
+    ),
+    (
+      api.ReceiveErrorKind.waitingForService,
+      SwapNoticeKind.privateReceiveAddressPreparing,
+    ),
+  ]) {
+    test(
+      '${kind.name} reservation errors keep a localized, persistent code',
+      () async {
+        const diagnostic = 'Original Rust diagnostic';
+        final h = await _Harness.create(
+          reserve: (_, _) async =>
+              throw api.ReceiveError(message: diagnostic, kind: kind),
+        );
+        await h.review('1', sell: true);
+        final message = h.state.quoteError;
+        expect(message, SwapNotice(notice));
+        final restored = swapMessageFromStored(
+          code: swapMessageCodeToJson(message),
+          text: diagnostic,
+        )!;
+        final english = restored.text(
+          lookupAppLocalizations(const Locale('en')),
+        );
+        for (final locale in const [Locale('ko'), Locale('zh')]) {
+          final translated = restored.text(lookupAppLocalizations(locale));
+          expect(translated, isNot(english));
+          expect(translated, isNot(contains(diagnostic)));
+        }
+      },
+    );
+  }
 
   /// An outdated receiver service is not something a retry fixes, so the
   /// quote stops at once with the update message.

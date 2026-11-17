@@ -60,6 +60,7 @@ void main() {
             onToggleFiatInputMode: () {},
             onOpenAssetSelector: () {},
             slippageLabel: '0.5%',
+            confidentialReveal: 0,
             onOpenSlippage: () {},
             onContinue: () {},
           ),

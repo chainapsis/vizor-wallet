@@ -17,6 +17,7 @@ import '../../models/swap_quote_text.dart';
 import '../swap_review_page_content.dart'
     show swapReviewMinimumReceiveText, swapReviewSlippageToleranceText;
 import '../swap_amount_text.dart' show compactSwapAmountText;
+import '../one_time_address_label.dart';
 import 'mobile_swap_review_header.dart';
 
 /// Mobile swap review — Figma `Review Qoute` (4731:85401): the serif
@@ -39,6 +40,7 @@ class MobileSwapReviewContent extends StatelessWidget {
     this.inactiveMessage,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
+    this.flowConnector,
     super.key,
   });
 
@@ -55,6 +57,9 @@ class MobileSwapReviewContent extends StatelessWidget {
   final String? inactiveMessage;
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
+
+  /// Optional replacement for the paying/receiving flow arrow row.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -90,6 +95,9 @@ class MobileSwapReviewContent extends StatelessWidget {
       ),
       asset: quote.sellAsset,
       bottomText: sendsZec ? payFiatTextOverride : null,
+      oneTimeAddress: sendsZec && addressPlan.oneTimeZecAddress
+          ? OneTimeAddressRole.refund
+          : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
       label: context.l10n.commonYoureReceiving,
@@ -99,13 +107,20 @@ class MobileSwapReviewContent extends StatelessWidget {
       asset: quote.receiveAsset,
       bottomText: sendsZec ? externalBottom : receiveFiatTextOverride,
       fullAddress: sendsZec ? externalAddress : null,
+      oneTimeAddress: !sendsZec && addressPlan.oneTimeZecAddress
+          ? OneTimeAddressRole.payout
+          : null,
     );
 
     return Column(
       key: const ValueKey('mobile_swap_review_content'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MobileSwapReviewHeader(pay: payRow, receive: receiveRow),
+        MobileSwapReviewHeader(
+          pay: payRow,
+          receive: receiveRow,
+          flowConnector: flowConnector,
+        ),
         const SizedBox(height: AppSpacing.sm),
         _ReviewCard(quote: quote),
         if (amountWarning != null) ...[

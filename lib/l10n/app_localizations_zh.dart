@@ -6547,6 +6547,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payFetchingQuote => '正在获取报价';
 
   @override
+  String payIronwoodOnlyShortfall(String amount) {
+    return '隐私支付仅使用 Ironwood ZEC。你在 Ironwood 中有 $amount。';
+  }
+
+  @override
   String get payNewAddressDetected => '检测到新地址。';
 
   @override
@@ -8983,31 +8988,52 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsLanguageUpdateFailed => '无法更改语言。';
 
   @override
+  String get settingsNearSwapPrivacyCheckingPastSwaps => '正在检查过往兑换';
+
+  @override
   String get settingsNearSwapPrivacyHardware =>
       '硬件钱包账户不支持此功能。其兑换使用普通 Zcash 地址。';
 
   @override
-  String get settingsNearSwapPrivacyInfoOneTime =>
-      '使用 NEAR Intents 兑换时，你的钱包会向 NEAR 提供一个用于收款的 Zcash 地址，以及另一个用于退款的地址。开启增强兑换隐私后，这些地址是专为兑换生成的一次性地址，因此未来的量子攻击者也无法将它们与你的钱包关联起来。';
+  String get settingsNearSwapPrivacyInfoChangesBody =>
+      '发送 ZEC 的兑换只使用你的 Ironwood 余额支付。Vizor 检查地址历史期间，兑换可能需要几分钟才能准备好。';
 
   @override
-  String get settingsNearSwapPrivacyInfoOwnAddresses =>
-      '你自行输入的地址（例如在多次兑换中重复使用的 Ethereum 地址）仍会提供给 NEAR，并可能将这些兑换关联起来。硬件钱包账户不使用一次性地址。';
+  String get settingsNearSwapPrivacyInfoChangesTitle => '有何变化';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLead =>
+      '每次兑换都会向 NEAR Intents 提供一个一次性 Zcash 地址，用于兑换的 ZEC 一方：收到 ZEC 时是收款地址，发送 ZEC 时是退款地址。即使是未来的量子计算机，也无法将它与此钱包关联起来。';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLimitsBody =>
+      '它能防止这些地址与你的钱包关联，但不会改变资金的安全保护方式。你自行输入的地址（例如重复使用的 Ethereum 地址）仍可能将你的兑换关联起来。硬件钱包账户使用普通地址。';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLimitsTitle => '不涵盖的内容';
 
   @override
   String get settingsNearSwapPrivacyInfoRestore =>
-      '你的助记词仍可恢复所有资产。恢复后，钱包会自行以隐私方式找到这些付款。';
+      '恢复后，钱包会自行以隐私方式找到这些付款。如果恢复时此设置处于关闭状态，兑换为 ZEC 的收款会在你开启此设置或运行“检查兑换历史”后显示。关闭此设置后，只有新的兑换会使用普通地址。发送到你已使用过的一次性地址的收款和退款仍会显示。';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestoreTitle => '恢复后或关闭时';
 
   @override
   String get settingsNearSwapPrivacyInfoReuse =>
       '报价未付款就过期时，其收款地址可能会用于之后的报价。在极少数情况下，同一钱包的两台设备若在同一时刻获取报价，会得到相同的地址。NEAR 能看出这些报价使用了同一个地址，但仍无法得知该地址属于哪个钱包。';
 
   @override
-  String get settingsNearSwapPrivacyInfoTurnOff =>
-      '关闭此设置后，只有新的兑换会使用普通地址。发送到你已使用过的一次性地址的收款和退款仍会显示。';
+  String get settingsNearSwapPrivacyInfoReuseTitle => '收款地址被共用时';
 
   @override
   String get settingsNearSwapPrivacyLabel => '增强兑换隐私';
+
+  @override
+  String get settingsNearSwapPrivacyLearnMore => '了解更多';
+
+  @override
+  String get settingsNearSwapPrivacyLearnMoreSemantics => '了解有关增强兑换隐私的更多信息';
 
   @override
   String get settingsNearSwapPrivacyOff => '兑换使用普通 Zcash 地址。';
@@ -9016,11 +9042,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsNearSwapPrivacyOn => '兑换使用一次性 Zcash 地址。';
 
   @override
-  String get settingsNearSwapPrivacyTroubleshootingBody =>
-      'Vizor 会自动查找兑换付款和退款。如果兑换完成后缺少某笔款项，此检查会查看此钱包用过的每个隐私兑换地址和退款密钥。它从 Ironwood 历史的起点开始，并通过隐私查询运行。可能需要几分钟。';
-
-  @override
-  String get settingsNearSwapPrivacyTroubleshootingTitle => '故障排除';
+  String get settingsNearSwapPrivacyUnavailable => '不可用';
 
   @override
   String get settingsNearSwapPrivacyUnknown => 'Vizor 无法读取你保存的选择。请重新设置后再兑换。';
@@ -9270,31 +9292,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsStatusOn => '已开启';
 
   @override
+  String get settingsSwapHistoryCheckAgainButton => '再次检查';
+
+  @override
   String get settingsSwapHistoryCheckButton => '检查兑换历史';
 
   @override
-  String get settingsSwapHistoryChecking => '正在检查兑换历史…';
+  String get settingsSwapHistoryChecking => '正在检查… 可能需要几分钟。';
 
   @override
   String get settingsSwapHistoryContinuing => 'Vizor 保持打开期间，检查会继续进行。';
 
   @override
-  String get settingsSwapHistoryDone => '兑换历史检查已完成。';
-
-  @override
-  String get settingsSwapHistoryExplanation => '仅在缺少兑换付款或退款时需要。';
+  String get settingsSwapHistoryDone => '检查已完成。';
 
   @override
   String get settingsSwapHistoryFailed => '目前无法检查兑换历史。请稍后重试。';
 
   @override
-  String get settingsSwapHistoryIdle => '检查旧地址是否收到重复付款。';
+  String get settingsSwapHistoryIdle => '缺少收款或退款？';
 
   @override
   String get settingsSwapHistoryNotStarted => '检查未能开始。请稍后重试。';
 
   @override
-  String get settingsSwapHistoryPauseButton => '暂停检查';
+  String get settingsSwapHistoryPauseButton => '暂停';
 
   @override
   String get settingsSwapHistoryPauseFailed => '无法暂停检查。请重试。';
@@ -9708,6 +9730,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActionAddRefundAddress => '添加退款地址';
 
   @override
+  String get swapActionGetConfidentialQuote => '获取保密报价';
+
+  @override
   String get swapActionGettingQuote => '正在获取报价';
 
   @override
@@ -9980,6 +10005,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepFindingPayoutDescription =>
+      'NEAR 已将其发送到你的一次性地址。Vizor 正在查找。';
+
+  @override
   String get swapActivityStepRecipientReceives => '收款方接收';
 
   @override
@@ -10096,6 +10125,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapAddressRememberRefund => '记住此地址作为退款地址';
 
   @override
+  String get swapAddressWaitServer => '选择服务器';
+
+  @override
+  String get swapAddressWaitSync => '正在等待同步…';
+
+  @override
   String get swapAssetSelectorEmpty => '未找到代币或链';
 
   @override
@@ -10117,6 +10152,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapComposerYouReceive => '你将收到';
+
+  @override
+  String get swapConfidentialLabel => '保密';
+
+  @override
+  String get swapConfidentialRouteTooltip =>
+      '在 NEAR Intents 上无法将你的存入与收款对应起来，也无法在其区块浏览器中查到。两笔交易仍会显示在各自的链上。';
+
+  @override
+  String get swapConfidentialSettingDescription =>
+      '无法将你的存入与收款相互关联追踪。报价可能与普通路径不同。';
 
   @override
   String get swapContactAlreadyInAddressBook => '已在你的地址簿中';
@@ -10253,13 +10299,25 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapFailureZecDepositIronwoodFunding =>
-      '隐私兑换使用你的 Ironwood 余额支付，但该余额不足以支付此笔兑换及其网络手续费。\n请先将资金转入 Ironwood，或尝试更小的金额。';
+      '隐私兑换仅使用 Ironwood ZEC，但其不足以支付此笔兑换及其网络手续费。\n请将资金转入 Ironwood，或尝试更小的金额。';
+
+  @override
+  String get swapFailureZecDepositIronwoodFundingPay =>
+      '隐私支付仅使用 Ironwood ZEC，但其不足以支付此笔付款及其网络手续费。\n请将资金转入 Ironwood，或尝试更小的金额。';
 
   @override
   String get swapFailureZecDepositPreflight => '无法准备 ZEC 存入。\n请检查余额后重试。';
 
   @override
   String get swapFailureZecDepositSendFailed => '无法发送 ZEC 存入交易。\n请稍后重试。';
+
+  @override
+  String get swapFindingPayout => '正在查找你的 ZEC…';
+
+  @override
+  String swapIronwoodOnlyShortfall(String amount) {
+    return '隐私兑换仅使用 Ironwood ZEC。你在 Ironwood 中有 $amount。';
+  }
 
   @override
   String get swapKeystoneBroadcastFailed => '无法广播交易。';
@@ -10383,7 +10441,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapNoticeNearSwapPrivacyUnknown =>
-      'Vizor 无法读取你的增强兑换隐私设置。请在设置中重新选择后再兑换。';
+      'Vizor 无法读取增强兑换隐私设置。请在设置中重新设置。';
+
+  @override
+  String get swapNoticeNoConfidentialQuoteForAmount => '此金额暂无可用保密报价';
+
+  @override
+  String get swapNoticeNoQuoteForAmount => '此金额暂无可用报价';
 
   @override
   String get swapNoticeOk => '好的';
@@ -10405,8 +10469,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapNoticePrivateReceiveAddressStale => '此兑换地址已不可用。请获取新报价。';
 
   @override
-  String get swapNoticePrivateReceiveAddressUnavailable =>
-      '隐私兑换地址暂时不可用。请稍后重试，或关闭增强兑换隐私以立即兑换。';
+  String get swapNoticePrivateReceiveAddressUnavailable => '隐私兑换暂时不可用。请几分钟后重试。';
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>
@@ -10421,13 +10484,38 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get swapNoticeStartNotFinished => '此兑换未能完成启动。如果仍需兑换，请开始新的兑换。';
+  String get swapNoticeStartNotFinished =>
+      'Vizor 无法确认此兑换已开始。开始新的兑换前，请检查你是否已发送其存款。';
 
   @override
   String get swapNoticeStatusPage => 'NEAR Intents 状态页面';
 
   @override
   String get swapNoticeSwapsMayFail => '兑换目前可能无法使用。';
+
+  @override
+  String get swapOneTimeAddressLabel => '一次性地址';
+
+  @override
+  String get swapOneTimeAddressPayoutExplanation =>
+      '这是此兑换专用的一次性 Zcash 地址。即使是未来的量子计算机，也无法将它与你的钱包关联起来。';
+
+  @override
+  String get swapOneTimeAddressPreparing => '正在准备地址…';
+
+  @override
+  String get swapOneTimeAddressPreparingExplanation =>
+      'Vizor 正在使用此地址前检查其历史记录。可能需要几分钟。';
+
+  @override
+  String get swapOneTimeAddressPreparingSemantics => '正在准备一次性地址';
+
+  @override
+  String get swapOneTimeAddressRefundExplanation =>
+      '如果此兑换被退款，ZEC 会退回到一个一次性 Zcash 地址。即使是未来的量子计算机，也无法将它与你的钱包关联起来。';
+
+  @override
+  String get swapOneTimeRefundAddressLabel => '一次性退款地址';
 
   @override
   String get swapPageTitle => '兑换';
@@ -10459,7 +10547,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapPayStatusSourceAmount => '原始金额';
 
   @override
+  String get swapPayoutUpdateRequired => '请更新 Vizor 以继续检查此兑换的收款。你的资金是安全的。';
+
+  @override
   String get swapPoweredByLabel => '由以下提供支持';
+
+  @override
+  String get swapQuoteErrorViewSwaps => '查看兑换';
 
   @override
   String swapQuoteExpiresAt(String time) {
@@ -10473,7 +10567,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapQuoteRatePending => '汇率待定';
 
   @override
-  String get swapRecoveryUpdateRequired => '请更新 Vizor 以继续检查隐私兑换地址。已保存的进度会保留。';
+  String get swapRecoveryUpdateRequired => '请更新 Vizor 以继续使用隐私兑换。';
+
+  @override
+  String get swapRefundUpdateRequired => '请更新 Vizor 以继续检查此兑换的退款。你的资金是安全的。';
 
   @override
   String get swapReviewBackPay => '支付';
@@ -10527,6 +10624,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get swapSettingsTitlePay => '支付设置';
+
+  @override
+  String get swapSettingsTitleSwap => '兑换设置';
+
+  @override
   String get swapSignPayment => '签署支付';
 
   @override
@@ -10536,17 +10639,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapSlippageCustom => '自定义';
 
   @override
-  String get swapSlippageDescriptionPay =>
-      '报价波动时最多可多付的 ZEC 数量，超出则执行失败。网络手续费另计。';
+  String get swapSlippageCustomValueSemantics => '自定义滑点容差（百分比）';
 
   @override
-  String get swapSlippageDescriptionSwap => '设置你可接受的最大汇率变动。网络手续费另计。';
+  String get swapSlippageDecrease => '降低滑点';
+
+  @override
+  String get swapSlippageIncrease => '提高滑点';
+
+  @override
+  String swapSlippagePresetSemantics(String value) {
+    return '滑点 $value';
+  }
 
   @override
   String get swapSlippageRangeError => '滑点必须在 0.1 - 5% 之间';
 
   @override
   String get swapSlippageTitle => '滑点';
+
+  @override
+  String get swapSlippageValueSemantics => '滑点容差（百分比）';
 
   @override
   String get swapStartPending => '正在开始兑换…';
