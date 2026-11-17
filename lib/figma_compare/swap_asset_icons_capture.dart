@@ -5,7 +5,8 @@ import '../src/core/theme/app_theme.dart';
 import '../src/features/swap/domain/swap_asset.dart';
 import '../src/features/swap/widgets/swap_asset_icon.dart';
 
-/// The missing-logo combinations from the October 2026 provider catalog.
+/// The missing-logo combinations from the October and November 2026 provider
+/// catalogs.
 /// Kept independent of the live API so both form factors can be inspected.
 List<SwapAsset> swapAssetIconCaptureAssets() => [
   for (final (symbol, chain, decimals) in const [
@@ -24,6 +25,13 @@ List<SwapAsset> swapAssetIconCaptureAssets() => [
     ('wNEARKAT', 'sol', 6),
     ('COCA', 'pol', 18),
     ('COCA', 'base', 18),
+    ('wstETH', 'eth', 18),
+    ('strkBTC', 'near', 8),
+    ('cNEAR', 'near', 24),
+    ('PRL', 'prl', 8),
+    ('PRL', 'near', 8),
+    ('USDT', 'miden', 6),
+    ('WBTC', 'miden', 8),
   ])
     SwapAsset.live(
       assetId: 'capture:$chain:$symbol',
