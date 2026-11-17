@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
 import 'dart:ui' show SemanticsAction, Tristate;
 
 import 'package:flutter/material.dart';
@@ -15,7 +16,6 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_hardware_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
@@ -46,6 +46,10 @@ Widget _app({
     routes: [
       ...mobileOnboardingRoutes(),
       GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+      GoRoute(
+        path: '/accounts',
+        builder: (_, _) => const Text('accounts-route'),
+      ),
     ],
   );
   return ProviderScope(
@@ -150,35 +154,23 @@ void main() {
     }
   }
 
-  testWidgets(
-    'security changes do not reweight active pages; a new start captures them',
-    (tester) async {
-      final security = _MutableSecurity();
-      await tester.pumpWidget(_app(security: security));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('mobile_welcome_get_started')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('mobile_intro_continue')));
-      await tester.pumpAndSettle();
-      expect(_stepsProgress(tester), closeTo(0.42176870748, 1e-8));
-      security.configure();
-      await tester.pumpAndSettle();
-      expect(_stepsProgress(tester), closeTo(0.42176870748, 1e-8));
-      for (var i = 0; i < 2; i++) {
-        await tester.tap(find.bySemanticsLabel('Back'));
-        await tester.pumpAndSettle();
-      }
-      await tester.tap(
-        find.byKey(const ValueKey('mobile_welcome_get_started')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('mobile_intro_continue')));
-      await tester.pumpAndSettle();
-      expect(_stepsProgress(tester), closeTo(0.44489795918, 1e-8));
-    },
-  );
+  testWidgets('new creation opens only passcode and Back returns to Welcome', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('mobile_intro_continue')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_secret_passphrase_primary')),
+      findsNothing,
+    );
+    expect(_stepsProgress(tester), closeTo((1 + 60 / 196) / 2, 1e-8));
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileWelcomeScreen), findsOneWidget);
+  });
 
   testWidgets('welcome exposes create and import without the method cards', (
     tester,
@@ -378,17 +370,9 @@ void main() {
   });
 
   for (final entry in ['/welcome', '/add-account']) {
-    testWidgets('$entry retains its caller through create and every import '
+    testWidgets('$entry retains its caller through every import '
         'choice', (tester) async {
       await pump(tester, location: entry);
-      await tester.tap(
-        find.byKey(const ValueKey('mobile_welcome_get_started')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
-      await tester.tap(find.bySemanticsLabel('Back'));
-      await tester.pumpAndSettle();
-
       await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
       await tester.pumpAndSettle();
       expect(
@@ -440,6 +424,25 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
     expect(find.text('home-route'), findsOneWidget);
+  });
+
+  testWidgets('add-account Welcome goes back to the screen that opened it', (
+    tester,
+  ) async {
+    // Settings → Accounts pushes Add account; Back returns to Accounts
+    // instead of jumping to the Home tab.
+    await pump(tester, location: '/accounts');
+    unawaited(
+      GoRouter.of(
+        tester.element(find.text('accounts-route')),
+      ).push('/add-account'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Activate gift card'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('accounts-route'), findsOneWidget);
+    expect(find.text('home-route'), findsNothing);
   });
 
   testWidgets('reduced motion uses the poster at the Figma video slot', (
@@ -745,14 +748,4 @@ void main() {
       expect(saved, [AppLanguage.zh]);
     });
   });
-}
-
-class _MutableSecurity extends AppSecurityNotifier {
-  @override
-  AppSecurityState build() =>
-      const AppSecurityState(isPasswordConfigured: false, isUnlocked: false);
-  void configure() => state = const AppSecurityState(
-    isPasswordConfigured: true,
-    isUnlocked: true,
-  );
 }

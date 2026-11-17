@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
@@ -99,10 +100,10 @@ void main() {
       const ValueKey('voting_poll_card_nu7-ineligible'),
     );
     final active = find.byKey(const ValueKey('voting_poll_card_nu7-active'));
-    expect(tester.getTopLeft(ineligible), const Offset(16, 139));
-    expect(tester.getSize(ineligible), const Size(361, 285.5));
-    expect(tester.getTopLeft(active), const Offset(16, 448.5));
-    expect(tester.getSize(active), const Size(361, 222.5));
+    expect(tester.getTopLeft(ineligible), const Offset(20, 139));
+    expect(tester.getSize(ineligible), const Size(353, 285.5));
+    expect(tester.getTopLeft(active), const Offset(20, 448.5));
+    expect(tester.getSize(active), const Size(353, 222.5));
     final label = tester.widget<Text>(find.text('Not eligible for this round'));
     expect(label.style?.color, AppThemeData.dark.colors.text.destructive);
     expect(label.style?.fontSize, 16);
@@ -146,13 +147,13 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('voting_poll_card_snack-governance-voted')),
       ),
-      const Size(361, 248.5),
+      const Size(353, 248.5),
     );
     expect(
       tester.getSize(
         find.byKey(const ValueKey('voting_poll_card_snack-governance-closed')),
       ),
-      const Size(361, 248.5),
+      const Size(353, 248.5),
     );
     expect(tester.takeException(), isNull);
   });
@@ -302,15 +303,16 @@ void main() {
   ) async {
     await _pumpMobileFixture(tester, buildMobileVotingIneligibleUseCase);
 
+    // An inner page: the small title, not the tab roots' serif.
     final header = tester.widget<Text>(find.text('Coinholder voting'));
-    expect(header.style?.fontFamily, 'Young Serif');
-    expect(header.style?.fontSize, 32);
+    expect(header.style?.fontFamily, AppTypography.headlineSmall.fontFamily);
+    expect(header.style?.fontSize, AppTypography.headlineSmall.fontSize);
     final badge = find.byKey(const ValueKey('voting_detail_ineligible_badge'));
     expect(badge, findsOneWidget);
     expect(tester.getTopLeft(badge).dy, 140.5);
     expect(
       tester.getTopLeft(find.byType(VotingProposalCard)),
-      const Offset(16, 406),
+      const Offset(20, 406),
     );
     expect(find.textContaining('Voting power'), findsNothing);
     expect(find.text('Ends Aug 24, 2026'), findsOneWidget);
@@ -319,10 +321,10 @@ void main() {
       findsNothing,
     );
     expect(find.text('·'), findsNothing);
-    expect(tester.getTopLeft(find.text('Show description')).dx, 36);
+    expect(tester.getTopLeft(find.text('Show description')).dx, 40);
     final option = find.byKey(const ValueKey('voting_proposal_1_option_1'));
-    expect(tester.getTopLeft(option), const Offset(32, 713));
-    expect(tester.getSize(option), const Size(329, 115));
+    expect(tester.getTopLeft(option), const Offset(36, 713));
+    expect(tester.getSize(option), const Size(321, 115));
     expect(
       tester
           .widget<Opacity>(
@@ -332,7 +334,7 @@ void main() {
       1,
     );
     final label = find.descendant(of: option, matching: find.byType(Text));
-    expect(tester.getSize(label).width, 305);
+    expect(tester.getSize(label).width, 297);
     expect(tester.widget<Text>(label).style?.fontWeight, FontWeight.w400);
 
     await tester.tap(find.text('Show description'));
@@ -340,7 +342,7 @@ void main() {
     expect(find.text('Hide description'), findsOneWidget);
     expect(
       tester.getTopLeft(find.byType(VotingProposalCard)),
-      const Offset(16, 406),
+      const Offset(20, 406),
     );
     await tester.tap(find.text('Hide description'));
     await tester.pumpAndSettle();
@@ -678,22 +680,22 @@ void main() {
   });
 
   testWidgets(
-    'vote config preserves content geometry with 16pt outer margins',
+    'vote config names its source in a Settings row with 16pt outer margins',
     (tester) async {
       final semantics = tester.ensureSemantics();
       try {
         await _pumpMobileFixture(tester, buildMobileVotingConfigDefaultUseCase);
         final modal = find.byKey(const ValueKey('mobile_voting_config_sheet'));
-        final source = find.byKey(
-          const ValueKey('mobile_voting_source_default'),
+        final sourceRow = find.byKey(
+          const ValueKey('mobile_voting_config_source_row'),
         );
-        final add = find.byKey(const ValueKey('mobile_voting_add_source'));
         final toggle = find.byKey(
           const ValueKey('mobile_voting_test_rounds_toggle'),
         );
         final close = find.byKey(const ValueKey('mobile_voting_config_close'));
         final modalRect = tester.getRect(modal);
-        expect(modalRect.size, const Size(361, 526));
+        // The sheet template's 24pt bottom padding.
+        expect(modalRect.size, const Size(361, 417));
         expect(modalRect.left, 16);
         expect(393 - modalRect.right, 16);
         expect(852 - modalRect.bottom, 16);
@@ -701,21 +703,31 @@ void main() {
         // independently so a margin change cannot hide an internal layout shift.
         Rect relativeRect(Finder finder) =>
             tester.getRect(finder).shift(-modalRect.topLeft);
-        expect(relativeRect(source), const Rect.fromLTWH(16, 173, 329, 64));
-        expect(relativeRect(add), const Rect.fromLTWH(16, 249, 329, 64));
-        expect(relativeRect(toggle), const Rect.fromLTWH(281, 345, 64, 28));
-        expect(relativeRect(close), const Rect.fromLTWH(16, 444, 329, 50));
+        // A 60pt Settings row inside its card's 16pt side padding.
+        expect(relativeRect(sourceRow), const Rect.fromLTWH(32, 144, 297, 60));
+        expect(relativeRect(toggle), const Rect.fromLTWH(281, 244, 64, 28));
+        expect(relativeRect(close), const Rect.fromLTWH(16, 343, 329, 50));
+        // Two columns: the label, then the active source before the chevron.
         expect(
-          relativeRect(
-            find.byKey(const ValueKey('mobile_voting_source_selected')),
-          ),
-          const Rect.fromLTWH(309, 193, 24, 24),
+          find.descendant(of: sourceRow, matching: find.text('Source')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: sourceRow, matching: find.text('Default')),
+          findsOneWidget,
+        );
+        expect(
+          tester.getTopLeft(find.text('Default')).dx,
+          greaterThan(tester.getTopRight(find.text('Source')).dx),
         );
         final title = tester.widget<Text>(find.text('Vote config'));
         expect(title.style?.fontSize, 18);
         expect(title.style?.fontWeight, FontWeight.w600);
-        expect(tester.widget<Text>(find.text('Default')).style?.fontSize, 16);
-        expect(find.text('Sources'), findsOneWidget);
+        // The sources themselves live one sheet down.
+        expect(
+          find.byKey(const ValueKey('mobile_voting_source_default')),
+          findsNothing,
+        );
         expect(
           tester.widget<AppButton>(close).variant,
           AppButtonVariant.secondary,
@@ -757,6 +769,47 @@ void main() {
     }),
   );
 
+  testWidgets('the Source sheet marks a source and offers Update', (
+    tester,
+  ) async {
+    await _pumpMobileFixture(tester, buildMobileVotingSourceUseCase);
+    final modal = find.byKey(const ValueKey('mobile_voting_source_sheet'));
+    final defaultSource = find.byKey(
+      const ValueKey('mobile_voting_source_default'),
+    );
+    final community = find.byKey(
+      const ValueKey('mobile_voting_source_community'),
+    );
+    final update = find.byKey(const ValueKey('mobile_voting_source_update'));
+    final add = find.byKey(const ValueKey('mobile_voting_add_source'));
+    final modalRect = tester.getRect(modal);
+    Rect relativeRect(Finder finder) =>
+        tester.getRect(finder).shift(-modalRect.topLeft);
+    expect(relativeRect(defaultSource).left, 16);
+    expect(relativeRect(defaultSource).width, 329);
+    // The selected source's check: a 14pt mark centred in the radio card's
+    // 24pt circle.
+    Finder checkIn(Finder card) => find.descendant(
+      of: card,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.check,
+      ),
+    );
+    expect(relativeRect(checkIn(defaultSource)).size, const Size(14, 14));
+    expect(relativeRect(checkIn(defaultSource)).left, 314);
+    expect(checkIn(community), findsNothing);
+    // One primary action applies the choice; adding a source is secondary.
+    expect(tester.widget<AppButton>(update).variant, AppButtonVariant.primary);
+    expect(tester.widget<AppButton>(add).variant, AppButtonVariant.secondary);
+    // A tap only marks the source; nothing is applied until Update.
+    await tester.tap(community);
+    await tester.pumpAndSettle();
+    expect(checkIn(community), findsOneWidget);
+    expect(checkIn(defaultSource), findsNothing);
+    expect(find.bySemanticsLabel('Edit Community'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
     for (final inset in [34.0, 48.0]) {
       testWidgets(
@@ -795,7 +848,7 @@ void main() {
   ) async {
     await _pumpMobileFixture(
       tester,
-      buildMobileVotingConfigDefaultUseCase,
+      buildMobileVotingSourceUseCase,
       size: const Size(320, 667),
       textScaler: TextScaler.linear(1.4),
     );
@@ -803,6 +856,11 @@ void main() {
     await tester.ensureVisible(add);
     await tester.tap(add);
     await tester.pumpAndSettle();
+    // A custom source opens in its own sheet over the Source sheet.
+    expect(
+      find.byKey(const ValueKey('mobile_voting_custom_source_sheet')),
+      findsOneWidget,
+    );
     tester.view.viewInsets = const FakeViewPadding(bottom: 280);
     await tester.pumpAndSettle();
     final save = find.byKey(const ValueKey('mobile_voting_source_save'));
@@ -878,8 +936,8 @@ void main() {
     (tester) async {
       await _pumpMobileFixture(tester, buildMobileVotingResultsFullUseCase);
       final card = find.byType(VotingResultCard);
-      expect(tester.getTopLeft(card), const Offset(16, 371));
-      expect(tester.getSize(card), const Size(361, 832));
+      expect(tester.getTopLeft(card), const Offset(20, 371));
+      expect(tester.getSize(card), const Size(353, 832));
       expect(find.text('Voted'), findsOneWidget);
       expect(find.text('Results'), findsNothing);
       expect(find.text('985 ZEC (98.5%)'), findsOneWidget);
@@ -889,23 +947,23 @@ void main() {
       expect(find.text('1,000 ZEC'), findsOneWidget);
       final winner = find.text('Winner');
       final yours = find.text('Your vote');
-      expect(tester.getTopLeft(winner).dx, 76);
-      expect(tester.getTopLeft(yours).dx, 76);
+      expect(tester.getTopLeft(winner).dx, 80);
+      expect(tester.getTopLeft(yours).dx, 80);
       expect(
         tester.getTopLeft(find.text('985 ZEC (98.5%)')).dy,
         tester.getTopLeft(winner).dy,
       );
       expect(
         tester.getSize(find.byKey(const ValueKey('voting-result-1-option-1'))),
-        const Size(329, 151),
+        const Size(321, 151),
       );
       expect(
         tester.getSize(find.byKey(const ValueKey('voting-result-1-option-2'))),
-        const Size(329, 101),
+        const Size(321, 101),
       );
       final nav = tester.widget<Text>(find.text('Voting results'));
-      expect(nav.style?.fontFamily, 'Young Serif');
-      expect(nav.style?.fontSize, 32);
+      expect(nav.style?.fontFamily, AppTypography.headlineSmall.fontFamily);
+      expect(nav.style?.fontSize, AppTypography.headlineSmall.fontSize);
       await tester.tap(find.text('Show description'));
       await tester.pumpAndSettle();
       expect(find.text('Hide description'), findsOneWidget);
@@ -924,7 +982,7 @@ void main() {
     expect(yours, findsOneWidget);
     expect(tester.getTopLeft(yours).dx, tester.getTopLeft(winner).dx);
     expect(tester.getTopLeft(yours).dy - tester.getTopLeft(winner).dy, 36);
-    expect(tester.getSize(option), const Size(329, 187));
+    expect(tester.getSize(option), const Size(321, 187));
     expect(find.text('985 ZEC (98.5%)'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -1301,7 +1359,7 @@ void main() {
     await _pumpMobileFixture(tester, (_) => active(privacyModeEnabled: false));
     expect(find.text('Voting power 0.375 ZEC'), findsOneWidget);
     await _pumpMobileFixture(tester, (_) => active(privacyModeEnabled: true));
-    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.text('Voting power •••••• ZEC'), findsOneWidget);
     expect(find.textContaining('0.375'), findsNothing);
     expectNoDoubledDenomination();
 
@@ -1309,7 +1367,7 @@ void main() {
     expect(find.text('0.375 ZEC'), findsOneWidget);
     await _pumpMobileFixture(tester, (_) => voted(privacyModeEnabled: true));
     expect(find.text('Voting power'), findsOneWidget);
-    expect(find.text('****** ZEC'), findsOneWidget);
+    expect(find.text('•••••• ZEC'), findsOneWidget);
     expect(find.textContaining('0.375'), findsNothing);
     expectNoDoubledDenomination();
   });

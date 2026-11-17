@@ -89,11 +89,17 @@ class PaymentLinksScreen extends ConsumerStatefulWidget {
   const PaymentLinksScreen({
     this.initialCards,
     this.initialReceivedCardAddress,
+    this.startOnRedeem = false,
     super.key,
   });
 
   final PaymentLinkCardsSnapshot? initialCards;
   final String? initialReceivedCardAddress;
+
+  /// Opens on the redeem page instead of the Gift Card home (mobile only),
+  /// as the mobile Home Receive sheet's "Redeem gift card" does. Back still
+  /// leads to the Gift Card home, as after a waiting card link.
+  final bool startOnRedeem;
 
   @override
   ConsumerState<PaymentLinksScreen> createState() => _PaymentLinksScreenState();
@@ -177,6 +183,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   PaymentLinkRecoveryRecord? _shareQrRecord;
   String? _shareQrData;
   bool _preparingShareQr = false;
+  ModalRoute<void>? _mobileShareSheetRoute;
   PaymentLinkFundingQuote? _maxFundingQuote;
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
@@ -253,6 +260,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         ref.read(paymentLinkIntakeProvider).pendingLink != null) {
       _page = PaymentLinksLocalPage.redeem;
       _redeemState = PaymentLinkRedeemVisualState.loading;
+    } else if (kAppFormFactor == AppFormFactor.mobile && widget.startOnRedeem) {
+      _page = PaymentLinksLocalPage.redeem;
     }
     final initialCards = widget.initialCards;
     if (initialCards != null) {
@@ -293,6 +302,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
 
   @override
   void dispose() {
+    final shareSheet = _mobileShareSheetRoute;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (shareSheet != null && shareSheet.isActive) {
+        shareSheet.navigator?.removeRoute(shareSheet);
+      }
+    });
     _claimCoordinator.preparationChanges.removeListener(
       _schedulePreparationResume,
     );
@@ -3748,6 +3763,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       unawaited(
         showAppMobileSheet<void>(
           context: context,
+          onRouteCreated: (route) => _mobileShareSheetRoute = route,
           builder: (sheetContext) => PaymentLinkShareSheet(
             artwork: PaymentLinkCardArtwork.fromProtocolId(
               record.link.presentation?.artworkId,
@@ -3763,7 +3779,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
             onCopyLink: () => _copyPaymentLink(record.link),
             onClose: () => Navigator.of(sheetContext).pop(),
           ),
-        ),
+        ).whenComplete(() => _mobileShareSheetRoute = null),
       );
       return;
     }

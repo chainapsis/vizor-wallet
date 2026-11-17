@@ -16,10 +16,10 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../create/onboarding_split_view.dart'
     show
-        clearCreateOnboardingSecretState,
         createOnboardingMnemonicProvider,
         onboardingSecretPassphraseRevealedProvider;
 import '../shared/onboarding_error_messages.dart';
+import '../shared/create_account_submission.dart';
 import '../shared/onboarding_flow_args.dart';
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
@@ -31,9 +31,8 @@ import 'seed_card.dart';
 /// Mobile create-flow passphrase step — Figma `Onboarding 4 Secret
 /// Phrase` (4394:81938 hidden / 4394:82007 revealed). Mirrors the
 /// desktop screen's logic: the mnemonic survives back navigation via
-/// [createOnboardingMnemonicProvider]; continue either pushes the passcode
-/// step (first wallet) or account customisation when a password is already
-/// configured (add-account).
+/// [createOnboardingMnemonicProvider]; continue either opens the passcode
+/// step (first wallet) or creates the additional account with a generated persona.
 class MobileSecretPassphraseScreen extends ConsumerStatefulWidget {
   const MobileSecretPassphraseScreen({
     this.args,
@@ -63,6 +62,9 @@ class _MobileSecretPassphraseScreenState
   bool _copied = false;
   // Worded in build: initState cannot read localizations.
   Object? _error;
+  OnboardingSubmitError? _submitError;
+  bool _submitting = false;
+  late final CreateAccountSubmission _submission;
   Timer? _copyResetTimer;
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -72,6 +74,7 @@ class _MobileSecretPassphraseScreenState
   @override
   void initState() {
     super.initState();
+    _submission = CreateAccountSubmission(persona: widget.args?.persona);
     _ownsPrivacyController = widget.privacyOverlayController == null;
     _privacyController =
         widget.privacyOverlayController ??
@@ -130,7 +133,7 @@ class _MobileSecretPassphraseScreenState
 
   Future<void> _continue() async {
     final mnemonic = _mnemonic;
-    if (mnemonic == null) return;
+    if (mnemonic == null || _submitting) return;
     if (!_revealed) {
       unawaited(AppHaptics.privacyToggle());
       setState(() => _revealed = true);
@@ -140,14 +143,41 @@ class _MobileSecretPassphraseScreenState
       return;
     }
 
-    clearCreateOnboardingSecretState(ref.read);
+    setState(() {
+      _submitting = true;
+      _submitError = null;
+    });
+    try {
+      await _submission.continueSetup(ref, mnemonic);
+    } catch (error, stack) {
+      log('MobileSecretPassphrase: account setup failed: $error\n$stack');
+      if (mounted) {
+        _submitError = OnboardingSubmitError.fromError(
+          error,
+          requiresRecovery: _submission.requiresRecovery,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
-    context.goOnboarding(
-      '/onboarding/customise-account',
-      extra: CustomiseAccountArgs(
-        setupArgs: SetPasswordScreenArgs.create(mnemonic: mnemonic),
-      ),
-    );
+  void _goBack() {
+    if (_submitting || _submission.requiresRecovery) return;
+    // Credential Back restores this screen as a root route. Keep its phrase
+    // available when the user returns through education instead of popping.
+    final mnemonic = _mnemonic;
+    if (mnemonic != null) {
+      ref.read(createOnboardingMnemonicProvider.notifier).setMnemonic(mnemonic);
+      ref
+          .read(onboardingSecretPassphraseRevealedProvider.notifier)
+          .setRevealed(_revealed);
+    }
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      context.goOnboarding('/onboarding/things-to-know');
+    }
   }
 
   Future<void> _onScreenshot() async {
@@ -177,55 +207,69 @@ class _MobileSecretPassphraseScreenState
     final colors = context.colors;
     final words = _mnemonic?.split(' ') ?? const <String>[];
 
-    return SensitivePrivacyOverlay(
-      // Protect only while the phrase is actually on screen. Before reveal the
-      // card shows no words, so blanking its screenshot and blurring the app
-      // switcher there is needless friction. Matches the `_onScreenshot` guard.
-      sensitiveContentVisible: _revealed && _mnemonic != null,
-      controller: _privacyController,
-      child: MobileOnboardingStepScaffold(
-        progress: MobileOnboardingProgressScope.of(
-          context,
-        ).at(OnboardingFlow.create, OnboardingStage.secretPassphrase).value,
-        onBack: () => Navigator.of(context).maybePop(),
-        title: context.l10n.secretPassphraseTitle,
-        subtitle: context.l10n.onboardingSecretPassphraseSubtitleMobile,
-        bottomArea: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_error != null) ...[
-              Text(
-                onboardingSubmitErrorMessage(context.l10n, _error!),
-                textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.destructive,
+    return PopScope<void>(
+      canPop:
+          !_submitting &&
+          !_submission.requiresRecovery &&
+          Navigator.of(context).canPop(),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && !Navigator.of(context).canPop()) _goBack();
+      },
+      child: SensitivePrivacyOverlay(
+        // Protect only while the phrase is actually on screen. Before reveal the
+        // card shows no words, so blanking its screenshot and blurring the app
+        // switcher there is needless friction. Matches the `_onScreenshot` guard.
+        sensitiveContentVisible: _revealed && _mnemonic != null,
+        controller: _privacyController,
+        child: MobileOnboardingStepScaffold(
+          progress: MobileOnboardingProgressScope.of(
+            context,
+          ).at(OnboardingFlow.create, OnboardingStage.secretPassphrase).value,
+          onBack: _submitting || _submission.requiresRecovery ? null : _goBack,
+          title: context.l10n.secretPassphraseTitle,
+          subtitle: context.l10n.onboardingSecretPassphraseSubtitleMobile,
+          bottomArea: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_error != null || _submitError != null) ...[
+                Text(
+                  _submitError?.resolve(context.l10n) ??
+                      onboardingSubmitErrorMessage(context.l10n, _error!),
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.destructive,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+              ],
+              AppButton(
+                key: const ValueKey('mobile_secret_passphrase_primary'),
+                expand: true,
+                onPressed: _error != null || _submitting ? null : _continue,
+                trailing: const AppIcon(AppIcons.chevronForward),
+                child: Text(
+                  _submission.requiresRecovery
+                      ? context.l10n.onboardingRetrySetup
+                      : _submitting
+                      ? context.l10n.commonCreating
+                      : _revealed
+                      ? context.l10n.commonContinue
+                      : context.l10n.onboardingSecretPassphraseRevealMobile,
                 ),
               ),
-              const SizedBox(height: AppSpacing.xs),
             ],
-            AppButton(
-              key: const ValueKey('mobile_secret_passphrase_primary'),
-              expand: true,
-              onPressed: _error != null ? null : _continue,
-              trailing: const AppIcon(AppIcons.chevronForward),
-              child: Text(
-                _revealed
-                    ? context.l10n.commonContinue
-                    : context.l10n.onboardingSecretPassphraseRevealMobile,
-              ),
-            ),
-          ],
+          ),
+          child: _revealed
+              ? SeedCard(
+                  words: words,
+                  onCopy: _copy,
+                  copied: _copied,
+                  // The passphrase frame spreads the grid to a 44 px pitch.
+                  rowGap: 19,
+                )
+              : const SecretPassphraseRevealWarningCard(),
         ),
-        child: _revealed
-            ? SeedCard(
-                words: words,
-                onCopy: _copy,
-                copied: _copied,
-                // The passphrase frame spreads the grid to a 44 px pitch.
-                rowGap: 19,
-              )
-            : const SecretPassphraseRevealWarningCard(),
       ),
     );
   }

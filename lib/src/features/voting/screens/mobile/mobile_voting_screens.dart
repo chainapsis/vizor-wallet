@@ -192,7 +192,7 @@ class MobileVotingStatusScreen extends StatelessWidget {
       roundId: roundId,
       accountUuid: accountUuid,
       requireCurrentRouteForConfirmation: true,
-      contentHorizontalPadding: AppSpacing.sm,
+      contentHorizontalPadding: kMobilePageMargin,
       submissionProgressBuilder: (_, presentation) =>
           MobileVotingSubmissionProgressScreen(
             activeStep: presentation.activeStep,
@@ -286,7 +286,7 @@ class MobileVotingAccountGuard extends ConsumerWidget {
           error: (error, _) => MobileVotingScaffold(
             title: context.l10n.commonCoinholderVoting,
             fallbackPath: '/home',
-            horizontalPadding: AppSpacing.sm,
+            horizontalPadding: kMobilePageMargin,
             child: Center(
               child: Text(
                 context.l10n.votingMobileAccountLoadFailed('$error'),

@@ -60,7 +60,7 @@ void main() {
     },
   );
 
-  testWidgets('mobile polls use the standard header and 16px content inset', (
+  testWidgets('mobile polls use the standard header and the page margin', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -103,7 +103,7 @@ void main() {
     );
     expect(card, findsOneWidget);
     expect(secondCard, findsOneWidget);
-    expect(tester.getTopLeft(card).dx, 16);
+    expect(tester.getTopLeft(card).dx, 20);
     final descriptionFinder = find.byKey(
       const ValueKey('voting_poll_description_snack-governance-active'),
     );
@@ -151,11 +151,6 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Vote config'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('mobile_voting_add_source')),
-      findsOneWidget,
-    );
-    expect(find.bySemanticsLabel('Edit Community'), findsOneWidget);
 
     final container = ProviderScope.containerOf(
       tester.element(find.byKey(const ValueKey('mobile_voting_config_sheet'))),
@@ -166,8 +161,19 @@ void main() {
     await tester.pump();
     expect(container.read(showTestVotingRoundsProvider).value, isTrue);
 
+    // The source row opens the Source sheet, and its add button the custom
+    // source sheet, each one level down.
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_voting_config_source_row')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_voting_source_sheet')),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('Edit Community'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('mobile_voting_add_source')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('mobile_voting_source_name')),
       findsOneWidget,
@@ -177,10 +183,19 @@ void main() {
       findsOneWidget,
     );
 
-    final cancel = find.text('Cancel');
-    await tester.ensureVisible(cancel);
-    await tester.tap(cancel);
+    // Each sheet closes back to the one under it.
+    await tester.tap(find.bySemanticsLabel('Close').last);
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_voting_custom_source_sheet')),
+      findsNothing,
+    );
+    await tester.tap(find.bySemanticsLabel('Close').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_voting_source_sheet')),
+      findsNothing,
+    );
     final close = find.byKey(const ValueKey('mobile_voting_config_close'));
     await tester.ensureVisible(close);
     await tester.tap(close);

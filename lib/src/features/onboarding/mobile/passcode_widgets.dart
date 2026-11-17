@@ -191,19 +191,7 @@ class PasscodeNumpad extends StatelessWidget {
         label: label,
         onTap: effectiveTap,
         excludeSemantics: true,
-        child: Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: effectiveTap == null
-              ? null
-              : (event) {
-                  if (event.buttons != kPrimaryButton) return;
-                  effectiveTap();
-                },
-          child: SizedBox.square(
-            dimension: keySize,
-            child: Center(child: child),
-          ),
-        ),
+        child: _PasscodeKey(size: keySize, onTap: effectiveTap, child: child),
       );
     }
 
@@ -297,6 +285,62 @@ class PasscodeNumpad extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// One numpad key. It fires on finger-down, so fast typing never waits on
+/// a release, and dims while held: at once on the touch, fading back over
+/// 150ms on release, as iOS keypads do.
+class _PasscodeKey extends StatefulWidget {
+  const _PasscodeKey({
+    required this.size,
+    required this.onTap,
+    required this.child,
+  });
+
+  final double size;
+  final VoidCallback? onTap;
+  final Widget child;
+
+  @override
+  State<_PasscodeKey> createState() => _PasscodeKeyState();
+}
+
+class _PasscodeKeyState extends State<_PasscodeKey> {
+  static const _pressedOpacity = 0.5;
+  static const _releaseDuration = Duration(milliseconds: 150);
+
+  var _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onTap = widget.onTap;
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: onTap == null
+          ? null
+          : (event) {
+              if (event.buttons != kPrimaryButton) return;
+              _setPressed(true);
+              onTap();
+            },
+      onPointerUp: (_) => _setPressed(false),
+      onPointerCancel: (_) => _setPressed(false),
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: AnimatedOpacity(
+          key: const ValueKey('passcode_key_opacity'),
+          opacity: _pressed ? _pressedOpacity : 1,
+          duration: _pressed ? Duration.zero : _releaseDuration,
+          curve: Curves.easeOut,
+          child: Center(child: widget.child),
+        ),
       ),
     );
   }

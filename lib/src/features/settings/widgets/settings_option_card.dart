@@ -1,11 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
-import '../../../core/feedback/app_haptics.dart';
 import '../../../core/l10n/locale_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/mobile/mobile_radio_card.dart';
 
 /// Applies [labelLocale]'s glyphs to a label written in another language,
 /// such as a language's own name in a picker.
@@ -134,7 +132,7 @@ class _SettingsOptionIndicator extends StatelessWidget {
 }
 
 /// A selectable row of a mobile settings picker sheet — Figma `Theme Modal`
-/// (4494:92272): option card with radio selection.
+/// (4494:92272): the standard [MobileRadioCard].
 class MobileSettingsOptionCard extends StatelessWidget {
   const MobileSettingsOptionCard({
     required this.label,
@@ -152,81 +150,11 @@ class MobileSettingsOptionCard extends StatelessWidget {
   final Locale? labelLocale;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final iconName = this.iconName;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (!selected) unawaited(AppHaptics.selection());
-          onTap();
-        },
-        child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.subtle,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              if (iconName != null) ...[
-                Opacity(
-                  opacity: selected ? 1 : 0.5,
-                  child: AppIcon(iconName, size: 20, color: colors.icon.accent),
-                ),
-                const SizedBox(width: AppSpacing.s),
-              ],
-              Expanded(
-                child: Text(
-                  label,
-                  locale: labelLocale,
-                  style: _labelStyle(
-                    AppTypography.bodyMediumStrong.copyWith(
-                      color: colors.text.accent,
-                    ),
-                    labelLocale,
-                  ),
-                ),
-              ),
-              if (selected)
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: colors.background.inverse,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.check,
-                      size: 14,
-                      color: colors.text.inverse,
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.background.raised,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => MobileRadioCard(
+    title: label,
+    selected: selected,
+    onTap: onTap,
+    iconName: iconName,
+    titleLocale: labelLocale,
+  );
 }

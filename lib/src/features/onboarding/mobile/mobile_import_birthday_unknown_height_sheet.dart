@@ -77,7 +77,7 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
             onPressed: onConfirm,
             child: Text(context.l10n.commonContinueAnyway),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.s),
           AppButton(
             key: const ValueKey('mobile_import_birthday_unknown_height_cancel'),
             variant: AppButtonVariant.ghost,

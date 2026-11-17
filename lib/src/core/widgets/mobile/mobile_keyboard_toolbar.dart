@@ -72,7 +72,7 @@ class _MobileKeyboardToolbarState extends State<MobileKeyboardToolbar>
     if (kAppFormFactor != AppFormFactor.mobile || !_usesNative) {
       return widget.child;
     }
-    final media = MediaQuery.of(context);
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final focus = FocusManager.instance.primaryFocus;
     final editable = focus?.context
         ?.findAncestorStateOfType<EditableTextState>()
@@ -81,7 +81,7 @@ class _MobileKeyboardToolbarState extends State<MobileKeyboardToolbar>
         editable != null &&
         !editable.readOnly &&
         editable.keyboardType != TextInputType.none;
-    final visible = hasKeyboard && media.viewInsets.bottom > 0;
+    final visible = hasKeyboard && keyboardInset > 0;
     final dark = Theme.of(context).brightness == Brightness.dark;
     if (_nativeVisible != visible || _nativeDark != dark) {
       _nativeVisible = visible;

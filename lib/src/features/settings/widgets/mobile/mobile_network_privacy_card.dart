@@ -7,7 +7,7 @@ import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
-import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../core/widgets/mobile/mobile_section.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../near_swap_privacy_info.dart';
 import '../settings_sub_option.dart';
@@ -16,6 +16,7 @@ import 'mobile_private_queries_control.dart';
 export 'mobile_tor_control.dart' show MobilePrivacyToggle;
 
 const _rowHeight = 44.0;
+const _rowIconSize = 20.0;
 
 /// Mobile Tor control.
 ///
@@ -30,29 +31,20 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final nearSwapPrivacy = ref.watch(nearSwapPrivacySettingProvider);
-    return MobileSurfaceCard(
-      cornerRadius: AppRadii.large,
+    // Titled above its card like the Settings list groups.
+    return MobileSection(
+      title: context.l10n.settingsPrivacyTitle,
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        AppSpacing.base,
         AppSpacing.sm,
-        AppSpacing.base,
+        AppSpacing.sm,
+        AppSpacing.md,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Text(
-              context.l10n.settingsPrivacyTitle,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
           const MobileTorControl(),
-          const MobilePrivateQueriesControl(),
+          const MobilePrivateQueriesControl(divided: true),
           if (nearSwapPrivacy != null) ...[
             const SizedBox(height: AppSpacing.md),
             // An option of Private queries: its icon sits under the label
@@ -61,8 +53,8 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
               key: const ValueKey(
                 'mobile_settings_near_swap_privacy_sub_option',
               ),
-              indent: 32 + AppSpacing.s,
-              lineX: AppSpacing.xxs + 16,
+              indent: _rowIconSize + AppSpacing.s,
+              lineX: _rowIconSize / 2,
               rowCenter: _rowHeight / 2,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,18 +80,13 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                       ),
                     ),
                   const SizedBox(height: AppSpacing.sm),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xxs,
+                  Text(
+                    nearSwapPrivacy.description.text(context.l10n),
+                    key: const ValueKey(
+                      'mobile_settings_near_swap_privacy_description',
                     ),
-                    child: Text(
-                      nearSwapPrivacy.description.text(context.l10n),
-                      key: const ValueKey(
-                        'mobile_settings_near_swap_privacy_description',
-                      ),
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
                     ),
                   ),
                 ],
@@ -142,24 +129,18 @@ class _MobileToggleRow extends StatelessWidget {
         key: ValueKey('${keyPrefix}_row'),
         behavior: HitTestBehavior.opaque,
         onTap: onToggle,
-        child: SizedBox(
-          height: _rowHeight,
+        // A floor, not a fixed height, as for the Private queries row.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _rowHeight),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            padding: const EdgeInsetsDirectional.only(end: AppSpacing.xxs),
             child: Row(
               children: [
                 ExcludeSemantics(
-                  child: SizedBox.square(
-                    dimension: 32,
-                    child: Center(
-                      child: AppIcon(
-                        AppIcons.eye,
-                        size: 20,
-                        color: enabled
-                            ? colors.icon.brandCrimson
-                            : colors.icon.muted,
-                      ),
-                    ),
+                  child: AppIcon(
+                    AppIcons.eye,
+                    size: _rowIconSize,
+                    color: colors.icon.accent,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.s),

@@ -299,8 +299,8 @@ void main() {
     // keeps them visible (docs/privacy-mode.md).
     expect(find.text('1.2345 ZEC'), findsOneWidget);
     expect(find.text('0 ZEC'), findsOneWidget);
-    expect(find.textContaining('******'), findsNothing);
-    expect(find.bySemanticsLabel(RegExp(r'\*{6}')), findsNothing);
+    expect(find.textContaining('••••••'), findsNothing);
+    expect(find.bySemanticsLabel(RegExp(r'•{6}')), findsNothing);
     semantics.dispose();
   });
 }

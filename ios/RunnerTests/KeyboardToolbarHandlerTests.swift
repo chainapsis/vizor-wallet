@@ -6,6 +6,77 @@ import UIKit
 
 @MainActor
 struct KeyboardToolbarHandlerTests {
+  @Test("A Flutter request cannot show a control without a docked keyboard")
+  func requestWithoutKeyboard() {
+    let fixture = KeyboardToolbarFixture(keyboardPresent: false)
+    fixture.view.layoutIfNeeded()
+    fixture.messenger.update(visible: true)
+    #expect(fixture.button?.isHidden != false)
+  }
+
+  @Test("A stale Flutter request after native hide cannot restore a bottom checkmark")
+  func staleRequestAfterHide() {
+    let fixture = KeyboardToolbarFixture()
+    fixture.messenger.update(visible: true)
+    fixture.notifications.post(name: UIResponder.keyboardWillHideNotification, object: nil)
+    fixture.messenger.update(visible: true, dark: true)
+    #expect(fixture.button?.isHidden != false)
+  }
+
+  @Test("A late show or frame notification cannot display a keyboardless control")
+  func staleShowAfterGeometryCollapses() throws {
+    let fixture = KeyboardToolbarFixture()
+    fixture.messenger.update(visible: true)
+    let button = try #require(fixture.button)
+    fixture.geometry.frame = .zero
+    fixture.notifications.post(name: UIResponder.keyboardDidShowNotification, object: nil)
+    fixture.notifications.post(name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
+    #expect(button.isHidden)
+  }
+
+  @Test("Layout changes hide and restore the control without a notification or Flutter update")
+  func guideLayoutChanges() async throws {
+    let fixture = KeyboardToolbarFixture()
+    fixture.messenger.update(visible: true)
+    let button = try #require(fixture.button)
+    fixture.geometry.frame = CGRect(x: 0, y: 852, width: 393, height: 0)
+    fixture.layout()
+    await fixture.drain()
+    #expect(button.isHidden)
+    fixture.geometry.frame = CGRect(x: 0, y: 552, width: 393, height: 300)
+    fixture.layout()
+    await fixture.drain()
+    #expect(!button.isHidden)
+  }
+
+  @Test("Non-local keyboard notifications cannot restore a hidden control")
+  func foreignKeyboard() throws {
+    let fixture = KeyboardToolbarFixture()
+    fixture.messenger.update(visible: true)
+    let button = try #require(fixture.button)
+    fixture.notifications.post(name: UIResponder.keyboardWillHideNotification, object: nil)
+    fixture.notifications.post(name: UIResponder.keyboardDidShowNotification, object: nil,
+      userInfo: [UIResponder.keyboardIsLocalUserInfoKey: false])
+    #expect(button.isHidden)
+    fixture.notifications.post(name: UIResponder.keyboardDidShowNotification, object: nil,
+      userInfo: [UIResponder.keyboardIsLocalUserInfoKey: true])
+    #expect(!button.isHidden)
+  }
+
+  @Test("Only a finite docked guide extending above the safe area represents a keyboard")
+  func geometryPolicy() {
+    let bounds = CGRect(x: 0, y: 0, width: 951, height: 669)
+    let safe = CGRect(x: 0, y: 0, width: 867, height: 635)
+    #expect(KeyboardToolbarHandler.hasDockedKeyboard(
+      CGRect(x: 0, y: 405, width: 951, height: 264), bounds: bounds, safeArea: safe))
+    for frame in [CGRect.zero, CGRect(x: 0, y: 635, width: 951, height: 34),
+                  CGRect(x: 100, y: 300, width: 300, height: 200),
+                  CGRect(x: 0, y: 700, width: 951, height: 200),
+                  CGRect(x: 1000, y: 405, width: 300, height: 264), CGRect.infinite] {
+      #expect(!KeyboardToolbarHandler.hasDockedKeyboard(frame, bounds: bounds, safeArea: safe))
+    }
+  }
+
   @Test("Keyboard replacement restores the control without another Flutter update")
   func keyboardReplacement() throws {
     let fixture = KeyboardToolbarFixture()
@@ -77,13 +148,26 @@ private final class KeyboardToolbarFixture {
   let notifications = NotificationCenter()
   let view = UIView(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
   private let handler: KeyboardToolbarHandler
+  let geometry = KeyboardToolbarTestGeometry()
 
-  init(hostAvailable: @escaping () -> Bool = { true }) {
+  init(keyboardPresent: Bool = true, hostAvailable: @escaping () -> Bool = { true }) {
     let view = self.view
+    let geometry = self.geometry
+    if !keyboardPresent { geometry.frame = .zero }
     handler = KeyboardToolbarHandler(
       messenger: messenger, notificationCenter: notifications,
-      hostViewProvider: { hostAvailable() ? view : nil }
+      hostViewProvider: { hostAvailable() ? view : nil },
+      keyboardFrame: { _ in geometry.frame }
     )
+  }
+
+  func layout() {
+    view.subviews.filter { !($0 is UIButton) }.forEach { $0.setNeedsLayout(); $0.layoutIfNeeded() }
+  }
+  func drain() async {
+    await withCheckedContinuation { continuation in
+      DispatchQueue.main.async { continuation.resume() }
+    }
   }
 
   var button: UIButton? {
@@ -91,6 +175,10 @@ private final class KeyboardToolbarFixture {
       $0.accessibilityIdentifier == "mobile_keyboard_toolbar"
     }
   }
+}
+
+private final class KeyboardToolbarTestGeometry {
+  var frame = CGRect(x: 0, y: 552, width: 393, height: 300)
 }
 
 private final class KeyboardToolbarMessenger: NSObject, FlutterBinaryMessenger {

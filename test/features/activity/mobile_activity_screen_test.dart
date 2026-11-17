@@ -455,7 +455,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(MobileTransactionStatusScreen),
-        matching: find.text('Received'),
+        matching: find.text('Received ZEC'),
       ),
       findsOneWidget,
     );
@@ -582,9 +582,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Net change'), findsNWidgets(2));
-    expect(find.text('-0.00065 ZEC'), findsOneWidget);
+    expect(find.text('0.00065 ZEC'), findsOneWidget);
     expect(find.text('Sent'), findsNothing);
-    expect(find.text('-0.7 ZEC'), findsOneWidget);
+    expect(find.text('0.7 ZEC'), findsOneWidget);
   });
 
   testWidgets('shows the empty state when history is empty', (tester) async {
@@ -642,9 +642,9 @@ void main() {
     expect(find.text('Redeemed a gift card'), findsOneWidget);
     expect(find.text('Created a gift card'), findsOneWidget);
     // The card amount, not the funding total the transaction carries.
-    expect(find.text('-0.5 ZEC'), findsOneWidget);
+    expect(find.text('0.5 ZEC'), findsOneWidget);
     expect(find.text('+0.3 ZEC'), findsOneWidget);
-    expect(find.text('-1 ZEC'), findsNothing);
+    expect(find.text('1 ZEC'), findsNothing);
     expect(find.text('+1 ZEC'), findsNothing);
     expect(
       find.byWidgetPredicate(

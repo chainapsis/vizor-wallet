@@ -6,7 +6,7 @@ final _swapAmountTextPattern = RegExp(
 final _digit = RegExp(r'\d');
 
 /// Masks a swap amount such as `0.21 USDC` while keeping its own symbol
-/// (`****** USDC`), because swap legs are often not ZEC. Text without a number
+/// (`•••••• USDC`), because swap legs are often not ZEC. Text without a number
 /// (`Included in shown rate`, `Not reported`, `--`) is returned as is.
 String swapAmountTextForPrivacy(
   String amountText, {

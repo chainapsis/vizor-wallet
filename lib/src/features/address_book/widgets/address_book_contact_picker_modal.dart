@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show TextInputAction;
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/layout/mobile/mobile_keyboard_aware_height.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -96,19 +97,6 @@ class _AddressBookContactPickerModalState
     ];
   }
 
-  double _mobileListHeight(BuildContext context) {
-    final media = MediaQuery.of(context);
-    // Reserve the title, search field, inter-element gaps, and modal margins.
-    final available =
-        media.size.height - media.viewInsets.bottom - media.padding.top - 260;
-    return available
-        .clamp(
-          _contactPickerMobileMinListHeight,
-          _contactPickerMobileMaxListHeight,
-        )
-        .toDouble();
-  }
-
   void _clearQuery() {
     if (_queryController.text.isEmpty) return;
     setState(() => _queryController.clear());
@@ -125,10 +113,8 @@ class _AddressBookContactPickerModalState
     // surface is full-width, draws no card, and the list scrolls within a
     // bounded height that the card hugs. Desktop keeps the fixed card.
     final isMobile = kAppFormFactor == AppFormFactor.mobile;
-    final listHeight = isMobile ? _mobileListHeight(context) : null;
     final body = _pickerBody(
       isMobile: isMobile,
-      listHeight: listHeight,
       contactsAsync: contactsAsync,
       searchTopInset: !isMobile,
     );
@@ -202,7 +188,6 @@ class _AddressBookContactPickerModalState
 
   Widget _pickerBody({
     required bool isMobile,
-    required double? listHeight,
     required AsyncValue<AddressBookState> contactsAsync,
     required bool searchTopInset,
   }) {
@@ -274,7 +259,7 @@ class _AddressBookContactPickerModalState
           isMobile,
           child: contactsAsync.when(
             loading: () => _pickerListViewport(
-              height: listHeight,
+              mobile: isMobile,
               child: const Center(
                 child: SizedBox(
                   width: 18,
@@ -284,7 +269,7 @@ class _AddressBookContactPickerModalState
               ),
             ),
             error: (_, _) => _pickerListViewport(
-              height: listHeight,
+              mobile: isMobile,
               child: _ContactPickerEmptyResult(
                 title: context.l10n.addressBookPickerLoadFailed,
               ),
@@ -293,7 +278,7 @@ class _AddressBookContactPickerModalState
               final contacts = _filteredContacts(state);
               if (contacts.isEmpty) {
                 return _pickerListViewport(
-                  height: listHeight,
+                  mobile: isMobile,
                   child: _ContactPickerEmptyResult(
                     title:
                         widget.emptyTitle ??
@@ -309,7 +294,7 @@ class _AddressBookContactPickerModalState
                     : 5,
                 onSelected: widget.onSelected,
               );
-              return _pickerListViewport(height: listHeight, child: list);
+              return _pickerListViewport(mobile: isMobile, child: list);
             },
           ),
         ),
@@ -324,11 +309,19 @@ class _AddressBookContactPickerModalState
 Widget _pickerExpandOrBound(bool mobile, {required Widget child}) =>
     mobile ? child : Expanded(child: child);
 
-Widget _pickerListViewport({required double? height, required Widget child}) {
-  if (height == null) return child;
-  return SizedBox(
-    key: const ValueKey('address_book_contact_picker_list_viewport'),
-    height: height,
+/// Mobile bounds the list to the room above the keyboard, reserving the
+/// title, search field, inter-element gaps and modal margins.
+Widget _pickerListViewport({required bool mobile, required Widget child}) {
+  if (!mobile) return child;
+  return MobileKeyboardAwareHeight(
+    reserved: 260,
+    min: _contactPickerMobileMinListHeight,
+    max: _contactPickerMobileMaxListHeight,
+    builder: (context, height, child) => SizedBox(
+      key: const ValueKey('address_book_contact_picker_list_viewport'),
+      height: height,
+      child: child,
+    ),
     child: child,
   );
 }

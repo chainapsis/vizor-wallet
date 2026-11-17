@@ -35,11 +35,6 @@ class DesktopGiftSetupShell extends StatelessWidget {
           iconName: AppIcons.giftCardOutline,
           active: step == DesktopGiftSetupStep.redeem,
         ),
-        OnboardingSidebarStepData(
-          label: context.l10n.commonCustomiseWallet,
-          iconName: AppIcons.user,
-          active: step == DesktopGiftSetupStep.customise,
-        ),
         if (showPasswordStep)
           OnboardingSidebarStepData(
             label: context.l10n.onboardingStepSetPassword,
