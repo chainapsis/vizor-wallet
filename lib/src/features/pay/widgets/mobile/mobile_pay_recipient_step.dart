@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart' show TextInputAction;
 
 import '../../../../core/layout/mobile/mobile_bottom_scroll_fade.dart';
+import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -143,9 +145,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
               : MobileBottomScrollFade(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.sm,
+                      kMobilePageMargin,
                       AppSpacing.s,
-                      AppSpacing.sm,
+                      kMobilePageMargin,
                       AppSpacing.md,
                     ),
                     child: Column(
@@ -221,10 +223,10 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
         if (valid)
           Padding(
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sm,
+              kMobilePageMargin,
               AppSpacing.s,
-              AppSpacing.sm,
-              AppSpacing.md,
+              kMobilePageMargin,
+              kMobileFooterGap,
             ),
             child: Column(
               key: const ValueKey('mobile_pay_recipient_actions'),
@@ -238,7 +240,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: AppTypography.bodySmall.copyWith(
+                    style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.destructive,
                     ),
                   ),
@@ -280,9 +282,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
-        AppSpacing.sm,
+        kMobilePageMargin,
         0,
       ),
       child: Column(

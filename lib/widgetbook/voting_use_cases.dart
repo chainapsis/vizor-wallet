@@ -183,9 +183,26 @@ Widget buildMobileVotingConfigUseCase(BuildContext context) =>
 Widget buildMobileVotingConfigDefaultUseCase(BuildContext context) =>
     _buildMobileVotingConfigPreview(context, defaultOnly: true);
 
+/// The Source sheet, one level under Vote config.
+Widget buildMobileVotingSourceUseCase(BuildContext context) =>
+    _buildMobileVotingConfigPreview(
+      context,
+      sheet: const MobileVotingSourceSheet(),
+    );
+
+/// The custom source sheet, editing a saved source.
+Widget buildMobileVotingCustomSourceUseCase(BuildContext context) =>
+    _buildMobileVotingConfigPreview(
+      context,
+      sheet: MobileVotingCustomSourceSheet(
+        source: _previewSourceState.savedSources.first,
+      ),
+    );
+
 Widget _buildMobileVotingConfigPreview(
   BuildContext context, {
   bool defaultOnly = false,
+  Widget sheet = const MobileVotingConfigSettingsSheet(),
 }) {
   return ProviderScope(
     overrides: [
@@ -211,9 +228,9 @@ Widget _buildMobileVotingConfigPreview(
         () => _PreviewShowTestVotingRoundsNotifier(initialValue: defaultOnly),
       ),
     ],
-    child: const MobileModalOverlay(
-      background: MobileVotingPollsScreen(),
-      child: MobileVotingConfigSettingsSheet(),
+    child: MobileModalOverlay(
+      background: const MobileVotingPollsScreen(),
+      child: sheet,
     ),
   );
 }

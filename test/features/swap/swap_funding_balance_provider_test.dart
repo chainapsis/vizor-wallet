@@ -66,7 +66,7 @@ void main() {
           payment: false,
           privacyModeEnabled: true,
         ),
-        'Private swaps use Ironwood ZEC only. You have ******\u00A0ZEC there.',
+        'Private swaps use Ironwood ZEC only. You have ••••••\u00A0ZEC there.',
       );
     });
   });

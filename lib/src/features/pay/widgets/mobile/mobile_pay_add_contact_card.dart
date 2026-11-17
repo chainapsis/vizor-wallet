@@ -1,4 +1,5 @@
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/locale_typography.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -24,7 +25,8 @@ const _fieldToNextContentGap = AppSpacing.xxs + AppSpacing.sm + AppSpacing.xxs;
 const _addressFieldToButtonsGap =
     AppSpacing.xxs + AppSpacing.sm + AppSpacing.md;
 
-/// Mobile add-contact surface for the Pay recipient flow.
+/// Mobile add-contact surface for the Pay recipient flow, also offered by a
+/// sent transaction's receipt for its recipient.
 ///
 /// Figma: `6261:129939`.
 class MobilePayAddContactCard extends StatefulWidget {
@@ -131,231 +133,285 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final media = MediaQuery.of(context);
-    // Keep the sheet usable on compact devices with the keyboard open. The
-    // route's empty area must remain outside this scroll view so barrier taps
-    // still dismiss; only the card body scrolls, matching Address Book.
-    final maxBodyHeight =
-        (media.size.height - media.viewInsets.bottom - media.padding.top - 120)
-            .clamp(180.0, 620.0)
-            .toDouble();
     return MobileModalScaffold(
       title: '',
       showTitle: false,
       onClose: widget.onCancel,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxBodyHeight),
-        child: SingleChildScrollView(
-          child: Column(
-            key: const ValueKey('mobile_pay_add_contact_card'),
+      // On compact devices with the keyboard open, the scaffold scrolls the
+      // card body; the route's empty area stays outside it, so barrier taps
+      // still dismiss.
+      child: Column(
+        key: const ValueKey('mobile_pay_add_contact_card'),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: AppTappable(
+              key: const ValueKey('mobile_pay_add_contact_picture'),
+              semanticsLabel: context.l10n.commonChangeContactPicture,
+              onTap: _pickPicture,
+              child: ExcludeSemantics(
+                child: SizedBox.square(
+                  dimension: AppProfilePictureSize.xxLarge.dimension,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AppProfilePicture(
+                        profilePictureId: _profilePictureId,
+                        size: AppProfilePictureSize.xxLarge,
+                      ),
+                      Positioned(
+                        right: -4,
+                        bottom: -4,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: colors.background.inverse,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: colors.background.base,
+                              width: 3,
+                            ),
+                          ),
+                          child: AppIcon(
+                            AppIcons.edit,
+                            size: 14,
+                            color: colors.icon.inverse,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            context.l10n.commonAddressLabel,
+            style: AppTypography.labelLarge.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          MobileTextField(
+            controller: _labelController,
+            focusNode: _labelFocusNode,
+            fieldKey: const ValueKey('mobile_pay_add_contact_label'),
+            hintText: context.l10n.commonContactLabelHint,
+            textInputAction: TextInputAction.done,
+            inputFormatters: [LengthLimitingTextInputFormatter(20)],
+            onSubmitted: (_) => _save(),
+            trailing:
+                (_labelFocusNode.hasFocus && _labelController.text.isNotEmpty)
+                ? Padding(
+                    padding: const EdgeInsets.only(right: AppSpacing.xs),
+                    child: AppIconHoverButton(
+                      icon: AppIcons.cross,
+                      semanticLabel: context.l10n.commonClearContactLabel,
+                      onTap: _clearLabel,
+                      size: 32,
+                      borderRadius: BorderRadius.circular(AppRadii.small),
+                      hoverColor: colors.background.ground,
+                      iconColor: colors.icon.muted,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(height: _fieldToNextContentGap),
+          _ContactChainRow(network: widget.network),
+          const SizedBox(height: AppSpacing.xxs),
+          Semantics(
+            label: context.l10n.payAddressSemantics(widget.address),
+            readOnly: true,
+            child: ExcludeSemantics(
+              child: Container(
+                key: const ValueKey('mobile_pay_add_contact_address'),
+                height: AppInputSizing.height,
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+                decoration: BoxDecoration(
+                  color: colors.surface.input.primary,
+                  borderRadius: BorderRadius.circular(AppInputSizing.radius),
+                  boxShadow: [
+                    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+                    BoxShadow(
+                      color: colors.shadows.subtle,
+                      offset: const Offset(0, 2),
+                      blurRadius: 4,
+                    ),
+                    BoxShadow(
+                      color: colors.shadows.subtle,
+                      offset: const Offset(0, 1),
+                      blurRadius: 2,
+                    ),
+                    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+                  ],
+                ),
+                child: Text(
+                  compactSwapAddress(
+                    widget.address,
+                    maxLength: 30,
+                    prefixLength: 16,
+                    suffixLength: 10,
+                    separator: '...',
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (_saveError != null) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              _saveError!,
+              key: const ValueKey('mobile_pay_add_contact_save_error'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
+          SizedBox(
+            height: _saveError == null
+                ? _addressFieldToButtonsGap
+                : AppSpacing.md,
+          ),
+          AppButton(
+            key: const ValueKey('mobile_pay_add_contact_save'),
+            expand: true,
+            constrainContent: true,
+            onPressed: _canSave ? _save : null,
+            child: Text(
+              _saving
+                  ? context.l10n.commonSaving
+                  : context.l10n.commonSaveContact,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(
+            key: const ValueKey('mobile_pay_add_contact_cancel'),
+            onTap: widget.onCancel,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContactChainRow extends StatelessWidget {
+  const _ContactChainRow({required this.network});
+  final AddressBookNetwork network;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = context.l10n.commonChainAndAddress;
+    final labelStyle = AppTypography.labelLarge.copyWith(
+      color: context.colors.text.secondary,
+    );
+    final networkStyle = AppTypography.labelLarge.copyWith(
+      color: context.colors.text.accent,
+    );
+    Widget networkLabel({bool wrap = false}) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AddressBookNetworkIcon(network: network, size: 16),
+        const SizedBox(width: AppSpacing.xxs),
+        if (wrap)
+          Flexible(child: Text(network.label, style: networkStyle))
+        else
+          Text(
+            network.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: networkStyle,
+          ),
+      ],
+    );
+
+    return ConstrainedBox(
+      key: const ValueKey('mobile_pay_add_contact_chain_row'),
+      constraints: const BoxConstraints(minHeight: AppSpacing.base),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Preserve the original row whenever both scaled, localized labels fit.
+          // Reflow by available space rather than a text-scale threshold.
+          final requiredWidth =
+              _textWidth(context, label, labelStyle) +
+              _textWidth(context, network.label, networkStyle) +
+              AppSpacing.xxs * 4 +
+              AppSpacing.xs +
+              16;
+          if (requiredWidth <= constraints.maxWidth) {
+            return Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xxs),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: labelStyle,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                networkLabel(),
+                const SizedBox(width: AppSpacing.xxs),
+              ],
+            );
+          }
+          return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: AppTappable(
-                  key: const ValueKey('mobile_pay_add_contact_picture'),
-                  semanticsLabel: context.l10n.commonChangeContactPicture,
-                  onTap: _pickPicture,
-                  child: ExcludeSemantics(
-                    child: SizedBox.square(
-                      dimension: AppProfilePictureSize.xxLarge.dimension,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          AppProfilePicture(
-                            profilePictureId: _profilePictureId,
-                            size: AppProfilePictureSize.xxLarge,
-                          ),
-                          Positioned(
-                            right: -4,
-                            bottom: -4,
-                            child: Container(
-                              width: 24,
-                              height: 24,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: colors.background.inverse,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: colors.background.base,
-                                  width: 3,
-                                ),
-                              ),
-                              child: AppIcon(
-                                AppIcons.edit,
-                                size: 14,
-                                color: colors.icon.inverse,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                context.l10n.commonAddressLabel,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xxs),
+                child: Text(label, style: labelStyle),
               ),
               const SizedBox(height: AppSpacing.xxs),
-              MobileTextField(
-                controller: _labelController,
-                focusNode: _labelFocusNode,
-                fieldKey: const ValueKey('mobile_pay_add_contact_label'),
-                hintText: context.l10n.commonContactLabelHint,
-                textInputAction: TextInputAction.done,
-                inputFormatters: [LengthLimitingTextInputFormatter(20)],
-                onSubmitted: (_) => _save(),
-                trailing:
-                    (_labelFocusNode.hasFocus &&
-                        _labelController.text.isNotEmpty)
-                    ? Padding(
-                        padding: const EdgeInsets.only(right: AppSpacing.xs),
-                        child: AppIconHoverButton(
-                          icon: AppIcons.cross,
-                          semanticLabel: context.l10n.commonClearContactLabel,
-                          onTap: _clearLabel,
-                          size: 32,
-                          borderRadius: BorderRadius.circular(AppRadii.small),
-                          hoverColor: colors.background.ground,
-                          iconColor: colors.icon.muted,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(height: _fieldToNextContentGap),
-              SizedBox(
-                key: const ValueKey('mobile_pay_add_contact_chain_row'),
-                height: 32,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.xxs),
-                        child: Text(
-                          context.l10n.commonChainAndAddress,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AddressBookNetworkIcon(
-                          network: widget.network,
-                          size: 16,
-                        ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        Text(
-                          widget.network.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                  ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: networkLabel(wrap: true),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Semantics(
-                label: context.l10n.payAddressSemantics(widget.address),
-                readOnly: true,
-                child: ExcludeSemantics(
-                  child: Container(
-                    key: const ValueKey('mobile_pay_add_contact_address'),
-                    height: AppInputSizing.height,
-                    alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.s,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.surface.input.primary,
-                      borderRadius: BorderRadius.circular(
-                        AppInputSizing.radius,
-                      ),
-                      boxShadow: [
-                        BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-                        BoxShadow(
-                          color: colors.shadows.subtle,
-                          offset: const Offset(0, 2),
-                          blurRadius: 4,
-                        ),
-                        BoxShadow(
-                          color: colors.shadows.subtle,
-                          offset: const Offset(0, 1),
-                          blurRadius: 2,
-                        ),
-                        BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
-                      ],
-                    ),
-                    child: Text(
-                      compactSwapAddress(
-                        widget.address,
-                        maxLength: 30,
-                        prefixLength: 16,
-                        suffixLength: 10,
-                        separator: '...',
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              if (_saveError != null) ...[
-                const SizedBox(height: AppSpacing.s),
-                Text(
-                  _saveError!,
-                  key: const ValueKey('mobile_pay_add_contact_save_error'),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.destructive,
-                  ),
-                ),
-              ],
-              SizedBox(
-                height: _saveError == null
-                    ? _addressFieldToButtonsGap
-                    : AppSpacing.md,
-              ),
-              AppButton(
-                key: const ValueKey('mobile_pay_add_contact_save'),
-                expand: true,
-                constrainContent: true,
-                onPressed: _canSave ? _save : null,
-                child: Text(
-                  _saving
-                      ? context.l10n.commonSaving
-                      : context.l10n.commonSaveContact,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              MobileSheetCancel(
-                key: const ValueKey('mobile_pay_add_contact_cancel'),
-                onTap: widget.onCancel,
               ),
             ],
-          ),
-        ),
+          );
+        },
       ),
     );
+  }
+
+  double _textWidth(BuildContext context, String text, TextStyle style) {
+    // Match Text's inherited font metrics and accessibility bold override.
+    final defaults = DefaultTextStyle.of(context);
+    var effective = defaults.style.merge(
+      withLocaleFontFallback(context, style),
+    );
+    if (MediaQuery.boldTextOf(context)) {
+      effective = effective.copyWith(fontWeight: FontWeight.bold);
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: effective),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.localeOf(context),
+      textHeightBehavior: defaults.textHeightBehavior,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
   }
 }

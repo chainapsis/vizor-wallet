@@ -26,11 +26,14 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_tab_root_scroll_fades.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_action_card.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/mobile/receive_options_sheet.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_sidebar_route_observer.dart';
@@ -64,6 +67,7 @@ import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 import '../../support/test_l10n.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
 /// channel in widget tests.
@@ -312,6 +316,14 @@ Widget _app(
       ),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
+      GoRoute(
+        path: '/receive/request',
+        builder: (_, state) => Text('request route ${state.extra}'),
+      ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, state) => Text('payment links route ${state.uri.query}'),
+      ),
       GoRoute(
         path: '/settings',
         builder: (_, _) => const Text(
@@ -1071,7 +1083,11 @@ void main() {
       find.descendant(of: entry, matching: find.byType(Container)).first,
     );
     final votingDecoration = votingSurface.decoration! as BoxDecoration;
-    expect(votingDecoration.boxShadow, isNull);
+    // The entry shares the soft lift of the mobile surfaces.
+    expect(
+      votingDecoration.boxShadow,
+      mobileSurfaceShadows(AppThemeData.dark.colors),
+    );
     expect(votingDecoration.color, AppThemeData.dark.colors.background.ground);
     expect(
       votingDecoration.borderRadius,
@@ -1388,7 +1404,7 @@ void main() {
       expect(tester.getRect(list).topLeft, before.topLeft);
       expect(
         tester.getRect(list).height,
-        before.height + 5 * (44 + AppSpacing.s),
+        before.height + 5 * (56 + AppSpacing.s),
       );
       expect(find.byType(HomeActivitySkeletonRow), findsNothing);
       expect(tester.takeException(), isNull);
@@ -1472,7 +1488,8 @@ void main() {
 
     expect(canvasRect.size, const Size(340, 220));
     expect(imageRect.size, const Size(246, 192));
-    expect(canvasRect.bottom, moreOrLessEquals(744));
+    // Clears the 60px tab bar.
+    expect(canvasRect.bottom, moreOrLessEquals(748));
 
     for (final size in const [
       Size(360, 800),
@@ -1513,6 +1530,38 @@ void main() {
     expect(find.text('Send'), findsOneWidget);
     expect(find.text('Receive'), findsOneWidget);
     expect(find.text('No activity, yet...'), findsOneWidget);
+  });
+
+  testWidgets('content starts where the other tab roots start theirs', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    // Swap, Activity and Settings put the top nav at the safe-area top and
+    // their first card 12px under it; Home matches, so switching tabs moves
+    // neither the header nor the first card.
+    expect(
+      tester.getRect(find.byKey(const ValueKey('mobile_top_nav_account'))).top,
+      moreOrLessEquals(0),
+    );
+    final list = find
+        .descendant(
+          of: find.byType(MobileTabRootScrollFades),
+          matching: find.byType(ListView),
+        )
+        .first;
+    expect(
+      tester
+          .getRect(
+            find.descendant(of: list, matching: find.byType(Column)).first,
+          )
+          .top,
+      moreOrLessEquals(kMobileTopNavHeight + AppSpacing.s),
+    );
   });
 
   testWidgets('a short catch-up reads as syncing without a percentage', (
@@ -2122,9 +2171,9 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Hide balance'));
     await tester.pump();
 
-    expect(find.text('****** ZEC still migrating'), findsOneWidget);
+    expect(find.text('•••••• ZEC still migrating'), findsOneWidget);
     expect(
-      find.bySemanticsLabel(RegExp(r'\*{6} ZEC still migrating')),
+      find.bySemanticsLabel(RegExp(r'•{6} ZEC still migrating')),
       findsOneWidget,
     );
     expect(find.text('2 ZEC still migrating'), findsNothing);
@@ -3366,13 +3415,13 @@ void main() {
       receiveLabelStyle.letterSpacing,
       AppTypography.labelLarge.letterSpacing,
     );
-    expect(shieldedLabel.style?.fontSize, 14);
-    expect(shieldedLabel.style?.height, 16 / 14);
-    expect(fiatLabel.style?.fontSize, 14);
-    expect(amountSpan.style?.fontSize, 45);
-    expect(amountSpan.style?.height, 48 / 45);
-    expect(tickerSpan.style?.fontSize, 32);
-    expect(tickerSpan.style?.height, 33 / 32);
+    expect(shieldedLabel.style?.fontSize, 16);
+    expect(shieldedLabel.style?.height, 17 / 16);
+    expect(fiatLabel.style?.fontSize, 16);
+    expect(amountSpan.style?.fontSize, 40);
+    expect(amountSpan.style?.height, 44 / 40);
+    expect(tickerSpan.style?.fontSize, 28);
+    expect(tickerSpan.style?.height, 31 / 28);
   });
 
   testWidgets('zero balance offers the first-receive action', (tester) async {
@@ -3385,8 +3434,63 @@ void main() {
 
     await tester.tap(find.text('Receive your first ZEC'));
     await tester.pumpAndSettle();
-    expect(find.text('receive route'), findsOneWidget);
     expect(feedback, ['HapticFeedbackType.lightImpact']);
+    await tester.tap(find.byKey(const ValueKey('receive_options_receive')));
+    await tester.pumpAndSettle();
+    expect(find.text('receive route'), findsOneWidget);
+  });
+
+  testWidgets('receive offers receiving, a request and a gift card', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_home_receive')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ReceiveOptionsSheet), findsOneWidget);
+    final cards = {
+      'receive_options_receive': (
+        'Receive ZEC',
+        'Share your address or QR code',
+        AppIcons.qr,
+      ),
+      'receive_options_request': (
+        'Request ZEC',
+        'Ask for an exact amount',
+        AppIcons.request,
+      ),
+      'receive_options_redeem_gift_card': (
+        'Redeem gift card',
+        'Add a card someone sent you',
+        AppIcons.giftCard,
+      ),
+    };
+    for (final MapEntry(key: key, value: (title, subtitle, icon))
+        in cards.entries) {
+      final card = tester.widget<MobileActionCard>(find.byKey(ValueKey(key)));
+      expect((card.title, card.subtitle, card.icon), (title, subtitle, icon));
+    }
+
+    // Request opens the request page for the shielded address at once.
+    await tester.tap(find.byKey(const ValueKey('receive_options_request')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ReceiveOptionsSheet), findsNothing);
+    final requestRoute = find.text('request route u1homeaddress');
+    expect(requestRoute, findsOneWidget);
+    Navigator.of(tester.element(requestRoute)).pop();
+    await tester.pumpAndSettle();
+
+    // Redeem opens Gift Cards on the redeem page.
+    await tester.tap(find.byKey(const ValueKey('mobile_home_receive')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('receive_options_redeem_gift_card')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('payment links route redeem=1'), findsOneWidget);
   });
 
   testWidgets('pay action opens exact-output pay route', (tester) async {
@@ -3423,7 +3527,9 @@ void main() {
   testWidgets('uses the mobile Rest illustration canvas for empty activity', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(390, 1000));
+    // 402 wide leaves the 340px canvas room inside the 20px page margins and
+    // the empty state's 8px insets; narrower screens scale it down.
+    await tester.binding.setSurfaceSize(const Size(402, 1000));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
     });
@@ -3721,9 +3827,9 @@ void main() {
     expect(find.text('Sent'), findsNothing);
     expect(find.text('Received'), findsNothing);
     // The card amount, not the funding total the transaction carries.
-    expect(find.text('-0.5 ZEC'), findsOneWidget);
+    expect(find.text('0.5 ZEC'), findsOneWidget);
     expect(find.text('+0.3 ZEC'), findsOneWidget);
-    expect(find.text('-0.1954 ZEC'), findsNothing);
+    expect(find.text('0.1954 ZEC'), findsNothing);
     expect(find.text('+2 ZEC'), findsNothing);
   });
 
@@ -3802,7 +3908,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(MobileTransactionStatusScreen),
-        matching: find.text('Received'),
+        matching: find.text('Received ZEC'),
       ),
       findsOneWidget,
     );
@@ -3892,7 +3998,7 @@ void main() {
     expect(checked, isNot(contains(swapChainTxidToWalletTxidHex(txid(0)))));
   });
 
-  testWidgets('recent activity section uses the Figma inner inset', (
+  testWidgets('recent activity section shares the screen margin', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(800, 1400));
@@ -3925,23 +4031,21 @@ void main() {
       find.ancestor(
         of: seeAllFinder,
         matching: find.byWidgetPredicate(
-          (widget) => widget is SizedBox && widget.height == 24,
+          (widget) =>
+              widget is ConstrainedBox && widget.constraints.minHeight == 24,
         ),
       ),
     );
     final headerText = tester.widget<Text>(headerFinder);
     final seeAllText = tester.widget<Text>(seeAllFinder);
 
-    expect(
-      rowRect.left,
-      moreOrLessEquals(sendRect.left + AppSpacing.xs, epsilon: 0.1),
-    );
-    expect(
-      rowRect.right,
-      moreOrLessEquals(payRect.right - AppSpacing.xs, epsilon: 0.1),
-    );
+    // Rows share the screen margin with the action buttons above.
+    expect(rowRect.left, moreOrLessEquals(sendRect.left, epsilon: 0.1));
+    expect(rowRect.right, moreOrLessEquals(payRect.right, epsilon: 0.1));
     expect(headerRect.left, rowRect.left);
-    expect(seeAllRect.height, 24);
+    // 24px minimum target; the label's own line height may grow it.
+    expect(seeAllRect.height, greaterThanOrEqualTo(24));
+    // The rows' 16px line, as See all beside it.
     expect(headerText.style?.fontSize, AppTypography.labelLarge.fontSize);
     expect(headerText.style?.fontWeight, FontWeight.w600);
     expect(seeAllText.style?.fontSize, AppTypography.labelLarge.fontSize);

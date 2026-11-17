@@ -163,32 +163,39 @@ void main() {
     _clearExitHint(testRouter);
   });
 
-  testWidgets('a root Gift route delegates back to its own PopScope', (
-    tester,
-  ) async {
-    final platformCalls = _capturePlatformCalls(tester);
-    var backCalls = 0;
-    final testRouter = _exitBackRouter(
-      initialLocation: '/gift',
-      routes: [
-        GoRoute(
-          path: '/gift',
-          builder: (_, _) => _RouteLevelBackHandler(
-            label: 'Gift route',
-            onBack: () => backCalls++,
+  for (final location in [
+    '/gift',
+    '/onboarding/secret-passphrase',
+    '/onboarding/set-passcode',
+    '/add-account',
+  ]) {
+    testWidgets('root $location delegates back to its own PopScope', (
+      tester,
+    ) async {
+      final platformCalls = _capturePlatformCalls(tester);
+      var backCalls = 0;
+      final testRouter = _exitBackRouter(
+        initialLocation: location,
+        routes: [
+          GoRoute(
+            path: location,
+            builder: (_, _) => _RouteLevelBackHandler(
+              label: 'Gift route',
+              onBack: () => backCalls++,
+            ),
           ),
-        ),
-      ],
-    );
-    await tester.pumpWidget(_app(testRouter));
-    await tester.pumpAndSettle();
-    await testRouter.dispatcher.didPopRoute();
-    await testRouter.dispatcher.didPopRoute();
-    await tester.pump();
-    expect(backCalls, 2);
-    expect(_systemNavigatorPopCallCount(platformCalls), 0);
-    expect(find.text(_exitHintMessage), findsNothing);
-  });
+        ],
+      );
+      await tester.pumpWidget(_app(testRouter));
+      await tester.pumpAndSettle();
+      await testRouter.dispatcher.didPopRoute();
+      await testRouter.dispatcher.didPopRoute();
+      await tester.pump();
+      expect(backCalls, 2);
+      expect(_systemNavigatorPopCallCount(platformCalls), 0);
+      expect(find.text(_exitHintMessage), findsNothing);
+    });
+  }
 
   testWidgets('android root back shows a lower exit hint before exiting', (
     tester,

@@ -577,6 +577,8 @@ void main() {
 
     expect(find.text('Clipboard is empty'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
+    // Let the toast finish its exit.
+    await tester.pumpAndSettle();
     expect(find.text('Clipboard is empty'), findsNothing);
   });
 

@@ -27,14 +27,19 @@ import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_welcome_art.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_section.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/hide_balance_on_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import '../../fakes/fake_hide_balance_on_unlock_notifier.dart';
 import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/swap_past_swaps_check_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
+import 'package:zcash_wallet/src/providers/flip_to_hide_balance_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/swap_history_check_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
@@ -136,6 +141,19 @@ class _FakeBiometricNotifier extends BiometricUnlockNotifier {
     disableCount++;
     final current = state.value ?? initialState;
     state = AsyncData(current.copyWith(enabled: false));
+  }
+}
+
+class _FakeFlipToHideNotifier extends FlipToHideBalanceNotifier {
+  bool? lastEnabled;
+
+  @override
+  bool build() => true;
+
+  @override
+  Future<void> set(bool enabled) async {
+    lastEnabled = enabled;
+    state = enabled;
   }
 }
 
@@ -320,6 +338,10 @@ Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
       ),
       GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
       GoRoute(
+        path: '/accounts',
+        builder: (_, _) => const Text('accounts route'),
+      ),
+      GoRoute(
         path: '/payment-links',
         builder: (_, state) => Text(
           state.extra is PaymentLinkCardsSnapshot
@@ -368,6 +390,68 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  testWidgets(
+    'hide on unlock toggles independently of current balance visibility',
+    (tester) async {
+      final notifier = FakeHideBalanceOnUnlockNotifier();
+      await tester.pumpWidget(
+        _app(
+          extraOverrides: [
+            hideBalanceOnUnlockProvider.overrideWith(() => notifier),
+          ],
+        ),
+      );
+      await tester.pump();
+      final toggle = find.byKey(
+        const ValueKey('mobile_settings_hide_on_unlock_row'),
+      );
+      await tester.scrollUntilVisible(toggle, 200);
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(tester.element(toggle));
+      expect(container.read(hideBalanceOnUnlockProvider), isFalse);
+      final privacy = container.read(privacyModeProvider);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(container.read(hideBalanceOnUnlockProvider), isTrue);
+      expect(container.read(privacyModeProvider), privacy);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(container.read(hideBalanceOnUnlockProvider), isFalse);
+    },
+  );
+
+  testWidgets('hide on unlock save failure leaves the toggle off', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [
+          hideBalanceOnUnlockProvider.overrideWith(
+            () => FakeHideBalanceOnUnlockNotifier(failSave: true),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    final toggle = find.byKey(
+      const ValueKey('mobile_settings_hide_on_unlock_row'),
+    );
+    await tester.scrollUntilVisible(toggle, 200);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      ProviderScope.containerOf(
+        tester.element(toggle),
+      ).read(hideBalanceOnUnlockProvider),
+      isFalse,
+    );
+    expect(
+      find.text(_en.settingsHideBalanceOnUnlockUpdateFailed),
+      findsOneWidget,
+    );
+  });
+
   for (final network in ['main', 'test', 'regtest']) {
     testWidgets('Support Vizor is exposed only on mainnet: $network', (
       tester,
@@ -425,6 +509,18 @@ void main() {
       },
     );
   }
+
+  testWidgets('the account card opens Manage accounts as a page', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_routedApp());
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_settings_account_card')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('accounts route'), findsOneWidget);
+  });
 
   testWidgets('Settings always opens coinholder voting', (tester) async {
     await tester.pumpWidget(_routedApp());
@@ -488,7 +584,7 @@ void main() {
             final text = tester.widget<Text>(value);
             expect(
               text.style,
-              AppTypography.codeSmall.copyWith(
+              AppTypography.codeMedium.copyWith(
                 color: theme.colors.text.secondary,
               ),
             );
@@ -512,10 +608,11 @@ void main() {
               tester.getTopLeft(footer).dy -
                   tester
                       .getBottomLeft(
-                        // Mainnet's support group is the last card.
+                        // Mainnet's support group is the last card; its
+                        // title sits above the card, in the same section.
                         find.ancestor(
                           of: find.text('Misc'),
-                          matching: find.byType(MobileSurfaceCard),
+                          matching: find.byType(MobileSection),
                         ),
                       )
                       .dy,
@@ -1071,12 +1168,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final button = find.byKey(
+      const ValueKey('mobile_settings_enhance_pir_row'),
+    );
+    // The account card and taller rows put the privacy card further down.
+    await tester.scrollUntilVisible(button, 200);
     expect(
       find.byKey(const ValueKey('mobile_settings_enhance_pir_toggle')),
       findsOneWidget,
-    );
-    final button = find.byKey(
-      const ValueKey('mobile_settings_enhance_pir_row'),
     );
     await tester.scrollUntilVisible(button, 200);
     expect(button, findsOneWidget);
@@ -1495,7 +1594,8 @@ void main() {
     );
     expect(find.text('My gift cards'), findsOneWidget);
     expect(find.text('New'), findsOneWidget);
-    expect(find.text('John'), findsOneWidget);
+    // The account card and the Account Name row both show the name.
+    expect(find.text('John'), findsNWidgets(2));
     expect(find.text('Knight'), findsOneWidget);
     final pfpRow = find.byKey(const ValueKey('mobile_settings_pfp_row'));
     final pfp = find.descendant(
@@ -1506,13 +1606,14 @@ void main() {
       tester.getTopLeft(pfp).dx,
       lessThan(tester.getTopLeft(find.text('Knight')).dx),
     );
+    // Chevrons are the muted affordance; the leading glyphs carry contrast.
     expect(
       _chevronIn(tester, const ValueKey('mobile_settings_seed_row')).color,
-      AppThemeData.dark.colors.icon.accent,
+      AppThemeData.dark.colors.icon.muted,
     );
     expect(
       _chevronIn(tester, const ValueKey('mobile_settings_pfp_row')).color,
-      AppThemeData.dark.colors.icon.accent,
+      AppThemeData.dark.colors.icon.muted,
     );
     expect(find.text('Theme'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
@@ -1751,6 +1852,43 @@ void main() {
     expect(notifier.lastMarkPromptSeen, isTrue);
     expect(tester.getTopLeft(thumb).dx, greaterThan(offThumbLeft));
     expect(tester.getCenter(thumb).dx, greaterThan(trackCenterX));
+  });
+
+  testWidgets('flip to hide row is on by default and turns it off', (
+    tester,
+  ) async {
+    final notifier = _FakeFlipToHideNotifier();
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [
+          flipToHideBalanceProvider.overrideWith(() => notifier),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_flip_to_hide_row'));
+    await tester.scrollUntilVisible(row, 200);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: row, matching: find.text('Flip to hide')),
+      findsOneWidget,
+    );
+    final thumb = find.byKey(
+      const ValueKey('mobile_settings_flip_to_hide_toggle_thumb'),
+    );
+    final track = find.byKey(
+      const ValueKey('mobile_settings_flip_to_hide_toggle'),
+    );
+    expect(tester.getCenter(thumb).dx, greaterThan(tester.getCenter(track).dx));
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(notifier.lastEnabled, isFalse);
+    expect(tester.getCenter(thumb).dx, lessThan(tester.getCenter(track).dx));
   });
 
   testWidgets('sync keep-awake row reflects persisted enabled state', (

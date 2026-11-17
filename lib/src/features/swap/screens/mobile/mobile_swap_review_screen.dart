@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -396,9 +397,9 @@ class _MobileSwapReviewScreenState
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
                 ),
                 child: widget.payMode
@@ -428,7 +429,7 @@ class _MobileSwapReviewScreenState
                               Text(
                                 message,
                                 textAlign: TextAlign.center,
-                                style: AppTypography.bodySmall.copyWith(
+                                style: AppTypography.bodyMedium.copyWith(
                                   color: colors.text.destructive,
                                 ),
                               ),
@@ -469,13 +470,13 @@ class _MobileSwapReviewScreenState
               ),
             ),
             MobileBottomSafeArea(
-              bottomPadding: AppSpacing.md,
+              bottomPadding: kMobileFooterGap,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
-                  AppSpacing.sm,
-                  AppSpacing.md,
+                  kMobilePageMargin,
+                  kMobileFooterGap,
                 ),
                 child: widget.payMode
                     ? MobilePayReviewActions(

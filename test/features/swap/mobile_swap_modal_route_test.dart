@@ -135,6 +135,43 @@ Widget _app({
 );
 
 void main() {
+  testWidgets('the direction arrows turn half a turn on each flip', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+    Finder button() => find.byWidgetPredicate(
+      (widget) =>
+          widget is GestureDetector &&
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith('swap_direction_'),
+    );
+    double turns() => tester
+        .widget<RotationTransition>(
+          find.descendant(
+            of: button(),
+            matching: find.byType(RotationTransition),
+          ),
+        )
+        .turns
+        .value;
+
+    expect(turns(), 0);
+    await tester.tap(button());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    // Mid-turn, not snapped to the end by the flip's remount.
+    expect(turns(), inExclusiveRange(0, 0.5));
+    await tester.pumpAndSettle();
+    expect(turns(), 0.5);
+    await tester.tap(button());
+    await tester.pumpAndSettle();
+    // The same way round again.
+    expect(turns(), 1);
+  });
+
   testWidgets('service notice can be dismissed before using mobile Swap', (
     tester,
   ) async {
@@ -458,16 +495,15 @@ void main() {
     expect(find.byType(MobileSwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
 
-    // The bottom strip — where the floating tab bar sits — is under the
-    // barrier too. The modal card is bottom-anchored with a gap beneath
-    // it, so a tap in that gap hits the barrier and dismisses the modal
-    // instead of reaching the tab bar to switch branches.
+    // The bottom strip, where the floating tab bar sits, is covered too.
+    // The modal is the shared mobile sheet, so the gap under its card
+    // belongs to the sheet, as on every other mobile sheet: a tap there
+    // neither reaches the tab bar nor switches branches.
     await tester.tap(find.text('Add recipient address'));
     await tester.pumpAndSettle();
     expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
     await tester.tapAt(Offset(screen.center.dx, screen.bottom - 4));
     await tester.pumpAndSettle();
-    expect(find.byType(MobileSwapAddressEditModal), findsNothing);
     expect(find.byType(MobileSwapScreen), findsOneWidget);
   });
 

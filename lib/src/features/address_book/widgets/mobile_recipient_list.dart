@@ -5,6 +5,7 @@ import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/pool_badge.dart';
 
 const _rowHeight = 44.0;
 const _lineHeight = 17.0;
@@ -64,14 +65,13 @@ class MobileRecipientSection extends StatelessWidget {
 }
 
 /// One recipient: a named contact or account (avatar, name, address) or a
-/// bare address (wallet glyph, address, optional [detail] line).
+/// bare address (wallet glyph, address, optional pool line).
 class MobileRecipientRow extends StatelessWidget {
   const MobileRecipientRow({
     required this.addressText,
     this.name,
     this.profilePictureId,
-    this.detail,
-    this.detailColor,
+    this.isShielded,
     this.amountText,
     this.timeLabel,
     this.selected = false,
@@ -86,9 +86,9 @@ class MobileRecipientRow extends StatelessWidget {
   final String? name;
   final String? profilePictureId;
 
-  /// Second line under a bare address, such as its pool.
-  final String? detail;
-  final Color? detailColor;
+  /// The pool of a bare address, shown under it as the shared [PoolBadge],
+  /// as activity rows show it.
+  final bool? isShielded;
   final String? amountText;
   final String? timeLabel;
   final bool selected;
@@ -142,14 +142,25 @@ class MobileRecipientRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _RecipientLine(title ?? addressText, color: colors.text.accent),
-                if (title != null || detail != null) ...[
+                if (title != null) ...[
                   const SizedBox(height: AppSpacing.xxs),
                   _RecipientLine(
-                    title != null ? addressText : detail!,
-                    color: title != null
-                        ? colors.text.secondary
-                        : detailColor ?? colors.text.secondary,
+                    addressText,
+                    color: colors.text.secondary,
                     fontWeight: FontWeight.w400,
+                  ),
+                ] else if (isShielded != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  // Unscaled like the lines above, so the fixed-height row
+                  // keeps one text size.
+                  SizedBox(
+                    height: _lineHeight,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: MediaQuery.withNoTextScaling(
+                        child: PoolBadge(isShielded: isShielded!),
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -179,7 +190,7 @@ class MobileRecipientRow extends StatelessWidget {
                     Text(
                       timeLabel!,
                       maxLines: 1,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),

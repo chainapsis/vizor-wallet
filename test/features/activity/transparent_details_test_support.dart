@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart'
-    show BuildContext, ThemeMode, SizedBox, ValueKey, GestureDetector;
+    show BuildContext, ThemeMode, SizedBox, Text, ValueKey, GestureDetector;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -705,6 +706,10 @@ class ReceiptTitles {
     required this.receiveFailed,
     required this.shielded,
     required this.sending,
+    required this.sent,
+    required this.sendFailed,
+    required this.recipient,
+    this.showsOwnReceivingAddress = true,
   });
 
   final String received;
@@ -712,6 +717,15 @@ class ReceiptTitles {
   final String receiveFailed;
   final String shielded;
   final String sending;
+  final String sent;
+  final String sendFailed;
+
+  /// The label of a send's counterparty row.
+  final String recipient;
+
+  /// Whether a receive shows the wallet's own receiving address. Mobile
+  /// leaves it out: under the amount it read as the sender.
+  final bool showsOwnReceivingAddress;
 }
 
 const _shieldedRecipientAddress =
@@ -753,13 +767,20 @@ rust_sync.TransactionInfo mixedSend() {
   );
 }
 
-/// The send shell with a To row naming no one and nothing to verify.
-void _expectUnknownRecipientShell({required String title}) {
+/// The send shell with a counterparty row naming no one and nothing to
+/// verify. Mobile labels that row "Recipient"; nothing else may be.
+void _expectUnknownRecipientShell({
+  required String title,
+  required String recipientLabel,
+}) {
   expect(find.text(title), findsOneWidget);
-  expect(find.text('To'), findsOneWidget);
+  expect(find.text(recipientLabel), findsOneWidget);
   expect(find.text(testL10n.activityDetailsUnknownRecipient), findsOneWidget);
-  expect(find.text('Show full address'), findsNothing);
-  expect(find.text('Recipient'), findsNothing);
+  expect(_fullAddressAction, findsNothing);
+  expect(
+    find.text('Recipient'),
+    recipientLabel == 'Recipient' ? findsOneWidget : findsNothing,
+  );
 }
 
 /// The transaction's outputs [listed] as such, never as recipients; the
@@ -790,6 +811,22 @@ final _supplementalCard = find.byKey(
   const ValueKey('transparent_details_section'),
 );
 
+/// The full-address action: the desktop's labelled button, or the chevron
+/// that ends the mobile From/To row.
+final _fullAddressAction = find.byWidgetPredicate(
+  (widget) =>
+      (widget is Text && widget.data == 'Show full address') ||
+      widget.key == const ValueKey('mobile_tx_status_show_full_address'),
+);
+
+/// A counterparty's pool: text on desktop, the labelled pool glyph that
+/// starts the mobile From/To row.
+Finder _poolLabel(String label) => find.byWidgetPredicate(
+  (widget) =>
+      (widget is Text && widget.data == label) ||
+      (widget is AppIcon && widget.semanticLabel == label),
+);
+
 /// Public and private receipts of the same transaction share one shell; only
 /// what private queries cannot know (the sender) differs.
 void transparentReceiptParityTests({
@@ -810,7 +847,10 @@ void transparentReceiptParityTests({
       expect(find.text(titles.received), findsOneWidget);
       expect(find.text('From'), findsOneWidget);
       expect(find.text('Completed'), findsOneWidget);
-      expect(_showsAddress(transparentOwnAddress), findsWidgets);
+      expect(
+        _showsAddress(transparentOwnAddress),
+        titles.showsOwnReceivingAddress ? findsWidgets : findsNothing,
+      );
       // The sender's change is not the account's and is never listed.
       expect(_supplementalCard, findsNothing);
       expect(find.textContaining('0.0548', findRichText: true), findsNothing);
@@ -818,15 +858,15 @@ void transparentReceiptParityTests({
       expect(find.text('Recipient'), findsNothing);
       if (private) {
         expect(find.text('Unknown sender'), findsOneWidget);
-        expect(find.text('Show full address'), findsNothing);
+        expect(_fullAddressAction, findsNothing);
         // A transparent receiving output says nothing about the sender's
         // pool, and neither output is the sender.
-        expect(find.text('Transparent'), findsNothing);
+        expect(_poolLabel('Transparent'), findsNothing);
         expect(_showsAddress(transparentSenderAddress), findsNothing);
       } else {
         expect(_showsAddress(transparentSenderAddress), findsOneWidget);
-        expect(find.text('Transparent'), findsOneWidget);
-        expect(find.text('Show full address'), findsOneWidget);
+        expect(_poolLabel('Transparent'), findsOneWidget);
+        expect(_fullAddressAction, findsOneWidget);
       }
       await tester.pumpWidget(const SizedBox());
     });
@@ -840,10 +880,10 @@ void transparentReceiptParityTests({
         transaction: transparentSend(),
         privateQueries: private,
       );
-      expect(find.text('Sent successfully'), findsOneWidget);
-      expect(find.text('To'), findsOneWidget);
+      expect(find.text(titles.sent), findsOneWidget);
+      expect(find.text(titles.recipient), findsOneWidget);
       expect(_showsAddress(transparentRecipientAddress), findsWidgets);
-      expect(find.text('Show full address'), findsOneWidget);
+      expect(_fullAddressAction, findsOneWidget);
       expect(find.text(testL10n.activityDetailsUnknownRecipient), findsNothing);
       // The account's change is not a payment.
       expect(_showsAddress(transparentOwnAddress), findsNothing);
@@ -868,10 +908,10 @@ void transparentReceiptParityTests({
         transaction: transparentSend(),
         privateQueries: private,
       );
-      expect(find.text('To'), findsOneWidget);
+      expect(find.text(titles.recipient), findsOneWidget);
       expect(_showsAddress(transparentSecondRecipientAddress), findsWidgets);
       expect(_showsAddress(transparentRecipientAddress), findsNothing);
-      expect(find.text('Show full address'), findsOneWidget);
+      expect(_fullAddressAction, findsOneWidget);
       // A recorded recipient needs no list of the transaction's outputs.
       expect(_supplementalCard, findsNothing);
       await tester.pumpWidget(const SizedBox());
@@ -892,10 +932,10 @@ void transparentReceiptParityTests({
         transaction: mixedSend(),
         privateQueries: private,
       );
-      expect(find.text('Sent successfully'), findsOneWidget);
+      expect(find.text(titles.sent), findsOneWidget);
       expect(_showsAddress(_shieldedRecipientAddress), findsWidgets);
       expect(_showsAddress(transparentRecipientAddress), findsNothing);
-      expect(find.text('Show full address'), findsOneWidget);
+      expect(_fullAddressAction, findsOneWidget);
       expect(_supplementalCard, findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
@@ -910,7 +950,10 @@ void transparentReceiptParityTests({
       transaction: transparentSend(),
       privateQueries: true,
     );
-    _expectUnknownRecipientShell(title: 'Sent successfully');
+    _expectUnknownRecipientShell(
+      title: titles.sent,
+      recipientLabel: titles.recipient,
+    );
     // The other party's output stays listed, attributed to no one, and the
     // receipt says its details are incomplete.
     _expectNeutralOutputs(listed: [0], hidden: [1]);
@@ -934,7 +977,10 @@ void transparentReceiptParityTests({
       transaction: mixedSend(),
       privateQueries: true,
     );
-    _expectUnknownRecipientShell(title: 'Sent successfully');
+    _expectUnknownRecipientShell(
+      title: titles.sent,
+      recipientLabel: titles.recipient,
+    );
     _expectNeutralOutputs(listed: [0], hidden: [1]);
     await tester.pumpWidget(const SizedBox());
   });
@@ -972,7 +1018,10 @@ void transparentReceiptParityTests({
       transaction: transparentSend(),
       privateQueries: true,
     );
-    _expectUnknownRecipientShell(title: 'Sent successfully');
+    _expectUnknownRecipientShell(
+      title: titles.sent,
+      recipientLabel: titles.recipient,
+    );
     _expectNeutralOutputs(listed: [1, 2], hidden: [0]);
     await tester.pumpWidget(const SizedBox());
   });
@@ -993,7 +1042,10 @@ void transparentReceiptParityTests({
       privateQueries: true,
       privacy: true,
     );
-    _expectUnknownRecipientShell(title: 'Sent successfully');
+    _expectUnknownRecipientShell(
+      title: titles.sent,
+      recipientLabel: titles.recipient,
+    );
     _expectNeutralOutputs(listed: [0, 2], hidden: [1]);
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('transaction_output_0'))).dy,
@@ -1037,7 +1089,8 @@ void transparentReceiptParityTests({
         privateQueries: true,
       );
       _expectUnknownRecipientShell(
-        title: expired ? 'Send failed' : titles.sending,
+        title: expired ? titles.sendFailed : titles.sending,
+        recipientLabel: titles.recipient,
       );
       await tester.pumpWidget(const SizedBox());
     });
@@ -1075,9 +1128,9 @@ void transparentReceiptParityTests({
       privateQueries: true,
     );
     // Its role may still change, so it has no To row at all.
-    expect(find.text('To'), findsNothing);
+    expect(find.text(titles.recipient), findsNothing);
     expect(find.text(testL10n.activityDetailsUnknownRecipient), findsNothing);
-    expect(find.text('Show full address'), findsNothing);
+    expect(_fullAddressAction, findsNothing);
     _expectNeutralOutputs(listed: [0], hidden: [1]);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1119,8 +1172,8 @@ void transparentReceiptParityTests({
     expect(find.text(testL10n.activityReceiptNetChange), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     expect(find.text(testL10n.activityDetailsUnknownRecipient), findsNothing);
-    expect(find.text('To'), findsNothing);
-    expect(find.text('Show full address'), findsNothing);
+    expect(find.text(titles.recipient), findsNothing);
+    expect(_fullAddressAction, findsNothing);
     expect(find.text('0.0002 ZEC'), findsOneWidget, reason: 'one fee line');
     await tester.pumpWidget(const SizedBox());
   });
@@ -1186,7 +1239,7 @@ void transparentReceiptParityTests({
       );
       expect(find.text('Shielded sender'), findsOneWidget);
       expect(find.text('Unknown sender'), findsNothing);
-      expect(find.text('Show full address'), findsNothing);
+      expect(_fullAddressAction, findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
   }
@@ -1221,10 +1274,10 @@ void transparentReceiptParityTests({
       expect(find.text('Unknown sender'), findsNothing);
       expect(find.text('Shielded sender'), findsNothing);
       // An account is not an address: nothing to show or verify.
-      expect(find.text('Show full address'), findsNothing);
+      expect(_fullAddressAction, findsNothing);
       // The pool appears only when the stored transaction established it.
-      expect(find.text('Shielded'), private ? findsNothing : findsOneWidget);
-      expect(find.text('Transparent'), findsNothing);
+      expect(_poolLabel('Shielded'), private ? findsNothing : findsOneWidget);
+      expect(_poolLabel('Transparent'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -1239,7 +1292,7 @@ void transparentReceiptParityTests({
       );
       expect(find.byKey(const ValueKey('received_from_account')), findsNothing);
       expect(_showsAddress(transparentSenderAddress), findsOneWidget);
-      expect(find.text('Show full address'), findsOneWidget);
+      expect(_fullAddressAction, findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -1342,7 +1395,10 @@ void transparentReceiptParityTests({
       );
       expect(find.text(titles.received), findsOneWidget);
       expect(find.text('Unknown sender'), findsOneWidget);
-      expect(_showsAddress(transparentOwnAddress), findsWidgets);
+      expect(
+        _showsAddress(transparentOwnAddress),
+        titles.showsOwnReceivingAddress ? findsWidgets : findsNothing,
+      );
       expect(_supplementalCard, findsNothing);
       expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
       expect(find.text(testL10n.activityDetailsNotCovered), findsNothing);
@@ -1395,7 +1451,7 @@ void transparentReceiptParityTests({
       privateQueries: true,
     );
     expect(find.text('Transaction'), findsOneWidget);
-    expect(find.text('To'), findsNothing);
+    expect(find.text(titles.recipient), findsNothing);
     expect(find.text(testL10n.activityDetailsUnknownRecipient), findsNothing);
     // The fee is the entry's one line.
     expect(find.text(testL10n.activityReceiptNetChange), findsOneWidget);

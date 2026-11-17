@@ -71,7 +71,7 @@ class SeedCard extends StatelessWidget {
                           copied
                               ? context.l10n.commonCopied
                               : context.l10n.commonCopy,
-                          style: AppTypography.labelMedium.copyWith(
+                          style: AppTypography.labelLarge.copyWith(
                             color: colors.text.homeCard,
                           ),
                         ),

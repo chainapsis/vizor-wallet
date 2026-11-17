@@ -108,13 +108,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('******'), findsNWidgets(2));
+      expect(find.text('••••••'), findsNWidgets(2));
       expect(
         find.byKey(const ValueKey('home_desktop_balance_fiat_text')),
         findsOneWidget,
       );
       expect(find.text('ZEC'), findsOneWidget);
-      expect(find.text('****** ZEC ZEC'), findsNothing);
+      expect(find.text('•••••• ZEC ZEC'), findsNothing);
     },
   );
 
@@ -205,7 +205,7 @@ void main() {
         final amount = find.byKey(
           const ValueKey('home_desktop_balance_amount_text'),
         );
-        final expected = privacyModeEnabled ? '******' : '0';
+        final expected = privacyModeEnabled ? '••••••' : '0';
         expect(tester.widget<Text>(amount).data, expected);
         expect(tester.getSemantics(amount).label, expected);
         expect(
@@ -284,7 +284,7 @@ void main() {
     );
     expect(
       changeText.style?.color,
-      AppThemeData.light.colors.text.positiveStrong,
+      AppThemeData.light.colors.text.homeCardPositive,
     );
   });
 
@@ -310,7 +310,10 @@ void main() {
     final changeText = tester.widget<Text>(
       find.byKey(const ValueKey('home_desktop_balance_price_change_text')),
     );
-    expect(changeText.style?.color, AppThemeData.light.colors.text.destructive);
+    expect(
+      changeText.style?.color,
+      AppThemeData.light.colors.text.homeCardNegative,
+    );
   });
 
   testWidgets('home desktop content tracks pane center on scaled screens', (

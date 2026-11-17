@@ -18,6 +18,7 @@ import '../../../core/feedback/app_review.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/mobile/ios_native_tab_bar_root.dart';
 import '../../../core/navigation/external_action_guard_provider.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -68,6 +69,8 @@ class _PaymentRequestHostState extends ConsumerState<PaymentRequestHost>
   );
   PaymentRequestFlowState? _closingFlow;
   String? _presentedAccountUuid;
+  IosNativeTabBarCoordinator? _tabCoordinator;
+  IosNativeTabBarOverlayLease? _tabOverlay;
   GoRouter get router => widget.router;
 
   bool get _isMobile => kAppFormFactor == AppFormFactor.mobile;
@@ -78,6 +81,7 @@ class _PaymentRequestHostState extends ConsumerState<PaymentRequestHost>
     if (_isMobile) {
       ref.listenManual(paymentRequestFlowProvider, (previous, next) {
         if (next != null) {
+          _tabOverlay?.setDisplayed(true);
           _presentedAccountUuid = ref
               .read(accountProvider)
               .value
@@ -102,7 +106,18 @@ class _PaymentRequestHostState extends ConsumerState<PaymentRequestHost>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final coordinator = IosNativeTabBarScope.maybeOf(context);
+    if (identical(coordinator, _tabCoordinator)) return;
+    _tabOverlay?.release();
+    _tabCoordinator = coordinator;
+    _tabOverlay = coordinator?.acquireOverlay();
+  }
+
+  @override
   void dispose() {
+    _tabOverlay?.release();
     if (_isMobile) {
       _sheetAnimation.dispose();
       _sheetController.dispose();
@@ -129,6 +144,8 @@ class _PaymentRequestHostState extends ConsumerState<PaymentRequestHost>
     final flow =
         activeFlow ??
         (MediaQuery.disableAnimationsOf(context) ? null : _closingFlow);
+    // A dismissed provider can still have a card painting its exit transition.
+    _tabOverlay?.setDisplayed(flow != null && !_scanning);
     // [child] is the router's content, and it holds route-local state — a
     // half-typed Send form, a scroll offset, an expanded row. So it keeps one
     // position in the tree whether or not a card is up: always this `Stack`'s

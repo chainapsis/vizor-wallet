@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
@@ -6,6 +9,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../../core/widgets/decimal_amount_input_formatter.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_fiat_amount.dart';
@@ -23,6 +28,12 @@ import '../swap_asset_icon.dart';
 /// Input semantics mirror [SwapComposerPanel] one-to-one — controllers
 /// synced from state, fiat/token mode per side, exact-input vs
 /// exact-output via which field is edited.
+/// A Figma row height grown with the text size, so the row's text never
+/// clips. The card height and the direction button's position use the same
+/// values, so the layout stays aligned.
+double _scaledSwapRowHeight(BuildContext context, double height) =>
+    math.max(height, MediaQuery.textScalerOf(context).scale(height));
+
 class MobileSwapComposerTicket extends StatefulWidget {
   const MobileSwapComposerTicket({
     required this.state,
@@ -75,9 +86,10 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
   late final FocusNode _amountFocusNode;
   late final FocusNode _receiveAmountFocusNode;
 
-  // Figma card anatomy: 20px vertical padding, 17px title line (only
-  // while the side is empty), 60px amount row, 32px bottom row.
-  static const _cardVerticalPadding = 20.0;
+  // Card anatomy: 24px vertical padding (Figma's 20 plus a little breathing
+  // room around the amounts), 17px title line (only while the side is
+  // empty), 60px amount row, 32px bottom row.
+  static const _cardVerticalPadding = AppSpacing.md;
   static const _titleRowHeight = 17.0;
   static const _amountRowHeight = 60.0;
   static const _bottomRowHeight = 32.0;
@@ -139,11 +151,11 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
         : state.receiveAmountText;
   }
 
-  double _cardHeight({required bool showTitle}) {
+  double _cardHeight(BuildContext context, {required bool showTitle}) {
     return _cardVerticalPadding * 2 +
-        (showTitle ? _titleRowHeight : 0) +
-        _amountRowHeight +
-        _bottomRowHeight;
+        (showTitle ? _scaledSwapRowHeight(context, _titleRowHeight) : 0) +
+        _scaledSwapRowHeight(context, _amountRowHeight) +
+        _scaledSwapRowHeight(context, _bottomRowHeight);
   }
 
   @override
@@ -182,6 +194,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             )
           : null,
       amount: _SwapAmountInput(
+        semanticsLabel: context.l10n.commonYouPay,
         key: const ValueKey('swap_amount_field'),
         controller: _amountController,
         focusNode: _amountFocusNode,
@@ -237,6 +250,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
       showTitle: true,
       title: context.l10n.swapComposerYouReceive,
       amount: _SwapAmountInput(
+        semanticsLabel: context.l10n.swapComposerYouReceive,
         key: const ValueKey('swap_receive_amount_field'),
         controller: _receiveAmountController,
         focusNode: _receiveAmountFocusNode,
@@ -288,7 +302,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           : null,
     );
 
-    final payCardHeight = _cardHeight(showTitle: true);
+    final payCardHeight = _cardHeight(context, showTitle: true);
     final switchButtonTop =
         payCardHeight + _cardGap / 2 - _switchButtonSize / 2;
 
@@ -298,6 +312,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(28),
+        boxShadow: mobileSurfaceShadows(colors),
       ),
       child: Stack(
         clipBehavior: Clip.none,
@@ -315,7 +330,8 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             right: 0,
             child: Center(
               child: _SwapDirectionButton(
-                key: ValueKey('swap_direction_${targetDirection.name}'),
+                tapKey: ValueKey('swap_direction_${targetDirection.name}'),
+                flipped: sendsZec,
                 onTap: widget.onToggleDirection,
               ),
             ),
@@ -378,7 +394,10 @@ class _SwapCard extends StatelessWidget {
               // reopens the platform text-input connection, which dismisses
               // the keyboard mid-entry.
               key: const ValueKey('swap_card_title'),
-              height: _MobileSwapComposerTicketState._titleRowHeight,
+              height: _scaledSwapRowHeight(
+                context,
+                _MobileSwapComposerTicketState._titleRowHeight,
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -386,8 +405,9 @@ class _SwapCard extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      // Readable label tone; muted falls under 4.5:1.
                       style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.muted,
+                        color: colors.text.secondary,
                       ),
                     ),
                   ),
@@ -403,7 +423,10 @@ class _SwapCard extends StatelessWidget {
             // TextField keeps its element across the empty↔filled title-row
             // toggle — preserving the live platform keyboard connection.
             key: const ValueKey('swap_card_amount'),
-            height: _MobileSwapComposerTicketState._amountRowHeight,
+            height: _scaledSwapRowHeight(
+              context,
+              _MobileSwapComposerTicketState._amountRowHeight,
+            ),
             child: Row(
               children: [
                 Expanded(child: amount),
@@ -414,7 +437,10 @@ class _SwapCard extends StatelessWidget {
           ),
           SizedBox(
             key: const ValueKey('swap_card_bottom'),
-            height: _MobileSwapComposerTicketState._bottomRowHeight,
+            height: _scaledSwapRowHeight(
+              context,
+              _MobileSwapComposerTicketState._bottomRowHeight,
+            ),
             child: Row(
               children: [
                 // Fiat meta takes only its (short) content width so the
@@ -443,6 +469,7 @@ class _SwapCard extends StatelessWidget {
 
 class _SwapAmountInput extends StatelessWidget {
   const _SwapAmountInput({
+    required this.semanticsLabel,
     required this.controller,
     required this.focusNode,
     required this.onChanged,
@@ -451,6 +478,9 @@ class _SwapAmountInput extends StatelessWidget {
     super.key,
   });
 
+  /// The card title ("You pay" / "You receive"), so a screen reader names
+  /// the field instead of reading its "0" placeholder.
+  final String semanticsLabel;
   final TextEditingController controller;
   final FocusNode focusNode;
   final ValueChanged<String> onChanged;
@@ -467,27 +497,34 @@ class _SwapAmountInput extends StatelessWidget {
       children: [
         if (prefixText != null) Text(prefixText!, style: valueStyle),
         Expanded(
-          child: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            onChanged: onChanged,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              // The decimal-pad key follows the device locale, so map a
-              // comma to the period the validator below expects.
-              const CommaToDotInputFormatter(),
-              DecimalAmountInputFormatter(maxFractionDigits: maxFractionDigits),
-            ],
-            style: valueStyle,
-            cursorColor: colors.text.accent,
-            cursorWidth: 2,
-            cursorRadius: const Radius.circular(AppRadii.full),
-            decoration: InputDecoration.collapsed(
-              // Muted "0" so an empty field reads as a placeholder rather
-              // than an entered zero — matches the desktop composer, which
-              // recolours the hint to text.disabled over the same serif.
-              hintText: '0',
-              hintStyle: valueStyle.copyWith(color: colors.text.disabled),
+          child: Semantics(
+            label: semanticsLabel,
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              onChanged: onChanged,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              inputFormatters: [
+                // The decimal-pad key follows the device locale, so map a
+                // comma to the period the validator below expects.
+                const CommaToDotInputFormatter(),
+                DecimalAmountInputFormatter(
+                  maxFractionDigits: maxFractionDigits,
+                ),
+              ],
+              style: valueStyle,
+              cursorColor: colors.text.accent,
+              cursorWidth: 2,
+              cursorRadius: const Radius.circular(AppRadii.full),
+              decoration: InputDecoration.collapsed(
+                // Muted "0" so an empty field reads as a placeholder rather
+                // than an entered zero — matches the desktop composer, which
+                // recolours the hint to text.disabled over the same serif.
+                hintText: '0',
+                hintStyle: valueStyle.copyWith(color: colors.text.disabled),
+              ),
             ),
           ),
         ),
@@ -555,13 +592,27 @@ class _CurrencyPicker extends StatelessWidget {
             ],
           ),
         ),
+        // A pickable asset shows the list-row chevron; the fixed ZEC side
+        // does not.
+        if (onTap != null) ...[
+          const SizedBox(width: AppSpacing.xxs),
+          AppIcon(
+            AppIcons.chevronForward,
+            key: const ValueKey('swap_currency_picker_chevron'),
+            size: AppIconSize.medium,
+            color: colors.icon.muted,
+          ),
+        ],
       ],
     );
     if (onTap == null) return content;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: content,
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: content,
+      ),
     );
   }
 }
@@ -618,10 +669,16 @@ class _FiatModeToggle extends StatelessWidget {
       ),
     );
     if (!showModeIcon) return content;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: content,
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          unawaited(AppHaptics.selection());
+          onTap();
+        },
+        child: content,
+      ),
     );
   }
 }
@@ -649,51 +706,65 @@ class _AddressChip extends StatelessWidget {
     final hasValue = trimmed.isNotEmpty;
     final name = contactName?.trim();
     final hasContact = hasValue && name != null && name.isNotEmpty;
-    return GestureDetector(
-      key: const ValueKey('swap_address_summary'),
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        height: _MobileSwapComposerTicketState._bottomRowHeight,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xs,
-          vertical: AppSpacing.xxs,
-        ),
-        child: hasContact
-            ? ContactNameInline(
-                name: name,
-                textStyle: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-                key: const ValueKey('swap_destination_value'),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(AppIcons.wallet, size: 20, color: colors.icon.accent),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Flexible(
-                    child: Text(
-                      hasValue
-                          ? compactSwapAddress(
-                              trimmed,
-                              prefixLength: 6,
-                              suffixLength: 4,
-                              separator: ' … ',
-                            )
-                          : emptyText,
-                      key: const ValueKey('swap_destination_value'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: hasValue
-                            ? colors.text.accent
-                            : colors.text.primary,
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        key: const ValueKey('swap_address_summary'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: _scaledSwapRowHeight(
+            context,
+            _MobileSwapComposerTicketState._bottomRowHeight,
+          ),
+          // No end inset, so the chip ends on the card's right edge like
+          // "Max" and the asset name above it.
+          padding: const EdgeInsetsDirectional.fromSTEB(
+            AppSpacing.xs,
+            AppSpacing.xxs,
+            0,
+            AppSpacing.xxs,
+          ),
+          child: hasContact
+              ? ContactNameInline(
+                  name: name,
+                  textStyle: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                  key: const ValueKey('swap_destination_value'),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(
+                      AppIcons.wallet,
+                      size: 20,
+                      color: colors.icon.accent,
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Flexible(
+                      child: Text(
+                        hasValue
+                            ? compactSwapAddress(
+                                trimmed,
+                                prefixLength: 6,
+                                suffixLength: 4,
+                                separator: ' … ',
+                              )
+                            : emptyText,
+                        key: const ValueKey('swap_destination_value'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: hasValue
+                              ? colors.text.accent
+                              : colors.text.primary,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -716,47 +787,117 @@ class _MaxAmountTrigger extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final hasError = errorText != null;
-    return GestureDetector(
-      key: const ValueKey('swap_max_amount_button'),
-      behavior: HitTestBehavior.opaque,
-      onTap: loading ? null : onTap,
-      child: Text(
-        errorText ?? context.l10n.swapComposerMaxAmount(availableText),
-        key: const ValueKey('swap_available_balance'),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: AppTypography.labelMedium.copyWith(
-          color: hasError ? colors.text.destructive : colors.text.secondary,
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        key: const ValueKey('swap_max_amount_button'),
+        behavior: HitTestBehavior.opaque,
+        onTap: loading ? null : onTap,
+        child: Text(
+          errorText ?? context.l10n.swapComposerMaxAmount(availableText),
+          key: const ValueKey('swap_available_balance'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.labelLarge.copyWith(
+            color: hasError ? colors.text.destructive : colors.text.secondary,
+          ),
         ),
       ),
     );
   }
 }
 
-class _SwapDirectionButton extends StatelessWidget {
-  const _SwapDirectionButton({required this.onTap, super.key});
+class _SwapDirectionButton extends StatefulWidget {
+  const _SwapDirectionButton({
+    required this.tapKey,
+    required this.flipped,
+    required this.onTap,
+  });
 
+  /// Keys the tap target. It changes with the direction, so it sits inside
+  /// the button: keying the button itself would remount it on every flip and
+  /// drop the turn.
+  final Key tapKey;
+
+  /// Follows the swap direction; each change turns the arrows.
+  final bool flipped;
   final VoidCallback onTap;
+
+  @override
+  State<_SwapDirectionButton> createState() => _SwapDirectionButtonState();
+}
+
+class _SwapDirectionButtonState extends State<_SwapDirectionButton>
+    with SingleTickerProviderStateMixin {
+  /// Strong ease-in-out, as the tab bar's swap arrows use.
+  static const _turnCurve = Cubic(0.77, 0, 0.175, 1);
+  static const _turnDuration = Duration(milliseconds: 300);
+
+  // The rotation lives in this state, not in an implicit animation under
+  // the keyed tap target: the key changes with every flip, which remounts
+  // that subtree and would snap an implicit animation to its end.
+  late final AnimationController _turn = AnimationController(
+    vsync: this,
+    duration: _turnDuration,
+  );
+
+  /// Half a turn per flip, always the same way round. The arrows are
+  /// symmetric under a half turn, so they rest looking unchanged.
+  double _turns = 0;
+  Animation<double> _rotation = const AlwaysStoppedAnimation(0);
+
+  @override
+  void didUpdateWidget(covariant _SwapDirectionButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.flipped == widget.flipped) return;
+    // A flip mid-turn continues from where the arrows are.
+    final from = _rotation.value;
+    _turns += 0.5;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _rotation = AlwaysStoppedAnimation(_turns);
+      return;
+    }
+    _rotation = Tween<double>(
+      begin: from,
+      end: _turns,
+    ).chain(CurveTween(curve: _turnCurve)).animate(_turn);
+    _turn.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _turn.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        width: _MobileSwapComposerTicketState._switchButtonSize,
-        height: _MobileSwapComposerTicketState._switchButtonSize,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: colors.background.inverse,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: colors.background.ground, width: 6),
-        ),
-        child: AppIcon(
-          AppIcons.swapArrows,
-          size: 20,
-          color: colors.icon.inverse,
+    return Semantics(
+      button: true,
+      label: context.l10n.swapSwitchDirection,
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: widget.tapKey,
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          width: _MobileSwapComposerTicketState._switchButtonSize,
+          height: _MobileSwapComposerTicketState._switchButtonSize,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colors.background.inverse,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colors.background.ground, width: 6),
+          ),
+          child: RotationTransition(
+            turns: _rotation,
+            child: AppIcon(
+              AppIcons.swapArrows,
+              size: 20,
+              color: colors.icon.inverse,
+            ),
+          ),
         ),
       ),
     );

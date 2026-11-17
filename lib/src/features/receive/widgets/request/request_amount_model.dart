@@ -144,10 +144,18 @@ class ZecRequestView {
 
   /// `0.5 ZEC` for the line under the QR, or null before there is an amount.
   String? get summaryAmountText {
+    final amount = summaryZecAmount;
+    if (amount == null) return null;
+    return '$amount $kZcashDefaultCurrencyTicker';
+  }
+
+  /// The ZEC amount of [summaryAmountText] without its ticker (`0.5`), for
+  /// layouts that set the ticker in its own style.
+  String? get summaryZecAmount {
     final uri = requestUri;
     if (uri == null) return null;
     try {
-      return '${normalizeZip321Amount(amountZec)} $kZcashDefaultCurrencyTicker';
+      return normalizeZip321Amount(amountZec);
     } on Zip321BuildException {
       return null;
     }

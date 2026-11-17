@@ -80,7 +80,7 @@ void main() {
             find.byKey(const ValueKey('mobile_ironwood_keystone_signing_next')),
           )
           .width,
-      361,
+      353,
     );
     expect(
       find.byKey(const ValueKey('mobile_ironwood_keystone_signing_cancel')),

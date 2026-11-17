@@ -153,7 +153,8 @@ void main() {
       const ValueKey('mobile_endpoint_custom_field_shell'),
     );
 
-    expect(tester.getSize(cardFinder), const Size(361, 200));
+    // 393 minus the 20px page margins.
+    expect(tester.getSize(cardFinder), const Size(353, 200));
     expect(tester.getSize(fieldFinder).height, 60);
 
     final cardTop = tester.getTopLeft(cardFinder).dy;

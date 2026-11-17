@@ -12,6 +12,7 @@ import '../../../swap/widgets/near_intents_service_notice_host.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
@@ -58,6 +59,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   late final FocusNode _amountFocusNode;
   late final TextEditingController _recipientController;
   bool _modalRouteOpen = false;
+
+  /// The last surface the modal drew, kept while the sheet slides out (its
+  /// future completes on pop, before the exit animation ends).
+  _PayModalSurface? _lastModalSurface;
   bool _reviewRequestInFlight = false;
   int _reviewRequestGeneration = 0;
   var _step = _MobilePayStep.amount;
@@ -99,17 +104,12 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     setState(() => _payModal.value = surface);
     if (_modalRouteOpen) return;
     _modalRouteOpen = true;
-    final appTheme = context.appTheme;
+    // The shared mobile sheet: same entrance, exit, scrim and
+    // drag-to-dismiss as the other mobile modals.
     unawaited(
-      showGeneralDialog<void>(
+      showAppMobileSheet<void>(
         context: context,
-        useRootNavigator: true,
-        barrierDismissible: true,
-        barrierLabel: context.l10n.payScanBarrierDismiss,
-        barrierColor: context.colors.background.neutralScrim,
-        transitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) =>
-            AppTheme(data: appTheme, child: _buildPayModal()),
+        builder: (_) => _buildPayModal(),
       ).whenComplete(() {
         _modalRouteOpen = false;
         if (mounted) setState(() => _payModal.value = null);
@@ -182,8 +182,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   Widget _buildPayModal() {
     return ValueListenableBuilder<_PayModalSurface?>(
       valueListenable: _payModal,
-      builder: (context, surface, _) {
+      builder: (context, current, _) {
+        final surface = current ?? _lastModalSurface;
         if (surface == null) return const SizedBox.shrink();
+        _lastModalSurface = surface;
         return Consumer(
           builder: (context, ref, _) {
             final swapState = ref.watch(swapStateProvider);
@@ -234,25 +236,8 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 onCancel: _closePayModal,
               ),
             };
-            // Match the Swap modal route exactly: only the bottom card is
-            // hit-testable, so taps in the empty area reach the dismissible
-            // dialog barrier instead of being swallowed by a full-screen
-            // scroll view.
-            return SafeArea(
-              bottom: false,
-              child: surface == _PayModalSurface.slippage
-                  ? Align(
-                      alignment: Alignment.bottomCenter,
-                      child: MobileModalCard(child: content),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Spacer(),
-                        MobileModalCard(child: content),
-                      ],
-                    ),
-            );
+            // showAppMobileSheet supplies the card, margins and safe area.
+            return content;
           },
         );
       },
@@ -380,7 +365,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 MobileTopNav.back(title: title, onBack: back),
                 Expanded(
                   child: MobileBottomSafeArea(
-                    bottomPadding: AppSpacing.md,
+                    bottomPadding: kMobileFooterGap,
                     child: switch (_step) {
                       _MobilePayStep.amount => MobilePayAmountStep(
                         state: swapState,

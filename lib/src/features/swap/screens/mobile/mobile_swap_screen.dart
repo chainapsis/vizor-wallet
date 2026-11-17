@@ -12,6 +12,8 @@ import '../../widgets/near_intents_service_notice_host.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
+import '../../../../core/layout/mobile/mobile_tab_root_scroll_fades.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -72,6 +74,11 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   final ValueNotifier<_SwapModalSurface?> _swapModal =
       ValueNotifier<_SwapModalSurface?>(null);
   bool _modalRouteOpen = false;
+
+  /// The last surface the modal drew. The route's future completes when it
+  /// pops, before the sheet has slid out, so the sheet keeps drawing this
+  /// surface instead of emptying mid-exit.
+  _SwapModalSurface? _lastModalSurface;
   String? _addressEditorDraftText;
   bool _addressEditorDraftRemember = false;
 
@@ -96,21 +103,14 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     setState(() => _swapModal.value = surface);
     if (_modalRouteOpen) return;
     _modalRouteOpen = true;
-    // One root-navigator dialog hosts every surface: the scrim must
-    // cover the status bar and the floating tab bar (the shell paints
-    // the bar above this screen, so an inline overlay can't reach it —
-    // same convention as showAppMobileSheet). Surface switches (editor
-    // → scanner → contacts → editor) swap content inside the open
-    // route instead of re-navigating.
+    // One shared mobile sheet hosts every surface, with the same entrance,
+    // exit, scrim and drag-to-dismiss as the other mobile modals. Surface
+    // switches (editor → scanner → contacts → editor) swap content inside
+    // the open sheet instead of re-navigating.
     unawaited(
-      showGeneralDialog<void>(
+      showAppMobileSheet<void>(
         context: context,
-        useRootNavigator: true,
-        barrierDismissible: true,
-        barrierLabel: context.l10n.swapDismissBarrierLabel,
-        barrierColor: context.colors.background.neutralScrim,
-        transitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) => _buildSwapModal(),
+        builder: (_) => _buildSwapModal(),
       ).whenComplete(() {
         _modalRouteOpen = false;
         if (mounted) {
@@ -164,15 +164,17 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     _closeSwapModal();
   }
 
-  /// Content of the root modal route: re-renders on surface switches
-  /// via [_swapModal] and on swap state changes via its own Consumer
-  /// (the route doesn't rebuild with the screen). Empty space around
-  /// the card falls through to the dialog barrier, which dismisses.
+  /// Content of the modal sheet: re-renders on surface switches via
+  /// [_swapModal] and on swap state changes via its own Consumer (the
+  /// sheet doesn't rebuild with the screen). [showAppMobileSheet] supplies
+  /// the card, margins and safe area.
   Widget _buildSwapModal() {
     return ValueListenableBuilder<_SwapModalSurface?>(
       valueListenable: _swapModal,
-      builder: (context, surface, _) {
+      builder: (context, current, _) {
+        final surface = current ?? _lastModalSurface;
         if (surface == null) return const SizedBox.shrink();
+        _lastModalSurface = surface;
         return Consumer(
           builder: (context, ref, _) {
             final swapState = ref.watch(swapStateProvider);
@@ -248,10 +250,6 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                   onCancel: _closeSwapModal,
                 ),
             };
-            // The shared base card provides the ground surface, radius,
-            // side margins, bottom gap and keyboard avoidance — the same
-            // chrome as showAppMobileSheet — so the swap modals match the
-            // other mobile modals. Bottom-anchored and full-width.
             return MobileSidebarExitScope(
               canSwitchAccount: !swapState.quoteLoading,
               onExit: () async {
@@ -259,21 +257,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 swapNotifier.cancelReviewQuote();
                 return true;
               },
-              child: SafeArea(
-                bottom: false,
-                child: surface == _SwapModalSurface.slippageSettings
-                    ? Align(
-                        alignment: Alignment.bottomCenter,
-                        child: MobileModalCard(child: surfaceContent),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Spacer(),
-                          MobileModalCard(child: surfaceContent),
-                        ],
-                      ),
-              ),
+              child: surfaceContent,
             );
           },
         );
@@ -402,92 +386,103 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
               children: [
                 MobileTopNav.back(
                   title: context.l10n.swapPageTitle,
+                  // Tab roots keep the large serif title.
+                  titleStyle: AppTypography.headlineLarge,
                   trailing: const SwapNearIntentsAttribution(alignEnd: true),
                 ),
                 Expanded(
-                  child: SingleChildScrollView(
-                    // The ticket sits flush under the top nav — Figma
-                    // 4686:101436 has no gap above the swap widget.
-                    padding: EdgeInsets.fromLTRB(
-                      AppSpacing.sm,
-                      0,
-                      AppSpacing.sm,
-                      // Clears the floating tab bar.
-                      MobileNavigationScope.bottomClearanceOf(context, 96),
-                    ),
-                    child: Column(
-                      children: [
-                        MobileSwapComposerTicket(
-                          state: swapState,
-                          onAmountChanged: swapNotifier.updateAmount,
-                          onAmountFiatChanged: swapNotifier.updateAmountFiat,
-                          onReceiveAmountChanged:
-                              swapNotifier.updateReceiveAmount,
-                          onReceiveAmountFiatChanged:
-                              swapNotifier.updateReceiveAmountFiat,
-                          onToggleFiatInputMode:
-                              swapNotifier.toggleFiatInputMode,
-                          onToggleDirection: () {
-                            unawaited(AppHaptics.selection());
-                            swapNotifier.toggleDirection();
-                          },
-                          onOpenExternalAssetPicker: () =>
-                              _openModal(_SwapModalSurface.assetSelector),
-                          onOpenDestinationAddress: _openAddressEditor,
-                          onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
-                          zecAvailableText: zecAvailableText,
-                          destinationContactName: swapDestinationContactFor(
-                            swapState,
-                            ref.watch(addressBookProvider).value?.contacts ??
-                                const [],
-                          )?.label,
-                          oneTimeZecAddress: oneTimeZecAddress,
-                          preparingOneTimeAddress:
-                              addressWait == SwapAddressWait.preparing,
+                  // Soft edges under the top nav and the tab bar, as on
+                  // every tab.
+                  child: MobileTabRootScrollFades(
+                    child: SingleChildScrollView(
+                      // Same insets as the other tab roots: 12px under the top
+                      // nav, and clear of the floating tab bar.
+                      padding: EdgeInsets.fromLTRB(
+                        kMobilePageMargin,
+                        AppSpacing.s,
+                        kMobilePageMargin,
+                        MobileNavigationScope.bottomClearanceOf(
+                          context,
+                          kMobileTabBarHeight + AppSpacing.lg,
                         ),
-                        const SizedBox(height: AppSpacing.md),
-                        Row(
-                          children: [
-                            AppButton(
-                              key: const ValueKey('swap_settings_button'),
-                              variant: AppButtonVariant.secondary,
-                              onPressed: swapState.quoteLoading
-                                  ? null
-                                  : () => _openModal(
-                                      _SwapModalSurface.slippageSettings,
-                                    ),
-                              trailing: const AppIcon(AppIcons.cog),
-                              child: Text(
-                                formatSwapSlippage(swapState.slippageBps),
+                      ),
+                      child: Column(
+                        children: [
+                          MobileSwapComposerTicket(
+                            state: swapState,
+                            onAmountChanged: swapNotifier.updateAmount,
+                            onAmountFiatChanged: swapNotifier.updateAmountFiat,
+                            onReceiveAmountChanged:
+                                swapNotifier.updateReceiveAmount,
+                            onReceiveAmountFiatChanged:
+                                swapNotifier.updateReceiveAmountFiat,
+                            onToggleFiatInputMode:
+                                swapNotifier.toggleFiatInputMode,
+                            onToggleDirection: () {
+                              unawaited(AppHaptics.selection());
+                              swapNotifier.toggleDirection();
+                            },
+                            onOpenExternalAssetPicker: () =>
+                                _openModal(_SwapModalSurface.assetSelector),
+                            onOpenDestinationAddress: _openAddressEditor,
+                            onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
+                            zecAvailableText: zecAvailableText,
+                            destinationContactName: swapDestinationContactFor(
+                              swapState,
+                              ref.watch(addressBookProvider).value?.contacts ??
+                                  const [],
+                            )?.label,
+                            oneTimeZecAddress: oneTimeZecAddress,
+                            preparingOneTimeAddress:
+                                addressWait == SwapAddressWait.preparing,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          Row(
+                            children: [
+                              AppButton(
+                                key: const ValueKey('swap_settings_button'),
+                                variant: AppButtonVariant.secondary,
+                                onPressed: swapState.quoteLoading
+                                    ? null
+                                    : () => _openModal(
+                                        _SwapModalSurface.slippageSettings,
+                                      ),
+                                trailing: const AppIcon(AppIcons.cog),
+                                child: Text(
+                                  formatSwapSlippage(swapState.slippageBps),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: AppSpacing.s),
-                            Expanded(
-                              child: _MobileSwapReviewButton(
-                                state: swapState,
-                                addressWait: addressWait,
-                                zecAvailableZatoshi: zecSpendable,
-                                onOpenDestinationAddress: _openAddressEditor,
-                                onReviewQuote: openReview,
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(
+                                child: _MobileSwapReviewButton(
+                                  state: swapState,
+                                  addressWait: addressWait,
+                                  zecAvailableZatoshi: zecSpendable,
+                                  onOpenDestinationAddress: _openAddressEditor,
+                                  onReviewQuote: openReview,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (quoteError != null) ...[
+                            const SizedBox(height: AppSpacing.s),
+                            SwapQuoteErrorText(
+                              message: quoteError,
+                              textKey: const ValueKey(
+                                'swap_quote_error_message',
+                              ),
+                              maxLines: quoteError == shortfall ? null : 2,
+                              style: AppTypography.bodyMedium,
+                              action: swapQuoteErrorAction(
+                                context.l10n,
+                                swapState.quoteError,
+                                shown: quoteError,
+                                onViewSwaps: () => context.go('/activity'),
                               ),
                             ),
                           ],
-                        ),
-                        if (quoteError != null) ...[
-                          const SizedBox(height: AppSpacing.s),
-                          SwapQuoteErrorText(
-                            message: quoteError,
-                            textKey: const ValueKey('swap_quote_error_message'),
-                            maxLines: quoteError == shortfall ? null : 2,
-                            action: swapQuoteErrorAction(
-                              context.l10n,
-                              swapState.quoteError,
-                              shown: quoteError,
-                              onViewSwaps: () => context.go('/activity'),
-                            ),
-                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),

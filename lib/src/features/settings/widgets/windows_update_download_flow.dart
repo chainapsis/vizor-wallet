@@ -104,7 +104,7 @@ class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _WindowsUpdateDialogFrame(
-      iconName: AppIcons.shieldKeyholeOutline,
+      iconName: AppIcons.shieldKeyhole,
       title: context.l10n.settingsWinUpdateTorChoiceTitle,
       child: Column(
         mainAxisSize: MainAxisSize.min,

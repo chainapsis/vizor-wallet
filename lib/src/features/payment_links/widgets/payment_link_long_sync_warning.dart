@@ -87,7 +87,7 @@ class PaymentLinkLongSyncWarningSheet extends StatelessWidget {
             onPressed: onConfirm,
             child: Text(context.l10n.paymentLinkLongSyncConfirm),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.s),
           AppButton(
             key: const ValueKey('payment_link_long_sync_sheet_cancel_button'),
             variant: AppButtonVariant.ghost,
