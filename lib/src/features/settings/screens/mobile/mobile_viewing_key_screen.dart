@@ -1,7 +1,10 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
+
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -150,7 +153,7 @@ class _MobileViewingKeyScreenState
         widget.privacyOverlayController ??
         SensitivePrivacyEnvironmentController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_tryBiometricGate());
+      unawaited(_tryBiometricGate(automatic: true));
     });
   }
 
@@ -163,20 +166,38 @@ class _MobileViewingKeyScreenState
 
   // ── Confirm access gate ────────────────────────────────────────────
 
-  Future<void> _tryBiometricGate() async {
+  Future<void> _tryBiometricGate({required bool automatic}) async {
     if (_checking || _stage != _ViewingKeyStage.confirmAccess) return;
     final expectedAccountUuid = _targetAccount(
       ref.read(accountProvider).value,
     )?.uuid;
-    final accessCheckGeneration = ++_accessCheckGeneration;
+    // A skipped automatic probe must not invalidate a manual access check.
+    final deferGeneration =
+        automatic && defaultTargetPlatform == TargetPlatform.iOS;
+    var accessCheckGeneration = deferGeneration
+        ? _accessCheckGeneration
+        : ++_accessCheckGeneration;
+    final entryAtStart = _entry;
     final biometric = await ref.read(biometricUnlockProvider.future);
     if (!mounted) return;
+    if (automatic &&
+        !shouldAutoPromptSensitiveBiometric(biometric.availability.kind)) {
+      return;
+    }
+    if (deferGeneration &&
+        (_checking ||
+            _stage != _ViewingKeyStage.confirmAccess ||
+            _entry != entryAtStart ||
+            accessCheckGeneration != _accessCheckGeneration)) {
+      return;
+    }
     if (accessCheckGeneration != _accessCheckGeneration ||
         _targetAccountChanged(expectedAccountUuid)) {
       _showTargetAccountChangedError();
       return;
     }
     if (!biometric.usable) return;
+    if (deferGeneration) accessCheckGeneration = ++_accessCheckGeneration;
     final wasEnabled = biometric.enabled;
     setState(() => _checking = true);
     _privacyController.beginAuthPrompt();
@@ -491,7 +512,8 @@ class _MobileViewingKeyScreenState
                       fingerprintSize: 16,
                     ),
                   ),
-                  onPressed: () => unawaited(_tryBiometricGate()),
+                  onPressed: () =>
+                      unawaited(_tryBiometricGate(automatic: false)),
                 ),
               ),
             )
@@ -554,7 +576,8 @@ class _MobileViewingKeyScreenState
                       fingerprintSize: 16,
                     ),
                   ),
-                  onPressed: () => unawaited(_tryBiometricGate()),
+                  onPressed: () =>
+                      unawaited(_tryBiometricGate(automatic: false)),
                 ),
               ),
             ),

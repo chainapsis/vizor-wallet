@@ -9,6 +9,15 @@ import '../core/l10n/l10n.dart';
 /// "Touch ID", "fingerprint", or generic "biometrics") and whether opt-in surfaces render.
 enum BiometricKind { face, touchId, fingerprint, none }
 
+/// Sensitive gates require a deliberate Face ID request on iOS. App-start
+/// unlock has its own auto-prompt policy; Android and Touch ID keep theirs.
+bool shouldAutoPromptSensitiveBiometric(
+  BiometricKind kind, {
+  TargetPlatform? platform,
+}) =>
+    (platform ?? defaultTargetPlatform) != TargetPlatform.iOS ||
+    kind != BiometricKind.face;
+
 extension BiometricKindCopy on BiometricKind {
   String inlineLabel(AppLocalizations l10n) => l10n.biometricNameInline(name);
 

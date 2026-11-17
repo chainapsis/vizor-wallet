@@ -2,9 +2,12 @@ import '../../../../core/l10n/inline_spans.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/l10n/locale_typography.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -128,10 +131,9 @@ class _MobileSeedPhraseScreenState
     _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
       (_) => _onScreenshot(),
     );
-    // Figma `FaceID Overlay`: with biometric unlock on, the gate offers
-    // the prompt first; cancel falls back to the passcode numpad.
+    // Face ID on iOS waits for its button; other modalities keep auto-prompt.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_tryBiometricGate());
+      unawaited(_tryBiometricGate(automatic: true));
     });
   }
 
@@ -146,20 +148,39 @@ class _MobileSeedPhraseScreenState
 
   // ── Confirm access gate ────────────────────────────────────────────
 
-  Future<void> _tryBiometricGate() async {
+  Future<void> _tryBiometricGate({required bool automatic}) async {
     if (_checking || _stage != _SeedStage.confirmAccess) return;
     final expectedAccountUuid = _targetAccount(
       ref.read(accountProvider).value,
     )?.uuid;
-    final accessCheckGeneration = ++_accessCheckGeneration;
+    // An automatic iOS probe may decide not to authenticate at all. It must
+    // not invalidate a manual passcode/biometric check while awaiting it.
+    final deferGeneration =
+        automatic && defaultTargetPlatform == TargetPlatform.iOS;
+    var accessCheckGeneration = deferGeneration
+        ? _accessCheckGeneration
+        : ++_accessCheckGeneration;
+    final entryAtStart = _entry;
     final biometric = await ref.read(biometricUnlockProvider.future);
     if (!mounted) return;
+    if (automatic &&
+        !shouldAutoPromptSensitiveBiometric(biometric.availability.kind)) {
+      return;
+    }
+    if (deferGeneration &&
+        (_checking ||
+            _stage != _SeedStage.confirmAccess ||
+            _entry != entryAtStart ||
+            accessCheckGeneration != _accessCheckGeneration)) {
+      return;
+    }
     if (accessCheckGeneration != _accessCheckGeneration ||
         _targetAccountChanged(expectedAccountUuid)) {
       _showTargetAccountChangedError();
       return;
     }
     if (!biometric.usable) return;
+    if (deferGeneration) accessCheckGeneration = ++_accessCheckGeneration;
     final wasEnabled = biometric.enabled;
     // The biometric sheet pushes the app to `inactive`; suppress the privacy
     // shield for its duration so the phrase revealed on success doesn't flash
@@ -570,7 +591,7 @@ class _MobileSeedPhraseScreenState
                     ? null
                     : () {
                         setState(() => _stage = _SeedStage.confirmAccess);
-                        unawaited(_tryBiometricGate());
+                        unawaited(_tryBiometricGate(automatic: true));
                       },
                 size: AppButtonSize.large,
                 expand: true,
@@ -666,7 +687,7 @@ class _MobileSeedPhraseScreenState
                   fingerprintSize: 16,
                 ),
               ),
-              onPressed: () => unawaited(_tryBiometricGate()),
+              onPressed: () => unawaited(_tryBiometricGate(automatic: false)),
             ),
           ),
         ),
@@ -700,7 +721,8 @@ class _MobileSeedPhraseScreenState
                       fingerprintSize: 16,
                     ),
                   ),
-                  onPressed: () => unawaited(_tryBiometricGate()),
+                  onPressed: () =>
+                      unawaited(_tryBiometricGate(automatic: false)),
                 ),
               ),
             )

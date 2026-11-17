@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/native_mobile_navigation_geometry.dart';
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/recording_sensitive_privacy_controller.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -107,18 +108,59 @@ class _FakeBiometricUnlock extends BiometricUnlock {
       BiometricAvailability.unavailable;
 }
 
+class _GateBiometrics extends BiometricUnlockNotifier {
+  _GateBiometrics({this.kind = BiometricKind.face});
+
+  final BiometricKind kind;
+  int reads = 0;
+  String? passcode = '111111';
+  Future<BiometricUnlockState>? availabilityResult;
+  Future<String?>? readResult;
+
+  BiometricUnlockState get available => BiometricUnlockState(
+    availability: BiometricAvailability(
+      supported: true,
+      enrolled: true,
+      kind: kind,
+    ),
+    enabled: true,
+  );
+
+  @override
+  Future<BiometricUnlockState> build() async =>
+      await availabilityResult ?? available;
+
+  @override
+  Future<String?> readPasscode({required String reason}) async {
+    reads++;
+    return readResult != null ? await readResult : passcode;
+  }
+}
+
+class _PendingConfirm extends AppSecurityNotifier {
+  _PendingConfirm(this.result);
+  final Future<bool> result;
+
+  @override
+  Future<bool> confirmPassword(String password) => result;
+}
+
 Widget _app({
   String? accountUuid,
   AccountNotifier Function()? accountNotifier,
   Future<AccountViewingKeys> Function(String accountUuid)? viewingKeysLoader,
   SyncNotifier Function() syncNotifier = _EmptySync.new,
   List<Override> extraOverrides = const [],
+  SensitivePrivacyOverlayController? privacyOverlayController,
+  AppSecurityNotifier Function()? securityNotifier,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       accountProvider.overrideWith(accountNotifier ?? _FakeAccountNotifier.new),
-      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      appSecurityProvider.overrideWith(
+        securityNotifier ?? _FakeSecurityNotifier.new,
+      ),
       biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
       // The header reads the account's balance from sync.
       syncProvider.overrideWith(syncNotifier),
@@ -128,6 +170,7 @@ Widget _app({
       localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: MobileViewingKeyScreen(
+        privacyOverlayController: privacyOverlayController,
         accountUuid: accountUuid,
         viewingKeysLoader: viewingKeysLoader,
       ),
@@ -151,6 +194,157 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  testWidgets('iOS Face ID viewing-key gate waits for its button', (
+    tester,
+  ) async {
+    final biometric = _GateBiometrics();
+    final privacy = RecordingSensitivePrivacyController();
+    addTearDown(privacy.dispose);
+    final requested = <String>[];
+    await tester.pumpWidget(
+      _app(
+        privacyOverlayController: privacy,
+        extraOverrides: [biometricUnlockProvider.overrideWith(() => biometric)],
+        viewingKeysLoader: (uuid) async {
+          requested.add(uuid);
+          return _keys;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 0);
+    expect(privacy.begins, 0);
+    expect(privacy.ends, 0);
+    expect(requested, isEmpty);
+    expect(find.byType(PasscodeNumpad), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('viewing_key_choose_incoming')),
+      findsNothing,
+    );
+    await tester.tap(find.byType(PasscodeBiometricButton));
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(privacy.begins, 1);
+    expect(privacy.ends, 1);
+    expect(requested, ['account-1']);
+    expect(
+      find.byKey(const ValueKey('viewing_key_choose_incoming')),
+      findsOneWidget,
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS Touch ID viewing-key gate still prompts automatically', (
+    tester,
+  ) async {
+    final biometric = _GateBiometrics(kind: BiometricKind.touchId);
+    final requested = <String>[];
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [biometricUnlockProvider.overrideWith(() => biometric)],
+        viewingKeysLoader: (uuid) async {
+          requested.add(uuid);
+          return _keys;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(requested, ['account-1']);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS Face ID viewing-key cancellation permits passcode entry', (
+    tester,
+  ) async {
+    final biometric = _GateBiometrics()..passcode = null;
+    final requested = <String>[];
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [biometricUnlockProvider.overrideWith(() => biometric)],
+        viewingKeysLoader: (uuid) async {
+          requested.add(uuid);
+          return _keys;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PasscodeBiometricButton));
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(requested, isEmpty);
+    expect(find.byType(PasscodeBiometricButton), findsOneWidget);
+    await _confirmPasscode(tester);
+    await tester.pumpAndSettle();
+    expect(requested, ['account-1']);
+    expect(biometric.reads, 1);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets(
+    'late iOS Face ID availability preserves manual viewing-key access',
+    (tester) async {
+      final biometric = _GateBiometrics();
+      final availability = Completer<BiometricUnlockState>();
+      final access = Completer<bool>();
+      biometric.availabilityResult = availability.future;
+      final requested = <String>[];
+      await tester.pumpWidget(
+        _app(
+          securityNotifier: () => _PendingConfirm(access.future),
+          extraOverrides: [
+            biometricUnlockProvider.overrideWith(() => biometric),
+          ],
+          viewingKeysLoader: (uuid) async {
+            requested.add(uuid);
+            return _keys;
+          },
+        ),
+      );
+      await _confirmPasscode(tester);
+      availability.complete(biometric.available);
+      await tester.pump();
+      access.complete(true);
+      await tester.pumpAndSettle();
+      expect(biometric.reads, 0);
+      expect(requested, ['account-1']);
+      expect(
+        find.text('Selected account changed. Enter your passcode again.'),
+        findsNothing,
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets('manual iOS Face ID rejects a changed viewing-key account', (
+    tester,
+  ) async {
+    final account = _FakeAccountNotifier();
+    final read = Completer<String?>();
+    final biometric = _GateBiometrics()..readResult = read.future;
+    final requested = <String>[];
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: () => account,
+        extraOverrides: [biometricUnlockProvider.overrideWith(() => biometric)],
+        viewingKeysLoader: (uuid) async {
+          requested.add(uuid);
+          return _keys;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PasscodeBiometricButton));
+    await tester.pump();
+    account.setActiveAccount('account-2');
+    await tester.pump();
+    read.complete('111111');
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+    expect(requested, isEmpty);
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsOneWidget,
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   testWidgets(
     'wide viewing key retains sidebar guards and both levels of back navigation',
