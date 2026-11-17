@@ -32,15 +32,9 @@ void main() {
           cleanupFails: failure == 'cleanup failure',
         );
         final accounts = _Accounts(events, failure);
-        final args =
-            const SetPasswordScreenArgs.create(
-              mnemonic: 'draft phrase',
-            ).withPersona(
-              const AccountPersona(
-                name: 'My savings',
-                profilePictureId: 'pfp-03',
-              ),
-            );
+        final args = const SetPasswordScreenArgs.createDeferred().withPersona(
+          const AccountPersona(name: 'My savings', profilePictureId: 'pfp-03'),
+        );
         final router = GoRouter(
           routes: [
             GoRoute(
@@ -154,10 +148,9 @@ class _Accounts extends AccountNotifier {
   FutureOr<AccountState> build() => const AccountState();
 
   @override
-  Future<void> createAccountFromMnemonic({
-    required String mnemonic,
-    String? name,
-    String profilePictureId = 'pfp-01',
+  Future<void> createAccountForDeferredSetup({
+    required String name,
+    required String profilePictureId,
   }) async {
     events.add('account');
     calls++;

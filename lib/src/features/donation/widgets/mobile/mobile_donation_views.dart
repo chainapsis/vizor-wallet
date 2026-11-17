@@ -3,6 +3,8 @@ import 'package:flutter/material.dart'
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -52,7 +54,10 @@ class MobileDonationComposeView extends StatelessWidget {
       children: [
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.sm),
+            padding: const EdgeInsets.symmetric(
+              horizontal: kMobilePageMargin,
+              vertical: AppSpacing.sm,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -185,13 +190,13 @@ class MobileDonationComposeView extends StatelessWidget {
                     ),
                     Text(
                       context.l10n.commonShieldedBalance,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),
                     Text(
                       balanceText,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
                     ),
@@ -203,7 +208,7 @@ class MobileDonationComposeView extends StatelessWidget {
                     errorText!,
                     key: const ValueKey('mobile_donation_amount_error'),
                     textAlign: TextAlign.center,
-                    style: AppTypography.bodySmall.copyWith(
+                    style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.destructive,
                     ),
                   ),
@@ -214,10 +219,10 @@ class MobileDonationComposeView extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
+            kMobilePageMargin,
             AppSpacing.s,
-            AppSpacing.sm,
-            AppSpacing.md,
+            kMobilePageMargin,
+            kMobileFooterGap,
           ),
           child: AppButton(
             key: const ValueKey('donation_continue_button'),
@@ -354,7 +359,7 @@ class _MobileDonationPreset extends StatelessWidget {
           isUsd
               ? '\$$value'
               : '$value ZEC', // l10n-ignore: currency code/amount format
-          style: AppTypography.labelMedium.copyWith(
+          style: AppTypography.labelLarge.copyWith(
             color: context.colors.text.accent,
           ),
         ),

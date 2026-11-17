@@ -10,6 +10,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/sync_short_catch_up_provider.dart';
 import '../../../services/native_mobile_navigation_geometry.dart';
 import '../../config/swap_feature_config.dart';
 import '../../formatting/sync_status_label.dart';
@@ -96,7 +97,7 @@ class _MobileAdaptiveFrameState extends ConsumerState<MobileAdaptiveFrame>
     if (_native.supportedHost) {
       _subscription = _native.changes.listen((value) {
         _revision++;
-        if (mounted) setState(() => _geometry = value);
+        if (mounted && value != _geometry) setState(() => _geometry = value);
       }, onError: (Object _) {});
       WidgetsBinding.instance.addPostFrameCallback((_) => _readGeometry());
     }
@@ -106,7 +107,11 @@ class _MobileAdaptiveFrameState extends ConsumerState<MobileAdaptiveFrame>
     if (!mounted) return;
     final revision = ++_revision;
     final geometry = await _native.read();
-    if (mounted && revision == _revision) setState(() => _geometry = geometry);
+    // Every keyboard frame changes the metrics and reads again; an unchanged
+    // snapshot needs no rebuild.
+    if (mounted && revision == _revision && geometry != _geometry) {
+      setState(() => _geometry = geometry);
+    }
   }
 
   @override
@@ -232,6 +237,7 @@ class _MobileAdaptiveFrameState extends ConsumerState<MobileAdaptiveFrame>
         child: MobileNavigationScope(
           mode: layout.mode,
           railRect: layout.rail,
+          viewportRect: layout.viewport,
           contentRect: wide
               ? layout.body.shift(-layout.viewport.topLeft)
               : null,
@@ -289,6 +295,7 @@ class _MobileAdaptiveFrameState extends ConsumerState<MobileAdaptiveFrame>
                             syncDisplayWholePercentageProvider,
                           ),
                           networkPrivacy: ref.watch(networkPrivacyProvider),
+                          shortCatchUp: ref.watch(syncShortCatchUpProvider),
                         ),
                         currentPath: path,
                         swapEnabled: swapEnabled,

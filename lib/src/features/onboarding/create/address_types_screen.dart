@@ -231,7 +231,7 @@ class _AddressTypeHeader extends StatelessWidget {
             children: [
               AppIcon(
                 _isShielded
-                    ? AppIcons.shieldKeyholeOutline
+                    ? AppIcons.shieldKeyhole
                     : AppIcons.transparentBalance,
                 size: 24,
                 color: _isShielded

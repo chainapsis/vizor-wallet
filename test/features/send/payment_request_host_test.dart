@@ -847,7 +847,7 @@ void main() {
         final visible = ZecAmount.fromZatoshi(
           BigInt.from(100000000),
         ).activityDetail.toString().replaceFirst(' ZEC', '');
-        final shown = privacyModeEnabled ? '******' : visible;
+        final shown = privacyModeEnabled ? '••••••' : visible;
         expect(
           find.text(
             'Not enough ZEC for this amount and the network fee '
@@ -858,7 +858,9 @@ void main() {
         if (privacyModeEnabled) {
           expect(find.textContaining('($visible available)'), findsNothing);
           expect(
-            find.bySemanticsLabel(RegExp(RegExp.escape('($visible available)'))),
+            find.bySemanticsLabel(
+              RegExp(RegExp.escape('($visible available)')),
+            ),
             findsNothing,
           );
           expect(find.textContaining('ZEC ZEC'), findsNothing);

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
 /// Wakes route-owned redirects after navigation, including the end of an
@@ -7,6 +10,98 @@ class RouteOwnedNavigationObserver extends NavigatorObserver
     with ChangeNotifier {
   final _departing = <TransitionRoute<dynamic>>{};
   bool _disposed = false;
+  final _nativeReturns = <TransitionRoute<dynamic>, Route<dynamic>>{};
+  Route<dynamic>? _gestureRoute;
+  Route<dynamic>? _gesturePreviousRoute;
+  bool _gestureCancelled = false;
+  int _nativeWatchers = 0;
+
+  /// Native tabs may reveal under this exact page return before it settles.
+  /// Redirects continue to use [hasDepartingRoutes], including popup barriers.
+  bool revealsNativeTabsFor(Route<dynamic> route) =>
+      !_departing.any((departing) => !_nativeReturns.containsKey(departing)) &&
+      ((route.isCurrent &&
+              _nativeReturns.values.any(
+                (target) => identical(target, route),
+              )) ||
+          (_gestureRoute is PageRoute &&
+              _gestureRoute!.isCurrent &&
+              !_gestureCancelled &&
+              identical(_gesturePreviousRoute, route)));
+
+  /// GoRouter forwards some inner-Navigator notifications to root observers.
+  /// Only returns to this shell's actual route ancestry can lift that fence.
+  bool blocksNativeTabRevealFor(Iterable<Route<dynamic>> owners) =>
+      _departing.any((route) => !owners.contains(_nativeReturns[route]));
+
+  bool get nativeGestureInProgress => _gestureRoute != null;
+
+  /// Only mounted native registrations observe releases. Cupertino reports
+  /// AnimationStatus.forward both while dragging and while settling a cancel;
+  /// the controller is actively animating only in the latter case.
+  void watchNativeTabReturns() {
+    if (_nativeWatchers++ == 0) {
+      GestureBinding.instance.pointerRouter.addGlobalRoute(_nativePointer);
+    }
+  }
+
+  void unwatchNativeTabReturns() {
+    if (--_nativeWatchers == 0 && !_disposed) {
+      GestureBinding.instance.pointerRouter.removeGlobalRoute(_nativePointer);
+    }
+  }
+
+  void _nativePointer(PointerEvent event) {
+    if (event is! PointerUpEvent && event is! PointerCancelEvent) return;
+    final route = _gestureRoute;
+    if (route is! TransitionRoute) return;
+    // After recognizers finish dispatch, a still-current page animating forward
+    // is cancelling. Accepted-pointer handoff leaves its controller paused;
+    // unrelated fingers therefore neither cancel nor delay the real release.
+    scheduleMicrotask(() {
+      if (_disposed || !identical(route, _gestureRoute)) return;
+      if (!_gestureCancelled &&
+          route.isCurrent &&
+          route.animation?.status == AnimationStatus.forward &&
+          _activelyAnimating(route.animation)) {
+        _gestureCancelled = true;
+        _changed();
+      }
+    });
+  }
+
+  bool _activelyAnimating(Animation<double>? animation) {
+    final visited = <Animation<double>>{};
+    while (animation != null && visited.add(animation)) {
+      if (animation is AnimationController) return animation.isAnimating;
+      animation = switch (animation) {
+        AnimationWithParentMixin<double> parent => parent.parent,
+        ProxyAnimation proxy => proxy.parent,
+        _ => null,
+      };
+    }
+    // An unfamiliar animation cannot prove that the gesture was released.
+    return false;
+  }
+
+  @override
+  void didStartUserGesture(
+    Route<dynamic> route,
+    Route<dynamic>? previousRoute,
+  ) {
+    _gestureRoute = route;
+    _gesturePreviousRoute = previousRoute;
+    _gestureCancelled = false;
+    _changed();
+  }
+
+  @override
+  void didStopUserGesture() {
+    _gestureRoute = null;
+    _gesturePreviousRoute = null;
+    _gestureCancelled = false;
+    _changed();
+  }
 
   bool get hasDepartingRoutes => _departing.isNotEmpty;
 
@@ -18,6 +113,7 @@ class RouteOwnedNavigationObserver extends NavigatorObserver
     if (route is TransitionRoute && _departing.add(route)) {
       route.completed.whenComplete(() {
         _departing.remove(route);
+        _nativeReturns.remove(route);
         _changed();
       });
     }
@@ -29,8 +125,12 @@ class RouteOwnedNavigationObserver extends NavigatorObserver
       _changed();
 
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _depart(route);
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute && previousRoute != null) {
+      _nativeReturns[route] = previousRoute;
+    }
+    _depart(route);
+  }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
@@ -43,6 +143,9 @@ class RouteOwnedNavigationObserver extends NavigatorObserver
   @override
   void dispose() {
     _disposed = true;
+    if (_nativeWatchers > 0) {
+      GestureBinding.instance.pointerRouter.removeGlobalRoute(_nativePointer);
+    }
     super.dispose();
   }
 }

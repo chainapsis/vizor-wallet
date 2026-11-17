@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
+import 'package:zcash_wallet/src/core/widgets/pool_badge.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
@@ -3641,6 +3642,31 @@ void main() {
     expect(inRecents('Shielded'), findsNothing);
   });
 
+  testWidgets('a bare recent shows its pool with the shared pool label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        recents: const [
+          SendRecentRecipient(address: _shieldedAddress, isShielded: true),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(
+      const ValueKey('mobile_send_recent_$_shieldedAddress'),
+    );
+    final badge = tester.widget<PoolBadge>(
+      find.descendant(of: row, matching: find.byType(PoolBadge)),
+    );
+    expect(badge.isShielded, isTrue);
+    expect(
+      find.descendant(of: row, matching: find.text('Shielded')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a recent sent to another account is found by its name', (
     tester,
   ) async {
@@ -4058,7 +4084,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(
-      find.descendant(of: balanceRow, matching: find.text('****** ZEC')),
+      find.descendant(of: balanceRow, matching: find.text('•••••• ZEC')),
       findsOneWidget,
     );
     expect(find.textContaining(visibleBalance), findsNothing);
@@ -4152,7 +4178,8 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_amount_field')))
           .height,
-      164,
+      // 164 plus the 48pt of breathing room a full-height phone gives it.
+      164 + 48,
     );
     expect(
       tester
@@ -4757,7 +4784,7 @@ void main() {
     expect(find.text('Confirm & Send'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_info'))),
-      const Size(488, 268),
+      const Size(480, 268),
     );
     expect(
       tester.getSize(
@@ -4788,11 +4815,11 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_wrap'))),
-      const Size(488, 161),
+      const Size(480, 161),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_buttons'))),
-      const Size(488, 112),
+      const Size(480, 112),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_cancel'))).height,

@@ -14,6 +14,7 @@ import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
 import 'core/l10n/app_language.dart';
 import 'core/storage/app_secure_store.dart';
+import 'core/storage/privacy_mode_persistence.dart';
 import 'core/storage/enhance_pir_preference_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'core/storage/wallet_balance_cache.dart';
@@ -66,6 +67,8 @@ class AppBootstrapState {
     this.biometricUnlockEnabled = false,
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
+    this.flipToHideBalanceEnabled = true,
+    this.hideBalanceOnUnlockEnabled = false,
     this.enhancePirEnabled = false,
     this.failureKind,
     this.failureMessage,
@@ -82,9 +85,14 @@ class AppBootstrapState {
   /// The saved language; English when nothing is saved or it cannot be read.
   final AppLanguage appLanguage;
   final bool privacyModeEnabled;
+  final bool hideBalanceOnUnlockEnabled;
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
+
+  /// Whether turning the phone screen-down hides amounts (mobile). On unless
+  /// turned off in Settings.
+  final bool flipToHideBalanceEnabled;
 
   /// The saved private queries setting, or `null` when it could not be read.
   /// An unreadable setting is private for this launch, but unconfirmed: see
@@ -145,6 +153,8 @@ class AppSyncSnapshot {
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
+    this.syncJobId = '',
+    this.startedFromCompletedSync = false,
     this.isSyncComplete = false,
     required this.transparentBalance,
     required this.saplingBalance,
@@ -174,6 +184,14 @@ class AppSyncSnapshot {
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
+
+  /// Unfinished Rust sync job [percentage] belongs to, or empty when
+  /// [percentage] is the scanned share of blocks.
+  final String syncJobId;
+
+  /// Whether [syncJobId] started from a completed sync: a catch-up the last
+  /// session left, which the next sync continues as one.
+  final bool startedFromCompletedSync;
   final bool isSyncComplete;
   final BigInt transparentBalance;
   final BigInt saplingBalance;
@@ -282,7 +300,14 @@ Future<AppBootstrapState> loadAppBootstrap({
     final explorerUrlTemplate = await _readExplorerUrlTemplate(storage);
     final themeMode = await _readThemeMode(storage);
     final appLanguage = await _readAppLanguage(storage);
-    final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
+    final privacyModeEnabled = await PrivacyModePersistence(
+      storage,
+    ).readAndRecover();
+    final hideBalanceOnUnlockEnabled = await _readPlainBool(
+      storage,
+      key: kHideBalanceOnUnlockKey,
+      label: 'hide balance on unlock flag', // l10n-ignore: log label
+    );
     final swapEnabledOverrideCachedForRelease =
         await _readSwapEnabledOverrideCachedForRelease();
     final biometricUnlockEnabled = await _readBiometricUnlockEnabled(storage);
@@ -295,6 +320,11 @@ Future<AppBootstrapState> loadAppBootstrap({
       storage,
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag', // l10n-ignore: log label
+    );
+    final flipToHideBalanceDisabled = await _readPlainBool(
+      storage,
+      key: kFlipToHideBalanceDisabledKey,
+      label: 'flip to hide disabled flag', // l10n-ignore: log label
     );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
     var isPasswordConfigured = await storage.isPasswordConfigured();
@@ -493,10 +523,12 @@ Future<AppBootstrapState> loadAppBootstrap({
       themeMode: themeMode,
       appLanguage: appLanguage,
       privacyModeEnabled: privacyModeEnabled,
+      hideBalanceOnUnlockEnabled: hideBalanceOnUnlockEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
+      flipToHideBalanceEnabled: !flipToHideBalanceDisabled,
       enhancePirEnabled: enhancePirEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
@@ -673,17 +705,6 @@ ThemeMode _decodeThemeMode(String? raw) {
     'dark' => ThemeMode.dark,
     _ => ThemeMode.system,
   };
-}
-
-Future<bool> _readPrivacyModeEnabled(AppSecureStore storage) async {
-  try {
-    return (await storage.readString(kPrivacyModeEnabledKey)) == 'true';
-  } on SecureStorageUnavailableException {
-    rethrow;
-  } catch (e) {
-    log('bootstrap: failed to read privacy mode: $e');
-    return false;
-  }
 }
 
 Future<bool> _readBiometricUnlockEnabled(AppSecureStore storage) async {

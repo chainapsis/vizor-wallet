@@ -186,6 +186,14 @@ fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingP
     }
 }
 
+/// The depth to request for the migration's trusted anchor. The SDK anchors
+/// that many blocks below the tip, so one fewer than the confirmations a
+/// denomination note needs keeps the anchor on the block that completes them.
+pub(crate) fn trusted_anchor_confirmations() -> NonZeroU32 {
+    NonZeroU32::new(ConfirmationsPolicy::default().trusted().get() - 1)
+        .expect("trusted confirmations exceed one")
+}
+
 #[cfg(test)]
 pub(crate) fn proof_readiness_delay_blocks(
     network: WalletNetwork,

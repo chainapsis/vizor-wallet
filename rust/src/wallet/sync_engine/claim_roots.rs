@@ -35,7 +35,7 @@ pub(super) async fn prepare_roots(
         .get_wallet_birthday()
         .map_err(|e| SyncError::db(e.to_string()))?;
     if !ironwood_only(network, birthday) {
-        return lwd::download_subtree_roots(client, db, db_path, network, tip).await;
+        return lwd::download_subtree_roots(client, db, network, tip).await;
     }
     let cursor = next_index(db_path, network)?;
     log::info!("PaymentLinkClaim: fetching Ironwood roots start_index={cursor}");

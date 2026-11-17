@@ -11,6 +11,7 @@ class SwapAssetIcon extends StatelessWidget {
     this.showChainBadge = true,
     this.badgeScale = 0.625,
     this.overhangScale = 0.125,
+    this.badgeRingColor,
     super.key,
   });
 
@@ -29,6 +30,11 @@ class SwapAssetIcon extends StatelessWidget {
   /// fraction of [size]. Desktop 1/8 (0.125); the mobile 40px asset uses 0.1
   /// so the 20px badge sits flush with a 4px overhang per Figma.
   final double overhangScale;
+
+  /// The surface right behind the icon, which the chain badge's ring takes
+  /// so it reads as a cut-out. Defaults to the card surface
+  /// (`background.ground`); a list on a sheet passes the sheet's surface.
+  final Color? badgeRingColor;
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +69,7 @@ class SwapAssetIcon extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: context.colors.background.ground,
+                    color: badgeRingColor ?? context.colors.background.ground,
                     width: 2,
                     strokeAlign: BorderSide.strokeAlignOutside,
                   ),

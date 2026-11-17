@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_bat
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 
 import '../figma_compare/figma_compare_font_loader.dart';
 import 'payment_links_screen_support.dart';
@@ -110,7 +111,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
                 find.byType(PaymentLinkCardListRow),
               )
               .map((r) => r.amountText);
-    expect(amounts(), everyElement('****** ZEC'));
+    expect(amounts(), everyElement('•••••• ZEC'));
     if (mobile) {
       await _expectPrivacyButtonSemantics(tester, 'Turn off privacy mode');
     } else {
@@ -158,7 +159,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
       await privacy.set(false);
     }
     await tester.pumpAndSettle();
-    expect(amounts(), everyElement(isNot(contains('*'))));
+    expect(amounts(), everyElement(isNot(contains(kPrivacyMaskCharacter))));
     expect(privacy.isEnabled, isFalse);
     expect(haptics, mobile ? ['HapticFeedbackType.mediumImpact'] : isEmpty);
     if (mobile) {
@@ -171,7 +172,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
     }
     await tester.tap(find.text('Received').first);
     await tester.pumpAndSettle();
-    expect(amounts(), ['****** ZEC']);
+    expect(amounts(), ['•••••• ZEC']);
     if (mobile) {
       await tester.tap(
         find.byKey(const ValueKey('payment_link_privacy_button')),
@@ -180,7 +181,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
       await privacy.set(false);
     }
     await tester.pumpAndSettle();
-    expect(amounts(), everyElement(isNot(contains('*'))));
+    expect(amounts(), everyElement(isNot(contains(kPrivacyMaskCharacter))));
     expect(privacy.isEnabled, isFalse);
     if (mobile) {
       await _expectPrivacyButtonSemantics(tester, 'Turn on privacy mode');
@@ -222,7 +223,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
       );
       expect(
         tester.widget<PaymentLinkBatchListRow>(row).amountText,
-        allOf(contains('*'), isNot(matches(RegExp(r'\d')))),
+        allOf(contains(kPrivacyMaskCharacter), isNot(matches(RegExp(r'\d')))),
       );
 
       await tester.tap(row);
@@ -234,14 +235,20 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
       Iterable<String?> cardAmounts() => tester
           .widgetList<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
           .map((card) => card.amountText);
-      expect(detail().amountPerCardText, contains('*'));
-      expect(cardAmounts(), everyElement(contains('*')));
+      expect(detail().amountPerCardText, contains(kPrivacyMaskCharacter));
+      expect(cardAmounts(), everyElement(contains(kPrivacyMaskCharacter)));
       expect(find.byType(PaymentLinkBatchMemberRow), findsNWidgets(2));
 
       await privacy.set(false);
       await tester.pumpAndSettle();
-      expect(detail().amountPerCardText, isNot(contains('*')));
-      expect(cardAmounts(), everyElement(isNot(contains('*'))));
+      expect(
+        detail().amountPerCardText,
+        isNot(contains(kPrivacyMaskCharacter)),
+      );
+      expect(
+        cardAmounts(),
+        everyElement(isNot(contains(kPrivacyMaskCharacter))),
+      );
     });
   }
 
@@ -263,8 +270,8 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Use max: ******'), findsOneWidget);
-      expect(find.bySemanticsLabel('Use max: ****** ZEC'), findsWidgets);
+      expect(find.text('Use max: ••••••'), findsOneWidget);
+      expect(find.bySemanticsLabel('Use max: •••••• ZEC'), findsWidgets);
       expect(find.textContaining('142.2298'), findsNothing);
       expect(find.bySemanticsLabel(RegExp(r'142\.2298')), findsNothing);
       expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
@@ -364,6 +371,6 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
     );
     expect(card.amountText, '4.45');
     expect(find.text(r'$445.00'), findsOneWidget);
-    expect(card.amountText, isNot(contains('*')));
+    expect(card.amountText, isNot(contains(kPrivacyMaskCharacter)));
   });
 }

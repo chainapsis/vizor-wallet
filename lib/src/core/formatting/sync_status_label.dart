@@ -1,3 +1,5 @@
+import 'package:flutter/painting.dart';
+
 import '../../providers/network_privacy_provider.dart';
 import '../l10n/l10n.dart';
 import '../../providers/sync_failure.dart';
@@ -5,7 +7,17 @@ import '../../providers/sync_provider.dart';
 
 /// Presentation of the wallet sync state shared by the desktop sidebar
 /// status row and the mobile top nav sync widget.
-enum SyncStatusKind { syncing, failed, synced }
+enum SyncStatusKind {
+  syncing,
+  failed,
+  synced,
+
+  /// A synced wallet's short catch-up (`syncShortCatchUpProvider`): the
+  /// label says it is syncing, but the status keeps the synced look (color,
+  /// no shimmer, the sidebar block height) so a routine catch-up does not
+  /// flash the syncing state every block.
+  catchingUp,
+}
 
 class SyncStatusLabel {
   const SyncStatusLabel({
@@ -24,13 +36,18 @@ class SyncStatusLabel {
   ///
   /// While the wallet waits on Tor (still bootstrapping, or the first
   /// lightwalletd connection over it has not answered) the label says so
-  /// instead of the preflight "1% Syncing..." floor. A failed Tor bootstrap
-  /// is a paused state: nothing retries on its own.
+  /// instead of sitting on "0% Syncing…" through preflight. A failed Tor
+  /// bootstrap is a paused state: nothing retries on its own.
+  ///
+  /// [shortCatchUp] (`syncShortCatchUpProvider`) shows a synced wallet's
+  /// catch-up without a percentage while it is short. Checking keeps its
+  /// label.
   factory SyncStatusLabel.from(
     AppLocalizations l10n,
     SyncState sync, {
     int? displayWholePercentage,
     NetworkPrivacyState? networkPrivacy,
+    bool shortCatchUp = false,
   }) {
     if (networkPrivacy != null) {
       // `failed` is a Tor connection failure only while the runtime is on
@@ -43,7 +60,13 @@ class SyncStatusLabel {
           semanticsLabel: l10n.syncTorFailedSemantics,
         );
       }
-      if (syncIsWaitingOnTor(networkPrivacy, sync)) {
+      // Over a connected route, a short catch-up's wait for its first answer
+      // is part of the catch-up; only a bootstrap reads as connecting.
+      final shortCatchUpOverConnectedTor =
+          shortCatchUp &&
+          networkPrivacy.status == NetworkPrivacyConnectionStatus.connected;
+      if (syncIsWaitingOnTor(networkPrivacy, sync) &&
+          !shortCatchUpOverConnectedTor) {
         return SyncStatusLabel(
           kind: SyncStatusKind.syncing,
           label: l10n.syncConnectingToTor,
@@ -58,6 +81,13 @@ class SyncStatusLabel {
         kind: SyncStatusKind.failed,
         label: l10n.syncFailed(reason),
         semanticsLabel: l10n.syncFailedSemantics(reason),
+      );
+    }
+    if (shortCatchUp && !sync.isChecking) {
+      return SyncStatusLabel(
+        kind: SyncStatusKind.catchingUp,
+        label: l10n.syncCatchingUp,
+        semanticsLabel: l10n.syncCatchingUpSemantics,
       );
     }
 
@@ -77,9 +107,11 @@ class SyncStatusLabel {
       return SyncStatusLabel(
         kind: SyncStatusKind.syncing,
         label: formatSyncProgressLabel(l10n, pct, isChecking: sync.isChecking),
-        semanticsLabel: sync.isChecking
-            ? l10n.syncCheckingPercentSemantics(pct)
-            : l10n.syncSyncingPercentSemantics(pct),
+        semanticsLabel: formatSyncProgressSemanticsLabel(
+          l10n,
+          pct,
+          isChecking: sync.isChecking,
+        ),
       );
     }
 
@@ -93,11 +125,26 @@ class SyncStatusLabel {
 
 String formatSyncProgressLabel(
   AppLocalizations l10n,
-  String percentage, {
+  Object percentage, {
   required bool isChecking,
 }) => isChecking
-    ? l10n.syncCheckingProgress(percentage)
-    : l10n.syncSyncingProgress(percentage);
+    ? l10n.syncCheckingProgress('$percentage')
+    : l10n.syncSyncingProgress('$percentage');
+
+/// [formatSyncProgressLabel] as read by a screen reader: the same words,
+/// without the trailing ellipsis.
+String formatSyncProgressSemanticsLabel(
+  AppLocalizations l10n,
+  Object percentage, {
+  required bool isChecking,
+}) => isChecking
+    ? l10n.syncCheckingPercentSemantics('$percentage')
+    : l10n.syncSyncingPercentSemantics('$percentage');
+
+/// [style] with tabular figures, so a changing percentage keeps its width.
+TextStyle withTabularFigures(TextStyle style) => style.copyWith(
+  fontFeatures: [...?style.fontFeatures, const FontFeature.tabularFigures()],
+);
 
 /// Whether Tor is where the route is heading. A disable in progress keeps
 /// `torEnabled` true while it drains, so the flag alone would read a route

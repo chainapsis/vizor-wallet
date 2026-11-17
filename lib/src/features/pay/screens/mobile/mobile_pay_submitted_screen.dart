@@ -1,3 +1,4 @@
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
@@ -132,7 +133,7 @@ class _MobilePaySubmittedScreenState
   }
 
   void _openActivity(BuildContext context) {
-    context.go(
+    context.pushReplacement(
       swapActivityDetailUri(
         intentId: widget.intentId,
         returnTarget: SwapActivityReturnTarget.pay,
@@ -142,6 +143,23 @@ class _MobilePaySubmittedScreenState
 
   @override
   Widget build(BuildContext context) {
+    // The deposit landing while this screen is open plays the success
+    // haptic once, as the Send status screen does.
+    ref.listen<MobileTransactionProgressPhase>(
+      swapStateProvider.select(
+        (state) => mobilePayDepositProgressFor(
+          state: state,
+          intentId: widget.intentId,
+        ).phase,
+      ),
+      (previous, next) {
+        if (previous == next ||
+            next != MobileTransactionProgressPhase.succeeded) {
+          return;
+        }
+        unawaited(AppHaptics.sendSuccess());
+      },
+    );
     final l10n = context.l10n;
     final swapState = ref.watch(swapStateProvider);
     final baseProgress = mobilePayDepositProgressFor(

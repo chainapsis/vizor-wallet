@@ -8,6 +8,11 @@ import 'mobile_sync_status.dart';
 /// Height of [MobileTopNav] — Figma `Mobile Top Nav` (node 4237:92733).
 const double kMobileTopNavHeight = 72;
 
+/// Left and right margin of mobile pages: the top nav's account row and the
+/// tab roots' scroll content start and end on it. Wider than the 16px
+/// spacing token so content gets more air from the screen edge.
+const double kMobilePageMargin = 20;
+
 /// Mobile top navigation bar with the three Figma variants:
 ///
 /// - [MobileTopNav.account] — avatar + account name (+ optional balance)
@@ -15,20 +20,21 @@ const double kMobileTopNavHeight = 72;
 ///   Used by the tab roots.
 /// - [MobileTopNav.steps] — back button + centered progress track. Used
 ///   by multi-step flows (onboarding, send wizard).
-/// - [MobileTopNav.back] — back button + centered serif title. Used by
-///   pushed detail screens; with a null [onBack] the button is omitted
-///   and only the centered title remains (tab roots like Activity).
+/// - [MobileTopNav.back] — back button + centered title. Used by pushed
+///   detail screens; with a null [onBack] the button is omitted and only
+///   the centered title remains (tab roots like Activity).
 ///
 /// Metrics come from Figma node 4237:92733 (393×72; not tokenized as
 /// variables yet, so they live here as constants). The Back-variant
-/// title uses [AppTypography.headlineLarge], which on mobile resolves to
-/// Young Serif 32 px (Headline L) — the size the shared Mobile Top Nav
-/// component's Back variant uses across the mobile screen frames.
+/// title is [AppTypography.headlineSmall], shared by every inner page. The
+/// large serif [AppTypography.headlineLarge] is kept for the tab roots
+/// (Home, Swap, Activity, Settings), which pass it as [titleStyle].
 class MobileTopNav extends StatelessWidget {
   const MobileTopNav.account({
     required this.accountName,
     this.balanceLabel,
     this.syncLabel,
+    this.syncSemanticsLabel,
     this.syncLabelColor,
     this.syncIndicatorColor,
     this.syncAnimated = false,
@@ -38,6 +44,7 @@ class MobileTopNav extends StatelessWidget {
     super.key,
   }) : _variant = _MobileTopNavVariant.account,
        title = '',
+       titleSemanticsLabel = null,
        titleStyle = null,
        titleMaxLines = 1,
        height = kMobileTopNavHeight,
@@ -62,6 +69,7 @@ class MobileTopNav extends StatelessWidget {
        accountName = '',
        balanceLabel = null,
        syncLabel = null,
+       syncSemanticsLabel = null,
        syncLabelColor = null,
        syncIndicatorColor = null,
        syncAnimated = false,
@@ -69,6 +77,7 @@ class MobileTopNav extends StatelessWidget {
        avatar = null,
        onAccountTap = null,
        title = '',
+       titleSemanticsLabel = null,
        titleStyle = null,
        titleMaxLines = 1,
        trailing = null,
@@ -77,6 +86,7 @@ class MobileTopNav extends StatelessWidget {
 
   const MobileTopNav.back({
     required this.title,
+    this.titleSemanticsLabel,
     this.onBack,
     this.trailing,
     this.backIcon = AppIcons.chevronBackward,
@@ -89,6 +99,7 @@ class MobileTopNav extends StatelessWidget {
        accountName = '',
        balanceLabel = null,
        syncLabel = null,
+       syncSemanticsLabel = null,
        syncLabelColor = null,
        syncIndicatorColor = null,
        syncAnimated = false,
@@ -109,6 +120,10 @@ class MobileTopNav extends StatelessWidget {
   final String accountName;
   final String? balanceLabel;
   final String? syncLabel;
+
+  /// What a screen reader announces for [syncLabel]; the label itself when
+  /// null.
+  final String? syncSemanticsLabel;
   final Color? syncLabelColor;
   final Color? syncIndicatorColor;
 
@@ -134,8 +149,11 @@ class MobileTopNav extends StatelessWidget {
   final Color? progressTrackColor;
   final bool showBackButton;
 
-  /// Back variant: centered serif title.
+  /// Back variant: centered title; inner pages keep the default small style.
   final String title;
+
+  /// What a screen reader announces for [title]; the title itself when null.
+  final String? titleSemanticsLabel;
   final TextStyle? titleStyle;
   final int titleMaxLines;
   final Color? foregroundColor;
@@ -217,13 +235,14 @@ class MobileTopNav extends StatelessWidget {
 
     return Row(
       children: [
-        const SizedBox(width: AppSpacing.sm),
+        const SizedBox(width: kMobilePageMargin),
         Expanded(
           child: Align(alignment: Alignment.centerLeft, child: account),
         ),
         if (syncLabel != null)
           MobileSyncStatus(
             label: syncLabel!,
+            semanticsLabel: syncSemanticsLabel,
             baseColor: syncLabelColor ?? colors.sync.text,
             highlightColor:
                 syncHighlightColor ?? syncLabelColor ?? colors.sync.text,
@@ -231,7 +250,7 @@ class MobileTopNav extends StatelessWidget {
             animated: syncAnimated,
           )
         else
-          const SizedBox(width: AppSpacing.sm),
+          const SizedBox(width: kMobilePageMargin),
       ],
     );
   }
@@ -292,10 +311,11 @@ class MobileTopNav extends StatelessWidget {
             ),
             child: Text(
               title,
+              semanticsLabel: titleSemanticsLabel,
               maxLines: titleMaxLines,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: (titleStyle ?? AppTypography.headlineLarge).copyWith(
+              style: (titleStyle ?? AppTypography.headlineSmall).copyWith(
                 color: foregroundColor ?? colors.text.accent,
               ),
             ),
@@ -311,7 +331,9 @@ class MobileTopNav extends StatelessWidget {
               color: foregroundColor,
             ),
           ),
-        if (trailing != null) Positioned(right: AppSpacing.s, child: trailing!),
+        // Inside the page margin the cards below use.
+        if (trailing != null)
+          PositionedDirectional(end: kMobilePageMargin, child: trailing!),
       ],
     );
   }

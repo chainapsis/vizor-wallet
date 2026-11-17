@@ -10,6 +10,7 @@ import '../features/migration/models/ironwood_migration_phases.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'rpc_endpoint_provider.dart';
+import 'hide_balance_on_unlock_provider.dart';
 
 const kIronwoodMigrationPasswordChangeBlockedMessage =
     'Cannot change wallet password while Ironwood migration is in progress.'; // l10n-ignore: exception text, never shown
@@ -276,6 +277,12 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
         isCurrentRequest: requestGeneration == _unlockRequestGeneration,
       );
       if (isValid) {
+        await applyHideBalanceOnUnlock(ref);
+        _checkAuthenticationRequest(
+          lifecycleGeneration: lifecycleGeneration,
+          sessionGeneration: sessionGeneration,
+          isCurrentRequest: requestGeneration == _unlockRequestGeneration,
+        );
         state = state.copyWith(isUnlocked: true);
       }
       return isValid;

@@ -72,6 +72,7 @@ import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 
 import 'fake_voting_round_session.dart';
 import 'round_plan_test_utils.dart';
@@ -2654,8 +2655,8 @@ void main() {
       final submitButtonWidget = tester.widget<AppButton>(submitButton);
       expect(submitButtonWidget.expand, isTrue);
       expect(submitButtonWidget.minWidth, isNull);
-      expect(tester.getTopLeft(submitButton).dx, AppSpacing.sm);
-      expect(tester.getTopRight(submitButton).dx, 393 - AppSpacing.sm);
+      expect(tester.getTopLeft(submitButton).dx, kMobilePageMargin);
+      expect(tester.getTopRight(submitButton).dx, 393 - kMobilePageMargin);
       expect(
         tester.getBottomLeft(reviewScroll).dy,
         greaterThan(tester.getBottomLeft(submitButton).dy),
@@ -3023,12 +3024,12 @@ void main() {
 
     expect(
       find.text(
-        '****** ZEC is left out of this vote to keep your submission less '
+        '•••••• ZEC is left out of this vote to keep your submission less '
         'identifiable.',
       ),
       findsOneWidget,
     );
-    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.text('Voting power •••••• ZEC'), findsOneWidget);
     expect(find.textContaining('0.19'), findsNothing);
     expect(find.textContaining('0.000001'), findsNothing);
     _expectNoDoubledDenomination();
@@ -3067,7 +3068,7 @@ void main() {
     expect(find.text('Voting power 0.375 ZEC'), findsOneWidget);
 
     await tester.pumpWidget(voted(privacyModeEnabled: true));
-    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.text('Voting power •••••• ZEC'), findsOneWidget);
     expect(find.textContaining('0.375'), findsNothing);
     _expectNoDoubledDenomination();
   });
@@ -3118,7 +3119,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(VotingSubmissionConfirmationView),
-        matching: find.text('****** ZEC'),
+        matching: find.text('•••••• ZEC'),
       ),
       findsOneWidget,
     );

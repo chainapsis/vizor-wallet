@@ -360,7 +360,7 @@ class _MobileLedgerConnectScreenState
         maintainSize: true,
         child: Text(
           context.l10n.ledgerAccountIndexHint,
-          style: AppTypography.bodySmall.copyWith(
+          style: AppTypography.bodyMedium.copyWith(
             color: context.colors.text.secondary,
           ),
         ),
@@ -372,7 +372,7 @@ class _MobileLedgerConnectScreenState
             child: Text(
               context.l10n.ledgerAccountIndexOutOfRange,
               key: const ValueKey('mobile_ledger_connect_error'),
-              style: AppTypography.bodySmall.copyWith(
+              style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.destructive,
               ),
             ),
@@ -414,6 +414,7 @@ class _MobileLedgerConnectScreenState
                 decoration: BoxDecoration(
                   color: colors.background.ground,
                   borderRadius: BorderRadius.circular(AppRadii.large),
+                  boxShadow: mobileSurfaceShadows(colors),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

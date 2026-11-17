@@ -1,15 +1,89 @@
 # Privacy mode
 
-Privacy mode ("Hide balance") replaces wallet amounts with `******`, so anyone
+Privacy mode ("Hide balance") replaces wallet amounts with `••••••`, so anyone
 who can see the screen — nearby, over screen sharing, in a screenshot, or
 through a screen reader — cannot learn how much the wallet holds or has moved.
 Users toggle it with the eye button on home and in the desktop sidebar, and in
-the mobile gift card list header.
+the mobile gift card list header. On mobile, flip to hide also toggles it from
+any wallet page (below).
 
 It changes presentation only. Validation, Max, proposals, and signing keep
 using real values, and network requests, storage, and native surfaces are
 unaffected. The setting is one flag shared by every account
-(`privacyModeProvider`, stored as `zcash_privacy_mode_enabled`).
+(`privacyModeProvider`, stored as `zcash_privacy_mode_enabled`). An incomplete
+reveal is tracked separately by `zcash_privacy_mode_reveal_pending_v1` in the
+same secure-store bucket and is cleared by a full wallet reset.
+
+## Hide balance on unlock
+
+Settings > Hide balance > Hide balance on unlock is available on desktop and
+mobile. It is off by default and stored separately from the current eye-button
+state (`hideBalanceOnUnlockProvider`, `zcash_hide_balance_on_unlock`). Changing
+this preference does not immediately change the displayed balance.
+
+When enabled, successful wallet authentication hides amounts before the wallet
+is uncovered: password/passcode/biometric sign-in, the desktop migration lock,
+and the mobile sync keep-awake lock. Other password confirmations do not apply
+it. An ordinary return to an already-unlocked app does not apply it either.
+Users can show amounts with the eye button or flip gesture as usual; the next
+unlock hides them again. All accounts share the preference, and a full wallet
+reset clears it.
+
+Automatic hiding updates the in-memory mask before persistence and keeps it
+hidden if saving fails. Writes are ordered with manual eye-button changes so a
+late write cannot reveal amounts after authentication.
+
+## Flip to hide (mobile)
+
+Turning the phone screen-down hides amounts at once, and they stay hidden when
+it is turned back. With amounts hidden, a flip down and back up within 2
+seconds shows them again. A phone left screen-down longer, on a table or in a
+bag, only ever hides, so picking it up never reveals the balance. A slow turn
+(such as holding the phone overhead lying down) is not a flip. A haptic and a
+"Balance hidden" or "Balance shown" toast confirm the change, since the page
+in view may show no amount.
+
+Flip hiding applies the mask before saving and keeps it hidden if saving
+fails. Revealing waits for a successful save and an active sensor session.
+Pending changes share ordering with the eye button and automatic unlock hiding;
+the detector reads the latest requested visibility, even while a save waits.
+Success feedback follows a completed, still-current change. A failed save uses
+an error toast; hiding failures explicitly say the balance remains hidden.
+Locking, backgrounding, disabling the setting, or removing the host cancels a
+pending reveal and suppresses its feedback. Before writing the visible flag,
+the provider durably records a pending reveal. A failed preparation never writes
+the visible flag. If a session ends during the visible write, the provider
+attempts to restore the saved mask; failure leaves the pending marker intact.
+Superseding requests retain that marker until their own save succeeds.
+
+The final ownership/session check and in-memory reveal commit are synchronous.
+Marker cleanup follows this commit in the same ordered queue; a session ending
+during cleanup suppresses feedback but does not cancel an already-applied reveal.
+Cleanup failure is nonfatal: if the marker remains, the next launch hides amounts
+conservatively. Only a successful accepted change or saved hide may clear it.
+
+Bootstrap reads the marker before the Boolean preference. Any existing marker,
+including an unknown value, forces the first amount frame and semantics to be
+hidden even when the saved flag says visible. Startup attempts to save hiding
+before deleting the marker. A failed repair leaves it for a later startup or
+privacy change; no unbounded retry or detached cleanup runs. Unknown reads hide
+amounts, while unavailable secure storage retains the existing blocking startup
+flow. Legacy installs with no marker keep their saved Boolean preference.
+
+- `FlipToHideDetector` (`lib/src/core/privacy/flip_to_hide_detector.dart`)
+  holds the thresholds: screen-down within about 40° of straight down, a turn
+  from screen-up within 1 second, the 2 second show window.
+- `FlipToHideBalanceHost` sits in the wallet's root shell route
+  (`buildMobileRoutes`), so it covers every wallet page and its toast shows
+  above pushed pages and sheets. It reads the sensor only while the app is
+  visible, a wallet is unlocked, and the setting is on.
+- The sensor is the `com.zcash.wallet/screen_facing` event channel
+  (`screenFacingEvents`): gravity along the screen's normal, -1 screen up and
+  1 screen down, from Core Motion on iOS and the gravity sensor on Android.
+  Neither asks for a permission.
+- Settings > Hide balance > Flip to hide turns it off
+  (`flipToHideBalanceProvider`, stored as the off flag
+  `zcash_flip_to_hide_balance_disabled`, so it is on by default).
 
 ## Which amounts to mask
 
@@ -66,9 +140,14 @@ masking a screen on one form factor requires checking its counterpart.
   unrecognized text that contains a number.
 - If the code appends the unit after the value (`'$amount ZEC'`, or a
   `Semantics` label that adds the currency), mask the bare number. Masking the
-  full amount there renders `****** ZEC ZEC`.
+  full amount there renders `•••••• ZEC ZEC`.
 - Mask where the display string is built, and pass that same string to `Text`
   and `Semantics`. Keep raw values for logic.
+- Young Serif gives the bullet a digit's width, so a masked serif amount reads
+  as spaced dots. A large serif amount (Home's balance card, a transaction
+  record's hero amount) builds its span with `serifPrivacyMaskSpan`, which
+  draws the bullets about half a dot apart and keeps the gap to the ticker.
+  The plain text, and so `find.text` and the semantics label, stays the same.
 - Read the flag with `ref.watch(privacyModeProvider)` in the build that
   produces the string, or pass it down as `privacyModeEnabled`, so a toggle
   updates the screen in place. A few presentational widgets default

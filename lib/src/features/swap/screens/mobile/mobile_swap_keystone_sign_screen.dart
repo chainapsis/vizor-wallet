@@ -342,6 +342,10 @@ class _MobileSwapKeystoneSignScreenState
           broadcast: broadcast,
         );
     if (!context.mounted) return;
+    if (context.canPop()) {
+      context.pop(MobileSwapKeystoneSignSuccess(broadcast));
+      return;
+    }
     // Pay reviews land on the branded submitted screen, matching the
     // software pay path; swap reviews keep the activity-detail landing.
     if (widget.args.returnTarget == SwapActivityReturnTarget.pay) {

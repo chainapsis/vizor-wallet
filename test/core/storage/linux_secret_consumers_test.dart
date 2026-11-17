@@ -308,6 +308,58 @@ void main() {
       },
     );
   }
+
+  for (final ending in ['linked', 'dispose']) {
+    test('Wallet link revokes its package on $ending', () async {
+      final client = _RecordingLinkClient()..completed = ending == 'linked';
+      final linkContainer = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          linuxSecretOperationStoreProvider.overrideWithValue(store),
+          linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
+          accountProvider.overrideWith(
+            () => accounts = _DelayedAccountNotifier(),
+          ),
+          walletLinkApiClientProvider.overrideWithValue(client),
+        ],
+      );
+      var disposed = false;
+      addTearDown(() {
+        if (!disposed) linkContainer.dispose();
+      });
+      addTearDown(() => client.close(force: true));
+      await linkContainer.read(accountProvider.future);
+      final subscription = linkContainer.listen(
+        walletLinkControllerProvider,
+        (_, _) {},
+      );
+      final controller = linkContainer.read(
+        walletLinkControllerProvider.notifier,
+      );
+      final operation = controller.start();
+      await accounts.started.future.timeout(const Duration(seconds: 3));
+      accounts.release();
+      await operation;
+      await pumpEventQueue();
+
+      if (ending == 'linked') {
+        final state = linkContainer.read(walletLinkControllerProvider);
+        expect(state.phase, WalletLinkPhase.linked);
+        expect(client.revoked, hasLength(1));
+        subscription.close();
+      } else {
+        final packageId = linkContainer
+            .read(walletLinkControllerProvider)
+            .packageId;
+        expect(client.revoked, isEmpty);
+        subscription.close();
+        linkContainer.dispose();
+        disposed = true;
+        await pumpEventQueue();
+        expect(client.revoked, [packageId]);
+      }
+    });
+  }
 }
 
 SendReviewArgs _sendArgs() => SendReviewArgs(
@@ -461,6 +513,8 @@ class _RecordingLinkClient extends WalletLinkApiClient {
   final uploadStarted = Completer<void>();
   final Completer<void>? uploadRelease;
   int uploads = 0;
+  bool completed = false;
+  final revoked = <String>[];
 
   @override
   Future<WalletLinkCreatePackageResponse> createPackage(
@@ -480,12 +534,16 @@ class _RecordingLinkClient extends WalletLinkApiClient {
   Future<WalletLinkPackageStatus> getPackageStatus(String packageId) async =>
       WalletLinkPackageStatus(
         id: packageId,
-        status: WalletLinkPackageCompletionStatus.pending,
+        status: completed
+            ? WalletLinkPackageCompletionStatus.completed
+            : WalletLinkPackageCompletionStatus.pending,
         expiresAt: 9999999999,
       );
 
   @override
-  Future<void> revokePackage(String packageId) async {}
+  Future<void> revokePackage(String packageId) async {
+    revoked.add(packageId);
+  }
 }
 
 // Credential lifecycle tests use one deterministic endpoint; automatic endpoint

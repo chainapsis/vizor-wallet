@@ -160,7 +160,7 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 600));
 
-      final amount = privacyModeEnabled ? '******' : '14.12';
+      final amount = privacyModeEnabled ? '••••••' : '14.12';
       expect(
         tester.widget<MobileShieldScene>(find.byType(MobileShieldScene)).amount,
         amount,
@@ -207,6 +207,35 @@ void main() {
     expect(
       container.read(pendingActivityEvidenceProvider).observedAt.keys,
       contains(('account-1', 'ab')),
+    );
+    container.read(pendingActivityEvidenceProvider.notifier).clear();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+  testWidgets('an unusable signature QR starts a new scan session', (
+    tester,
+  ) async {
+    await _startScanner(tester);
+    final first = tester.widget<AnimatedUrScannerView>(
+      find.byType(AnimatedUrScannerView),
+    );
+    api.pendingDecode = Completer<Uint8List>();
+    first.onComplete(const ScanResult(urType: 'zcash-pczt', data: [4]));
+    await tester.pump();
+    api.pendingDecode!.completeError(StateError('malformed PCZT CBOR'));
+    api.pendingDecode = null;
+    await _flush(tester);
+    // The scanner completed on that QR; only a new session reads the next.
+    final next = tester.widget<AnimatedUrScannerView>(
+      find.byType(AnimatedUrScannerView),
+    );
+    expect(next.scanSessionResetToken, isNot(first.scanSessionResetToken));
+    next.onComplete(const ScanResult(urType: 'zcash-pczt', data: [4]));
+    await _flush(tester);
+    expect(api.decodes, 2);
+    expect(api.broadcasts, 1);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileKeystoneShieldScreen)),
     );
     container.read(pendingActivityEvidenceProvider.notifier).clear();
     await tester.pumpWidget(const SizedBox.shrink());

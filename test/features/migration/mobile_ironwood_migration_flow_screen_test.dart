@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_radio_card.dart';
 import 'package:zcash_wallet/src/core/widgets/app_loading_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
@@ -1571,6 +1572,13 @@ void _useMobileViewport(
   });
 }
 
+/// Whether the migration option behind [option] shows as chosen.
+bool _optionSelected(WidgetTester tester, Finder option) => tester
+    .widget<MobileRadioCard>(
+      find.descendant(of: option, matching: find.byType(MobileRadioCard)),
+    )
+    .selected;
+
 void main() {
   test('private migration remains available outside Android', () {
     expect(supportsPrivateMobileIronwoodMigration(isAndroid: false), isTrue);
@@ -2317,9 +2325,10 @@ void main() {
       ),
     );
     expect(subtitle.textAlign, TextAlign.center);
+    // The standard radio card: Medium until chosen, SemiBold once chosen.
     expect(
       tester.widget<Text>(find.text('Immediate')).style?.fontWeight,
-      FontWeight.w600,
+      FontWeight.w500,
     );
     expect(
       tester
@@ -2334,10 +2343,20 @@ void main() {
       FontWeight.w500,
     );
     final immediateIconOpacity = tester.widget<Opacity>(
-      find.ancestor(
-        of: find.byKey(const ValueKey('mobile_ironwood_immediate_icon')),
-        matching: find.byType(Opacity),
-      ),
+      find
+          .ancestor(
+            of: find.descendant(
+              of: find.byKey(
+                const ValueKey('mobile_ironwood_immediate_option'),
+              ),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is AppIcon && widget.name == AppIcons.migrationFast,
+              ),
+            ),
+            matching: find.byType(Opacity),
+          )
+          .first,
     );
     expect(immediateIconOpacity.opacity, 0.5);
     expect(
@@ -2353,38 +2372,18 @@ void main() {
       const Color(0xFF00A460),
     );
 
-    final unselectedRadio = tester.widget<Container>(
-      find.byKey(const ValueKey('mobile_ironwood_unselected_radio')),
-    );
-    expect(
-      (unselectedRadio.decoration! as BoxDecoration).color,
-      const Color(0x33B8B8B8),
-    );
-
     final privateOption = find.byKey(
       const ValueKey('mobile_ironwood_private_option'),
     );
     final immediateOption = find.byKey(
       const ValueKey('mobile_ironwood_immediate_option'),
     );
+    expect(_optionSelected(tester, privateOption), isTrue);
+    expect(_optionSelected(tester, immediateOption), isFalse);
     await tester.tap(immediateOption);
     await tester.pump();
-    expect(
-      find.descendant(
-        of: immediateOption,
-        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: privateOption,
-        matching: find.byKey(
-          const ValueKey('mobile_ironwood_unselected_radio'),
-        ),
-      ),
-      findsOneWidget,
-    );
+    expect(_optionSelected(tester, immediateOption), isTrue);
+    expect(_optionSelected(tester, privateOption), isFalse);
 
     await tester.tap(immediateOption);
     await tester.pump();
@@ -2417,13 +2416,7 @@ void main() {
     expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNotNull);
     await tester.tap(immediateOption);
     await tester.pump();
-    expect(
-      find.descendant(
-        of: immediateOption,
-        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
-      ),
-      findsOneWidget,
-    );
+    expect(_optionSelected(tester, immediateOption), isTrue);
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
@@ -3625,48 +3618,21 @@ void main() {
     );
     expect(find.text('Not available on Android.'), findsOneWidget);
     expect(find.text('Recommended'), findsNothing);
-    expect(
-      find.descendant(
-        of: privateOption,
-        matching: find.byKey(
-          const ValueKey('mobile_ironwood_unselected_radio'),
-        ),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: immediateOption,
-        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
-      ),
-      findsOneWidget,
-    );
+    expect(_optionSelected(tester, privateOption), isFalse);
+    expect(_optionSelected(tester, immediateOption), isTrue);
 
     final privateGesture = find.descendant(
       of: privateOption,
       matching: find.byType(GestureDetector),
     );
     expect(tester.widget<GestureDetector>(privateGesture).onTap, isNull);
-    expect(
-      tester
-          .widget<AnimatedOpacity>(
-            find.byKey(
-              const ValueKey('mobile_ironwood_private_option_opacity'),
-            ),
-          )
-          .opacity,
-      0.5,
-    );
-    expect(
-      tester
-          .widget<AnimatedOpacity>(
-            find.byKey(
-              const ValueKey('mobile_ironwood_immediate_option_opacity'),
-            ),
-          )
-          .opacity,
-      1,
-    );
+    double optionOpacity(Finder option) => tester
+        .widget<AnimatedOpacity>(
+          find.descendant(of: option, matching: find.byType(AnimatedOpacity)),
+        )
+        .opacity;
+    expect(optionOpacity(privateOption), 0.5);
+    expect(optionOpacity(immediateOption), 1);
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
@@ -9560,7 +9526,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.text(
-          '****** ZEC is still in Orchard. Choose between more privacy over '
+          '•••••• ZEC is still in Orchard. Choose between more privacy over '
           'time or a faster migration.',
         ),
         findsOneWidget,
@@ -9569,7 +9535,7 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Back'));
       await tester.pumpAndSettle();
       expect(find.text('Still in Orchard'), findsOneWidget);
-      expect(find.text('****** ZEC'), findsNWidgets(2));
+      expect(find.text('•••••• ZEC'), findsNWidgets(2));
       expect(find.textContaining('142.23'), findsNothing);
       expect(find.textContaining(RegExp(r'\d ZEC')), findsNothing);
       expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
@@ -9596,9 +9562,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('142.23'), findsNothing);
-      expect(find.text('****** ZEC'), findsNWidgets(2));
+      expect(find.text('•••••• ZEC'), findsNWidgets(2));
       expect(
-        find.textContaining('Your ****** ZEC is currently in Orchard.'),
+        find.textContaining('Your •••••• ZEC is currently in Orchard.'),
         findsOneWidget,
       );
       _expectNoDoubledDenomination();
@@ -9622,9 +9588,9 @@ void main() {
       await remount(tester, harness(true));
       await tester.pumpAndSettle();
       expect(find.text('Amount'), findsOneWidget);
-      expect(find.text('****** ZEC'), findsOneWidget);
+      expect(find.text('•••••• ZEC'), findsOneWidget);
       expect(find.text('0.0006 ZEC'), findsOneWidget);
-      expect(find.textContaining('your ****** ZEC and timing'), findsOneWidget);
+      expect(find.textContaining('your •••••• ZEC and timing'), findsOneWidget);
       expect(find.textContaining('142.2'), findsNothing);
       _expectNoDoubledDenomination();
     });
@@ -9672,7 +9638,7 @@ void main() {
       await remount(tester, harness(true));
       await tester.pumpAndSettle();
       expect(find.text('Transactions needing signature'), findsOneWidget);
-      expect(find.text('****** ZEC (50%)'), findsOneWidget);
+      expect(find.text('•••••• ZEC (50%)'), findsOneWidget);
       expect(find.text('Left to migrate'), findsOneWidget);
       expect(find.textContaining(RegExp(r'\d ZEC')), findsNothing);
       expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
@@ -9710,7 +9676,7 @@ void main() {
 
       await remount(tester, harness(true));
       await tester.pumpAndSettle();
-      expect(find.text('Your\n****** ZEC\nare on Ironwood!'), findsOneWidget);
+      expect(find.text('Your\n•••••• ZEC\nare on Ironwood!'), findsOneWidget);
       expect(find.textContaining('4.12'), findsNothing);
       _expectNoDoubledDenomination();
     });
@@ -9761,7 +9727,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Next migration'), findsOneWidget);
       expect(find.text('3,000,020'), findsOneWidget);
-      expect(find.text('****** ZEC'), findsNWidgets(2));
+      expect(find.text('•••••• ZEC'), findsNWidgets(2));
       expect(find.textContaining(RegExp(r'\d ZEC')), findsNothing);
       _expectNoDoubledDenomination();
 
@@ -9774,10 +9740,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Migration Schedule'), findsOneWidget);
-      expect(find.text('1. ****** ZEC 33.3%'), findsOneWidget);
-      expect(find.text('2. ****** ZEC 66.7%'), findsOneWidget);
+      expect(find.text('1. •••••• ZEC 33.3%'), findsOneWidget);
+      expect(find.text('2. •••••• ZEC 66.7%'), findsOneWidget);
       expect(find.text('Ironwood spendable'), findsOneWidget);
-      expect(find.text('****** ZEC'), findsOneWidget);
+      expect(find.text('•••••• ZEC'), findsOneWidget);
       expect(find.textContaining(RegExp(r'\d ZEC')), findsNothing);
       _expectNoDoubledDenomination();
     });
@@ -9833,8 +9799,8 @@ void main() {
       await remount(tester, harness(true));
       await tester.pumpAndSettle();
       expect(find.text('Split round 1'), findsOneWidget);
-      expect(find.text('****** ZEC 100%'), findsOneWidget);
-      expect(find.text('****** ZEC'), findsNWidgets(2));
+      expect(find.text('•••••• ZEC 100%'), findsOneWidget);
+      expect(find.text('•••••• ZEC'), findsNWidgets(2));
       expect(find.text('Migration note'), findsOneWidget);
       expect(find.text('Round 2'), findsOneWidget);
       expect(find.textContaining(RegExp(r'\d ZEC')), findsNothing);

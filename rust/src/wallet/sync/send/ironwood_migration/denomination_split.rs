@@ -265,7 +265,7 @@ fn create_padded_orchard_denomination_pczts(
     let memo = MemoBytes::empty();
 
     let (target_height, anchor_height) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before preparing denominations")?;
     let fee_rule = ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));

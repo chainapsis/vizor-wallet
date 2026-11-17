@@ -294,7 +294,7 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.sm),
         Text(
           context.l10n.migrationKeystoneScanIssuesBody,
           textAlign: TextAlign.center,
@@ -302,7 +302,7 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
             color: colors.text.accent,
           ),
         ),
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.md),
         AppButton(
           expand: true,
           height: 50,
@@ -1482,7 +1482,6 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         title: '',
         showTitle: false,
         showClose: false,
-        bottomPadding: AppSpacing.base,
         onClose: () => Navigator.of(sheetContext).pop(),
         child: MobileIronwoodKeystoneScanHelpBody(
           onConfirm: () => Navigator.of(sheetContext).pop(),
@@ -1611,7 +1610,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Widget _buildMobileFailureContent(BuildContext context) {
     final colors = context.colors;
     return Padding(
-      padding: const EdgeInsets.all(AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kMobilePageMargin,
+        vertical: AppSpacing.sm,
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -1959,7 +1961,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           else
             KeystoneQrScannerCard(
               expectedUrType: _keystoneMigrationSignBatchResultUrType,
-              decoding: _decoding,
+              // The signature was read; the card must not start a new scan.
+              decoding: _decoding || waitingForProofs,
               error: _error,
               onProgress: (_) {
                 if (_pendingSignedMessages != null) return;

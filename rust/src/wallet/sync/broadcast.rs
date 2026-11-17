@@ -28,6 +28,32 @@ pub(super) fn send_rejection_is_already_accepted(message: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// The iOS background outbox repeats this list in `isAcceptedEquivalent`;
+    /// a fragment changed in one place must change in both.
+    #[test]
+    fn ios_background_outbox_accepts_the_same_duplicate_responses() {
+        fn fragments(source: &str, function: &str, end: &str) -> Vec<String> {
+            let body = &source[source.find(function).expect(function)..];
+            let body = &body[..body.find(end).expect(end)];
+            body.split("message.contains(\"")
+                .skip(1)
+                .map(|rest| rest[..rest.find('"').unwrap()].to_string())
+                .collect()
+        }
+        let rust = fragments(
+            include_str!("broadcast.rs"),
+            "fn send_rejection_is_already_accepted",
+            "\n}",
+        );
+        let swift = fragments(
+            include_str!("../../../../ios/Runner/BackgroundMigrationOutboxRunner.swift"),
+            "static func isAcceptedEquivalent",
+            "\n  }",
+        );
+        assert_eq!(rust.len(), 9, "{rust:?}");
+        assert_eq!(rust, swift);
+    }
+
     fn send_response(error_code: i32, error_message: &str) -> SendResponse {
         SendResponse {
             error_code,

@@ -12,6 +12,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -324,10 +325,23 @@ class _MobileKeystoneShieldScreenState
       _decoding = true;
       _scanHint = null;
     });
+    final Uint8List signedPczt;
     try {
-      final signedPczt = await rust_keystone.decodePcztFromCbor(
-        cbor: result.data,
-      );
+      signedPczt = await rust_keystone.decodePcztFromCbor(cbor: result.data);
+    } catch (e, st) {
+      if (!_isActiveScan(generation)) return;
+      log('MobileKeystoneShield: signed PCZT decode error: $e\n$st');
+      if (!mounted || _closed) return;
+      // The scanner completed on this QR; a new session lets it read the next.
+      _scanGeneration++;
+      setState(() {
+        _decoding = false;
+        _scanProgress = 0;
+        _scanHint = context.l10n.commonThisQRCodeCouldNotBe;
+      });
+      return;
+    }
+    try {
       while (_isActiveScan(generation) &&
           _pcztWithProofs == null &&
           !_proofsFailed) {
@@ -351,7 +365,7 @@ class _MobileKeystoneShieldScreenState
       );
     } catch (e, st) {
       if (!_isActiveScan(generation)) return;
-      log('MobileKeystoneShield: signed PCZT decode error: $e\n$st');
+      log('MobileKeystoneShield: signed PCZT completion error: $e\n$st');
       if (!mounted || _closed) return;
       setState(() {
         _decoding = false;
@@ -693,7 +707,7 @@ class _MobileKeystoneShieldScreenState
           AppSpacing.md,
           AppSpacing.s,
           AppSpacing.md,
-          AppSpacing.md,
+          kMobileFooterGap,
         ),
         child: canRetry
             ? Row(

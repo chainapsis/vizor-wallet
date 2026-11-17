@@ -1,5 +1,6 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
+import '../../../../core/navigation/mobile_destinations.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -194,16 +196,7 @@ class _MobileSwapReviewScreenState
           : SwapActivityReturnTarget.swap;
       switch (result) {
         case SwapStartedActivity(:final intentId):
-          if (widget.payMode) {
-            context.go('/pay/submitted/${Uri.encodeComponent(intentId)}');
-            return;
-          }
-          context.go(
-            swapActivityDetailUri(
-              intentId: intentId,
-              returnTarget: returnTarget,
-            ).toString(),
-          );
+          _openStartedIntent(intentId);
         case SwapStartedHardwareSigning(:final intentId):
           final pendingIntent = ref
               .read(swapStateProvider)
@@ -213,16 +206,20 @@ class _MobileSwapReviewScreenState
                 .read(accountProvider.notifier)
                 .hardwareSignerKindForAccount(pendingIntent.accountUuid ?? '');
             if (signerKind == HardwareSignerKind.ledger) {
-              await context.push<void>(
-                '/swap/ledger-sign',
-                extra: MobileSwapLedgerSignArgs.fromReview(
-                  intent: pendingIntent,
-                  returnTarget: returnTarget,
-                ),
-              );
+              final signingResult = await context
+                  .push<MobileSwapLedgerSignSuccess>(
+                    '/swap/ledger-sign',
+                    extra: MobileSwapLedgerSignArgs.fromReview(
+                      intent: pendingIntent,
+                      returnTarget: returnTarget,
+                    ),
+                  );
+              if (mounted && signingResult != null && _isCurrentReview) {
+                _openStartedIntent(intentId);
+              }
               return;
             }
-            final signingRoute = context.push<void>(
+            final signingRoute = context.push<MobileSwapKeystoneSignResult>(
               '/swap/keystone-sign',
               extra: MobileSwapKeystoneSignArgs.fromReview(
                 intent: pendingIntent,
@@ -230,12 +227,12 @@ class _MobileSwapReviewScreenState
               ),
             );
             _scheduleKeystoneSigningReviewInactive();
-            await signingRoute;
+            final signingResult = await signingRoute;
             if (!mounted) return;
-            final path = GoRouter.of(
-              context,
-            ).routerDelegate.currentConfiguration.uri.path;
-            if (path == (widget.payMode ? '/pay/review' : '/swap/review')) {
+            if (!_isCurrentReview) return;
+            if (signingResult is MobileSwapKeystoneSignSuccess) {
+              _openStartedIntent(intentId);
+            } else {
               ref
                   .read(swapStateProvider.notifier)
                   .clearPendingHardwareSigningIntent(intentId);
@@ -245,7 +242,7 @@ class _MobileSwapReviewScreenState
             }
             return;
           }
-          context.go(
+          context.pushReplacement(
             swapActivityDetailUri(
               intentId: intentId,
               returnTarget: returnTarget,
@@ -254,6 +251,24 @@ class _MobileSwapReviewScreenState
           );
       }
     }());
+  }
+
+  bool get _isCurrentReview =>
+      mobileVisiblePath(GoRouter.of(context)) ==
+      (widget.payMode ? '/pay/review' : '/swap/review');
+
+  void _openStartedIntent(String intentId) {
+    // Replace the completed review, leaving its composer below the receipt.
+    // Signing routes return here after saving the broadcast result so they
+    // cannot leave a completed review between the receipt and the composer.
+    context.pushReplacement(
+      widget.payMode
+          ? '/pay/submitted/${Uri.encodeComponent(intentId)}'
+          : swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.swap,
+            ).toString(),
+    );
   }
 
   void _scheduleKeystoneSigningReviewInactive() {
@@ -369,9 +384,9 @@ class _MobileSwapReviewScreenState
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
                 ),
                 child: widget.payMode
@@ -401,7 +416,7 @@ class _MobileSwapReviewScreenState
                               Text(
                                 message,
                                 textAlign: TextAlign.center,
-                                style: AppTypography.bodySmall.copyWith(
+                                style: AppTypography.bodyMedium.copyWith(
                                   color: colors.text.destructive,
                                 ),
                               ),
@@ -442,13 +457,13 @@ class _MobileSwapReviewScreenState
               ),
             ),
             MobileBottomSafeArea(
-              bottomPadding: AppSpacing.md,
+              bottomPadding: kMobileFooterGap,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
-                  AppSpacing.sm,
-                  AppSpacing.md,
+                  kMobilePageMargin,
+                  kMobileFooterGap,
                 ),
                 child: widget.payMode
                     ? MobilePayReviewActions(

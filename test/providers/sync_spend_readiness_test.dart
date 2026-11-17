@@ -207,6 +207,7 @@ rust_sync.ApiSyncProgressEvent _complete({
   phaseCompletedUnits: BigInt.zero,
   phaseTotalUnits: BigInt.zero,
   phase: '',
+  syncJobId: 'test-sync-job',
 );
 
 void main() {

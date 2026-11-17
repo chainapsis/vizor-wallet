@@ -6,9 +6,9 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
     required this.child,
     this.showAccountNav = true,
     this.contentPadding = const EdgeInsets.fromLTRB(
-      AppSpacing.sm,
+      kMobilePageMargin,
       44,
-      AppSpacing.sm,
+      kMobilePageMargin,
       AppSpacing.md,
     ),
     super.key,
@@ -30,21 +30,26 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
           children: [
             if (showAccountNav) ...[
               Consumer(
-                builder: (context, ref, _) => MobileTopNav.account(
-                  accountName: data.accountName,
-                  syncLabel: SyncStatusLabel.from(
+                builder: (context, ref, _) {
+                  final status = SyncStatusLabel.from(
                     context.l10n,
                     sync,
                     displayWholePercentage: ref.watch(
                       syncDisplayWholePercentageProvider,
                     ),
                     networkPrivacy: ref.watch(networkPrivacyProvider),
-                  ).label,
-                  avatar: AppProfilePicture(
-                    profilePictureId: data.profilePictureId,
-                    size: AppProfilePictureSize.navLarge,
-                  ),
-                ),
+                    shortCatchUp: ref.watch(syncShortCatchUpProvider),
+                  );
+                  return MobileTopNav.account(
+                    accountName: data.accountName,
+                    syncLabel: status.label,
+                    syncSemanticsLabel: status.semanticsLabel,
+                    avatar: AppProfilePicture(
+                      profilePictureId: data.profilePictureId,
+                      size: AppProfilePictureSize.navLarge,
+                    ),
+                  );
+                },
               ),
             ],
             Expanded(
@@ -72,7 +77,7 @@ class _MobileStatusCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: colors.background.ground,
           borderRadius: BorderRadius.circular(AppRadii.large),
-          boxShadow: appSurfaceShadow(colors),
+          boxShadow: mobileSurfaceShadows(colors),
         ),
         child: Padding(
           padding:

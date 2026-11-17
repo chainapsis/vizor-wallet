@@ -66,6 +66,33 @@ void main() {
     expect(sync.style?.color, AppThemeData.dark.colors.sync.text);
   });
 
+  testWidgets('MobileTopNav.account keeps the synced label width for shorter '
+      'labels and sets figures tabular', (tester) async {
+    Future<Rect> slotFor(String label) async {
+      await tester.pumpWidget(
+        _harness(
+          MobileTopNav.account(accountName: 'Account1', syncLabel: label),
+        ),
+      );
+      return tester.getRect(
+        find.byKey(const ValueKey('mobile_top_nav_sync_label_slot')),
+      );
+    }
+
+    final synced = await slotFor('Vizor is synced');
+    expect(await slotFor('Syncing\u2026'), synced);
+    expect(await slotFor('45% Syncing\u2026'), synced);
+    // The label sits at the slot's trailing edge, next to the bar.
+    expect(tester.getTopRight(find.text('45% Syncing\u2026')).dx, synced.right);
+    expect(
+      tester.widget<Text>(find.text('45% Syncing\u2026')).style?.fontFeatures,
+      contains(const FontFeature.tabularFigures()),
+    );
+    // A longer label still gets its full width.
+    final failed = await slotFor('Syncing failed. Wallet data error...');
+    expect(failed.width, greaterThan(synced.width));
+  });
+
   testWidgets('MobileTopNav.account syncing shimmers the label', (
     tester,
   ) async {
@@ -73,7 +100,7 @@ void main() {
       _harness(
         MobileTopNav.account(
           accountName: 'Account1',
-          syncLabel: '20% Syncing...',
+          syncLabel: '20% Syncing…',
           syncLabelColor: AppThemeData.dark.colors.sync.textSyncing,
           syncIndicatorColor: AppThemeData.dark.colors.text.muted,
           syncHighlightColor: AppThemeData.dark.colors.sync.lightSuccess,
@@ -87,10 +114,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(tester.takeException(), isNull);
-    expect(find.text('20% Syncing...'), findsOneWidget);
+    expect(find.text('20% Syncing…'), findsOneWidget);
     // The label is wrapped in a shimmer ShaderMask over a solid-color Text.
     expect(find.byType(ShaderMask), findsOneWidget);
-    final label = tester.widget<Text>(find.text('20% Syncing...'));
+    final label = tester.widget<Text>(find.text('20% Syncing…'));
     expect(label.style?.color, const Color(0xFFFFFFFF));
 
     // Unmount so the active ticker is disposed cleanly.
@@ -109,7 +136,7 @@ void main() {
             data: MediaQuery.of(context).copyWith(disableAnimations: true),
             child: MobileTopNav.account(
               accountName: 'Account1',
-              syncLabel: '20% Syncing...',
+              syncLabel: '20% Syncing…',
               syncLabelColor: mutedGreen,
               syncIndicatorColor: greyBar,
               syncHighlightColor: AppThemeData.dark.colors.sync.lightSuccess,
@@ -124,7 +151,7 @@ void main() {
     // is a neutral grey. The brighter shimmer peak only appears in the
     // animated state.
     expect(find.byType(ShaderMask), findsNothing);
-    final label = tester.widget<Text>(find.text('20% Syncing...'));
+    final label = tester.widget<Text>(find.text('20% Syncing…'));
     expect(label.style?.color, mutedGreen);
 
     final greyBars = tester
@@ -137,17 +164,18 @@ void main() {
     expect(greyBars, isNotEmpty);
   });
 
-  testWidgets('MobileTopNav.back shows serif title and fires onBack', (
+  testWidgets('MobileTopNav.back shows the inner-page title and fires onBack', (
     tester,
   ) async {
     var backs = 0;
     await tester.pumpWidget(
-      _harness(MobileTopNav.back(title: 'Activity', onBack: () => backs++)),
+      _harness(MobileTopNav.back(title: 'Contacts', onBack: () => backs++)),
     );
 
-    final title = tester.widget<Text>(find.text('Activity'));
-    expect(title.style?.fontFamily, AppTypography.headlineLarge.fontFamily);
-    expect(title.style?.fontSize, AppTypography.headlineLarge.fontSize);
+    // Inner pages share the small title; only tab roots pass the serif.
+    final title = tester.widget<Text>(find.text('Contacts'));
+    expect(title.style?.fontFamily, AppTypography.headlineSmall.fontFamily);
+    expect(title.style?.fontSize, AppTypography.headlineSmall.fontSize);
 
     await tester.tap(find.bySemanticsLabel('Back'));
     expect(backs, 1);
@@ -159,9 +187,9 @@ void main() {
     await tester.pumpWidget(
       _harness(
         const MobileTopNav.back(
-          // Neutral sample text: a distinct style from the headlineLarge
-          // default, purely to prove the override is applied. (Real screens
-          // like the swap status header use the headlineLarge default.)
+          // Neutral sample text: a distinct style from the headlineSmall
+          // default, purely to prove the override is applied. (Tab roots
+          // pass headlineLarge for their serif title.)
           title: 'Custom title',
           titleStyle: AppTypography.headlineMedium,
         ),
@@ -222,11 +250,16 @@ void main() {
         matching: find.byType(DecoratedBox),
       ),
     );
+    final pillDecoration = pillBox.decoration as BoxDecoration;
     expect(
-      (pillBox.decoration as BoxDecoration).color,
-      AppThemeData.dark.colors.navPanel.activeBg,
+      pillDecoration.color,
+      AppThemeData.dark.colors.navPanel.tabBarActiveBg,
     );
-    expect(icons()[0].color, AppThemeData.dark.colors.navPanel.activeIcon);
+    expect(pillDecoration.border, isNull);
+    expect(
+      icons()[0].color,
+      AppThemeData.dark.colors.navPanel.tabBarActiveIcon,
+    );
     expect(icons()[2].color, AppThemeData.dark.colors.icon.muted);
 
     await tester.tap(find.bySemanticsLabel('Activity'));
@@ -239,7 +272,130 @@ void main() {
     await tester.pumpAndSettle();
     expect(pillAlignment().x, closeTo(-1 + 2 * 2 / 3, 1e-9));
     expect(icons()[0].color, AppThemeData.dark.colors.icon.muted);
-    expect(icons()[2].color, AppThemeData.dark.colors.navPanel.activeIcon);
+    expect(
+      icons()[2].color,
+      AppThemeData.dark.colors.navPanel.tabBarActiveIcon,
+    );
+  });
+
+  testWidgets('dragging the pill selects the tab it is released over', (
+    tester,
+  ) async {
+    final selected = <int>[];
+    final haptics = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    const items = [
+      AppMobileTabItem(iconName: 'home', label: 'Home'),
+      AppMobileTabItem(iconName: 'swap_arrows', label: 'Swap'),
+      AppMobileTabItem(iconName: 'history', label: 'Activity'),
+      AppMobileTabItem(iconName: 'cog', label: 'Settings'),
+    ];
+    await tester.pumpWidget(
+      _harness(
+        AppMobileTabBar(items: items, currentIndex: 0, onSelect: selected.add),
+      ),
+    );
+    double pillX() =>
+        (tester
+                    .widget<AnimatedAlign>(
+                      find.byKey(AppMobileTabBar.activePillKey),
+                    )
+                    .alignment
+                as Alignment)
+            .x;
+
+    // Drag slowly two tabs to the right: the pill follows the finger and a
+    // strong haptic marks each tab it crosses.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.bySemanticsLabel('Home')),
+    );
+    for (var i = 0; i < 18; i++) {
+      await gesture.moveBy(const Offset(8, 0));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(pillX(), greaterThan(-1));
+    expect(selected, isEmpty);
+    // The tint follows the pill: the tab under it lights up and the one it
+    // left goes grey before anything is selected.
+    Color? iconColor(String name) => tester
+        .widget<AppIcon>(
+          find.byWidgetPredicate(
+            (widget) => widget is AppIcon && widget.name == name,
+          ),
+        )
+        .color;
+    final colors = AppThemeData.dark.colors;
+    expect(iconColor('history'), colors.navPanel.tabBarActiveIcon);
+    expect(iconColor('home'), colors.icon.muted);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(selected, [2]);
+    expect(pillX(), closeTo(-1 + 2 * 2 / 3, 1e-9));
+    expect(haptics, List.filled(2, 'HapticFeedbackType.mediumImpact'));
+
+    // A tap selects with the same strong haptic.
+    await tester.tap(find.bySemanticsLabel('Settings'));
+    await tester.pump();
+    expect(selected, [2, 3]);
+    expect(haptics, List.filled(3, 'HapticFeedbackType.mediumImpact'));
+  });
+
+  testWidgets('a newly active tab icon plays its flourish, then rests', (
+    tester,
+  ) async {
+    const items = [
+      AppMobileTabItem(iconName: 'home', label: 'Home'),
+      AppMobileTabItem(iconName: 'history', label: 'Activity'),
+    ];
+    Widget bar(int index, {bool reduceMotion = false}) => _harness(
+      MediaQuery(
+        data: MediaQueryData(disableAnimations: reduceMotion),
+        child: SizedBox(
+          width: 361,
+          child: AppMobileTabBar(
+            items: items,
+            currentIndex: index,
+            onSelect: (_) {},
+          ),
+        ),
+      ),
+    );
+    Finder historyIcons() => find.byWidgetPredicate(
+      (widget) => widget is AppIcon && widget.name == 'history',
+    );
+
+    await tester.pumpWidget(bar(0));
+    // At rest each tab draws its plain icon, with no flourish layers.
+    expect(historyIcons(), findsOneWidget);
+
+    await tester.pumpWidget(bar(1));
+    await tester.pump(const Duration(milliseconds: 200));
+    // Mid-flourish the clock's hand and ring turn as separate layers.
+    expect(historyIcons(), findsNWidgets(2));
+
+    await tester.pumpAndSettle();
+    expect(historyIcons(), findsOneWidget);
+
+    // Reduced motion switches instantly, with no flourish.
+    await tester.pumpWidget(bar(0, reduceMotion: true));
+    await tester.pumpWidget(bar(1, reduceMotion: true));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(historyIcons(), findsOneWidget);
   });
 
   testWidgets('AppMobileShell extends body behind the floating tab bar', (

@@ -12,6 +12,7 @@ import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import 'voting_auto_advance_indicator.dart';
 import '../../../core/l10n/locale_typography.dart';
+import '../../../core/widgets/mobile/mobile_surface_card.dart';
 
 class VotingMetadataBadge extends StatelessWidget {
   const VotingMetadataBadge(this.label, {super.key});
@@ -339,13 +340,7 @@ class _MobileVotingProposalCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: [
-          BoxShadow(
-            color: colors.shadows.subtle,
-            offset: const Offset(0, 1),
-            blurRadius: 2,
-          ),
-        ],
+        boxShadow: mobileSurfaceShadows(colors),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

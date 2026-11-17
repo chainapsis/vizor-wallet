@@ -55,7 +55,7 @@ void main() {
             ),
           )
           .left,
-      16,
+      20,
     );
   });
 
@@ -73,7 +73,7 @@ void main() {
             find.byKey(const ValueKey('mobile_voting_submitted_content')),
           )
           .left,
-      16,
+      20,
     );
   });
 }

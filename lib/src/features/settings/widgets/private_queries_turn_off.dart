@@ -51,13 +51,12 @@ Future<void> togglePrivateQueries(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   // A second confirmation may finish after the first has applied its change.
   // Apply the choice the user confirmed, regardless of the current state.
-  final previous = ref.read(privateQueriesControlEnabledProvider);
-  await ref.read(enhancePirProvider.notifier).set(enabled);
-  if (context.mounted &&
-      previous != enabled &&
-      ref.read(privateQueriesControlEnabledProvider) == enabled) {
+  // The switch ticks as it flips (after any confirmation), not once the
+  // setting has saved.
+  if (ref.read(privateQueriesControlEnabledProvider) != enabled) {
     unawaited(AppHaptics.selection());
   }
+  await ref.read(enhancePirProvider.notifier).set(enabled);
 }
 
 Future<bool> _confirmTurnOff(BuildContext context, WidgetRef ref) async {

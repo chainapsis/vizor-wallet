@@ -426,6 +426,8 @@ _NetworkPrivacyPresentation _presentationFor(
       state.status == NetworkPrivacyConnectionStatus.connected) {
     return _NetworkPrivacyPresentation(
       statusLabel: l10n.settingsTorStatusConnected,
+      // Large block downloads fetch public blocks directly, so the connected
+      // copy does not promise every request.
       description: l10n.settingsTorDescConnectedNoUpdates,
       statusColor: (colors) => colors.text.destructive,
       iconColor: (colors) => colors.icon.brandCrimson,

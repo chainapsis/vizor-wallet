@@ -35,6 +35,7 @@ class MobileNavigationScope extends InheritedWidget {
     required this.navigation,
     required super.child,
     this.railRect,
+    this.viewportRect,
     this.contentRect,
     this.availableContentRect,
     this.sidebarExit,
@@ -43,6 +44,9 @@ class MobileNavigationScope extends InheritedWidget {
 
   final MobileNavigationMode mode;
   final Rect? railRect;
+
+  /// Root window coordinates computed before any route transition transform.
+  final Rect? viewportRect;
 
   /// Content bounds in the wallet Navigator's coordinates, before animations.
   final Rect? contentRect;
@@ -69,6 +73,7 @@ class MobileNavigationScope extends InheritedWidget {
   bool updateShouldNotify(MobileNavigationScope oldWidget) =>
       mode != oldWidget.mode ||
       railRect != oldWidget.railRect ||
+      viewportRect != oldWidget.viewportRect ||
       contentRect != oldWidget.contentRect ||
       availableContentRect != oldWidget.availableContentRect ||
       sidebarExit != oldWidget.sidebarExit ||

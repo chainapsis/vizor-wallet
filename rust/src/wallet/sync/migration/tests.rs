@@ -2594,6 +2594,14 @@ fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
 }
 
 #[test]
+fn trusted_anchor_reaches_a_note_on_its_last_required_confirmation() {
+    // The SDK anchors `trusted_anchor_confirmations` blocks below the tip. A
+    // note mined at 100 has its third confirmation at tip 102.
+    let tip = 100 + denomination_confirmations_required() - 1;
+    assert_eq!(tip - trusted_anchor_confirmations().get(), 100);
+}
+
+#[test]
 fn proof_retry_waits_until_the_next_boundary_is_trusted() {
     assert_eq!(
         next_anchor_retry_height_after(

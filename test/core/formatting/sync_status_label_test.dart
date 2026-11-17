@@ -25,7 +25,7 @@ void main() {
       );
       expect(
         SyncStatusLabel.from(testL10n, sync).semanticsLabel,
-        'Checking 25 percent',
+        '25% checking',
       );
       expect(
         SyncStatusLabel.from(
@@ -85,7 +85,104 @@ void main() {
       displayWholePercentage: 99,
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, '99% Syncing...');
+    expect(status.label, '99% Syncing\u2026');
+    expect(status.semanticsLabel, '99% Syncing');
+  });
+
+  test('a short catch-up of a synced wallet reads as syncing without a '
+      'percentage', () {
+    final catchUp = SyncState(
+      isSyncing: true,
+      phase: 'scan',
+      startedFromCompletedSync: true,
+    );
+    expect(
+      SyncStatusLabel.from(testL10n, catchUp, displayWholePercentage: 0).label,
+      '0% Syncing…',
+    );
+
+    final status = SyncStatusLabel.from(
+      testL10n,
+      catchUp,
+      displayWholePercentage: 0,
+      shortCatchUp: true,
+    );
+    // It keeps the synced look.
+    expect(status.kind, SyncStatusKind.catchingUp);
+    expect(status.label, 'Syncing\u2026');
+    expect(status.semanticsLabel, 'Syncing');
+  });
+
+  test('checking, failures and Tor failures keep their labels in a short '
+      'catch-up', () {
+    final checking = SyncState(
+      isSyncing: true,
+      percentage: 1,
+      startedFromCompletedSync: true,
+      checking: const SyncCheckingProgress(
+        cycle: 1,
+        percentage: 0.25,
+        displayTargetPercentage: 0.5,
+      ),
+    );
+    expect(
+      SyncStatusLabel.from(testL10n, checking, shortCatchUp: true).label,
+      '25% checking',
+    );
+    expect(
+      SyncStatusLabel.from(
+        testL10n,
+        SyncState(failure: _networkFailure('connection refused')),
+        shortCatchUp: true,
+      ).kind,
+      SyncStatusKind.failed,
+    );
+    expect(
+      SyncStatusLabel.from(
+        testL10n,
+        SyncState(isSyncing: true, phase: 'scan'),
+        networkPrivacy: _tor(NetworkPrivacyConnectionStatus.failed),
+        shortCatchUp: true,
+      ).label,
+      testL10n.syncTorFailed,
+    );
+  });
+
+  test('a short catch-up over a connected Tor route does not flash '
+      'connecting', () {
+    final preflight = SyncState(
+      isSyncing: true,
+      phase: kSyncPhasePreflight,
+      startedFromCompletedSync: true,
+    );
+    expect(
+      SyncStatusLabel.from(
+        testL10n,
+        preflight,
+        networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
+      ).label,
+      testL10n.syncConnectingToTor,
+    );
+
+    final status = SyncStatusLabel.from(
+      testL10n,
+      preflight,
+      networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
+      shortCatchUp: true,
+    );
+    expect(status.label, testL10n.syncCatchingUp);
+    expect(status.semanticsLabel, testL10n.syncCatchingUpSemantics);
+
+    // A Tor route still coming up reads as connecting.
+    expect(
+      SyncStatusLabel.from(
+        testL10n,
+        preflight,
+        networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connecting),
+        shortCatchUp: true,
+      ).label,
+      testL10n.syncConnectingToTor,
+    );
   });
 
   test('failed state names the failure reason', () {
@@ -153,7 +250,7 @@ void main() {
       displayWholePercentage: 40,
       networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
     );
-    expect(status.label, '40% Syncing...');
+    expect(status.label, '40% Syncing…');
   });
 
   test('direct-route preflight keeps the percentage label', () {
@@ -163,7 +260,7 @@ void main() {
       displayWholePercentage: 1,
       networkPrivacy: const NetworkPrivacyState.off(),
     );
-    expect(status.label, '1% Syncing...');
+    expect(status.label, '1% Syncing…');
   });
 
   test('a failed enable with Tor still off leaves the sync state alone', () {
@@ -191,7 +288,7 @@ void main() {
       ),
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, '40% Syncing...');
+    expect(status.label, '40% Syncing…');
   });
 
   test('turning Tor off does not read as connecting to it', () {
@@ -220,7 +317,7 @@ void main() {
       ),
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, '40% Syncing...');
+    expect(status.label, '40% Syncing…');
   });
 
   test('an enable in flight reads as connecting to Tor', () {

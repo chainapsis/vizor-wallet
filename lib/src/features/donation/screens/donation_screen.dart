@@ -11,6 +11,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
+import '../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/storage/wallet_paths.dart';
@@ -366,7 +367,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
               ),
               Expanded(
                 child: MobileBottomSafeArea(
-                  bottomPadding: AppSpacing.md,
+                  bottomPadding: kMobileFooterGap,
                   child: MobileDonationComposeView(
                     controller: _controller,
                     mode: _mode,

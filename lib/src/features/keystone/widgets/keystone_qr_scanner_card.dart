@@ -157,6 +157,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   bool _restartCameraOnResume = false;
   int _scanProgress = 0;
   int _scanSessionResetToken = 0;
+  bool _awaitingScanOutcome = false;
 
   @override
   void initState() {
@@ -175,6 +176,14 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.onControlsReady != widget.onControlsReady) {
       _notifyControlsReady();
+    }
+    // A screen leaves after a payload it can use, so staying here without
+    // `decoding` means it could not. Start a new scan session, or the
+    // scanner, already complete, would ignore every later QR.
+    if (_awaitingScanOutcome && !widget.decoding) {
+      _awaitingScanOutcome = false;
+      _scanSessionResetToken++;
+      _scanProgress = 0;
     }
   }
 
@@ -340,6 +349,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
         _scanProgress = 100;
       });
     }
+    _awaitingScanOutcome = true;
     widget.onComplete(result);
   }
 

@@ -256,11 +256,13 @@ class _MobileLedgerConnectionHelpState
             actionLabel,
             onPressed: widget.busy ? null : action,
           ),
-          if (_step == _HelpStep.checks)
+          if (_step == _HelpStep.checks) ...[
+            const SizedBox(height: AppSpacing.s),
             _secondary(
               l10n.ledgerResetBluetoothPairing,
               () => setState(() => _step = _HelpStep.ledger),
             ),
+          ],
         ],
       ),
       children: children,

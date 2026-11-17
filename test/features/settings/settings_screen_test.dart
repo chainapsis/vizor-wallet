@@ -22,6 +22,9 @@ import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_contr
 import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/hide_balance_on_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import '../../fakes/fake_hide_balance_on_unlock_notifier.dart';
 import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -37,6 +40,66 @@ import '../../support/test_l10n.dart';
 final _en = lookupAppLocalizations(const Locale('en'));
 
 void main() {
+  testWidgets(
+    'hide on unlock toggles independently of current balance visibility',
+    (tester) async {
+      final notifier = FakeHideBalanceOnUnlockNotifier();
+      await tester.pumpWidget(
+        _settingsHarness(
+          extraOverrides: [
+            hideBalanceOnUnlockProvider.overrideWith(() => notifier),
+          ],
+        ),
+      );
+      await tester.pump();
+      final toggle = find.byKey(
+        const ValueKey('settings_hide_on_unlock_toggle'),
+      );
+      await tester.ensureVisible(toggle);
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(tester.element(toggle));
+      expect(container.read(hideBalanceOnUnlockProvider), isFalse);
+      final privacy = container.read(privacyModeProvider);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(container.read(hideBalanceOnUnlockProvider), isTrue);
+      expect(container.read(privacyModeProvider), privacy);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(container.read(hideBalanceOnUnlockProvider), isFalse);
+    },
+  );
+
+  testWidgets('hide on unlock save failure leaves the toggle off', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          hideBalanceOnUnlockProvider.overrideWith(
+            () => FakeHideBalanceOnUnlockNotifier(failSave: true),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    final toggle = find.byKey(const ValueKey('settings_hide_on_unlock_toggle'));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      ProviderScope.containerOf(
+        tester.element(toggle),
+      ).read(hideBalanceOnUnlockProvider),
+      isFalse,
+    );
+    expect(
+      find.text(_en.settingsHideBalanceOnUnlockUpdateFailed),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('private recovery is labelled experimental', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -642,8 +705,8 @@ void main() {
     expect(find.text('Connected'), findsOneWidget);
     expect(
       find.text(
-        'Vizor’s network requests go through Tor. Links opened in other apps '
-        'use those apps’ network settings.',
+        'Vizor uses Tor to protect your IP address. Links opened in other '
+        'apps use those apps’ network settings.',
       ),
       findsOneWidget,
     );
@@ -709,8 +772,8 @@ void main() {
 
       expect(
         find.text(
-          'Vizor’s network requests go through Tor. Links opened in other apps '
-          'use those apps’ network settings.',
+          'Vizor uses Tor to protect your IP address. Links opened in other '
+          'apps use those apps’ network settings.',
         ),
         findsOneWidget,
       );
@@ -1012,7 +1075,7 @@ void main() {
 
     expect(
       find.text(
-        'Vizor’s network requests go through Tor, but software updates are '
+        'Vizor uses Tor to protect your IP address, but software updates are '
         'unavailable.',
       ),
       findsOneWidget,

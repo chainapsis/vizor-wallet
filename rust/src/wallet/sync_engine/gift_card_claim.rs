@@ -61,7 +61,9 @@ pub(crate) struct Snapshot {
 /// Use the same anchor depth as the claim selector, including for a frozen
 /// funding prefix whose later blocks are observed without wallet scanning.
 pub(crate) fn max_claim_anchor_height(checked_height: u32) -> Option<u32> {
-    checked_height.checked_add(1)?.checked_sub(u32::from(
+    // Like the SDK: `trusted` blocks below the tip, one below the target height.
+    let tip = checked_height.checked_add(1)?.checked_sub(1)?;
+    tip.checked_sub(u32::from(
         crate::wallet::payment_link_claim_confirmations_policy().trusted(),
     ))
 }
@@ -498,7 +500,7 @@ async fn run_inner(
                 state = read_snapshot(&c).map_err(|e| e.to_string())?.unwrap();
                 progress("checking", 0, (tip - height + 1) as u64, &state);
                 if let Some(block) = source.block_at(BlockHeight::from_u32(height)) {
-                    save_canary(&c, block)?;
+                    save_canary(&c, &block)?;
                 }
                 break;
             }
@@ -533,8 +535,7 @@ async fn run_inner(
         .map_err(|e| e.to_string())?;
         let block = full
             .block_at(BlockHeight::from_u32(state.funding_height))
-            .ok_or("Gift Card canary missing")?
-            .clone();
+            .ok_or("Gift Card canary missing")?;
         save_canary(&c, &block)?;
         block
     };

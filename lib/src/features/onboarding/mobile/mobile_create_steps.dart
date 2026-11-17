@@ -1,16 +1,21 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/l10n/l10n.dart';
 import '../../../core/l10n/locale_typography.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/liquid_metal.dart';
+import '../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../core/widgets/svg_shape_image.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-/// Step 2 — Figma `New Account` (8569:129347).
+/// Step 2 — Figma `New Wallet01` (9394:58807): "About Zcash" over the
+/// citadel art, with the shield cast in liquid metal.
 class MobileOnboardingIntroScreen extends StatelessWidget {
   const MobileOnboardingIntroScreen({
     super.key,
@@ -36,23 +41,22 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
       progress: OnboardingProgressPosition.start.value,
       showProgress: showProgress,
       onBack: onBack ?? () => Navigator.of(context).maybePop(),
-      title: context.l10n.onboardingIntroTitle,
+      title: context.l10n.onboardingIntroTitleMobile,
+      // Figma sets this title at 36, a step under the other steps' 40.
       titleStyle: AppTypography.displayLarge.copyWith(
         fontWeight: FontWeight.w500,
+        fontSize: 36,
+        height: 36 / 36,
       ),
-      topNavHeight: 74,
-      topNavProgressOffset: const Offset(-4.5, 0),
-      topNavProgressTrackColor: colors.background.inverse.withValues(
-        alpha: 0.35,
-      ),
+      background: const MobileOnboardingCitadelBackground(),
       contentGap: AppSpacing.base,
       // Line break matches the Figma subtitle wrap.
       subtitle: context.l10n.onboardingIntroSubtitleMobile,
       bottomAreaPadding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
-        AppSpacing.sm,
-        AppSpacing.md,
+        kMobilePageMargin,
+        kMobileFooterGap,
       ),
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
@@ -96,15 +100,12 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _DarkInfoCard(
-            iconName: AppIcons.shieldKeyhole,
-            text: context.l10n.onboardingIntroCard,
-          ),
-          // 32 to the paragraph block (plus its own 24 inset) per the
-          // intro frame's vertical rhythm.
-          const SizedBox(height: AppSpacing.base + AppSpacing.md),
+          _DarkInfoCard(text: context.l10n.onboardingIntroCard),
+          // 24 to the paragraph block, plus its own 8 inset.
+          const SizedBox(height: AppSpacing.md + AppSpacing.xs),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            // Figma's 329 measure, so the sentence wraps where it does there.
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
             child: Text(
               closingText ?? context.l10n.onboardingIntroClosingMobile,
               textAlign: TextAlign.center,
@@ -164,7 +165,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
         separateCards: true,
         sections: [
           _InfoSection(
-            iconName: AppIcons.shieldKeyholeOutline,
+            iconName: AppIcons.shieldKeyhole,
             iconColor: colors.icon.brandCrimson,
             title: context.l10n.onboardingAddressShieldedTitleMobile,
             trailing: const _AddressChip(
@@ -238,7 +239,7 @@ class MobileThingsToKnowScreen extends StatelessWidget {
             body: context.l10n.onboardingThingsTimeToSyncBody,
           ),
           _InfoSection(
-            iconName: AppIcons.shieldKeyholeOutline,
+            iconName: AppIcons.shieldKeyhole,
             iconColor: colors.icon.accent,
             title: context.l10n.onboardingThingsKeepPrivacyTitle,
             body: context.l10n.onboardingThingsKeepPrivacyBody,
@@ -250,10 +251,12 @@ class MobileThingsToKnowScreen extends StatelessWidget {
 }
 
 class _DarkInfoCard extends StatelessWidget {
-  const _DarkInfoCard({required this.iconName, required this.text});
+  const _DarkInfoCard({required this.text});
 
-  final String iconName;
   final String text;
+
+  /// Figma `Shield Fill` at 72, cast in the transaction records' metal.
+  static const _shieldSize = 72.0;
 
   @override
   Widget build(BuildContext context) {
@@ -261,57 +264,42 @@ class _DarkInfoCard extends StatelessWidget {
     return Container(
       key: const ValueKey('mobile_intro_info_card'),
       width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 175),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: colors.background.homeCard,
         borderRadius: BorderRadius.circular(AppRadii.large),
       ),
-      foregroundDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0x26FFFFFF)),
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: LayoutBuilder(
-        builder: (context, constraints) => Stack(
-          children: [
-            // Figma `Card Pattern` (8569:129370) overflows its 397×163
-            // frame and is clipped by the card. Keep the complete SVG so
-            // the outlines also continue through the bottom of the card.
-            Positioned(
-              top: -566.5,
-              left: (constraints.maxWidth - 397) / 2 + 1 - 345.24,
-              width: 1086.34,
-              height: 1220.5,
-              child: Opacity(
-                opacity: 0.15,
-                child: SvgPicture.asset(
-                  'assets/illustrations/mobile_onboarding_intro_pattern.svg',
-                  excludeFromSemantics: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ExcludeSemantics(
+            child: SizedBox.square(
+              key: const ValueKey('mobile_intro_info_card_shield'),
+              dimension: _shieldSize,
+              child: LiquidMetal(
+                image: SvgShapeImage(
+                  'assets/icons/${AppIcons.shieldKeyhole}.svg',
                 ),
+                // Only the shape shows; the card shows through around it.
+                colorBack: const Color(0x00000000),
+                softness: 1,
+                scale: 1,
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.base,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(iconName, size: 24, color: colors.text.homeCard),
-                  const SizedBox(height: AppSpacing.s),
-                  Text(
-                    text,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.homeCard,
-                    ),
-                  ),
-                ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Figma wraps the text at 249 inside the card.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 249),
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.homeCard,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -369,12 +357,14 @@ class _InfoSection {
 
 // Include the device's safe area in the 48 px bottom margin, rather than
 // adding it twice. Larger accessibility/system insets remain respected.
-EdgeInsets _educationActionPadding(BuildContext context) => EdgeInsets.fromLTRB(
-  16,
-  12,
-  16,
-  48 - MediaQuery.paddingOf(context).bottom.clamp(0, 34),
-);
+// The shared footer gap, as on every page.
+EdgeInsets _educationActionPadding(BuildContext context) =>
+    const EdgeInsets.fromLTRB(
+      kMobilePageMargin,
+      12,
+      kMobilePageMargin,
+      kMobileFooterGap,
+    );
 
 class _EducationSections extends StatelessWidget {
   const _EducationSections({
@@ -405,6 +395,7 @@ class _EducationSections extends StatelessWidget {
                   ? BoxDecoration(
                       color: colors.background.ground,
                       borderRadius: BorderRadius.circular(AppRadii.large),
+                      boxShadow: mobileSurfaceShadows(colors),
                     )
                   : null,
               child: Column(

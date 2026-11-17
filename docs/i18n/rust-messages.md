@@ -37,7 +37,7 @@ Rules for new code:
 
 | `ApiWalletErrorCode` | Raised by (Rust) | FRB functions | Dart readers |
 | --- | --- | --- | --- |
-| `retryAfterRecovery`, `authorityRefused` | `sync/pczt.rs` `retryable_refusal` / `final_refusal` (hardware broadcast authority) | `store_and_broadcast_*`, `extract_and_broadcast_pczt`, Ledger broadcast | `send_flow.dart`, `transparent_shielding_service.dart`, Ledger services |
+| `retryAfterRecovery`, `authorityRefused` | `sync/pczt.rs` `retryable_refusal` / `final_refusal` (hardware broadcast authority) | `store_and_broadcast_*`, Ledger broadcast | `send_flow.dart`, `transparent_shielding_service.dart`, Ledger services |
 | `ledgerOperationTerminal` | `ledger/operations.rs` | `ledger_checkpoint_*`, `ledger_broadcast_signed_operation` | `ledger_signed_operation_service.dart` |
 | `recoveryIncomplete`, `optOutUnfinished` | `sync/send.rs` shielding refusal | `create_shield_transparent_pczt`, `shield_transparent_balance*` | `friendlyShieldBalanceError` |
 | `invalidUr`, `unexpectedUrType`, `urSessionReset` (new) | `wallet/keystone.rs` `decode_ur_part` | `decode_ur_part` | `services/qr_scanner.dart` (skip the frame, reset the session); `isUnexpectedUrTypeError` on the Keystone scan screens below |

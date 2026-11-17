@@ -1,6 +1,7 @@
 import AVFoundation
 import BackgroundTasks
 import CoreHaptics
+import CoreMotion
 import Flutter
 import UIKit
 
@@ -8,8 +9,11 @@ import UIKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mobileNavigationGeometryHandler: MobileNavigationGeometryHandler?
   private var keyboardToolbarHandler: KeyboardToolbarHandler?
+  private var nativeTabBarPlugin: NativeTabBarPlugin?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
+  /// True while a seed-entry screen is showing (`keyboard_policy` channel).
+  private(set) var rejectsCustomKeyboards = false
 
   override func application(
     _ application: UIApplication,
@@ -43,6 +47,16 @@ import UIKit
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  // A keyboard extension receives every key typed into a non-secure field.
+  // Returning `false` for all keyboards would apply this app-wide instead.
+  override func application(
+    _ application: UIApplication,
+    shouldAllowExtensionPointIdentifier extensionPointIdentifier: UIApplication
+      .ExtensionPointIdentifier
+  ) -> Bool {
+    !(extensionPointIdentifier == .keyboard && rejectsCustomKeyboards)
+  }
+
   override func applicationWillEnterForeground(_ application: UIApplication) {
     IronwoodMigrationNotificationGate.shared.enforceOnForeground()
     if #available(iOS 26.0, *) {
@@ -55,6 +69,9 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let messenger = engineBridge.applicationRegistrar.messenger()
+    if let tabBarRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "VizorNativeTabBar") {
+      nativeTabBarPlugin = NativeTabBarPlugin(registrar: tabBarRegistrar)
+    }
     let navigationRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "VizorMobileNavigation")
     mobileNavigationGeometryHandler = MobileNavigationGeometryHandler(
       messenger: messenger,
@@ -679,6 +696,22 @@ import UIKit
       }
     }
 
+    // Seed entry asks for the system keyboard only; see
+    // `application(_:shouldAllowExtensionPointIdentifier:)`.
+    FlutterMethodChannel(name: "com.zcash.wallet/keyboard_policy", binaryMessenger: messenger)
+      .setMethodCallHandler { [weak self] (call, result) in
+        guard
+          call.method == "setCustomKeyboardsRejected",
+          let args = call.arguments as? [String: Any],
+          let rejected = args["rejected"] as? Bool
+        else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.rejectsCustomKeyboards = rejected
+        result(nil)
+      }
+
     // EventChannel for screenshot detection — sensitive screens (secret
     // passphrase) warn when the user captures them.
     let screenshotChannel = FlutterEventChannel(
@@ -686,6 +719,22 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+
+    // EventChannel for the thermal state and Low Power Mode: sync scans with
+    // less of the CPU as the device warms.
+    let devicePowerChannel = FlutterEventChannel(
+      name: "com.zcash.wallet/device_power",
+      binaryMessenger: messenger
+    )
+    devicePowerChannel.setStreamHandler(DevicePowerStreamHandler())
+
+    // EventChannel for which way the screen faces: flip to hide hides
+    // amounts when the phone is turned screen-down.
+    let screenFacingChannel = FlutterEventChannel(
+      name: "com.zcash.wallet/screen_facing",
+      binaryMessenger: messenger
+    )
+    screenFacingChannel.setStreamHandler(ScreenFacingStreamHandler())
 
     let incomingUriChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/payment_uri",
@@ -1364,6 +1413,82 @@ private enum WindowAppearanceHandler {
       window.overrideUserInterfaceStyle = style
       window.rootViewController?.overrideUserInterfaceStyle = style
     }
+  }
+}
+
+/// Emits `{thermal, lowPower}` on listen and whenever either changes.
+/// `thermal` is the `ProcessInfo.ThermalState` raw value (0 nominal through
+/// 3 critical).
+class DevicePowerStreamHandler: NSObject, FlutterStreamHandler {
+  private var observers: [NSObjectProtocol] = []
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    let send = {
+      let info = ProcessInfo.processInfo
+      events([
+        "thermal": info.thermalState.rawValue,
+        "lowPower": info.isLowPowerModeEnabled,
+      ])
+    }
+    send()
+    for name in [
+      ProcessInfo.thermalStateDidChangeNotification,
+      Notification.Name.NSProcessInfoPowerStateDidChange,
+    ] {
+      observers.append(
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+          send()
+        }
+      )
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    observers.forEach { NotificationCenter.default.removeObserver($0) }
+    observers = []
+    return nil
+  }
+}
+
+/// Streams how far the screen faces the floor, about 20 times a second:
+/// gravity along the screen's normal, -1 with the screen straight up and 1
+/// straight down. Dart turns a quick flip screen-down into hiding amounts
+/// (flip to hide). The sensor runs only while Dart listens, which it does
+/// only while the app is visible and unlocked. Needs no permission prompt.
+/// Lives in this file so it doesn't need a project.pbxproj entry.
+class ScreenFacingStreamHandler: NSObject, FlutterStreamHandler {
+  private let motion = CMMotionManager()
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    let interval = 1.0 / 20.0
+    if motion.isDeviceMotionAvailable {
+      // Device motion separates gravity from the hand's own movement.
+      motion.deviceMotionUpdateInterval = interval
+      motion.startDeviceMotionUpdates(to: .main) { data, _ in
+        guard let gravity = data?.gravity else { return }
+        events(max(-1.0, min(1.0, gravity.z)))
+      }
+    } else if motion.isAccelerometerAvailable {
+      motion.accelerometerUpdateInterval = interval
+      motion.startAccelerometerUpdates(to: .main) { data, _ in
+        guard let acceleration = data?.acceleration else { return }
+        events(max(-1.0, min(1.0, acceleration.z)))
+      }
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    motion.stopDeviceMotionUpdates()
+    motion.stopAccelerometerUpdates()
+    return nil
   }
 }
 

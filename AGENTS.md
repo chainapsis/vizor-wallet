@@ -227,6 +227,23 @@ Preserve their dimensions and decoded pixels, and update app, Widgetbook, and
 test references to `.webp`. For illustrations, use
 `scripts/convert-illustrations-to-webp.py` (`--apply` writes verified conversions).
 
+iOS native tab icons intentionally duplicate the Flutter SVGs in Xcode's asset
+catalog. Before changing tab icons or their loading path, read
+[docs/ios-native-tab-bar.md](docs/ios-native-tab-bar.md#icon-assets-and-synchronization)
+and refresh/check both copies with `scripts/sync-ios-native-tab-icons.py`.
+
+## Transaction Record Hero
+
+A transaction record opens on its type's icon (the one its activity row
+shows, from `activityKindIconName`) cast in liquid metal:
+`TransactionTypeHero` draws `assets/icons/<name>.svg` through `LiquidMetal`
+(`lib/src/core/widgets/liquid_metal.dart`, the NU7 announcement's shader) via
+`SvgShapeImage`, which rasterizes the SVG for the shader's shape. A Gift Card
+record shows the card instead, at 70% of the full card. There are no 3D
+models. Tests hold every `LiquidMetal` still
+(`LiquidMetal.debugDisableMotion`, set in `test/flutter_test_config.dart`) so
+screens with it can settle.
+
 ## Editing Figma
 
 When the user explicitly asks you to modify a Figma file or design, read
@@ -339,6 +356,11 @@ Ledger accounts keep the decorative dot style.
 
 Before adding or changing UI that shows an amount, read `docs/privacy-mode.md` (the hide-balance toggle).
 
+On mobile, turning the phone screen-down also hides amounts from any wallet
+page (flip to hide, `FlipToHideBalanceHost`); `docs/privacy-mode.md` has its
+rules. It only switches privacy mode, so a screen that masks correctly needs
+nothing more.
+
 ## Release Notes
 
 When asked to prepare user-facing release notes or a changelog for a release,
@@ -442,6 +464,23 @@ transparent addresses had activity.
   on the app-start `/unlock` screen. Never show it in any other passcode keypad
   context.
 
+### Account Creation and Home Setup
+
+Ordinary software creation and Gift Card creation defer secret-passphrase backup
+and Zcash education to Home. First ordinary accounts generate their mnemonic only
+after password/passcode confirmation; additional accounts create from Welcome with
+the unlocked credential. Imports retain account customisation. Ordinary creation
+uses `createAccountForDeferredSetup`, journaling the unseen seed in encrypted
+storage before first or additional account mutations. Recovery must preserve the
+seed, persona and account-specific `setupPending` / `giftEducationPending` flags.
+The existing Home cards share backup snooze/completion and education completion
+with Gift creation; education completion never marks a seed backed up.
+
+A separate mobile reminder that asks new users to back up later is still being
+built (Tony Yoon’s version). Integrate it at `TODO(backup-reminder)` in
+`mobile_home_screen.dart`, beside the NU7 announcement host, and record its
+rules here when it lands.
+
 ### Mobile Screen Privacy
 
 Mobile screen privacy applies only while secret material is visible. Keep
@@ -495,6 +534,7 @@ SyncProvider (sync_provider.dart)
   │   deleted wallet's cached path
   ├── startSyncAnyway() — unlock recovery path for cancelled-but-still-unwinding Rust sync
   ├── Polls getLatestBlockHeight every 10s after sync completes
+  ├── Checks at once when the mempool observer reports a new block
   ├── Re-syncs automatically when new blocks detected or previous sync incomplete
   ├── Duplicate sync guard: _isSyncing (Dart) + isSyncRunning() (Rust)
   ├── A start requested while its own stream still holds the Rust guard (its
@@ -505,7 +545,8 @@ SyncProvider (sync_provider.dart)
   ├── Sync itself is account-agnostic (covers all accounts)
   ├── Polling pauses on app background (onHide), resumes on foreground (onResume)
   ├── refreshAfterSend() called after account switch for immediate update
-  ├── refreshAfterUnlock() restores only the selected account's persisted display balance
+  ├── refreshAfterUnlock() restores the stored sync status, then the selected account's
+  │   persisted display balance; it reads no wallet summary or history
   └── refreshHomeInBackground() refreshes live balance/history after sync starts; each publishes independently
 
 SyncDisplayPercentageProvider (sync_display_progress_provider.dart)
@@ -541,45 +582,11 @@ until sync callback arrives" flash.
   initial address/cache hydration fails, in which case sync state falls back
   to empty and the live sync repopulates it.
 
-### Sync Engine (Rust-only)
+### Sync
 
-The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single call from Dart (`startFullSync()`) triggers the full pipeline:
-
-1. tonic gRPC → lightwalletd (TLS via `tls-ring`)
-2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
-3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O)
-4. `scan_cached_blocks` from memory (100 blocks per batch)
-5. Enhancement: process each work queue separately. Status observations come
-   from `transaction_status_work()`, which routes each obligation to public
-   `GetTransaction` or private Status PIR. Payload recovery comes from
-   `transaction_enhancement_work()`. `transaction_data_requests()` feeds only
-   transparent-address history (`TransactionsInvolvingAddress`). librustzcash
-   persistently requests `GetStatus` only when compact-block scanning cannot
-   observe the transaction's mined state. During recovery, Vizor separately
-   excludes previously mined transactions from resubmission while a pending
-   scan range can still restore their mined heights.
-6. Progress streamed to Dart via FRB `StreamSink` per batch. Each event has a
-   `kind` (`SyncEventKind` in `sync_engine/mod.rs`, which replaced the old
-   `is_complete` flag): `Progress`, `Completed`, or `FollowupUpdated`.
-7. After `Completed`, two follow-up loops run under the same cancellation and
-   never fail the sync: private transparent recovery over the transparent PIR
-   service (`transparent_followup`,
-   `sync_engine/transparent_ledger.rs`, a no-op unless Private queries selects
-   it) and transparent txid details (`sync_engine/transparent_details.rs`, over
-   txid display PIR under private policy or gated `GetTransaction` otherwise).
-   Background preparation syncs (mode 2) skip both. When one changes wallet
-   data it reports `FollowupUpdated`, and Dart re-reads balances, history and
-   open receipts without counting a second completion. The stream and the
-   `SYNC_RUNNING` guard end only after the follow-ups (and the deferred
-   inactive-account UTXO refresh) finish.
-
-Single DB connection reused across entire sync (opened once, passed to all operations).
-
-Progress percentage: `initial_total` (total blocks to scan) is captured once before the scan loop from `suggest_scan_ranges()`. After each batch, `remaining` unscanned blocks are recalculated, then `pct = 1.0 - remaining / initial_total`. Note: `suggest_scan_ranges()` does not return `Scanned` ranges, so per-batch `total` cannot be used as the denominator. Each progress event includes `has_new_tx` (from `ScanSummary` received/spent note counts) to trigger transaction history refresh only when needed.
-
-Automatic retry: `run_sync_inner` wraps `run_sync_impl` with exponential backoff (3 retries, 2s/4s/8s). Cancel and mode-change are checked during retry wait. Both FRB and C FFI paths benefit.
-
-All sync log messages include `[Xs]` elapsed time from sync start (set once in `run_sync_inner`, consistent across retries). Errors are logged via `log` crate (forwarded to os_log subsystem `frb_user` by FRB `setup_default_user_utils()`). Log level set to `Info` to filter verbose rustls TLS logs. Rust logs are NOT visible in `flutter run` terminal — use `log stream --predicate 'subsystem == "frb_user"' --level info` in a separate terminal.
+The sync engine (`rust/src/wallet/sync_engine/`) and the Dart sync provider
+(`lib/src/providers/sync_provider.dart`) are described in `docs/sync.md`.
+Read it before changing either, and update it when their behaviour changes.
 
 ### Rust Module Structure
 
@@ -646,7 +653,7 @@ rust/src/
 │   │                    # MemoryBlockSource (BlockSource trait impl)
 │   │                    # Single DB connection reused across entire sync
 │   │                    # Checks cancel + mode mismatch after each download/scan/batch
-│   │                    # Progress: initial_total based (remaining / initial_total)
+│   │                    # Progress: work-unit fraction of a persisted sync job
 │   │                    # has_new_tx from ScanSummary note counts
 │   └── keystone.rs     # Keystone hardware wallet integration:
 │                        # - UR (Uniform Resources) encode/decode for animated QR:
@@ -722,8 +729,24 @@ around an upgrade, where those rules live
 Tor covers the app's foreground traffic only. The desired route lives in Rust
 process memory, applied by the Dart layer at startup and by the settings
 toggle; every foreground lightwalletd and HTTP path goes through the
-policy-aware openers and fails closed while Tor is starting or broken.
+policy-aware openers and fails closed while Tor is starting or broken, except
+a sync's large block download (below).
 
+- **Large block downloads may leave Tor; nothing identifying does.** With Tor
+  and Private queries on, a sync session whose estimated direct download
+  reaches `DIRECT_BLOCK_DOWNLOAD_MIN_BYTES` downloads its main-scan batches
+  over `open_block_download_lwd_transport`. Keep these rules:
+  - Only the batches `batch_uses_direct_connection` allows use it. Every
+    request that carries an address, txid or transaction stays on Tor.
+  - Never dial an onion server directly (`block_download_can_go_direct`).
+  - The session opens its Tor route first and fails closed with it; a direct
+    failure sends the batch over Tor.
+  - HTTP/2 pings only on a multi-threaded runtime (`keep_alive_fits_runtime`).
+  - Settings copy says Vizor uses Tor to protect the IP address; it does not
+    promise that every request goes through Tor.
+
+  How it opens, falls back and reconnects, and what the server learns from it:
+  "Direct block connection" in `docs/sync.md`.
 - **Voting SDK network clients are constructed only in**
   `rust/src/wallet/voting/network_clients.rs`. Chain, helper, PIR, and
   vote-tree are separate transport roles; injecting a chain transport does
@@ -935,9 +958,15 @@ development; breaking them is a correctness or data-loss regression):
 1. **The hardware completion path must broadcast before it persists.**
    The function order is: `TransactionExtractor::extract()` (in-memory, no
    DB) → `send_transaction` gRPC → *only then* `extract_and_store_transaction_from_pczt`.
-   Store-then-broadcast leaves the wallet in an unrecoverable state if
-   lightwalletd rejects the tx: DB thinks the notes are spent, network
-   has no record of the tx, user has to manually rescue the wallet.
+   Storing first would mark notes spent by a transaction no server holds.
+   Once the server has the whole transaction, a nonzero `SendResponse` is no
+   proof it was dropped: Zebra and Zakura re-queue rejected transactions for
+   later blocks. A rejected transaction is stored like an unknown result, so
+   its inputs stay spent until its expiry height; for a TEX payment round,
+   sync keeps resubmitting it after the funding round. A transaction without
+   an expiry height still fails outright, and
+   so does a rejected TEX first round: it pays only the wallet's ephemeral
+   address, and keeping it would drop the signed payment round.
 
 2. **Local storage failure after a successful broadcast must not surface
    as a send failure.** The primary store path is
@@ -1053,60 +1082,6 @@ Seed-relevance rule:
 - **Subsequent opens**: `ensure_db_initialized` calls `init_wallet_db(None)`. Calling `init_wallet_db(Some(other_seed))` after the first account would fail the relevance check when any `Imported` account exists.
 - **Hardware-first bootstrap is allowed**: `import_hardware_account` initializes without a local seed and imports the Keystone UFVK. This can produce an `Imported`-only DB, so seed-requiring migration recovery must be handled at the product layer if such a migration appears.
 
-### Dart Sync Provider
-
-`lib/src/providers/sync_provider.dart` — Riverpod `AsyncNotifier`.
-
-**Auto-sync lifecycle:**
-- `build()` watches `accountProvider` via `ref.listen` (not `ref.watch` — avoids rebuild on switch/rename)
-- Account count increase triggers `startSync()` + `_startPolling()` (both first account and additional accounts)
-- `_checkAndSync()`: polls `getLatestBlockHeight` every 10s, re-syncs if tip > last synced height or previous sync incomplete (`percentage < 1.0`)
-- `_checkAndSync()`, `_refreshBalance()`, and `_onSyncProgress()` all bail out while
-  locked and discard late async completions via `_sensitiveStateEpoch`
-- Polling stops during `_checkAndSync` execution to prevent concurrent overlap, restarts after
-- Duplicate sync guard: `_isSyncing` (Dart-side bool) + `isSyncRunning()` (Rust AtomicBool)
-- `startSync()` / `startSyncAnyway()` called while this notifier's own stream is
-  still open (the Rust guard is held through post-sync follow-ups) queue one
-  start (`_queueSyncStart`) instead of being dropped. Repeats coalesce: a
-  forced request upgrades a plain one and the highest tip carries over. The
-  queued start runs when the stream ends, unless the app is now in the
-  background.
-
-**startSync() is fire-and-forget:**
-- Sets up FRB stream listener and returns immediately (no Completer, no await)
-- `_syncGen` generation counter: incremented by `stopSync()`, checked in `.then()` callbacks to invalidate pending operations after user-initiated stop
-- Stream `onDone` → `_onSyncDone()` (balance refresh + start polling), then any queued start
-- `FollowupUpdated` event → `_onSyncFollowupUpdated()` (re-read balances and open receipts; not a new completion)
-- Stream `onError` → sets error state + starts polling for auto-retry
-
-**Sync control:**
-- `stopSync()`: increments `_syncGen` + `cancelFullSync()` + `_stopPolling()`. Polling does not restart until next `onResume`
-- `clearSensitiveStateForLock()`: increments `_syncGen`/`_sensitiveStateEpoch`,
-  clears in-memory sync state, sends `setSyncMode(0)` + `cancelFullSync()`,
-  and waits briefly for stale Rust sync / mempool work to stop
-- `startSyncAnyway()`: unlock recovery path. If Rust is still running but already
-  cancelling, waits for teardown before starting foreground sync; if teardown
-  times out, it at least restores polling so a later retry can recover
-
-**Lifecycle:**
-- `onResume`: refreshes balance → `_checkAndSync()` (which starts polling)
-- `onHide`: stops polling (no wasted network in background)
-- `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
-- `hasCachedBalance` permits Home to display the persisted snapshot without setting
-  `hasBalanceData`, current pool balances, sync completion, or spendability. An
-  accepted live read updates current balances independently of history. Persisted
-  display snapshots follow the same release conditions as in-memory completed-sync
-  snapshots: a valid balance at sync completion, or an explicit send, proposal-release,
-  or account-switch refresh. Intermediate reads preserve spendable, pending, and
-  holdings displays. `hasRecentTransactionsData` and `hasRecentTransactionsError`
-  own the activity loading state.
-- Only completed-sync or explicit-release balance reads enqueue display-only
-  snapshots through `walletBalanceCacheProvider`; intermediate reads leave the
-  saved snapshot intact. Deletion/reset suspend and drain its writes.
-  `ext_vizor_balance_cache` is in the wallet DB and removed with its account;
-  writes open existing DB files only and do not invalidate the wallet-summary cache.
-- All balance/history queries pass `activeAccountUuid` from `AccountProvider`
-
 ### Desktop Window Bootstrap
 
 Desktop window appearance is managed by the external [`desktop_window_bootstrap`](https://github.com/chainapsis/desktop_window_bootstrap) package plus `window_manager`, with a strict responsibility split:
@@ -1164,6 +1139,283 @@ Important desktop design rule:
 - Any opaque `Container`, `ColoredBox`, decoration color, or other filled background will cover the native effect in that region.
 - Treat transparency as opt-in per region: only paint solid backgrounds where the UI should actually be solid.
 
+## Mobile UI Standards
+
+Follow these whenever you build or change mobile UI, and especially when there
+is no Figma design for it. They record decisions already made for the app, so
+a screen that follows them looks and behaves like the rest. When you add a
+reusable mobile component or settle a new visual rule, add it here in the same
+change. The subsections below this list carry the detailed rules.
+
+**Start from the shared pieces.** Don't rebuild a private copy of any of these:
+
+- Page route: `_mobilePage` in `mobile_routes.dart` (`MobilePage` plus
+  `MobilePageViewport`).
+- Page header: `MobileTopNav.back`.
+- Sheet: `showAppMobileSheet` with a `MobileModalScaffold` body. A flow
+  with steps of its own (type an amount, then hand over a result) is a page
+  instead, like Pay and Request ZEC: `MobileTopNav.back` over the step, its
+  buttons docked at `kMobileFooterGap`, Back returning a step at a time.
+- Card surface: `MobileSurfaceCard`. Titled list group: `MobileSection` with
+  `MobileSectionRows` and `MobileListRow`.
+- Single choice: `MobileRadioCard`. An option that starts an action:
+  `MobileActionCard`.
+- Floating bottom button: `MobileStickyBottomAction`. A list page's add
+  action (Accounts' Add account, Contacts' Add contact) is this button, not
+  a top-right "+".
+- A two-way choice on a page (Receive's pools, the viewing key's QR code and
+  Text): `AppSegmentedControl` set up as on Receive, 320 by 44, 20px icons,
+  `labelLarge` w500, the selected pill `background.inverse`.
+- Whose page it is (the viewing key choice, the secret passphrase):
+  `MobileAccountHeader` with `mobileAccountHeaderBalance`. It shows the
+  account's `AppProfilePicture` (`xLarge`) above its name in `bodyLarge` w600
+  `text.accent`, then its balance in `bodyLarge` `text.secondary` (masked in
+  privacy mode; left out when unknown), centered, 32 above the content. On
+  the secret passphrase it is optional, a proposal rather than a
+  requirement: it signals that the words are this wallet's master key, so
+  the user treats the screen with care. Removing it there is acceptable.
+- Success, pending and failure screen: `MobileTransactionProgressScreen`.
+- Typing an amount: `MobileAmountCard`, Pay's card (its header row holds
+  Pay's asset picker; Request ZEC leaves it out and the amount centres in
+  the same minimum 240 height). Its amount/conversion rows and header grow with
+  scaled text; narrow Pay headers and actions reflow before labels are clipped.
+  Adding a message (memo):
+  `showMobileMemoSheet`, Send's sheet, opened from a line under the card;
+  pass a title, hint and `sanitize` for a flow with its own rules.
+  Memo labels, errors and buttons grow with text; the input keeps an internal
+  scroll view. Its scrollbar has a 24px hit area and a 6px visible thumb.
+- Buttons `AppButton`, icons `AppIcon(AppIcons.x)`, toasts `showAppToast`,
+  haptics `AppHaptics`.
+
+**Layout and spacing**
+
+- Spacing comes from `AppSpacing` (4, 8, 12, 16, 24, 32, 48, 64) and radii
+  from `AppRadii` (8, 12, 16, 24, 32). Don't write a literal where a token
+  exists.
+- Pages use `kMobilePageMargin` (20) at the sides. Sheets, card insides,
+  toasts and the tab bar keep 16.
+- 12 between stacked buttons and between stacked cards, 24 between sections,
+  24 from a sheet's body to its buttons.
+- Bottom buttons sit `kMobileFooterGap` above the safe-area inset (see
+  "Mobile Page Footers").
+- Rows and labels that hold text take a minimum height, never a fixed one, so
+  large text grows instead of clipping.
+- A page with a fixed layout (Receive) fits a 393×852 screen without
+  scrolling. Receive keeps its QR at 228 for that, still easy for a camera;
+  check the fit there before growing anything on such a page.
+
+**Pages**
+
+- Register every pushed screen through `_mobilePage`. It gives the window
+  background, the side constraints, the scroll edge fades, the fade-and-zoom
+  entrance (320ms, `Cubic(0.23, 1, 0.32, 1)`), the edge-swipe back and the page
+  haptic. Button Back slides out over 400ms, restoring the previous page from
+  1.03 scale to 1 with the same progress; a back swipe follows the finger and
+  settles over 350ms. Both exits keep the page opaque and at full size, so the
+  page below shows beside it. Under Reduce Motion button Back only fades.
+  A pop during entry reverses that entry without jumping to a slide. A route
+  outside it (onboarding, the Gift Card claim) installs
+  `MobileScrollEdgeFades(color: window, bottomHeight: AppSpacing.xl)` itself.
+- Onboarding steps enter instantly: `_mobileOnboardingPage` uses
+  `MobilePageTransition.onboarding`. Back slides out over 400ms (fades under
+  Reduce Motion); a back swipe stays opaque and follows the finger, then
+  completes or cancels over 350ms. The previous page stays still. Keep entry
+  duration zero and use the shared policy rather than per-screen transitions.
+  Unlock, tab roots and the wallet root shell retain `NoTransitionPage`.
+- Every step with a progress bar uses `MobileTopNav.steps` with its default
+  geometry (`kMobileTopNavHeight`, no `progressOffset`, the default track
+  color), directly under the safe area. Don't give one step its own height,
+  offset or track, or the bar jumps between pages.
+- An onboarding step that shows the citadel art passes
+  `MobileOnboardingCitadelBackground` as the scaffold's `background`, the
+  unlock screen's asset; the step then scrolls without edge fades.
+- Inner pages keep `MobileTopNav.back`'s default `headlineSmall` title. Only
+  the four tab roots (Home, Swap, Activity, Settings) pass
+  `AppTypography.headlineLarge`, the serif. Don't pass `titleStyle` on an
+  inner page.
+- The four tab roots share one top: the nav (`kMobileTopNavHeight`) right at
+  the safe-area top, nothing above it, and the first card `AppSpacing.s`
+  under it. Switching tabs then moves neither the header nor the first card.
+
+**Scrolling and fades**
+
+- Every vertical scroll view under a page or sheet fades its cut edges by
+  itself (`MobileScrollEdgeFades`); one that fits shows none. Don't add a
+  private fade and don't clip rows flat.
+- The fades paint the surface color. Where an image or gradient sits behind
+  the scroll view (the castle engraving on records and success screens), wrap
+  that body in `MobileScrollEdgeFades.off`.
+- A scroll area that needs a taller, tuned fade (tab roots, a list under a
+  floating button) uses `MobileTabRootScrollFades`, `MobileTopScrollFade` or
+  `MobileBottomScrollFade`; each turns the standard edge off below it.
+- Content that scrolls under a floating button gets its bottom padding from
+  `MobileStickyBottomAction.contentInset`.
+
+**Sheets**
+
+- `MobileModalScaffold` is the one template: a `bodyLarge` w600 `text.accent`
+  title, the shared close button, 32 top, 16 sides, 16 from title to body, 24
+  bottom. Don't override its paddings without a stated reason.
+- The scaffold scrolls a body taller than the room left (keyboard, large
+  text). Pass `constrainBody: true` only for a body that brings its own
+  scroll view.
+- A field focused on open calls `focusWhenMobileSheetOpens` from a post-frame
+  callback instead of `autofocus`, so the keyboard waits for the sheet.
+- One decision per sheet. A setting with options shows as a Settings-style
+  row (label left, the current value and a chevron right) that opens its own
+  sheet one level down; there a tap marks an option and one primary Update
+  applies it. Adding or editing an item (a custom source or server) opens a
+  further sheet, so no sheet mixes a list with a form. Vote config is the
+  example (`mobile_voting_config_settings_sheet.dart`).
+
+**Surfaces, cards and lists**
+
+- Cards are `MobileSurfaceCard`: ground fill with the `mobileSurfaceShadows`
+  lift and no stroke. Borders mark structure (hairlines, a selected choice,
+  inputs), never elevation.
+- A titled group is a `MobileSection`: a 16px `text.secondary` label, 12
+  above the card, sections 24 apart, rows split by `MobileSectionDivider`
+  (0.5px `border.subtle`).
+- Row icons are `icon.accent`; trailing chevrons are `icon.muted`.
+- A list that runs longer than a screenful of choices (networks, tokens) gets
+  a search field at its top, the Contacts search field or the Swap asset
+  picker's, filtering on name and ticker, with the list holding its height
+  while it filters and a "No … found" line when nothing matches.
+
+**Typography**
+
+- Mobile text is at least 16px: use `labelLarge`, `bodyMedium` and
+  `codeMedium` at mobile call sites. The 13 and 14px tokens are for desktop or
+  for spots with no room (seed-word grids, badges).
+- Readable secondary text is `text.secondary`. `text.muted` fails 4.5:1, so
+  keep it for disabled or decorative text.
+- Amounts, balances and list dates use tabular figures (`withTabularFigures`).
+- A page's hero amount is Young Serif at the Send amount's size (48, its
+  ticker 38) inside `FittedBox(fit: BoxFit.scaleDown)`, so a long amount
+  shrinks to fit between the page margins instead of clipping or wrapping.
+- An amount shown with its QR (Request ZEC's result) uses the Home balance
+  card's serif (`kMobileSerifAmountStyle`, its ticker
+  `kMobileSerifTickerStyle`) with the `PoolBadge` under it, and the QR,
+  amount and badge sit centred together between the header and the buttons.
+- A large serif amount that privacy mode masks (Home's balance, a record's
+  hero amount) builds its span with `serifPrivacyMaskSpan`: Young Serif sets
+  the bullet a digit wide, and the helper pulls the dots to about half a dot
+  apart.
+- Copy follows "UI Copy Conventions" (sentence case, the glossary).
+
+**Transaction records**
+
+- The top shows only the type icon in liquid metal (a Gift Card shows its
+  card art, without the amount), then the hero amount and its dollar value.
+- Everything else is a row of the detail card, the status first, in the
+  card's two columns: a `text.secondary` label and its value on the right.
+- The castle engraving sits behind the record and the status screens in both
+  themes; the art is a translucent grey that reads on light and dark.
+
+**Color, icons and amounts**
+
+- Colors come from `context.colors` tokens; no hex values in feature code.
+- A shielded pool is the filled shield (`AppIcons.shieldKeyhole`); there is
+  no outline version.
+- An icon cast in liquid metal (a record's hero, the onboarding intro's
+  shield) is `LiquidMetal` over `SvgShapeImage('assets/icons/<name>.svg')`
+  with a transparent `colorBack`, `softness: 1` and `scale: 1`, as
+  `TransactionTypeHero` sets it, wrapped in `ExcludeSemantics`.
+- A line that names an address's or a payment's pool is `PoolBadge`: the
+  crimson shield (or the muted transparent glyph) and "Shielded" or
+  "Transparent" in `text.secondary`, on mobile drawn exactly as the activity
+  rows draw it: the 16px regular label and the `icon.brandCrimson` /
+  `icon.muted` glyph colors (the text crimson is a lighter pink in dark mode).
+  Don't tint the word itself or pair it with another icon color.
+- A value that opens or expands (a message) shows `AppIcons.expand`, the
+  vertical chevrons. The up-down arrows (`AppIcons.doubleArrowVertical`)
+  only switch units, such as ZEC and dollars.
+- A viewing key is the eye (`AppIcons.eye`): the full key, the Settings row
+  and "Show viewing key". The incoming-only key is the receive arrow
+  (`AppIcons.arrowDownCircle`). Request ZEC is the speech bubble with the Z
+  (`AppIcons.request`), not the link icon.
+- Received amounts show "+", sent amounts no sign, both in the row's accent
+  tone. Amounts follow privacy mode (`docs/privacy-mode.md`).
+
+**Controls**
+
+- `AppButton`: one primary (black accent) action per view, secondary for
+  alternatives, ghost for Cancel; full width (`expand: true`) at the bottom of
+  a page. Disabled buttons are solid (`button.disabled`), so a floating button
+  never shows content through it.
+- Toggles have no outline: the off track is `background.overlay` and the thumb
+  carries `appSurfaceShadow`.
+- Every custom tap target is wrapped in `Semantics(button: true, label: ...)`
+  and is at least 24pt.
+- A copy confirms with a toast (`showAppToast`, "... copied"; a failure uses
+  the destructive tone), not by changing the button's label.
+- Menu items that reveal a secret say "Show ...": "Show secret phrase",
+  "Show viewing key".
+- A Settings on/off setting is a card like Keep screen awake and Flip to hide:
+  a `MobileSection` title, a row with its icon, label and the shared
+  `_SettingsToggle`, and a `bodyMedium` `text.secondary` explanation under it.
+  The switch ticks `selection()` as it flips, and a failed save shows a toast.
+- The Flutter fallback tab bar (`AppMobileTabBar`) has 52 by 72 items in a
+  60-high bar (`kMobileTabBarHeight`), hugging its tabs, with 24px icons. Code that
+  clears it reads `kMobileTabBarHeight` or
+  `MobileNavigationScope.bottomClearanceOf`, never a literal.
+  Its horizontal bar previews the touched tab over 100ms, adding finger travel
+  during that arrival; navigation commits only on tap/drag release. Cancel
+  restores the actual selection. Keep the first pointer in control, one haptic
+  per selection boundary, and instant arrivals under Reduce Motion. The vertical
+  bar retains its selected-tab drag origin.
+  Raw drag recognizers inherit `MediaQuery` gesture settings and require the
+  horizontal threshold before accepting a drag. A tab's tap rejection only
+  releases its icon press; it must not discard a pending drag preview. Cover
+  device touch slop and diagonal movement in gesture regressions.
+- iOS 26+ uses the native Liquid Glass tab bar when available. Preserve the
+  native root host, registration and `nativeBar` precedence in `AppMobileShell`.
+  UIKit owns its sizing, safe area, selection lens, motion and press haptics;
+  Flutter fallback metrics, icon flourishes and surrounding touch blocker do
+  not wrap the native lane. See `docs/ios-native-tab-bar.md`.
+- A host that toasts from any wallet page (flip to hide) sits in the wallet's
+  root shell route (`buildMobileRoutes`), so its toast shows in the root
+  overlay. Mounted above the router it would draw into the tab shell's toast
+  host, under any pushed page.
+
+**Motion**
+
+- Gate every animation on `MediaQuery.disableAnimationsOf(context)`; iOS
+  Reduce Motion reaches it through `PlatformReduceMotionScope`. Under reduced
+  motion keep fades and drop movement, scale and rotation.
+- Curves: `Cubic(0.23, 1, 0.32, 1)` for entrances, `Cubic(0.77, 0, 0.175, 1)`
+  for movement on screen, `Cubic(0.32, 0.72, 0, 1)` for iOS-style sheets and
+  pagers.
+- Keep interaction motion short (pages 320ms in and 400ms out, toasts 350ms in
+  and 200ms out, sheets about 200ms). Longer motion is for one-off moments
+  only, such as the tab icon flourishes and the 1,950ms success ripple. Frequent actions
+  (typing, row taps) don't animate.
+- Passcode keys fire on touch and dim to 50% while held: at once on the
+  touch, fading back over 150ms on release (`_PasscodeKey` in
+  `passcode_widgets.dart`). The fade never delays the next digit.
+
+**Haptics**
+
+- Use `AppHaptics`, not `HapticFeedback`:
+  - `action()` on a button that starts a flow, before the push. Routes play
+    `pageTransition()` themselves.
+  - `selection()` the moment a toggle, radio or segmented control flips, not
+    after its save finishes. `AppSegmentedControl` ticks it on a tap itself;
+    a pager that switches the same choice by swipe (Receive's pools) ticks
+    it on its page change, so each switch ticks once.
+  - `tabSwitch()` (medium) for the Flutter fallback tab bar, `copy()`, and
+    `error()` for a rejected passcode.
+  - `sendSuccess()` or `sendFailure()` once, when a transaction's outcome
+    arrives while its screen is open.
+
+**Check a new mobile screen**
+
+- Add a deterministic capture scenario (`figma_compare_scenarios.dart`,
+  ideally from a Widgetbook use case) and look at it in light and dark:
+  `scripts/figma-compare.sh widget --form-factor mobile --scenario <id>
+  --theme <light|dark>`.
+- Tag its tests `mobile` and compare against tokens, not literal numbers.
+
 ### Mobile Bottom Safe Area (iOS proportional padding)
 
 Mobile bottom-sheet bodies and the floating tab bar wrap their bottom
@@ -1191,6 +1443,56 @@ edge in `MobileBottomSafeArea`
 - New sheets follow `MobileBottomSafeArea(bottomPadding: token)` >
   `Padding(...)`; both platform geometries are pinned in
   `test/core/layout/mobile/mobile_bottom_safe_area_test.dart`.
+
+### Mobile Page Footers
+
+Every mobile page's bottom buttons sit `kMobileFooterGap` (12) above the
+bottom safe-area inset: 46pt from the bottom edge on a current iPhone, the
+Send flow's distance. The token lives in
+`lib/src/core/layout/mobile/mobile_sticky_bottom_action.dart`.
+
+- A footer docked under a page's scroll view, in a bottom `SafeArea`, pads
+  its buttons' bottom by `kMobileFooterGap`.
+- A button floating over the scroll view uses `MobileStickyBottomAction`
+  (its `bottomOffset` adds the inset, which drops to the gap above a raised
+  keyboard).
+- A page body wrapped in `MobileBottomSafeArea` passes
+  `bottomPadding: kMobileFooterGap`; that is under the iOS clearance, so the
+  inset always applies and the page matches the others. The iOS
+  proportional rule above stays for sheets and the tab bar only.
+
+### Mobile Sheets and the Keyboard
+
+Mobile sheets are root-navigator routes, and a text field in one raises the
+keyboard over the whole window. Keep a keyboard animation from rebuilding or
+laying out more than the sheet itself:
+
+- Routes beneath a sheet hold still. `CoveredRouteKeyboardHold`
+  (`lib/src/core/layout/mobile/covered_route_keyboard_hold.dart`) wraps every
+  `MobilePage` and the wallet shell route: a covered route whose keyboard was
+  down sees none until the keyboard rises for it again. Wrap any new
+  root-level page type the same way.
+- Sheet bodies sized to the room above the keyboard use
+  `MobileKeyboardAwareHeight` instead of reading `MediaQuery` in their own
+  build. Only its builder runs per keyboard frame; pass the body as `child`.
+- Elsewhere, read the narrow lookups (`MediaQuery.viewInsetsOf`,
+  `sizeOf`, `paddingOf`) rather than `MediaQuery.of`, and keep any
+  `MediaQuery.of` read out of the app-root `builder`.
+
+### Mobile Cards
+
+Mobile option and action cards share one surface, `MobileSurfaceCard`
+(ground fill with `mobileSurfaceShadows`, no stroke). Build new ones from
+the shared components in `lib/src/core/widgets/mobile/` instead of a
+private copy:
+
+- `MobileRadioCard` — one choice in a single-choice list (Figma `Radio
+  Card`): optional icon, title, detail lines or a description paragraph, a
+  badge beside the title, action buttons before the trailing round check,
+  and a dimmed disabled state. Only the selected card carries the 2px strong
+  stroke. Stack them 12px apart.
+- `MobileActionCard` — a card that starts an action: round badge in the
+  primary button's colours, title, description (the Home Receive sheet).
 
 ## Testing
 
@@ -1247,6 +1549,8 @@ edge in `MobileBottomSafeArea`
 ## Crate Versions
 
 Constrained in `rust/Cargo.toml` and resolved in `rust/Cargo.lock`. Key crates: `zcash_client_backend` 0.22.0, `zcash_client_sqlite` 0.20.2, `orchard` 0.13.1, `sapling-crypto` 0.7.0. These must stay compatible — check librustzcash releases before bumping.
+
+The zakura wallet crates come from their crates.io releases, with no `[patch]`. A release that adds a wallet migration makes the database unreadable to builds with an older release.
 
 `tonic` 0.14 with `tls-ring` + `tls-webpki-roots` features for gRPC TLS. `rustls` 0.23+ requires explicit crypto provider — `tls-ring` provides this.
 

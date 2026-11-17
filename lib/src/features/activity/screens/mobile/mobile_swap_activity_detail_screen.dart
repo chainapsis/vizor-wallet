@@ -35,6 +35,7 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final state = ref.watch(swapStateProvider);
+    final canPop = Navigator.of(context).canPop();
     SwapIntent? intent;
     for (final candidate in state.intents) {
       if (candidate.id == swapIntentId.trim()) {
@@ -43,34 +44,39 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
       }
     }
 
-    return Scaffold(
-      backgroundColor: colors.background.window,
-      body: AppToastHost(
-        child: SafeArea(
-          child: Column(
-            children: [
-              MobileTopNav.back(
-                title: mobileSwapActivityTitle(context.l10n, state, intent),
-                // Pushed from activity rows -> pop; arrived via go()
-                // from the review start -> fall back to the return
-                // target (pop would be a no-op there).
-                onBack: () {
-                  if (Navigator.of(context).canPop()) {
-                    context.pop();
-                  } else {
-                    context.go(returnTarget.path);
-                  }
-                },
-              ),
-              Expanded(
-                child: SwapActivityDetailSurface(
-                  intentId: swapIntentId,
-                  returnTarget: returnTarget,
-                  autoSignZecDeposit: autoSignZecDeposit,
-                  layout: SwapActivityDetailLayout.mobile,
+    return PopScope<void>(
+      canPop: canPop,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && !canPop) context.go(returnTarget.path);
+      },
+      child: Scaffold(
+        backgroundColor: colors.background.window,
+        body: AppToastHost(
+          child: SafeArea(
+            child: Column(
+              children: [
+                MobileTopNav.back(
+                  title: mobileSwapActivityTitle(context.l10n, state, intent),
+                  // Normal flow/row entry has a predecessor. Direct entry or
+                  // restoration may have only this page, so use its return target.
+                  onBack: () {
+                    if (canPop) {
+                      context.pop();
+                    } else {
+                      context.go(returnTarget.path);
+                    }
+                  },
                 ),
-              ),
-            ],
+                Expanded(
+                  child: SwapActivityDetailSurface(
+                    intentId: swapIntentId,
+                    returnTarget: returnTarget,
+                    autoSignZecDeposit: autoSignZecDeposit,
+                    layout: SwapActivityDetailLayout.mobile,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

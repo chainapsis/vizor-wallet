@@ -3,11 +3,15 @@
 //! `scan_cached_blocks` expects a `BlockSource`-shaped input so it can
 //! iterate compact blocks one at a time. Historically librustzcash
 //! wallets pointed that input at an on-disk SQLite cache
-//! (`FsBlockDb`). We deliberately skip the file-cache step and keep a
-//! single batch of compact blocks in memory:
+//! (`FsBlockDb`). We deliberately skip the file-cache step and keep
+//! compact blocks in memory: the batch being scanned and the few
+//! downloaded ahead of it.
 //!
-//!   1. Batches are bounded (≤300 blocks on desktop, ≤100 on mobile),
-//!      so the memory footprint is small and predictable.
+//!   1. Batches are sized by a compact-block byte budget where the
+//!      compiled mainnet estimate reaches, and by a smaller block cap past
+//!      it, so the memory footprint stays bounded. Blocks stay encoded
+//!      until the scan reads them: decoded, every output field is its own
+//!      small allocation, and a batch takes about 1.8 times its wire size.
 //!   2. Avoiding the cache DB means one less file format to keep in
 //!      sync with librustzcash migrations and one less thing to clear
 //!      on reorg / rewind.
@@ -16,13 +20,14 @@
 //!      scan down.
 //!
 //! The type is visible only to the `sync_engine` module tree
-//! (`pub(super)`); callers construct one via
-//! [`MemoryBlockSource::new`] and hand it straight to
-//! `scan_cached_blocks`.
+//! (`pub(super)`); the download fills one with
+//! [`MemoryBlockSource::with_capacity`] and [`MemoryBlockSource::push`],
+//! and the scan reads it straight from there.
 
 use std::collections::BTreeSet;
 use std::fmt;
 
+use prost::Message;
 use zcash_client_backend::{
     data_api::chain::{self, error::Error as ChainError},
     proto::compact_formats::CompactBlock,
@@ -30,30 +35,78 @@ use zcash_client_backend::{
 use zcash_protocol::consensus::BlockHeight;
 
 /// Holds a single batch of compact blocks in memory for one
-/// `scan_cached_blocks` call.
+/// `scan_cached_blocks` call, each as its protobuf encoding. A block is
+/// decoded every time it is read; `scan_cached_blocks` reads each twice.
 pub(super) struct MemoryBlockSource {
-    blocks: Vec<CompactBlock>,
+    blocks: Vec<EncodedBlock>,
+    /// Every block's transaction ids, for the enhancement queue.
+    txids: Vec<Vec<u8>>,
+}
+
+struct EncodedBlock {
+    height: u64,
+    has_orchard_actions: bool,
+    bytes: Vec<u8>,
+}
+
+impl EncodedBlock {
+    fn decode(&self) -> Result<CompactBlock, MemoryBlockSourceError> {
+        CompactBlock::decode(self.bytes.as_slice())
+            .map_err(|e| MemoryBlockSourceError(format!("decode block {}: {e}", self.height)))
+    }
 }
 
 impl MemoryBlockSource {
-    pub(super) fn block_at(&self, height: BlockHeight) -> Option<&CompactBlock> {
+    pub(super) fn block_at(&self, height: BlockHeight) -> Option<CompactBlock> {
         self.blocks
             .iter()
             .find(|block| block.height == u64::from(u32::from(height)))
+            .and_then(|block| block.decode().ok())
     }
 
+    #[cfg(test)]
     pub(super) fn new(blocks: Vec<CompactBlock>) -> Self {
-        Self { blocks }
+        let mut source = Self::with_capacity(blocks.len());
+        for block in blocks {
+            source.push(block);
+        }
+        source
+    }
+
+    pub(super) fn with_capacity(blocks: usize) -> Self {
+        Self {
+            blocks: Vec::with_capacity(blocks),
+            txids: Vec::new(),
+        }
+    }
+
+    /// Appends `block`, keeping only its encoding and what the accessors
+    /// below read without decoding.
+    pub(super) fn push(&mut self, block: CompactBlock) {
+        self.txids
+            .extend(block.vtx.iter().map(|tx| tx.txid.clone()));
+        self.blocks.push(EncodedBlock {
+            height: block.height,
+            has_orchard_actions: block.vtx.iter().any(|tx| !tx.actions.is_empty()),
+            bytes: block.encode_to_vec(),
+        });
+    }
+
+    fn first_block(&self) -> Option<CompactBlock> {
+        self.blocks.first().and_then(|block| block.decode().ok())
     }
 
     pub(super) fn height_range(&self) -> Option<std::ops::RangeInclusive<u64>> {
         Some(self.blocks.first()?.height..=self.blocks.last()?.height)
     }
 
+    /// The encoded size of the blocks, as downloaded.
+    pub(super) fn encoded_bytes(&self) -> usize {
+        self.blocks.iter().map(|block| block.bytes.len()).sum()
+    }
+
     pub(super) fn transaction_hashes(&self) -> impl Iterator<Item = &[u8]> {
-        self.blocks
-            .iter()
-            .flat_map(|block| block.vtx.iter().map(|tx| tx.txid.as_slice()))
+        self.txids.iter().map(Vec::as_slice)
     }
 
     /// Returns whether this source contains exactly the requested half-open
@@ -69,14 +122,14 @@ impl MemoryBlockSource {
     }
 
     pub(super) fn first_block_prev_hash(&self) -> Option<Vec<u8>> {
-        self.blocks.first().map(|block| block.prev_hash.clone())
+        self.first_block().map(|block| block.prev_hash)
     }
 
     /// Whether the preceding tree state and first compact block have matching
     /// identities and satisfy the commitment-count invariant that `put_blocks`
     /// enforces. The zero hash identifies the synthetic pre-activation state.
     pub(super) fn starts_after(&self, from_state: &chain::ChainState) -> bool {
-        self.blocks.first().is_some_and(|block| {
+        self.first_block().is_some_and(|block| {
             let metadata = block.chain_metadata.unwrap_or_default();
             let sapling_commitments: usize = block.vtx.iter().map(|tx| tx.outputs.len()).sum();
             let orchard_commitments: usize = block.vtx.iter().map(|tx| tx.actions.len()).sum();
@@ -101,7 +154,7 @@ impl MemoryBlockSource {
     pub(super) fn orchard_checkpoint_heights(&self) -> BTreeSet<u32> {
         self.blocks
             .iter()
-            .filter(|block| block.vtx.iter().any(|tx| !tx.actions.is_empty()))
+            .filter(|block| block.has_orchard_actions)
             .filter_map(|block| u32::try_from(block.height).ok())
             .collect()
     }
@@ -109,9 +162,8 @@ impl MemoryBlockSource {
 
 /// Error type for the in-memory block source.
 ///
-/// The `BlockSource` trait requires an associated `Error` type, but
-/// iterating a `Vec<CompactBlock>` cannot actually fail — this is a
-/// placeholder so the trait signature type-checks. All `with_blocks`
+/// Decoding a block this source encoded fails only if its memory is
+/// corrupted; otherwise iterating cannot fail. All other `with_blocks`
 /// failures come from the caller closure via `ChainError`, not from
 /// the source itself.
 #[derive(Debug)]
@@ -148,7 +200,7 @@ impl chain::BlockSource for MemoryBlockSource {
                     break;
                 }
             }
-            with_block(block.clone())?;
+            with_block(block.decode().map_err(ChainError::BlockSource)?)?;
             count += 1;
         }
         Ok(())
@@ -160,6 +212,45 @@ mod tests {
     use super::*;
     use zcash_client_backend::proto::compact_formats::{CompactOrchardAction, CompactTx};
     use zcash_primitives::block::BlockHash;
+
+    #[test]
+    fn blocks_read_back_as_they_were_pushed() {
+        let blocks: Vec<CompactBlock> = (10..13)
+            .map(|height| CompactBlock {
+                height,
+                prev_hash: vec![height as u8; 32],
+                vtx: vec![CompactTx {
+                    txid: vec![height as u8 + 100; 32],
+                    actions: vec![CompactOrchardAction {
+                        cmx: vec![7; 32],
+                        ciphertext: vec![9; 52],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
+            .collect();
+        let source = MemoryBlockSource::new(blocks.clone());
+
+        let mut read = Vec::new();
+        chain::BlockSource::with_blocks::<_, ()>(&source, None, None, |block| {
+            read.push(block);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(read, blocks);
+        assert_eq!(
+            source.block_at(BlockHeight::from_u32(11)),
+            Some(blocks[1].clone())
+        );
+        assert_eq!(source.block_at(BlockHeight::from_u32(13)), None);
+        assert_eq!(
+            source.transaction_hashes().collect::<Vec<_>>(),
+            vec![&[110u8; 32][..], &[111u8; 32][..], &[112u8; 32][..]],
+        );
+        assert_eq!(source.first_block_prev_hash(), Some(vec![10u8; 32]));
+    }
 
     #[test]
     fn orchard_checkpoint_heights_exclude_later_cross_pool_checkpoints() {

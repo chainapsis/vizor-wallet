@@ -406,11 +406,22 @@ mod tests {
         )
         .await
         .expect("enhancement checkpoint timed out");
-        server.abort();
 
-        assert!(
-            matches!(result, Err(SyncError::Network(message)) if message.contains("temporary failure"))
-        );
+        // The failed payload stays queued without failing the sync.
+        assert!(matches!(result, Ok(false)), "{result:?}");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(has_public_payload_work(&db, tx.txid()));
+
+        // A later drain in the same session holds it back instead of asking
+        // again before its retry time.
+        let again = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            enhancement.run_payload_recovery(&mut db, &mut client, None, &should_exit),
+        )
+        .await
+        .expect("payload recovery timed out");
+        server.abort();
+        assert!(matches!(again, Ok(false)), "{again:?}");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         assert!(has_public_payload_work(&db, tx.txid()));
         let observed: Option<i64> = conn
@@ -521,6 +532,35 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn failed_public_payloads_are_held_with_growing_waits() {
+        use std::collections::HashSet;
+        use std::time::{Duration, Instant};
+
+        let first = TxId::from_bytes([1; 32]);
+        let second = TxId::from_bytes([2; 32]);
+        let start = Instant::now();
+        let at = |seconds: u64| start + Duration::from_secs(seconds);
+        let mut retries = PublicPayloadRetries::default();
+        assert!(retries.held(start).is_empty());
+
+        retries.record_failures(vec![first], start);
+        assert!(retries.held(at(29)).contains(&first));
+        assert!(retries.held(at(30)).is_empty());
+
+        // Each further failure waits longer, up to the last wait.
+        retries.record_failures(vec![first, second], at(30));
+        assert_eq!(retries.held(at(59)), HashSet::from([first, second]));
+        assert_eq!(retries.held(at(60)), HashSet::from([first]));
+        assert_eq!(retries.held(at(89)), HashSet::from([first]));
+        assert!(retries.held(at(90)).is_empty());
+        for _ in 0..4 {
+            retries.record_failures(vec![first], at(1_000));
+        }
+        assert!(retries.held(at(1_299)).contains(&first));
+        assert!(!retries.held(at(1_300)).contains(&first));
     }
 
     #[test]
@@ -1445,6 +1485,79 @@ mod tests {
         assert!(
             enhance.0.load(std::sync::atomic::Ordering::SeqCst) > 0,
             "and asks it"
+        );
+    }
+
+    /// A scanned batch that does not check the chain tip asks no status; the
+    /// next batch that checks it does.
+    #[tokio::test]
+    async fn status_waits_for_a_batch_that_checks_the_tip() {
+        use super::super::content_failures;
+        use crate::wallet::sync_engine::test_lwd::CapturingLwd;
+        use zakura_pir_client::status::policy::StatusObservation;
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+
+        let (_dir, path, _) =
+            crate::wallet::sync::private_shielding_tests::wallet_with_a_private_memo_query();
+        let network = WalletNetwork::Regtest;
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let txid: Vec<u8> = conn
+            .query_row(
+                "SELECT txid FROM tx_retrieval_queue WHERE query_type = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        conn.execute("DELETE FROM tx_retrieval_queue WHERE query_type = 1", [])
+            .unwrap();
+        conn.execute(
+            "UPDATE transactions SET mined_height = NULL WHERE txid = ?1",
+            [&txid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 0)",
+            [&txid],
+        )
+        .unwrap();
+        let policy = super::super::EnhancementPolicy::current(network)
+            .with_private_queries()
+            .with_transparent_mode(TransparentLedgerMode::PrivateRequired);
+        let mut session = super::EnhancementSession::with_policy(network, &path, policy);
+        session.payload.set_endpoint("https://example.test");
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            network,
+            crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        let mut lwd = CapturingLwd::start(Vec::new()).await;
+        let enhance = RefusingEnhance::default();
+        content_failures::at_tip(&path, 1_000);
+
+        let between = status_source(Ok(StatusObservation::NotFound));
+        let asked_between = between.requests.clone();
+        session.status_due = false;
+        session
+            .checkpoint_with(&mut db, &mut lwd.client, None, between, &enhance, &|| false)
+            .await
+            .unwrap();
+        assert!(
+            asked_between.lock().unwrap().is_empty(),
+            "no status between tip checks"
+        );
+
+        let checked = status_source(Ok(StatusObservation::NotFound));
+        let asked_checked = checked.requests.clone();
+        session.status_due = true;
+        session
+            .checkpoint_with(&mut db, &mut lwd.client, None, checked, &enhance, &|| false)
+            .await
+            .unwrap();
+        assert_eq!(
+            asked_checked.lock().unwrap().len(),
+            1,
+            "the batch that checks the tip asks it"
         );
     }
 

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
@@ -104,15 +105,82 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('******'), findsNWidgets(2));
+      expect(find.text('••••••'), findsNWidgets(2));
       expect(
         find.byKey(const ValueKey('home_desktop_balance_fiat_text')),
         findsOneWidget,
       );
       expect(find.text('ZEC'), findsOneWidget);
-      expect(find.text('****** ZEC ZEC'), findsNothing);
+      expect(find.text('•••••• ZEC ZEC'), findsNothing);
     },
   );
+
+  testWidgets('home desktop import view fits its number in the slot under a '
+      'larger text scale', (tester) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final slot = find.byKey(
+      const ValueKey('home_desktop_importing_progress_slot'),
+    );
+
+    // Home shows the import view while blocks remain to scan
+    // ([SyncState.isImportingAccount]).
+    for (final (state, label) in [
+      // A new job shows 0% from the start.
+      (
+        SyncState(
+          accountUuid: 'account-1',
+          isSyncing: true,
+          phase: kSyncPhaseActiveUtxo,
+          remainingScanBlocks: 1000,
+        ),
+        '0%',
+      ),
+      (
+        SyncState(
+          accountUuid: 'account-1',
+          isSyncing: true,
+          phase: 'scan',
+          percentage: 0.32,
+          remainingScanBlocks: 1000,
+        ),
+        '32%',
+      ),
+    ]) {
+      // A fresh scope for each state. The sidebar account header overflows
+      // by 10px at this scale, which is outside this test: that one error
+      // is expected, and nothing else may be thrown.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(_appHarness('/home', syncState: state));
+      expect(
+        tester.takeException(),
+        isA<FlutterError>().having(
+          (error) => error.message,
+          'message',
+          'A RenderFlex overflowed by 10.0 pixels on the bottom.',
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.takeException(), isNull);
+
+      // Laid out at its full height (nothing clipped) and drawn inside the
+      // slot.
+      final text = find.text(label);
+      final paragraph = tester.renderObject<RenderParagraph>(text);
+      expect(
+        paragraph.size.height,
+        greaterThanOrEqualTo(
+          paragraph.getMaxIntrinsicHeight(paragraph.size.width) - 0.01,
+        ),
+      );
+      final slotRect = tester.getRect(slot);
+      final textRect = tester.getRect(text);
+      expect(slotRect.size, const Size(340, 48));
+      expect(textRect.top, greaterThanOrEqualTo(slotRect.top - 0.01));
+      expect(textRect.bottom, lessThanOrEqualTo(slotRect.bottom + 0.01));
+    }
+  });
 
   for (final privacyModeEnabled in [false, true]) {
     testWidgets(
@@ -134,7 +202,7 @@ void main() {
         final amount = find.byKey(
           const ValueKey('home_desktop_balance_amount_text'),
         );
-        final expected = privacyModeEnabled ? '******' : '0';
+        final expected = privacyModeEnabled ? '••••••' : '0';
         expect(tester.widget<Text>(amount).data, expected);
         expect(tester.getSemantics(amount).label, expected);
         expect(
@@ -213,7 +281,7 @@ void main() {
     );
     expect(
       changeText.style?.color,
-      AppThemeData.light.colors.text.positiveStrong,
+      AppThemeData.light.colors.text.homeCardPositive,
     );
   });
 
@@ -239,7 +307,10 @@ void main() {
     final changeText = tester.widget<Text>(
       find.byKey(const ValueKey('home_desktop_balance_price_change_text')),
     );
-    expect(changeText.style?.color, AppThemeData.light.colors.text.destructive);
+    expect(
+      changeText.style?.color,
+      AppThemeData.light.colors.text.homeCardNegative,
+    );
   });
 
   testWidgets('home desktop content tracks pane center on scaled screens', (
