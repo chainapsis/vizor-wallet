@@ -377,8 +377,8 @@ class _MobilePayAmountInput extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final unit = inputIsFiat
-            ? 'USD'
-            : asset.symbol; // l10n-ignore: currency code
+            ? 'USD' // l10n-ignore: currency code
+            : asset.symbol;
         final unitWidth = _scaledTextWidth(context, unit, unitStyle);
         final availableInputWidth =
             constraints.maxWidth - math.max(108, unitWidth + AppSpacing.xs);
