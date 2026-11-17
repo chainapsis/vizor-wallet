@@ -3061,6 +3061,8 @@
   "swapNoticePaymentsMayFail": "支付目前可能无法使用。",
   "swapNoticePrivateReceiveAddressLimit": "等待中的兑换过多。请在其中一笔完成或过期后重试。",
   "swapNoticePrivateReceiveAddressPreparationFailed": "无法准备新的钱包接收地址。请在钱包同步后重试。",
+  "swapNoticePrivateReceiveAddressPreparing": "正在准备隐私兑换地址。请稍后重试。",
+  "swapNoticePrivateReceiveAddressStale": "此兑换地址已不可用。请获取新报价。",
   "swapNoticePrivateReceiveAddressUnavailable": "隐私兑换暂时不可用。请几分钟后重试。",
   "swapNoticeReceiveAddressUnavailable": "无法准备新的钱包接收地址。请在钱包同步后重试，或在获取新报价前关闭处理中的旧兑换。",
   "swapNoticeServiceTitle": "服务通知",

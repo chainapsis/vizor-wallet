@@ -3061,6 +3061,8 @@
   "swapNoticePaymentsMayFail": "지금은 결제가 되지 않을 수 있어요.",
   "swapNoticePrivateReceiveAddressLimit": "대기 중인 스왑이 너무 많아요. 스왑 하나가 끝나거나 만료된 뒤 다시 시도해 주세요.",
   "swapNoticePrivateReceiveAddressPreparationFailed": "지갑의 새 받는 주소를 준비하지 못했어요. 지갑 동기화 후 다시 시도해 주세요.",
+  "swapNoticePrivateReceiveAddressPreparing": "비공개 스왑 주소를 준비하고 있어요. 잠시 후 다시 시도해 주세요.",
+  "swapNoticePrivateReceiveAddressStale": "이 스왑 주소는 더 이상 사용할 수 없어요. 새 견적을 요청해 주세요.",
   "swapNoticePrivateReceiveAddressUnavailable": "지금은 비공개 스왑을 사용할 수 없어요. 몇 분 뒤 다시 시도해 주세요.",
   "swapNoticeReceiveAddressUnavailable": "지갑의 새 받는 주소를 준비하지 못했어요. 지갑 동기화 후 다시 시도하거나, 새 견적을 요청하기 전에 대기 중인 예전 스왑을 닫아 주세요.",
   "swapNoticeServiceTitle": "서비스 안내",

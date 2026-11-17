@@ -11325,6 +11325,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Could not prepare a fresh wallet receive address. Try again after wallet sync.';
 
   @override
+  String get swapNoticePrivateReceiveAddressPreparing =>
+      'Preparing a private swap address. Try again in a moment.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale =>
+      'This swap address is no longer available. Request a new quote.';
+
+  @override
   String get swapNoticePrivateReceiveAddressUnavailable =>
       'Private swaps aren\'t available right now. Try again in a few minutes.';
 

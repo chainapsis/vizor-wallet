@@ -11151,6 +11151,14 @@ class AppLocalizationsKo extends AppLocalizations {
       '지‍갑‍의 새 받‍는 주‍소‍를 준‍비‍하‍지 못‍했‍어‍요. 지‍갑 동‍기‍화 후 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
+  String get swapNoticePrivateReceiveAddressPreparing =>
+      '비‍공‍개 스‍왑 주‍소‍를 준‍비‍하‍고 있‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale =>
+      '이 스‍왑 주‍소‍는 더 이‍상 사‍용‍할 수 없‍어‍요. 새 견‍적‍을 요‍청‍해 주‍세‍요.';
+
+  @override
   String get swapNoticePrivateReceiveAddressUnavailable =>
       '지‍금‍은 비‍공‍개 스‍왑‍을 사‍용‍할 수 없‍어‍요. 몇 분 뒤 다‍시 시‍도‍해 주‍세‍요.';
 

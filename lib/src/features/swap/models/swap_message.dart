@@ -50,6 +50,8 @@ enum SwapNoticeKind {
   privateReceiveAddressPreparationFailed,
   privateReceiveAddressUnavailable,
   privateReceiveAddressLimit,
+  privateReceiveAddressPreparing,
+  privateReceiveAddressStale,
   depositIntentMissing,
   broadcastPartial,
   broadcastPending,
@@ -124,6 +126,10 @@ final class SwapNotice extends SwapMessage {
       l10n.swapNoticePrivateReceiveAddressUnavailable,
     SwapNoticeKind.privateReceiveAddressLimit =>
       l10n.swapNoticePrivateReceiveAddressLimit,
+    SwapNoticeKind.privateReceiveAddressPreparing =>
+      l10n.swapNoticePrivateReceiveAddressPreparing,
+    SwapNoticeKind.privateReceiveAddressStale =>
+      l10n.swapNoticePrivateReceiveAddressStale,
     SwapNoticeKind.depositIntentMissing => l10n.swapNoticeDepositIntentMissing,
     SwapNoticeKind.broadcastPartial => l10n.swapNoticeBroadcastPartial,
     SwapNoticeKind.broadcastPending => l10n.swapNoticeBroadcastPending,

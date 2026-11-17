@@ -14400,6 +14400,14 @@
   "@swapNoticePrivateReceiveAddressPreparationFailed": {
     "description": "Swap quote error with Enhance swap privacy on: the wallet could not reserve a one-time receive address for the swap."
   },
+  "swapNoticePrivateReceiveAddressPreparing": "Preparing a private swap address. Try again in a moment.",
+  "@swapNoticePrivateReceiveAddressPreparing": {
+    "description": "Swap quote or start error with Enhance swap privacy on while the wallet is still checking the next one-time address's history or waiting for sync."
+  },
+  "swapNoticePrivateReceiveAddressStale": "This swap address is no longer available. Request a new quote.",
+  "@swapNoticePrivateReceiveAddressStale": {
+    "description": "Swap quote or start error when the one-time address reserved for the quote expired or was retired."
+  },
   "swapNoticePrivateReceiveAddressUnavailable": "Private swaps aren't available right now. Try again in a few minutes.",
   "@swapNoticePrivateReceiveAddressUnavailable": {
     "description": "Swap quote error with Enhance swap privacy on: no one-time receive address is available even after the wallet checked its swap history. Enhance swap privacy is the name of the setting."
