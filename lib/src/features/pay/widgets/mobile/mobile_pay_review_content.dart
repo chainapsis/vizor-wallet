@@ -6,6 +6,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../swap/domain/swap_quote.dart';
@@ -67,6 +68,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
           decoration: BoxDecoration(
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(_reviewCardRadius),
+            boxShadow: mobileSurfaceShadows(colors),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -134,6 +136,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
           decoration: BoxDecoration(
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(_reviewCardRadius),
+            boxShadow: mobileSurfaceShadows(colors),
           ),
           child: Opacity(
             key: const ValueKey('mobile_pay_review_converted_opacity'),

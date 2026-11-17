@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/navigation/route_owned_redirect.dart';
@@ -39,6 +40,49 @@ void main() {
     revision.value++;
     await tester.pumpAndSettle();
     expect(navigated, ['account-a/round-1', 'account-b/round-2']);
+  });
+
+  testWidgets('native visual return does not release a route-owned redirect '
+      'before the outgoing page finishes', (tester) async {
+    final observer = RouteOwnedNavigationObserver();
+    addTearDown(observer.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    late Route<dynamic> owner;
+    var ready = false;
+    var navigations = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigator,
+        navigatorObservers: [observer],
+        home: Builder(
+          builder: (context) {
+            owner = ModalRoute.of(context)!;
+            return RouteOwnedRedirect(
+              requestKey: 'request',
+              isValid: () => ready,
+              onNavigate: () => navigations++,
+              child: const Text('Owner'),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    navigator.currentState!.push(
+      CupertinoPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('Detail')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    ready = true;
+    navigator.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(observer.revealsNativeTabsFor(owner), true);
+    expect(observer.hasDepartingRoutes, true);
+    expect(navigations, 0);
+    await tester.pumpAndSettle();
+    expect(navigations, 1);
   });
 
   for (final action in ['resume', 'invalidate', 'dispose', 'replace request']) {

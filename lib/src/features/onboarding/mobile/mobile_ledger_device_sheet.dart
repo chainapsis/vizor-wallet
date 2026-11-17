@@ -338,7 +338,8 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                                 ? null
                                 : () => unawaited(_startDiscovery()),
                           ),
-                          if (_state == _DiscoveryState.empty)
+                          if (_state == _DiscoveryState.empty) ...[
+                            const SizedBox(height: AppSpacing.s),
                             AppButton(
                               variant: AppButtonVariant.ghost,
                               expand: true,
@@ -349,6 +350,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                                   : () => unawaited(_openHelp()),
                               child: Text(context.l10n.ledgerConnectionHelp),
                             ),
+                          ],
                         ],
                       )
                     : null,
@@ -505,7 +507,7 @@ class _StatusMessage extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
                   message,
-                  style: AppTypography.bodySmall.copyWith(
+                  style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.secondary,
                   ),
                 ),

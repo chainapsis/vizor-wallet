@@ -47,7 +47,7 @@ class _MobileAccountRemovalPasscodeScreenState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_tryBiometricGate());
+      unawaited(_tryBiometricGate(automatic: true));
     });
   }
 
@@ -57,7 +57,7 @@ class _MobileAccountRemovalPasscodeScreenState
     super.dispose();
   }
 
-  Future<void> _tryBiometricGate() async {
+  Future<void> _tryBiometricGate({required bool automatic}) async {
     if (!mounted || _checking) return;
     final entryAtStart = _entry;
     final BiometricUnlockState biometric;
@@ -72,7 +72,9 @@ class _MobileAccountRemovalPasscodeScreenState
         !_isCurrentRoute ||
         _checking ||
         _entry != entryAtStart ||
-        !biometric.usable) {
+        !biometric.usable ||
+        (automatic &&
+            !shouldAutoPromptSensitiveBiometric(biometric.availability.kind))) {
       return;
     }
     setState(() => _checking = true);
@@ -166,7 +168,7 @@ class _MobileAccountRemovalPasscodeScreenState
                     fingerprintSize: 16,
                   ),
                 ),
-                onPressed: () => unawaited(_tryBiometricGate()),
+                onPressed: () => unawaited(_tryBiometricGate(automatic: false)),
               ),
             ),
           )
@@ -209,12 +211,12 @@ class _MobileAccountRemovalPasscodeScreenState
                     ? 0
                     : _kBiometricFooterHeight,
                 legacyPadding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
+                  horizontal: kMobilePageMargin,
                   vertical: AppSpacing.md,
                 ),
                 legacy: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
+                    horizontal: kMobilePageMargin,
                     vertical: AppSpacing.md,
                   ),
                   child: Column(

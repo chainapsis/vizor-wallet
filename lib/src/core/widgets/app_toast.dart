@@ -22,6 +22,9 @@ class AppToastAction {
 const _kToastIconSize = 20.0;
 const _kDestructiveToastForeground = Color(0xFFFFFFFF);
 
+/// Strong ease-out: the toast is moving the moment it appears, then settles.
+const _kToastCurve = Cubic(0.23, 1, 0.32, 1);
+
 class AppToast extends StatelessWidget {
   const AppToast({
     required this.message,
@@ -33,6 +36,11 @@ class AppToast extends StatelessWidget {
   });
 
   static const defaultDuration = Duration(seconds: 2);
+
+  /// The toast drops in from just above its resting place and leaves the
+  /// same way, a little faster than it came.
+  static const enterDuration = Duration(milliseconds: 350);
+  static const exitDuration = Duration(milliseconds: 200);
 
   final String message;
   final String iconName;
@@ -263,6 +271,7 @@ class _ToastNotification {
 class _AppToastHostState extends State<AppToastHost> {
   static final List<_AppToastHostState> _activeStates = [];
   static OverlayEntry? _fallbackOverlayEntry;
+  static GlobalKey<_OverlayAppToastState>? _fallbackOverlayToastKey;
 
   static _AppToastHostState? get _lastActiveState {
     for (final state in _activeStates.reversed) {
@@ -361,41 +370,45 @@ class _AppToastHostState extends State<AppToastHost> {
         fit: StackFit.expand,
         children: [
           widget.child,
-          if (notification != null)
-            Positioned(
-              top: topInset,
-              left: bounds.left,
-              right: media.size.width - bounds.right,
-              child: IgnorePointer(
-                ignoring:
-                    notification.action == null &&
-                    notification.duration != null,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
+          Positioned(
+            top: topInset,
+            left: bounds.left,
+            right: media.size.width - bounds.right,
+            child: _AppToastMotion(
+              child: notification == null
+                  ? null
+                  : IgnorePointer(
+                      ignoring:
+                          notification.action == null &&
+                          notification.duration != null,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm,
+                          ),
+                          child: AppToast(
+                            message: notification.message,
+                            iconName: notification.iconName,
+                            tone: notification.tone,
+                            onDismiss: notification.duration == null
+                                ? () =>
+                                      _dismiss(notification, acknowledge: true)
+                                : null,
+                            action: notification.action == null
+                                ? null
+                                : AppToastAction(
+                                    label: notification.action!.label,
+                                    onPressed: () {
+                                      _dismiss(notification);
+                                      notification.action!.onPressed();
+                                    },
+                                  ),
+                          ),
+                        ),
+                      ),
                     ),
-                    child: AppToast(
-                      message: notification.message,
-                      iconName: notification.iconName,
-                      tone: notification.tone,
-                      onDismiss: notification.duration == null
-                          ? () => _dismiss(notification, acknowledge: true)
-                          : null,
-                      action: notification.action == null
-                          ? null
-                          : AppToastAction(
-                              label: notification.action!.label,
-                              onPressed: () {
-                                _dismiss(notification);
-                                notification.action!.onPressed();
-                              },
-                            ),
-                    ),
-                  ),
-                ),
-              ),
             ),
+          ),
         ],
       ),
     );
@@ -509,28 +522,49 @@ VoidCallback _showOverlayToast(
   VoidCallback? onDismiss,
 }) {
   final previousEntry = _AppToastHostState._fallbackOverlayEntry;
+  // Replacing a toast still on screen swaps it in place, as the host does;
+  // one that is already leaving gives way to a fresh entrance.
+  final replacesVisibleToast =
+      (previousEntry?.mounted ?? false) &&
+      (_AppToastHostState._fallbackOverlayToastKey?.currentState?.isShowing ??
+          false);
   if (previousEntry?.mounted ?? false) {
     previousEntry?.remove();
   }
   _AppToastHostState._fallbackOverlayEntry = null;
 
+  final toastKey = GlobalKey<_OverlayAppToastState>();
   late final OverlayEntry entry;
-  void dismiss() {
+  void remove() {
     if (_AppToastHostState._fallbackOverlayEntry == entry) {
       _AppToastHostState._fallbackOverlayEntry = null;
     }
     if (entry.mounted) entry.remove();
   }
 
+  // The toast animates out and removes its entry once it has left. Before
+  // its first build there is nothing to animate, so it goes at once.
+  void dismiss() {
+    final toast = toastKey.currentState;
+    if (toast == null) {
+      remove();
+    } else {
+      toast.hide();
+    }
+  }
+
   entry = OverlayEntry(
     builder: (_) => _OverlayAppToast(
+      key: toastKey,
       message: message,
       iconName: iconName,
       tone: tone,
       duration: duration,
       theme: theme,
       action: action,
+      animateIn: !replacesVisibleToast,
       onDismiss: dismiss,
+      onHidden: remove,
       onUserDismiss: () {
         dismiss();
         onDismiss?.call();
@@ -544,6 +578,7 @@ VoidCallback _showOverlayToast(
   );
 
   _AppToastHostState._fallbackOverlayEntry = entry;
+  _AppToastHostState._fallbackOverlayToastKey = toastKey;
   overlay.insert(entry);
   return dismiss;
 }
@@ -558,7 +593,10 @@ class _OverlayAppToast extends StatefulWidget {
     required this.onDismiss,
     required this.onDisposed,
     required this.onUserDismiss,
+    required this.onHidden,
     this.action,
+    this.animateIn = true,
+    super.key,
   });
 
   final String message;
@@ -571,12 +609,25 @@ class _OverlayAppToast extends StatefulWidget {
   final VoidCallback onDisposed;
   final VoidCallback onUserDismiss;
 
+  /// Runs once the toast has animated out.
+  final VoidCallback onHidden;
+  final bool animateIn;
+
   @override
   State<_OverlayAppToast> createState() => _OverlayAppToastState();
 }
 
 class _OverlayAppToastState extends State<_OverlayAppToast> {
   Timer? _timer;
+  bool _showing = true;
+
+  bool get isShowing => _showing;
+
+  void hide() {
+    if (!_showing) return;
+    _timer?.cancel();
+    setState(() => _showing = false);
+  }
 
   @override
   void initState() {
@@ -635,14 +686,126 @@ class _OverlayAppToastState extends State<_OverlayAppToast> {
       top: topInset,
       left: 0,
       right: 0,
-      child: IgnorePointer(
-        ignoring: widget.action == null && widget.duration != null,
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: toast,
-          ),
-        ),
+      child: _AppToastMotion(
+        animateIn: widget.animateIn,
+        onHidden: widget.onHidden,
+        child: _showing
+            ? IgnorePointer(
+                ignoring: widget.action == null && widget.duration != null,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                    ),
+                    child: toast,
+                  ),
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+}
+
+/// Drops the toast in from just above its resting place while fading it in,
+/// and sends it back out the same way. A toast replacing one on screen swaps
+/// in place; one shown while the last is still leaving turns it around from
+/// where it is instead of restarting.
+class _AppToastMotion extends StatefulWidget {
+  const _AppToastMotion({
+    required this.child,
+    this.animateIn = true,
+    this.onHidden,
+  });
+
+  /// The toast to show; null sends the last one out.
+  final Widget? child;
+
+  /// False starts [child] at rest, for a toast replacing a visible one.
+  final bool animateIn;
+
+  /// Runs once the toast has fully left.
+  final VoidCallback? onHidden;
+
+  @override
+  State<_AppToastMotion> createState() => _AppToastMotionState();
+}
+
+class _AppToastMotionState extends State<_AppToastMotion>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final CurvedAnimation _animation;
+  late final Animation<Offset> _offset;
+  Widget? _child;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: AppToast.enterDuration,
+      reverseDuration: AppToast.exitDuration,
+      value: widget.child != null && !widget.animateIn ? 1 : 0,
+    )..addStatusListener(_handleStatusChanged);
+    // Flipped on the way out, so the exit eases out in time as well.
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: _kToastCurve,
+      reverseCurve: _kToastCurve.flipped,
+    );
+    _offset = _animation.drive(
+      Tween(begin: const Offset(0, -1), end: Offset.zero),
+    );
+    _child = widget.child;
+    if (_child != null) _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(_AppToastMotion oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final child = widget.child;
+    if (child != null) {
+      _child = child;
+      _controller.forward();
+    } else if (oldWidget.child != null) {
+      _controller.reverse();
+    }
+  }
+
+  void _handleStatusChanged(AnimationStatus status) {
+    if (status != AnimationStatus.dismissed || widget.child != null) return;
+    setState(() => _child = null);
+    final onHidden = widget.onHidden;
+    if (onHidden != null) {
+      // A toast hidden before its first frame settles during a build, and
+      // the owner may remove an overlay entry; do that after the frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) => onHidden());
+    }
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = _child;
+    if (child == null) return const SizedBox.shrink();
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return IgnorePointer(
+      ignoring: widget.child == null,
+      child: FadeTransition(
+        opacity: _animation,
+        // Screen readers get the live region from the first frame, as before.
+        alwaysIncludeSemantics: true,
+        // Reduced motion keeps the fade and drops the travel.
+        child: reduceMotion
+            ? child
+            : SlideTransition(position: _offset, child: child),
       ),
     );
   }

@@ -1069,6 +1069,26 @@ void main() {
       expect(find.byType(PasscodeNumpad), findsOneWidget);
     });
 
+    testWidgets('iOS Face ID still auto-prompts for app unlock', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.configurePassword('123456');
+      AppSecureStore.instance.clearSessionPassword();
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final biometric = FakeBiometricUnlock(
+        avail: faceAvailability,
+        escrow: '999999',
+      );
+      await tester.pumpWidget(_app(biometric: biometric));
+      await _pumpUntilBiometricRead(tester, biometric);
+      await tester.pumpAndSettle();
+      expect(biometric.reads, 1);
+      expect(find.text('Incorrect Passcode'), findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
     testWidgets('auto-prompt feeds the escrowed passcode to unlock', (
       tester,
     ) async {

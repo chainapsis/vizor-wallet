@@ -104,9 +104,20 @@ void main() {
     );
     await tester.pump();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_explorer_update')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mobile_explorer_update')));
     await tester.pump();
 
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileExplorerScreen)),
+    );
+    expect(
+      container.read(zcashExplorerProvider),
+      'https://privacy.example/tx/{txid}',
+    );
     expect(find.textContaining('privacy.example'), findsWidgets);
   });
 
@@ -139,6 +150,10 @@ void main() {
       find.byKey(const ValueKey('mobile_explorer_option_zecblock_private')),
     );
     await tester.pump();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_explorer_update')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mobile_explorer_update')));
     await tester.pump();
 

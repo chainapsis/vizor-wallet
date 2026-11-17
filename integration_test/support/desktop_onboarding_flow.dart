@@ -4,8 +4,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 
 var _nextDesktopOnboardingPointer = 9000;
 
-/// Completes personalisation before the first wallet's password step.
-/// Additional accounts finish here using the existing unlocked session.
+/// Completes import personalisation, or observes creation reaching security/Home.
 Future<void> finishDesktopAccountCustomisation(
   WidgetTester tester, {
   Duration timeout = const Duration(minutes: 4),
@@ -16,6 +15,23 @@ Future<void> finishDesktopAccountCustomisation(
   final deadline = DateTime.now().add(timeout);
 
   while (DateTime.now().isBefore(deadline)) {
+    if (find
+            .byKey(const ValueKey('set_password_password_field'))
+            .hitTestable()
+            .evaluate()
+            .isNotEmpty ||
+        find
+            .byKey(const ValueKey('home_desktop_send_button'))
+            .hitTestable()
+            .evaluate()
+            .isNotEmpty ||
+        find
+            .byKey(const ValueKey('home_desktop_receive_first_button'))
+            .hitTestable()
+            .evaluate()
+            .isNotEmpty) {
+      return;
+    }
     final enabled = finishButton.evaluate().any(
       (element) =>
           element.widget is AppButton &&

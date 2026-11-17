@@ -27,8 +27,14 @@ const kWalletDbNameKey = 'zcash_wallet_db_name';
 const kThemeModeKey = 'zcash_theme_mode';
 const kAppLanguageKey = 'zcash_app_language';
 const kPrivacyModeEnabledKey = 'zcash_privacy_mode_enabled';
+// Written before a reveal; its presence forces hiding during crash recovery.
+const kPrivacyModeRevealPendingKey = 'zcash_privacy_mode_reveal_pending_v1';
+const kHideBalanceOnUnlockKey = 'zcash_hide_balance_on_unlock';
 const kSyncKeepAwakeEnabledKey = 'zcash_sync_keep_awake_enabled';
 const kSyncKeepAwakePromptSeenKey = 'zcash_sync_keep_awake_prompt_seen';
+
+/// Flip to hide, saved as its off flag: a missing value reads as on.
+const kFlipToHideBalanceDisabledKey = 'zcash_flip_to_hide_balance_disabled';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
 const kPaymentLinkRecoveryStorageKey = 'zcash_gift_card_recovery_v1';

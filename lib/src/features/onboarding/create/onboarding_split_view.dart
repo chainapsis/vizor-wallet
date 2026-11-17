@@ -73,7 +73,7 @@ extension OnboardingStepX on OnboardingStep {
 
   String get iconName => switch (this) {
     OnboardingStep.intro => AppIcons.zcash,
-    OnboardingStep.addressTypes => AppIcons.shieldKeyholeOutline,
+    OnboardingStep.addressTypes => AppIcons.shieldKeyhole,
     OnboardingStep.thingsToKnow => AppIcons.crystalBall,
     OnboardingStep.secretPassphrase => AppIcons.key,
     OnboardingStep.setPassword => AppIcons.lock,
@@ -116,6 +116,7 @@ class OnboardingSplitViewShell extends ConsumerWidget {
   const OnboardingSplitViewShell({
     required this.activeStep,
     required this.showPasswordStep,
+    this.showEducationSteps = true,
     required this.child,
     super.key,
   });
@@ -123,6 +124,7 @@ class OnboardingSplitViewShell extends ConsumerWidget {
   final OnboardingStep activeStep;
   final bool showPasswordStep;
   final Widget child;
+  final bool showEducationSteps;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -150,6 +152,7 @@ class OnboardingSplitViewShell extends ConsumerWidget {
         child: _Sidebar(
           activeStep: activeStep,
           showPasswordStep: showPasswordStep,
+          showEducationSteps: showEducationSteps,
           secretPassphraseRevealed: secretPassphraseRevealed,
         ),
       ),
@@ -220,11 +223,13 @@ class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.activeStep,
     required this.showPasswordStep,
+    required this.showEducationSteps,
     required this.secretPassphraseRevealed,
   });
 
   final OnboardingStep activeStep;
   final bool showPasswordStep;
+  final bool showEducationSteps;
   final bool secretPassphraseRevealed;
 
   @override
@@ -256,11 +261,12 @@ class _Sidebar extends StatelessWidget {
   }
 
   List<OnboardingStep> get _steps => [
-    OnboardingStep.intro,
-    OnboardingStep.addressTypes,
-    OnboardingStep.thingsToKnow,
-    OnboardingStep.secretPassphrase,
-    OnboardingStep.customiseAccount,
+    if (showEducationSteps) ...[
+      OnboardingStep.intro,
+      OnboardingStep.addressTypes,
+      OnboardingStep.thingsToKnow,
+      OnboardingStep.secretPassphrase,
+    ],
     if (showPasswordStep) OnboardingStep.setPassword,
   ];
 

@@ -174,7 +174,7 @@ class _ThingsToKnowPanel extends StatelessWidget {
           _InfoSection(
             title: context.l10n.onboardingThingsKeepPrivacyTitle,
             body: context.l10n.onboardingThingsKeepPrivacyBody,
-            iconName: AppIcons.shieldKeyholeOutline,
+            iconName: AppIcons.shieldKeyhole,
           ),
         ],
       ),

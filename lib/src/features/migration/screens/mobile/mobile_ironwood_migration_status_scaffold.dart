@@ -6,9 +6,9 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
     required this.child,
     this.showAccountNav = true,
     this.contentPadding = const EdgeInsets.fromLTRB(
-      AppSpacing.sm,
+      kMobilePageMargin,
       44,
-      AppSpacing.sm,
+      kMobilePageMargin,
       AppSpacing.md,
     ),
     super.key,
@@ -77,7 +77,7 @@ class _MobileStatusCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: colors.background.ground,
           borderRadius: BorderRadius.circular(AppRadii.large),
-          boxShadow: appSurfaceShadow(colors),
+          boxShadow: mobileSurfaceShadows(colors),
         ),
         child: Padding(
           padding:

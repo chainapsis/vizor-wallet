@@ -1,6 +1,8 @@
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
+import 'mobile_scroll_edge_fades.dart';
 
 /// Soft top edge for tab-root scroll areas (VZR-74): a window-colored
 /// gradient overlay that dissolves content under the top nav instead of
@@ -15,6 +17,7 @@ class MobileTopScrollFade extends StatefulWidget {
   const MobileTopScrollFade({
     required this.child,
     this.height = AppSpacing.base,
+    this.color,
     super.key,
   });
 
@@ -23,6 +26,10 @@ class MobileTopScrollFade extends StatefulWidget {
 
   /// Maximum height of the fade band below the top edge.
   final double height;
+
+  /// The surface the content fades into; the window background when null.
+  /// Lists inside a sheet pass the sheet's surface.
+  final Color? color;
 
   @override
   State<MobileTopScrollFade> createState() => _MobileTopScrollFadeState();
@@ -74,22 +81,37 @@ class _MobileTopScrollFadeState extends State<MobileTopScrollFade> {
     if (notification.depth != 0) return false;
     final progress = (notification.metrics.extentBefore / _activationDistance)
         .clamp(0.0, 1.0);
-    final next = _smoothstep(progress);
-    if (next != _progress) setState(() => _progress = next);
+    _setProgress(_smoothstep(progress));
     return false; // Observe only — let the notification bubble on.
+  }
+
+  void _setProgress(double next) {
+    if (next == _progress) return;
+    // A scroll position re-settling after its content changed size notifies
+    // mid-layout, when no rebuild may be scheduled; apply those after the
+    // frame instead.
+    final scheduler = SchedulerBinding.instance;
+    if (scheduler.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      scheduler.addPostFrameCallback((_) {
+        if (mounted && _progress != next) setState(() => _progress = next);
+      });
+      return;
+    }
+    setState(() => _progress = next);
   }
 
   static double _smoothstep(double value) => value * value * (3 - 2 * value);
 
   @override
   Widget build(BuildContext context) {
-    final window = context.colors.background.window;
+    final window = widget.color ?? context.colors.background.window;
     final fadeHeight = widget.height * _progress;
     return NotificationListener<ScrollNotification>(
       onNotification: _onScroll,
       child: Stack(
         children: [
-          widget.child,
+          // This band replaces the standard top fade here.
+          MobileScrollEdgeFades(topHeight: 0, child: widget.child),
           Positioned(
             top: 0,
             left: 0,

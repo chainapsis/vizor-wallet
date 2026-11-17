@@ -3,6 +3,9 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_bottom_scroll_fade.dart';
+import '../../../../core/layout/mobile/mobile_keyboard_aware_height.dart';
+import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
@@ -96,18 +99,6 @@ class _MobileSwapAssetSelectorModalState
     ];
   }
 
-  /// The scroll viewport height: a stable [_minListHeight].._maxListHeight,
-  /// further capped to the room above the keyboard so the list bottom and its
-  /// scrollbar stay on screen.
-  double _listHeight(BuildContext context) {
-    final media = MediaQuery.of(context);
-    // Reserve for the title, the search field, the inter-element gaps and the
-    // card's own top/bottom margins.
-    final available =
-        media.size.height - media.viewInsets.bottom - media.padding.top - 220;
-    return available.clamp(_minListHeight, _maxListHeight);
-  }
-
   double _listContentHeight(int itemCount) {
     if (itemCount <= 0) return 0;
     return itemCount * _rowHeight + (itemCount - 1) * _rowGap;
@@ -118,9 +109,7 @@ class _MobileSwapAssetSelectorModalState
     final colors = context.colors;
     final assets = _filteredAssets;
     final hasQuery = _queryController.text.isNotEmpty;
-    final listHeight = _listHeight(context);
     final listContentHeight = _listContentHeight(assets.length);
-    final showScrollbar = listContentHeight > listHeight;
 
     return MobileModalScaffold(
       key: const ValueKey('swap_external_asset_menu'),
@@ -167,55 +156,77 @@ class _MobileSwapAssetSelectorModalState
           // The _Modal Type Field reserves an (opacity-0) error line, so the
           // search sits ~24px above the list.
           const SizedBox(height: 24),
-          SizedBox(
-            height: listHeight,
-            child: assets.isEmpty
-                ? Center(
-                    child: SizedBox(
-                      width: 112,
-                      child: Text(
-                        context.l10n.swapAssetSelectorEmpty,
-                        textAlign: TextAlign.center,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.secondary,
+          // The scroll viewport: a stable [_minListHeight].._maxListHeight,
+          // further capped to the room above the keyboard so the list bottom
+          // and its scrollbar stay on screen. Reserves the title, the search
+          // field, the inter-element gaps and the card's own margins.
+          MobileKeyboardAwareHeight(
+            reserved: 220,
+            min: _minListHeight,
+            max: _maxListHeight,
+            builder: (context, listHeight, list) => SizedBox(
+              height: listHeight,
+              child: assets.isEmpty
+                  ? Center(
+                      child: SizedBox(
+                        width: 112,
+                        child: Text(
+                          context.l10n.swapAssetSelectorEmpty,
+                          textAlign: TextAlign.center,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.secondary,
+                          ),
                         ),
                       ),
+                    )
+                  : RawScrollbar(
+                      key: const ValueKey('swap_asset_selector_scrollbar'),
+                      controller: _scrollController,
+                      thumbVisibility: listContentHeight > listHeight,
+                      interactive: true,
+                      radius: const Radius.circular(AppRadii.full),
+                      thickness: _scrollbarThickness,
+                      mainAxisMargin: 0,
+                      padding: EdgeInsets.zero,
+                      crossAxisMargin:
+                          (_scrollbarGutter - _scrollbarThickness) / 2,
+                      thumbColor: colors.background.overlay,
+                      child: list!,
                     ),
-                  )
-                : RawScrollbar(
-                    key: const ValueKey('swap_asset_selector_scrollbar'),
-                    controller: _scrollController,
-                    thumbVisibility: showScrollbar,
-                    interactive: true,
-                    radius: const Radius.circular(AppRadii.full),
-                    thickness: _scrollbarThickness,
-                    mainAxisMargin: 0,
-                    padding: EdgeInsets.zero,
-                    crossAxisMargin:
-                        (_scrollbarGutter - _scrollbarThickness) / 2,
-                    thumbColor: colors.background.overlay,
-                    child: Padding(
-                      key: const ValueKey('swap_asset_selector_list_gutter'),
-                      padding: const EdgeInsets.only(right: _scrollbarGutter),
-                      child: ScrollConfiguration(
-                        behavior: ScrollConfiguration.of(
-                          context,
-                        ).copyWith(scrollbars: false),
-                        child: ListView.separated(
-                          controller: _scrollController,
-                          physics: const ClampingScrollPhysics(),
-                          padding: EdgeInsets.zero,
-                          itemCount: assets.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: _rowGap),
-                          itemBuilder: (context, index) {
-                            final asset = assets[index];
-                            return _AssetMenuRow(
-                              asset: asset,
-                              selected: widget.selected == asset,
-                              onTap: () => widget.onSelected(asset),
-                            );
-                          },
+            ),
+            child: assets.isEmpty
+                ? null
+                : Padding(
+                    key: const ValueKey('swap_asset_selector_list_gutter'),
+                    padding: const EdgeInsets.only(right: _scrollbarGutter),
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(
+                        context,
+                      ).copyWith(scrollbars: false),
+                      // Rows dissolve into the card at the list's edges
+                      // instead of being cut flat while more wait beyond
+                      // them; the first and last rows rest uncovered.
+                      child: MobileTopScrollFade(
+                        color: colors.background.base,
+                        child: MobileBottomScrollFade(
+                          height: AppSpacing.base,
+                          color: colors.background.base,
+                          child: ListView.separated(
+                            controller: _scrollController,
+                            physics: const ClampingScrollPhysics(),
+                            padding: EdgeInsets.zero,
+                            itemCount: assets.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: _rowGap),
+                            itemBuilder: (context, index) {
+                              final asset = assets[index];
+                              return _AssetMenuRow(
+                                asset: asset,
+                                selected: widget.selected == asset,
+                                onTap: () => widget.onSelected(asset),
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -265,6 +276,14 @@ class _AssetMenuRow extends StatelessWidget {
                 badgeScale: 0.5,
                 overhangScale: 0.1,
                 showChainBadge: true,
+                // The ring takes the row's own background on the sheet, so
+                // the badge reads as a cut-out rather than a white halo.
+                badgeRingColor: Color.alphaBlend(
+                  selected
+                      ? colors.background.neutralSubtleOpacity
+                      : const Color(0x00000000),
+                  colors.background.base,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -276,7 +295,7 @@ class _AssetMenuRow extends StatelessWidget {
                       asset.symbol,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         fontWeight: FontWeight.w500,
                         color: colors.text.accent,
                       ),
@@ -286,7 +305,7 @@ class _AssetMenuRow extends StatelessWidget {
                       asset.chainLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
+import '../feedback/app_haptics.dart';
 import '../theme/app_theme.dart';
 import 'app_button.dart';
 import 'app_icon.dart';
@@ -119,7 +122,14 @@ class AppSegmentedControl<T> extends StatelessWidget {
                         selected: segment.value == selected,
                         child: AppButton(
                           key: segment.key,
-                          onPressed: () => onChanged(segment.value),
+                          onPressed: () {
+                            // Ticks the moment the choice flips, as toggles
+                            // and radios do (mobile only).
+                            if (segment.value != selected) {
+                              unawaited(AppHaptics.selection());
+                            }
+                            onChanged(segment.value);
+                          },
                           variant: AppButtonVariant.ghost,
                           size: AppButtonSize.small,
                           height: height,

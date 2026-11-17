@@ -2,6 +2,22 @@ import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
 
+/// The soft lift under mobile surfaces: two wide, low layers rather than the
+/// tight outline of [appSurfaceShadow]. Painted with the subtle shadow token,
+/// so it shows in light mode and is transparent in dark mode.
+List<BoxShadow> mobileSurfaceShadows(AppColors colors) => [
+  BoxShadow(
+    color: colors.shadows.subtle,
+    offset: const Offset(0, 2),
+    blurRadius: 8,
+  ),
+  BoxShadow(
+    color: colors.shadows.subtle,
+    offset: const Offset(0, 6),
+    blurRadius: 20,
+  ),
+];
+
 /// Rounded content surface used by the mobile screens (Figma `Surface`
 /// groups in the mobile frames): a ground-colored card that sections
 /// settings rows, activity groups, and similar list content.
@@ -10,6 +26,7 @@ class MobileSurfaceCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.sm),
     this.cornerRadius = defaultRadius,
+    this.shadows,
     super.key,
   });
 
@@ -21,12 +38,17 @@ class MobileSurfaceCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final double cornerRadius;
 
+  /// Elevation under the card. Null gives every surface the same soft lift,
+  /// [mobileSurfaceShadows]; pass `const []` for a flat card.
+  final List<BoxShadow>? shadows;
+
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: context.colors.background.ground,
         borderRadius: BorderRadius.circular(cornerRadius),
+        boxShadow: shadows ?? mobileSurfaceShadows(context.colors),
       ),
       child: Padding(padding: padding, child: child),
     );

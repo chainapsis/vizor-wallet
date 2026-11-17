@@ -11,12 +11,13 @@ import 'mobile_onboarding_progress_scope.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/feedback/app_haptics.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/mobile/mobile_radio_card.dart';
+import '../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart'
     show AnimatedUrScannerView, ScanResult;
@@ -128,6 +129,7 @@ class _KeystoneIntroCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: mobileSurfaceShadows(colors),
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxs),
@@ -177,7 +179,11 @@ class _FirmwareInlineLink extends StatelessWidget {
         iconGap: AppSpacing.xxs,
         leading: const AppIcon(AppIcons.link),
         onPressed: () => unawaited(launchAboutUrl(_keystoneFirmwareUrl)),
-        child: Text(context.l10n.keystoneFirmwareLinkLabel),
+        // The small button's 14pt label, raised to the 16pt mobile minimum.
+        child: Text(
+          context.l10n.keystoneFirmwareLinkLabel,
+          style: AppTypography.labelLarge,
+        ),
       ),
     );
   }
@@ -510,120 +516,13 @@ class _AccountCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: name,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (!selected) unawaited(AppHaptics.selection());
-          onTap();
-        },
-        child: Container(
-          // Figma `Radio Card` (4654:74580): min-h 64, ground fill, 16 px
-          // radius, asymmetric 8/12/4 padding. Only the selected card
-          // carries a 2 px strong border; unselected cards are border-less.
-          constraints: const BoxConstraints(minHeight: 64),
-          padding: const EdgeInsets.only(
-            left: AppSpacing.xs,
-            right: AppSpacing.s,
-            top: AppSpacing.xxs,
-            bottom: AppSpacing.xxs,
-          ),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: selected
-                ? Border.all(color: colors.border.strong, width: 2)
-                : null,
-          ),
-          child: Row(
-            children: [
-              // 32 px icon cell; the user glyph dims to 50 % when the card
-              // is not selected (Figma `Card Icon`).
-              SizedBox(
-                width: 32,
-                height: 32,
-                child: Center(
-                  child: Opacity(
-                    opacity: selected ? 1 : 0.5,
-                    child: AppIcon(
-                      AppIcons.user,
-                      size: 20,
-                      color: colors.icon.accent,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Label M; SemiBold when selected, Medium otherwise.
-                    Text(
-                      name,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: colors.text.accent,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    // Label M Regular; accent on the selected card, secondary
-                    // otherwise.
-                    Text(
-                      detail,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        fontWeight: FontWeight.w400,
-                        color: selected
-                            ? colors.text.accent
-                            : colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              if (selected)
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: colors.background.inverse,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.check,
-                      size: 14,
-                      color: colors.text.inverse,
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.background.neutralSubtleOpacity,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => MobileRadioCard(
+    iconName: AppIcons.user,
+    title: name,
+    details: [detail],
+    selected: selected,
+    onTap: onTap,
+  );
 }
 
 /// Step 4 — Figma `Keystone 2` / `Keystone 2 Calendar`: the shared

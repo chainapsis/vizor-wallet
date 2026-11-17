@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import 'passcode_widgets.dart';
 
@@ -126,7 +127,7 @@ class AdaptivePasscodeLayout extends StatelessWidget {
         if (requiredHeight <= constraints.maxHeight && errorFits) return legacy;
 
         const padding = EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
+          horizontal: kMobilePageMargin,
           vertical: AppSpacing.s,
         );
         final compactWidth = math.max(

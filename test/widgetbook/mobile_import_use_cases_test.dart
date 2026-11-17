@@ -35,7 +35,7 @@ void main() {
         const ValueKey('mobile_import_manual_card'),
       );
       expect(manualCard, findsOneWidget);
-      expect(tester.getSize(manualCard), const Size(361, 385));
+      expect(tester.getSize(manualCard), const Size(353, 385));
       final title = tester.widget<Text>(
         find.text('Manually Enter\nSecret Passphrase'),
       );
@@ -135,7 +135,7 @@ void main() {
 
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_import_manual_card'))),
-      const Size(408, 385),
+      const Size(400, 385),
     );
 
     await tester.pumpWidget(
@@ -235,7 +235,7 @@ void main() {
     expect(toastText.style?.color, const Color(0xFFFFFFFF));
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_import_manual_card'))),
-      const Size(361, 385),
+      const Size(353, 385),
     );
     await tester.pump(const Duration(seconds: 3));
     expect(find.text("Can't read the clipboard"), findsOneWidget);
@@ -266,7 +266,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('mobile_import_manual_suggestions')),
       ),
-      const Size(361, 60),
+      const Size(353, 60),
     );
     expect(
       tester
@@ -325,7 +325,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('mobile_import_review_seed_card')),
       ),
-      const Size(361, 385),
+      const Size(353, 385),
     );
     expect(find.text('01 caution'), findsNothing);
     expect(find.text('01'), findsOneWidget);
@@ -354,7 +354,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('mobile_import_review_seed_card')),
       ),
-      const Size(361, 385),
+      const Size(353, 385),
     );
     expect(find.text('15'), findsOneWidget);
     expect(find.text('modify'), findsOneWidget);

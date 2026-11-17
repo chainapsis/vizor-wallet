@@ -90,7 +90,6 @@ import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import '../src/features/onboarding/create/customise_account_screen.dart';
 import '../src/features/onboarding/create/desktop_gift_education_screen.dart';
-import '../src/features/onboarding/create/onboarding_split_view.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/settings/screens/settings_change_password_screen.dart';
 import '../src/features/settings/screens/settings_endpoint_screen.dart';
@@ -109,6 +108,7 @@ import '../src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/app_security_provider.dart';
+import '../src/providers/hide_balance_on_unlock_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
 import '../src/providers/network_privacy_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
@@ -128,6 +128,7 @@ const _previewMnemonic =
 const _previewLongWordMnemonic =
     'business question physical security language purchase abstract accident '
     'distance elephant hospital umbrella';
+
 final _previewImportWordList = _previewMnemonic.split(' ');
 
 bool _previewMnemonicValidator(String mnemonic) => mnemonic.isNotEmpty;
@@ -423,7 +424,10 @@ Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
   return _MobilePreviewFrame(
     child: MobileCustomiseAccountScreen(
       args: const CustomiseAccountArgs(
-        setupArgs: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
+        setupArgs: SetPasswordScreenArgs.importWallet(
+          mnemonic: _previewMnemonic,
+          birthdayHeight: 2500000,
+        ),
       ),
       random: Random(1234),
       onFinish: (_, _) async {},
@@ -653,6 +657,7 @@ Widget buildMobileSettingsViewingKeyRevealUseCase(
       account: _accountsDesignState.activeAccount!,
       initialType: type,
       initialFormat: format,
+      balanceText: '143.1212 ZEC', // l10n-ignore: preview amount
     ),
   );
 }
@@ -802,6 +807,9 @@ Widget buildMobileSettingsMainUseCase(
 }) {
   return ProviderScope(
     overrides: [
+      hideBalanceOnUnlockProvider.overrideWith(
+        () => _PreviewHideBalanceOnUnlockNotifier(false),
+      ),
       appBootstrapProvider.overrideWithValue(
         _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
       ),
@@ -855,6 +863,9 @@ Widget buildMobileSettingsFooterUseCase(BuildContext context) =>
 Widget _buildMobileSettingsFooterUseCase({bool recoveryChanging = false}) {
   return ProviderScope(
     overrides: [
+      hideBalanceOnUnlockProvider.overrideWith(
+        () => _PreviewHideBalanceOnUnlockNotifier(false),
+      ),
       if (recoveryChanging) ...[
         enhancePirProvider.overrideWith(_PreviewEnhancePirEnabled.new),
         enhancePirTransitionProvider.overrideWith(
@@ -930,7 +941,11 @@ class _MobileSettingsFooterPreviewState
 }
 
 class _MobileSettingsExplorerPreview extends StatefulWidget {
-  const _MobileSettingsExplorerPreview();
+  const _MobileSettingsExplorerPreview({
+    this.rowKey = 'mobile_settings_explorer_row',
+  });
+
+  final String rowKey;
 
   @override
   State<_MobileSettingsExplorerPreview> createState() =>
@@ -953,8 +968,7 @@ class _MobileSettingsExplorerPreviewState
       Element? found;
       void visitor(Element element) {
         if (found != null) return;
-        if (element.widget.key ==
-            const ValueKey('mobile_settings_explorer_row')) {
+        if (element.widget.key == ValueKey(widget.rowKey)) {
           found = element;
           return;
         }
@@ -963,8 +977,16 @@ class _MobileSettingsExplorerPreviewState
 
       context.visitChildElements(visitor);
       final rowContext = found;
-      if (rowContext == null) return;
-      Scrollable.ensureVisible(rowContext, alignment: 0.4);
+      if (rowContext == null) {
+        if (_controller.hasClients) {
+          _controller.jumpTo(_controller.position.maxScrollExtent);
+        }
+        return;
+      }
+      Scrollable.ensureVisible(
+        rowContext,
+        alignment: widget.rowKey == 'mobile_settings_explorer_row' ? 0.4 : 0.15,
+      );
     });
   }
 
@@ -1042,9 +1064,13 @@ Widget _buildSettingsMainUseCase(
   NetworkPrivacyState networkPrivacyState, {
   double initialScrollOffset = 0,
   bool recoveryChanging = false,
+  bool hideOnUnlock = false,
 }) {
   return ProviderScope(
     overrides: [
+      hideBalanceOnUnlockProvider.overrideWith(
+        () => _PreviewHideBalanceOnUnlockNotifier(hideOnUnlock),
+      ),
       if (recoveryChanging) ...[
         enhancePirProvider.overrideWith(_PreviewEnhancePirEnabled.new),
         enhancePirTransitionProvider.overrideWith(
@@ -1114,9 +1140,40 @@ Widget buildMobileExplorerCustomUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileSettingsExplorerUseCase(BuildContext context) {
+Widget buildMobileSettingsExplorerUseCase(BuildContext context) =>
+    _buildMobileSettingsTargetUseCase();
+
+Widget buildMobileSettingsHideBalanceUseCase(BuildContext context) =>
+    _buildMobileSettingsTargetUseCase(
+      rowKey: 'mobile_settings_hide_on_unlock_row',
+      hideOnUnlock: true,
+    );
+
+Widget buildSettingsHideBalanceUseCase(BuildContext context) =>
+    _buildSettingsMainUseCase(
+      const NetworkPrivacyState.off(),
+      initialScrollOffset: 1050,
+      hideOnUnlock: true,
+    );
+
+class _PreviewHideBalanceOnUnlockNotifier extends HideBalanceOnUnlockNotifier {
+  _PreviewHideBalanceOnUnlockNotifier(this.enabled);
+  final bool enabled;
+  @override
+  bool build() => enabled;
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
+}
+
+Widget _buildMobileSettingsTargetUseCase({
+  String rowKey = 'mobile_settings_explorer_row',
+  bool hideOnUnlock = false,
+}) {
   return ProviderScope(
     overrides: [
+      hideBalanceOnUnlockProvider.overrideWith(
+        () => _PreviewHideBalanceOnUnlockNotifier(hideOnUnlock),
+      ),
       appBootstrapProvider.overrideWithValue(
         _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
       ),
@@ -1130,9 +1187,11 @@ Widget buildMobileSettingsExplorerUseCase(BuildContext context) {
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
       ),
     ],
-    child: const _MobilePreviewFrame(
+    child: _MobilePreviewFrame(
       constrainToDesignSize: false,
-      child: IgnorePointer(child: _MobileSettingsExplorerPreview()),
+      child: IgnorePointer(
+        child: _MobileSettingsExplorerPreview(rowKey: rowKey),
+      ),
     ),
   );
 }
@@ -1399,6 +1458,19 @@ Widget _buildMobileBackupUseCase(
           pending ? _setupPreviewState : _accountsDesignState,
         ),
       ),
+      // The account header's balance under the name.
+      syncProvider.overrideWith(() {
+        final uuid = (pending ? _setupPreviewState : _accountsDesignState)
+            .activeAccountUuid;
+        return _PreviewSyncNotifier(
+          uuid,
+          initialState: SyncState(
+            accountUuid: uuid,
+            hasAccountScopedData: true,
+            displayTotalBalance: BigInt.from(14312120000),
+          ),
+        );
+      }),
       appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(
@@ -5277,17 +5349,18 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
   void initState() {
     super.initState();
     _router = GoRouter(
-      initialLocation: OnboardingStep.customiseAccount.routePath,
+      initialLocation: '/import/customise-account',
       routes: [
         GoRoute(
-          path: OnboardingStep.customiseAccount.routePath,
-          builder: (_, _) => OnboardingSplitViewShell(
-            activeStep: OnboardingStep.customiseAccount,
+          path: '/import/customise-account',
+          builder: (_, _) => ImportOnboardingShell(
+            activeStep: ImportOnboardingStep.customiseAccount,
             showPasswordStep: true,
             child: CustomiseAccountScreen(
               args: CustomiseAccountArgs(
-                setupArgs: const SetPasswordScreenArgs.create(
+                setupArgs: const SetPasswordScreenArgs.importWallet(
                   mnemonic: _previewMnemonic,
+                  birthdayHeight: 2500000,
                 ),
               ),
               random: Random(1234),
@@ -5297,15 +5370,14 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
           ),
         ),
         GoRoute(
-          path: OnboardingStep.setPassword.routePath,
+          path: '/import/set-password',
           builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/onboarding/set-password'),
+              const _PreviewRoutePlaceholder(label: '/import/set-password'),
         ),
         GoRoute(
-          path: OnboardingStep.secretPassphrase.routePath,
-          builder: (_, _) => const _PreviewRoutePlaceholder(
-            label: '/onboarding/secret-passphrase',
-          ),
+          path: '/import/birthday',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/import/birthday'),
         ),
       ],
     );

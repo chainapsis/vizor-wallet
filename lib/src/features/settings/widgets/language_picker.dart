@@ -148,8 +148,6 @@ class _MobileLanguageSheetState extends State<MobileLanguageSheet> {
     return MobileModalScaffold(
       title: l10n.settingsLanguageLabel,
       onClose: () => Navigator.of(context).pop(),
-      bodyGap: AppSpacing.md,
-      bottomPadding: AppSpacing.base,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -171,7 +169,7 @@ class _MobileLanguageSheetState extends State<MobileLanguageSheet> {
             onPressed: () => Navigator.of(context).pop<AppLanguage>(_selected),
             child: Text(l10n.commonUpdate),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
         ],
       ),

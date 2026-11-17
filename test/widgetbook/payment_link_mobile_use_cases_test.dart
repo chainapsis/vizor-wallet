@@ -86,8 +86,10 @@ void main() {
     final create = find.byKey(
       const ValueKey('payment_links_mobile_create_button'),
     );
-    expect(tester.getRect(redeem), const Rect.fromLTWH(16, 716, 361, 50));
-    expect(tester.getRect(create), const Rect.fromLTWH(16, 778, 361, 50));
+    // The actions sit at the shared floating-footer offset above the bottom
+    // edge (12px on this Android-default preview), like every page's.
+    expect(tester.getRect(redeem), const Rect.fromLTWH(20, 704, 353, 50));
+    expect(tester.getRect(create), const Rect.fromLTWH(20, 766, 353, 50));
     expect(
       find.byWidgetPredicate(
         (widget) =>

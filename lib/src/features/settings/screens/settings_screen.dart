@@ -38,6 +38,7 @@ import '../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
+import '../widgets/hide_balance_on_unlock_control.dart';
 import '../widgets/enhance_pir_privacy_control.dart';
 import '../widgets/private_queries_turn_off.dart';
 import '../widgets/language_picker.dart';
@@ -696,6 +697,11 @@ class _SettingsList extends ConsumerWidget {
               ),
             ],
           ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SettingsBlock(
+          title: context.l10n.settingsHideBalanceTitle,
+          rows: const [HideBalanceOnUnlockControl()],
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(

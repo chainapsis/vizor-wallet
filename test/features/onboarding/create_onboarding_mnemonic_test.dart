@@ -89,10 +89,11 @@ void main() {
           ),
         ),
         GoRoute(
-          path: '/onboarding/customise-account',
+          path: '/onboarding/set-password',
           builder: (_, state) {
-            routedMnemonic = (state.extra! as CustomiseAccountArgs).mnemonic;
-            return const Text('customise route');
+            routedMnemonic =
+                (state.extra! as SetPasswordScreenArgs).requiredMnemonic;
+            return const Text('password route');
           },
         ),
       ],
@@ -115,7 +116,7 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
-    expect(find.text('customise route'), findsOneWidget);
+    expect(find.text('password route'), findsOneWidget);
     expect(routedMnemonic, _mnemonic);
     expect(router.canPop(), isFalse);
     expect(container.read(createOnboardingMnemonicProvider), isNull);

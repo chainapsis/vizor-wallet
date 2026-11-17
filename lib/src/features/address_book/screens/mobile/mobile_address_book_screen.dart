@@ -11,6 +11,8 @@ import '../../../../../main.dart' show log;
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
+import '../../../../core/layout/mobile/mobile_keyboard_aware_height.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -21,7 +23,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
-import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../core/widgets/mobile/mobile_section.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
     show MobileSheetCancel, showProfilePictureSheet;
@@ -141,53 +143,59 @@ class MobileAddressBookScreen extends ConsumerWidget {
               MobileTopNav.back(
                 title: context.l10n.commonContacts,
                 onBack: () => context.pop(),
-                // The Figma no-contacts frame has no top-nav add button (the
-                // centered "Add contact" CTA covers it); the + appears only
-                // once there are contacts (list + empty-search states).
-                trailing: hasContacts
-                    ? _TopNavAddButton(
-                        onPressed: () => unawaited(_openEditor(context, ref)),
-                      )
-                    : null,
               ),
               Expanded(
                 child: !hasContacts
                     ? _NoContactsState(
                         onAdd: () => unawaited(_openEditor(context, ref)),
                       )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppSpacing.sm,
-                              AppSpacing.s,
-                              AppSpacing.sm,
-                              0,
+                    // Add contact floats at the bottom, as Add account does on
+                    // Accounts, so it stays in reach however long the list
+                    // grows. With no contacts the centered empty state has
+                    // its own button.
+                    : MobileStickyBottomAction(
+                        action: AppButton(
+                          key: const ValueKey('mobile_contacts_add'),
+                          expand: true,
+                          constrainContent: true,
+                          onPressed: () => unawaited(_openEditor(context, ref)),
+                          leading: const AppIcon(AppIcons.addNew),
+                          child: Text(context.l10n.addressBookAddContact),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                kMobilePageMargin,
+                                AppSpacing.s,
+                                kMobilePageMargin,
+                                0,
+                              ),
+                              child: _ContactsSearchField(
+                                query: state.query,
+                                onChanged: (query) => ref
+                                    .read(addressBookProvider.notifier)
+                                    .setQuery(query),
+                              ),
                             ),
-                            child: _ContactsSearchField(
-                              query: state.query,
-                              onChanged: (query) => ref
-                                  .read(addressBookProvider.notifier)
-                                  .setQuery(query),
+                            Expanded(
+                              child: filtered.isEmpty
+                                  ? const _EmptySearchState()
+                                  : _ContactsGroupedList(
+                                      contacts: filtered,
+                                      onCopy: (c) => _copyAddress(context, c),
+                                      onSend: (c) => _sendToContact(context, c),
+                                      onEdit: (c) => unawaited(
+                                        _openEditor(context, ref, contact: c),
+                                      ),
+                                      onRemove: (c) => unawaited(
+                                        _confirmRemove(context, ref, c),
+                                      ),
+                                    ),
                             ),
-                          ),
-                          Expanded(
-                            child: filtered.isEmpty
-                                ? const _EmptySearchState()
-                                : _ContactsGroupedList(
-                                    contacts: filtered,
-                                    onCopy: (c) => _copyAddress(context, c),
-                                    onSend: (c) => _sendToContact(context, c),
-                                    onEdit: (c) => unawaited(
-                                      _openEditor(context, ref, contact: c),
-                                    ),
-                                    onRemove: (c) => unawaited(
-                                      _confirmRemove(context, ref, c),
-                                    ),
-                                  ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
               ),
             ],
@@ -198,48 +206,22 @@ class MobileAddressBookScreen extends ConsumerWidget {
   }
 }
 
-/// The top-nav trailing `+` — a 44×44 secondary circle that opens the add
-/// contact sheet (Figma `Mobile Top Nav` plus button).
-class _TopNavAddButton extends StatelessWidget {
-  const _TopNavAddButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      label: context.l10n.addressBookAddContact,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onPressed,
-        child: Container(
-          key: const ValueKey('mobile_contacts_add'),
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: colors.button.secondary.bg,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: AppIcon(
-              AppIcons.plus,
-              size: 20,
-              color: colors.button.secondary.label,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
+/// The mobile search input of the Contacts page, reused by its network
+/// picker with its own [hintText] and [fieldKey].
 class _ContactsSearchField extends StatefulWidget {
-  const _ContactsSearchField({required this.query, required this.onChanged});
+  const _ContactsSearchField({
+    required this.query,
+    required this.onChanged,
+    this.hintText,
+    this.fieldKey = const ValueKey('mobile_contacts_search_field'),
+  });
 
   final String query;
   final ValueChanged<String> onChanged;
+
+  /// Defaults to the contacts search hint.
+  final String? hintText;
+  final Key fieldKey;
 
   @override
   State<_ContactsSearchField> createState() => _ContactsSearchFieldState();
@@ -283,10 +265,10 @@ class _ContactsSearchFieldState extends State<_ContactsSearchField> {
     // The shared mobile input — same shell the swap modals and the contact
     // picker use (surface.input.primary box, search glyph, inline clear button).
     return MobileTextField(
-      fieldKey: const ValueKey('mobile_contacts_search_field'),
+      fieldKey: widget.fieldKey,
       controller: _controller,
       focusNode: _focusNode,
-      hintText: context.l10n.addressBookSearchHint,
+      hintText: widget.hintText ?? context.l10n.addressBookSearchHint,
       textInputAction: TextInputAction.search,
       onChanged: (value) {
         widget.onChanged(value);
@@ -321,8 +303,8 @@ class _ContactsSearchFieldState extends State<_ContactsSearchField> {
   }
 }
 
-/// Network-grouped surface cards (Figma `Surface Group`): one ground card
-/// per network, each headed by the network label and listing its contacts.
+/// Network-grouped sections: one card per network, its network label above
+/// it, listing the network's contacts.
 class _ContactsGroupedList extends StatelessWidget {
   const _ContactsGroupedList({
     required this.contacts,
@@ -362,16 +344,14 @@ class _ContactsGroupedList extends StatelessWidget {
       );
     }
 
-    // Absorb the bottom safe-area inset here (the screen uses SafeArea(bottom:
-    // false)) so the list scrolls to the physical bottom edge while the last
-    // card still clears the home indicator.
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    // The list runs to the bottom edge under the floating Add contact; its
+    // last card scrolls clear of the button.
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.md + bottomInset,
+        kMobilePageMargin,
+        MobileStickyBottomAction.contentInset(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -405,9 +385,6 @@ class _ContactGroupCard extends StatelessWidget {
     // share one variable and every closure would see the last contact).
     final rows = <Widget>[];
     for (final contact in contacts) {
-      if (rows.isNotEmpty) {
-        rows.add(const SizedBox(height: AppSpacing.s));
-      }
       rows.add(
         _ContactRow(
           key: ValueKey('mobile_contact_row_${contact.id}'),
@@ -422,55 +399,18 @@ class _ContactGroupCard extends StatelessWidget {
       );
     }
 
-    // Figma `Surface`: ground card, radii/m (24), px16 py32, gap16 between
-    // the network label and the contact rows.
-    return MobileSurfaceCard(
-      cornerRadius: AppRadii.large,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.base,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ContactGroupLabel(network: network),
-          const SizedBox(height: AppSpacing.sm),
-          ...rows,
-        ],
-      ),
+    // Titled list in the Settings style: the network label above its card,
+    // rows split by hairlines.
+    return MobileSection(
+      title: network.label,
+      leading: AddressBookNetworkIcon(network: network, size: 16),
+      child: MobileSectionRows(rows: rows),
     );
   }
 }
 
-class _ContactGroupLabel extends StatelessWidget {
-  const _ContactGroupLabel({required this.network});
-
-  final AddressBookNetwork network;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.xxs),
-      child: Row(
-        children: [
-          AddressBookNetworkIcon(network: network, size: 16),
-          const SizedBox(width: AppSpacing.xxs),
-          Flexible(
-            child: Text(
-              network.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              // Figma `List Title`: Label M Medium (16) — mobile `labelLarge`.
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+/// Contact rows match the Settings list rows.
+const _contactRowHeight = 60.0;
 
 class _ContactRow extends StatelessWidget {
   const _ContactRow({
@@ -492,7 +432,7 @@ class _ContactRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      height: 44,
+      height: _contactRowHeight,
       child: Row(
         children: [
           AppProfilePicture(
@@ -1114,15 +1054,6 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isEdit = widget.contact != null;
-    final media = MediaQuery.of(context);
-    // MobileModalScaffold lays its body out unbounded, so cap the scroll
-    // area here: when a tall keyboard (e.g. Korean with its candidate bar)
-    // is up, the form scrolls instead of overflowing the card. The card
-    // already floats above the keyboard via MobileModalCard.
-    final maxBodyHeight =
-        (media.size.height - media.viewInsets.bottom - media.padding.top - 120)
-            .clamp(240.0, 620.0)
-            .toDouble();
     final addressError = _addressError;
 
     final nameClear = (_labelFocus.hasFocus && _labelController.text.isNotEmpty)
@@ -1151,165 +1082,163 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
           : context.l10n.addressBookAddContact,
       showTitle: false,
       onClose: () => Navigator.of(context).pop(),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxBodyHeight),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Semantics(
-                  button: true,
-                  label: context.l10n.commonChangeContactPicture,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _pickAvatar(),
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        AppProfilePicture(
-                          profilePictureId: _profilePictureId,
-                          size: AppProfilePictureSize.xLarge,
+      // When a tall keyboard (e.g. Korean with its candidate bar) is up, the
+      // scaffold scrolls the form under the pinned close instead of letting
+      // it overflow the card, which floats above the keyboard.
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Semantics(
+              button: true,
+              label: context.l10n.commonChangeContactPicture,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _pickAvatar(),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AppProfilePicture(
+                      profilePictureId: _profilePictureId,
+                      size: AppProfilePictureSize.xLarge,
+                    ),
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: colors.background.inverse,
+                          shape: BoxShape.circle,
                         ),
-                        Positioned(
-                          right: -2,
-                          bottom: -2,
-                          child: Container(
-                            width: 22,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              color: colors.background.inverse,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: AppIcon(
-                                AppIcons.edit,
-                                size: 12,
-                                color: colors.icon.inverse,
-                              ),
-                            ),
+                        child: Center(
+                          child: AppIcon(
+                            AppIcons.edit,
+                            size: 12,
+                            color: colors.icon.inverse,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                isEdit
-                    ? context.l10n.addressBookEditContact
-                    : context.l10n.addressBookAddContact,
-                textAlign: TextAlign.center,
-                style: AppTypography.headlineSmall.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _FieldLabel(context.l10n.addressBookNetworkLabel),
-              const SizedBox(height: AppSpacing.xxs),
-              Semantics(
-                button: true,
-                label: context.l10n.addressBookSelectNetwork,
-                child: GestureDetector(
-                  key: const ValueKey('mobile_address_book_network'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => unawaited(_pickNetwork()),
-                  child: _FieldShell(
-                    child: Row(
-                      children: [
-                        AddressBookNetworkIcon(network: _network, size: 20),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: Text(
-                            _network.label,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: colors.text.accent,
-                            ),
-                          ),
-                        ),
-                        AppIcon(
-                          AppIcons.expand,
-                          size: AppIconSize.medium,
-                          color: colors.icon.muted,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              _FieldLabel(context.l10n.addressBookNameLabel),
-              const SizedBox(height: AppSpacing.xxs),
-              MobileTextField(
-                fieldKey: const ValueKey('mobile_address_book_label'),
-                controller: _labelController,
-                focusNode: _labelFocus,
-                hintText: context.l10n.addressBookNameHint,
-                textInputAction: TextInputAction.next,
-                onSubmitted: (_) => _addressFocus.requestFocus(),
-                trailing: nameClear == null
-                    ? null
-                    : Padding(
-                        padding: const EdgeInsets.only(right: AppSpacing.xs),
-                        child: nameClear,
                       ),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              _FieldLabel(context.l10n.addressBookAddressLabel),
-              const SizedBox(height: AppSpacing.xxs),
-              MobileTextField(
-                fieldKey: const ValueKey('mobile_address_book_address'),
-                controller: _addressController,
-                focusNode: _addressFocus,
-                hintText: context.l10n.addressBookAddressHintMobile,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _save(),
-                trailing: Padding(
-                  padding: const EdgeInsets.only(right: AppSpacing.xs),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (addressClear != null) ...[
-                        addressClear,
-                        const SizedBox(width: AppSpacing.xxs),
-                      ],
-                      _fieldIcon(
-                        AppIcons.qr,
-                        context.l10n.addressBookScanAddressQr,
-                        () => unawaited(_scanAddress()),
-                        iconColor: colors.icon.accent,
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-              if (addressError != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  addressError,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.destructive,
-                  ),
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              AppButton(
-                key: const ValueKey('mobile_address_book_save'),
-                expand: true,
-                onPressed: _canSave ? _save : null,
-                child: Text(
-                  isEdit
-                      ? context.l10n.commonSaveContact
-                      : context.l10n.addressBookAddContact,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            isEdit
+                ? context.l10n.addressBookEditContact
+                : context.l10n.addressBookAddContact,
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineSmall.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _FieldLabel(context.l10n.addressBookNetworkLabel),
+          const SizedBox(height: AppSpacing.xxs),
+          Semantics(
+            button: true,
+            label: context.l10n.addressBookSelectNetwork,
+            child: GestureDetector(
+              key: const ValueKey('mobile_address_book_network'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => unawaited(_pickNetwork()),
+              child: _FieldShell(
+                child: Row(
+                  children: [
+                    AddressBookNetworkIcon(network: _network, size: 20),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        _network.label,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    AppIcon(
+                      AppIcons.expand,
+                      size: AppIconSize.medium,
+                      color: colors.icon.muted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          _FieldLabel(context.l10n.addressBookNameLabel),
+          const SizedBox(height: AppSpacing.xxs),
+          MobileTextField(
+            fieldKey: const ValueKey('mobile_address_book_label'),
+            controller: _labelController,
+            focusNode: _labelFocus,
+            hintText: context.l10n.addressBookNameHint,
+            textInputAction: TextInputAction.next,
+            onSubmitted: (_) => _addressFocus.requestFocus(),
+            trailing: nameClear == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(right: AppSpacing.xs),
+                    child: nameClear,
+                  ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          _FieldLabel(context.l10n.addressBookAddressLabel),
+          const SizedBox(height: AppSpacing.xxs),
+          MobileTextField(
+            fieldKey: const ValueKey('mobile_address_book_address'),
+            controller: _addressController,
+            focusNode: _addressFocus,
+            hintText: context.l10n.addressBookAddressHintMobile,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _save(),
+            trailing: Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xs),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (addressClear != null) ...[
+                    addressClear,
+                    const SizedBox(width: AppSpacing.xxs),
+                  ],
+                  _fieldIcon(
+                    AppIcons.qr,
+                    context.l10n.addressBookScanAddressQr,
+                    () => unawaited(_scanAddress()),
+                    iconColor: colors.icon.accent,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (addressError != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              addressError,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.destructive,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_address_book_save'),
+            expand: true,
+            onPressed: _canSave ? _save : null,
+            child: Text(
+              isEdit
+                  ? context.l10n.commonSaveContact
+                  : context.l10n.addressBookAddContact,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+        ],
       ),
     );
   }
@@ -1368,57 +1297,117 @@ class _FieldShell extends StatelessWidget {
   }
 }
 
-class _NetworkPickerSheet extends StatelessWidget {
+class _NetworkPickerSheet extends StatefulWidget {
   const _NetworkPickerSheet({required this.selected});
 
   final AddressBookNetwork selected;
 
   @override
+  State<_NetworkPickerSheet> createState() => _NetworkPickerSheetState();
+}
+
+class _NetworkPickerSheetState extends State<_NetworkPickerSheet> {
+  static const _rowHeight = 52.0;
+
+  String _query = '';
+
+  /// Networks whose name or ticker matches the search, as on desktop.
+  List<AddressBookNetwork> get _networks {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return AddressBookNetwork.values;
+    return [
+      for (final network in AddressBookNetwork.values)
+        if (network.id.toLowerCase().contains(query) ||
+            network.label.toLowerCase().contains(query))
+          network,
+    ];
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final networks = _networks;
     return MobileModalScaffold(
       title: context.l10n.addressBookSelectNetwork,
       onClose: () => Navigator.of(context).pop(),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 420),
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            for (final network in AddressBookNetwork.values)
-              Semantics(
-                button: true,
-                selected: network == selected,
-                label: network.label,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).pop(network),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 52),
-                    child: Row(
-                      children: [
-                        AddressBookNetworkIcon(network: network, size: 24),
-                        const SizedBox(width: AppSpacing.s),
-                        Expanded(
-                          child: Text(
-                            network.label,
-                            style: AppTypography.bodyMedium.copyWith(
-                              color: colors.text.accent,
-                            ),
-                          ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ContactsSearchField(
+            query: _query,
+            onChanged: (query) => setState(() => _query = query),
+            hintText: context.l10n.addressBookSearchNetwork,
+            fieldKey: const ValueKey('mobile_network_search_field'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          // The list keeps one height while the search filters it, capped to
+          // the room above the keyboard.
+          MobileKeyboardAwareHeight(
+            reserved: 220,
+            min: _rowHeight * 4,
+            max: 420,
+            builder: (context, listHeight, _) => SizedBox(
+              height: listHeight,
+              child: networks.isEmpty
+                  ? Center(
+                      child: Text(
+                        context.l10n.addressBookNoNetworks,
+                        key: const ValueKey('mobile_network_search_empty'),
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
                         ),
-                        if (network == selected)
-                          AppIcon(
-                            AppIcons.check,
-                            size: AppIconSize.medium,
-                            color: colors.icon.accent,
+                      ),
+                    )
+                  : ListView(
+                      children: [
+                        for (final network in networks)
+                          Semantics(
+                            button: true,
+                            selected: network == widget.selected,
+                            label: network.label,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => Navigator.of(context).pop(network),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  minHeight: _rowHeight,
+                                ),
+                                child: Row(
+                                  children: [
+                                    // The asset picker's circle size, so
+                                    // chains read the same in both lists.
+                                    AddressBookNetworkIcon(
+                                      network: network,
+                                      size: AppAssetSize.size,
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    Expanded(
+                                      child: Text(
+                                        network.label,
+                                        style: AppTypography.bodyMedium
+                                            .copyWith(
+                                              color: colors.text.accent,
+                                            ),
+                                      ),
+                                    ),
+                                    if (network == widget.selected)
+                                      AppIcon(
+                                        AppIcons.check,
+                                        size: AppIconSize.medium,
+                                        color: colors.icon.accent,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                       ],
                     ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }

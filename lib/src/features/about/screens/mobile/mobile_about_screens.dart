@@ -35,9 +35,9 @@ class MobileAboutScreen extends StatelessWidget {
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.lg,
                 ),
                 children: [
@@ -113,9 +113,9 @@ class MobileLegalScreen extends StatelessWidget {
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   0,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.lg,
                 ),
                 children: [

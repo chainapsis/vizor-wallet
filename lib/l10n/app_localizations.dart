@@ -487,14 +487,20 @@ abstract class AppLocalizations {
   /// [security] Account menu item that shows the account's secret passphrase.
   ///
   /// In en, this message translates to:
-  /// **'View secret phrase'**
+  /// **'Show secret phrase'**
   String get accountsViewSecretPhrase;
 
   /// [security] Account menu item that shows the account's viewing key.
   ///
   /// In en, this message translates to:
-  /// **'View viewing key'**
+  /// **'Show viewing key'**
   String get accountsViewViewingKey;
+
+  /// Button pinned to the bottom of a sent transaction's receipt that saves its recipient address to the address book. Shown only while that address is not a contact yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Add address to contacts'**
+  String get activityAddAddressToContacts;
 
   /// Title of the sheet that shows a full unified address.
   ///
@@ -525,6 +531,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Orchard balance'**
   String get activityBalanceOrchard;
+
+  /// Value of the From row of a mobile shielding receipt: the transparent balance the funds came from.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent balance'**
+  String get activityBalanceTransparent;
 
   /// Row value shown after a public load of the transaction details failed; the row stays tappable.
   ///
@@ -903,6 +915,12 @@ abstract class AppLocalizations {
   /// **'Output'**
   String get activityReceiptOutput;
 
+  /// Label of the first row in the mobile transaction record card for a sent transaction: the address or contact the ZEC went to. Short.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient'**
+  String get activityReceiptRecipient;
+
   /// Message shown when the latest status of a transaction could not be refreshed.
   ///
   /// In en, this message translates to:
@@ -1065,11 +1083,23 @@ abstract class AppLocalizations {
   /// **'Receive in progress...'**
   String get activityTitleReceiveInProgress;
 
+  /// Title of the mobile transaction record for an incoming ZEC transaction that failed. Short; shown in the top navigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive ZEC failed'**
+  String get activityTitleReceiveZecFailed;
+
   /// Title of the desktop receipt of an incoming transaction that completed.
   ///
   /// In en, this message translates to:
   /// **'Received successfully'**
   String get activityTitleReceivedSuccessfully;
+
+  /// Title of the mobile transaction record for a completed incoming ZEC transaction. Short; shown in the top navigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Received ZEC'**
+  String get activityTitleReceivedZec;
 
   /// Title of the mobile receipt of an incoming transaction that is pending.
   ///
@@ -1083,17 +1113,41 @@ abstract class AppLocalizations {
   /// **'Receiving'**
   String get activityTitleReceivingVerb;
 
+  /// Title of the mobile transaction record for an incoming ZEC transaction that is still pending. Short; shown in the top navigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving ZEC...'**
+  String get activityTitleReceivingZec;
+
+  /// Title of the mobile transaction record for a sent ZEC transaction that failed. Short; shown in the top navigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Send ZEC failed'**
+  String get activityTitleSendZecFailed;
+
   /// Title of a pending outgoing activity row; the app appends an ellipsis.
   ///
   /// In en, this message translates to:
   /// **'Sending'**
   String get activityTitleSendingVerb;
 
+  /// Title of the mobile transaction record for a sent ZEC transaction that is still pending. Short; shown in the top navigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending ZEC...'**
+  String get activityTitleSendingZec;
+
   /// Title of an activity row for an outgoing transaction.
   ///
   /// In en, this message translates to:
   /// **'Sent'**
   String get activityTitleSent;
+
+  /// Title of the mobile transaction record for a completed sent ZEC transaction. Short; shown in the top navigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent ZEC'**
+  String get activityTitleSentZec;
 
   /// Title of an activity row or receipt for funds moved into a shielded pool.
   ///
@@ -1912,6 +1966,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back to wallet'**
   String get commonBackToWallet;
+
+  /// Toast after turning the phone screen-down hides amounts (flip to hide, mobile). Shows on whatever screen is open.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance hidden'**
+  String get commonBalanceHidden;
+
+  /// Toast after a quick flip down and back up shows hidden amounts again (flip to hide, mobile). Shows on whatever screen is open.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance shown'**
+  String get commonBalanceShown;
 
   /// Placeholder shown for the amount, fee or button while the Immediate migration plan is being calculated.
   ///
@@ -3776,17 +3842,41 @@ abstract class AppLocalizations {
   /// **'Pay in USDC'**
   String get homePayInUsdc;
 
-  /// Home action button that opens the receive screen.
+  /// Home action button for receiving. On desktop it opens the receive screen; on mobile it opens a sheet of ways to receive, and is also that sheet's title.
   ///
   /// In en, this message translates to:
   /// **'Receive'**
   String get homeReceive;
 
-  /// Mobile Home button shown instead of Send/Receive while the wallet has no funds; opens the receive screen.
+  /// Mobile Home button shown instead of Send/Receive while the wallet has no funds; opens the sheet of ways to receive.
   ///
   /// In en, this message translates to:
   /// **'Receive your first ZEC'**
   String get homeReceiveFirstZec;
+
+  /// Description under Receive ZEC in the mobile Home Receive sheet, whose card opens the Receive screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Share your address or QR code'**
+  String get homeReceiveReceiveSubtitle;
+
+  /// Title of the card in the mobile Home Receive sheet that opens Gift Cards on the page for redeeming a card someone sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem gift card'**
+  String get homeReceiveRedeemGiftCard;
+
+  /// Description under Redeem gift card in the mobile Home Receive sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a card someone sent you'**
+  String get homeReceiveRedeemGiftCardSubtitle;
+
+  /// Description under Request ZEC in the mobile Home Receive sheet, whose card opens the payment request sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask for an exact amount'**
+  String get homeReceiveRequestSubtitle;
 
   /// Heading above the recent transactions list on Home.
   ///
@@ -10862,6 +10952,12 @@ abstract class AppLocalizations {
   /// **'The Shielded World'**
   String get onboardingIntroTitle;
 
+  /// Heading of the mobile Zcash intro step, the first step of creating a wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'About Zcash'**
+  String get onboardingIntroTitleMobile;
+
   /// Option on the mobile import method picker for linking accounts from the Vizor desktop app.
   ///
   /// In en, this message translates to:
@@ -11629,12 +11725,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t save this contact. Try again.'**
   String get paySaveContactError;
-
-  /// Accessibility label of the tappable area that dismisses the mobile Pay modal.
-  ///
-  /// In en, this message translates to:
-  /// **'Dismiss'**
-  String get payScanBarrierDismiss;
 
   /// Caption of the camera scanner for the Pay recipient address.
   ///
@@ -13293,6 +13383,12 @@ abstract class AppLocalizations {
   /// **'QR code could not be generated'**
   String get paymentLinkQrCouldNotBeGenerated;
 
+  /// Accessibility label of the QR code in the mobile Gift Card sharing sheet; tapping it opens the full-screen QR viewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Show gift card QR code full screen'**
+  String get paymentLinkQrExpandSemantic;
+
   /// Toast shown when saving the Gift Card QR image failed.
   ///
   /// In en, this message translates to:
@@ -13892,6 +13988,18 @@ abstract class AppLocalizations {
   /// **'Transparent'**
   String get poolTransparent;
 
+  /// [security] Mobile flip-to-hide error toast: amounts are hidden for this session, but persisting that choice failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance hidden, but the setting couldn\'t be saved.'**
+  String get privacyBalanceHiddenSaveFailed;
+
+  /// [security] Mobile flip-to-show error toast: saving the visibility choice failed, so amounts remain hidden.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t show your balance. Try again.'**
+  String get privacyBalanceShowFailed;
+
   /// [security] Error shown when the wallet still requires private recovery because turning off Private queries did not finish.
   ///
   /// In en, this message translates to:
@@ -14066,7 +14174,7 @@ abstract class AppLocalizations {
   /// **'Amount exceeds the ZEC supply'**
   String get receiveRequestAmountSupplyError;
 
-  /// Button on the mobile Receive screen that opens the payment request sheet, and the title of the payment request dialog on both form factors. {ticker} is the currency ticker such as ZEC.
+  /// Button on the mobile Receive screen, and card title in the mobile Home Receive sheet, that opens the payment request sheet, and the title of the payment request dialog on both form factors. {ticker} is the currency ticker such as ZEC.
   ///
   /// In en, this message translates to:
   /// **'Request {ticker}'**
@@ -14144,12 +14252,6 @@ abstract class AppLocalizations {
   /// **'Request ZEC'**
   String get receiveRequestZecButton;
 
-  /// Visible label of the mobile Receive button that shares the selected address.
-  ///
-  /// In en, this message translates to:
-  /// **'Share address'**
-  String get receiveShareAddress;
-
   /// Toast on the Receive screen when the system share sheet fails for an address.
   ///
   /// In en, this message translates to:
@@ -14168,13 +14270,13 @@ abstract class AppLocalizations {
   /// **'Share transparent address'**
   String get receiveShareTransparentAddress;
 
-  /// Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows.
+  /// Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows. Also a toast when Request ZEC is picked in the mobile Home Receive sheet and the address could not be read.
   ///
   /// In en, this message translates to:
   /// **'Couldn’t load your shielded address. Try again in a moment.'**
   String get receiveShieldedAddressLoadFailed;
 
-  /// Title of the Receive screen. {ticker} is the currency ticker such as ZEC.
+  /// Title of the Receive screen, and the card title in the mobile Home Receive sheet that opens that screen. {ticker} is the currency ticker such as ZEC.
   ///
   /// In en, this message translates to:
   /// **'Receive {ticker}'**
@@ -15056,6 +15158,12 @@ abstract class AppLocalizations {
   /// **'Send to'**
   String get sendRecipientLabel;
 
+  /// Name under the mobile recipient field when the entered address belongs to one of the user's own accounts; marks it as the user's own.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} (you)'**
+  String sendRecipientOwnAccountName(String name);
+
   /// [security] Error under the recipient field when a pasted zcash: payment link is not a valid address or request.
   ///
   /// In en, this message translates to:
@@ -15757,6 +15865,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Explorer URL'**
   String get settingsExplorerUrlLabel;
+
+  /// Label of the mobile Settings switch that lets turning the phone screen-down hide amounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Flip to hide'**
+  String get settingsFlipToHide;
+
+  /// Explanation under the mobile Settings flip to hide switch.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn your phone screen-down to hide amounts on any screen. To show them again, flip it down and back up within 2 seconds.'**
+  String get settingsFlipToHideDescription;
+
+  /// Toast when the mobile Settings flip to hide switch could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update flip to hide setting.'**
+  String get settingsFlipToHideUpdateFailed;
+
+  /// Settings > Hide balance: toggle that hides balances after every successful wallet unlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide balance on unlock'**
+  String get settingsHideBalanceOnUnlock;
+
+  /// Settings > Hide balance: explanation below the hide-on-unlock toggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide your balance every time you unlock. Tap the eye icon to show it again.'**
+  String get settingsHideBalanceOnUnlockDescription;
+
+  /// Toast when saving the hide-on-unlock preference fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update hide balance on unlock setting.'**
+  String get settingsHideBalanceOnUnlockUpdateFailed;
+
+  /// Title of the mobile Settings card that holds the flip to hide switch.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide balance'**
+  String get settingsHideBalanceTitle;
 
   /// [security] Error shown on the passcode keypad when the entered passcode is wrong.
   ///
@@ -16748,11 +16898,23 @@ abstract class AppLocalizations {
   /// **'Confirm access again to try loading this key.'**
   String get settingsViewingKeyConfirmAgain;
 
+  /// [security] Mobile toast after the viewing key was copied to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewing key copied'**
+  String get settingsViewingKeyCopied;
+
   /// [security] Button that copies the viewing key to the clipboard.
   ///
   /// In en, this message translates to:
   /// **'Copy viewing key'**
   String get settingsViewingKeyCopy;
+
+  /// [security] Mobile toast when copying the viewing key to the clipboard failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t copy the viewing key. Try again.'**
+  String get settingsViewingKeyCopyFailed;
 
   /// [security] Explains what the full viewing key reveals and that it cannot spend funds.
   ///
@@ -17724,12 +17886,6 @@ abstract class AppLocalizations {
   /// **'Deposit ZEC'**
   String get swapDepositZecButton;
 
-  /// Accessibility label of the tappable backdrop behind swap modals on mobile.
-  ///
-  /// In en, this message translates to:
-  /// **'Dismiss'**
-  String get swapDismissBarrierLabel;
-
   /// Swap or Pay quote error: the amount has more decimal places than the token supports.
   ///
   /// In en, this message translates to:
@@ -18384,6 +18540,12 @@ abstract class AppLocalizations {
   /// **'Status'**
   String get swapStatusRowLabel;
 
+  /// Accessibility label of the round button between the pay and receive cards on the mobile Swap screen. Tapping it swaps which asset you pay and which you receive.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch swap direction'**
+  String get swapSwitchDirection;
+
   /// Body text on the swap timeout screen asking the user to start a new swap.
   ///
   /// In en, this message translates to:
@@ -18798,12 +18960,6 @@ abstract class AppLocalizations {
   /// **'Custom source'**
   String get votingConfigCustomSource;
 
-  /// Accessibility label of the delete button of a saved voting config source; {name} is the source's title.
-  ///
-  /// In en, this message translates to:
-  /// **'Delete {name}'**
-  String votingConfigDeleteNamed(String name);
-
   /// Accessibility label of the button that deletes a saved voting config source.
   ///
   /// In en, this message translates to:
@@ -18924,11 +19080,11 @@ abstract class AppLocalizations {
   /// **'Display authenticated rounds whose titles begin with [TEST].'**
   String get votingConfigShowTestRoundsHint;
 
-  /// Heading above the list of voting config sources on mobile.
+  /// Mobile Vote config: label of the row naming where voting rounds come from, and title of the sheet that picks it.
   ///
   /// In en, this message translates to:
-  /// **'Sources'**
-  String get votingConfigSources;
+  /// **'Source'**
+  String get votingConfigSource;
 
   /// Error shown when changing the Show test rounds setting failed.
   ///

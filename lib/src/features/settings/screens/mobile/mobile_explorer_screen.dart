@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart' show Scaffold, TextInputType;
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
@@ -7,13 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/mobile/mobile_radio_card.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
@@ -150,9 +148,9 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.xs,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.lg,
                 ),
                 children: [
@@ -243,7 +241,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         customMessage,
-                        style: AppTypography.bodySmall.copyWith(
+                        style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.destructive,
                         ),
                       ),
@@ -254,7 +252,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                         '{txid}', // l10n-ignore: URL placeholder token
                         '{txHash}', // l10n-ignore: URL placeholder token
                       ),
-                      style: AppTypography.bodySmall.copyWith(
+                      style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),
@@ -284,7 +282,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                       child: Text(
                         _submitError!,
                         textAlign: TextAlign.center,
-                        style: AppTypography.bodySmall.copyWith(
+                        style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.destructive,
                         ),
                       ),
@@ -330,104 +328,12 @@ class _ExplorerOptionCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final radius = BorderRadius.circular(AppRadii.medium);
-    final onTap = this.onTap;
-    final handleTap = onTap == null
-        ? null
-        : () {
-            if (!selected) unawaited(AppHaptics.selection());
-            onTap();
-          };
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: '$label, $subtitle', // l10n-ignore: joins two labels
-      // excludeSemantics drops the detector's tap action, so restate it.
-      onTap: handleTap,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: handleTap,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 64),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.s,
-          ),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: radius,
-          ),
-          // Drawn over the card so a thicker selected border moves nothing.
-          foregroundDecoration: BoxDecoration(
-            borderRadius: radius,
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.subtle,
-              width: selected ? 1.5 : 1,
-              strokeAlign: BorderSide.strokeAlignInside,
-            ),
-          ),
-          child: Row(
-            children: [
-              Opacity(
-                opacity: selected ? 1 : 0.5,
-                child: AppIcon(iconName, size: 20, color: colors.icon.accent),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              if (selected)
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: colors.background.inverse,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.check,
-                      size: 14,
-                      color: colors.text.inverse,
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.background.raised,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => MobileRadioCard(
+    iconName: iconName,
+    title: label,
+    details: [subtitle],
+    semanticsLabel: '$label, $subtitle', // l10n-ignore: joins two labels
+    selected: selected,
+    onTap: onTap,
+  );
 }

@@ -33,9 +33,9 @@ class _MobileMigrationIntro extends StatelessWidget {
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
+                    kMobilePageMargin,
                     30,
-                    AppSpacing.sm,
+                    kMobilePageMargin,
                     AppSpacing.md,
                   ),
                   child: Column(
@@ -86,9 +86,9 @@ class _MobileMigrationIntro extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.xs,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
                 ),
                 child: Column(
@@ -289,7 +289,7 @@ class _MobileMigrationOptionsState
               Text(
                 l10n.migrationMobileOptionsOpenError,
                 textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
+                style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.destructive,
                 ),
               ),
