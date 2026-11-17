@@ -792,6 +792,35 @@ void main() {
     }
 
     for (final lastAccount in [false, true]) {
+      testWidgets('iOS Face ID waits for its button before removal '
+          '(last: $lastAccount)', (tester) async {
+        final biometric = _FakeBiometricUnlockNotifier(
+          initial: _faceBiometricState,
+          read: (_) async => '123456',
+        );
+        final app = await pumpRemovalApp(
+          tester,
+          biometric,
+          lastAccount: lastAccount,
+        );
+        await _openRemovalGate(tester);
+        await tester.pumpAndSettle();
+        expect(biometric.reasons, isEmpty);
+        expect(app.security.confirmations, isEmpty);
+        expect(app.accounts.removedUuid, isNull);
+        expect(app.accounts.resetCount, 0);
+        expect(app.sync.pauseCount, 0);
+        expect(find.byType(PasscodeNumpad), findsOneWidget);
+        await tester.tap(find.byType(PasscodeBiometricButton));
+        await tester.pumpAndSettle();
+        expect(biometric.reasons, [
+          lastAccount ? 'Confirm wallet reset' : 'Confirm account removal',
+        ]);
+        expect(app.security.confirmations, ['123456']);
+        expect(app.accounts.removedUuid, lastAccount ? isNull : 'a');
+        expect(app.accounts.resetCount, lastAccount ? 1 : 0);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
       testWidgets('a successful prompt authorizes the mutation '
           '(last: $lastAccount)', (tester) async {
         final biometric = _FakeBiometricUnlockNotifier(
@@ -816,6 +845,47 @@ void main() {
         expect(find.byType(MobileAccountRemovalPasscodeScreen), findsNothing);
       });
     }
+
+    testWidgets('iOS Face ID cancellation permits manual passcode removal', (
+      tester,
+    ) async {
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: _faceBiometricState,
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(PasscodeBiometricButton));
+      await tester.pumpAndSettle();
+      expect(biometric.reasons, hasLength(1));
+      expect(app.accounts.removedUuid, isNull);
+      expect(find.byType(PasscodeNumpad), findsOneWidget);
+      await _enterPasscode(tester);
+      expect(app.accounts.removedUuid, 'a');
+      expect(app.security.confirmations, ['123456']);
+      expect(biometric.reasons, hasLength(1));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+    testWidgets('iOS Touch ID removal still prompts automatically', (
+      tester,
+    ) async {
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: const BiometricUnlockState(
+          availability: BiometricAvailability(
+            supported: true,
+            enrolled: true,
+            kind: BiometricKind.touchId,
+          ),
+          enabled: true,
+        ),
+        read: (_) async => '123456',
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+      expect(biometric.reasons, ['Confirm account removal']);
+      expect(app.accounts.removedUuid, 'a');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
     testWidgets('cancelling falls back to the keypad and can retry', (
       tester,
