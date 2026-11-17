@@ -325,7 +325,7 @@ void main() {
     expect(find.text('Send ZEC'), findsOneWidget);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
-    expect(find.text('View secret phrase'), findsNothing);
+    expect(find.text('Show secret phrase'), findsNothing);
     _expectVerticalTextOrder(tester, const [
       'Copy address',
       'Send ZEC',
@@ -371,36 +371,36 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret phrase'), findsOneWidget);
+    expect(find.text('Show secret phrase'), findsOneWidget);
     expect(tester.getSize(find.byType(AppContextMenu)).width, 176);
     expect(
       find.ancestor(
-        of: find.text('View secret phrase'),
+        of: find.text('Show secret phrase'),
         matching: find.byType(FittedBox),
       ),
       findsNothing,
     );
     expect(
       tester
-          .renderObject<RenderParagraph>(find.text('View secret phrase'))
+          .renderObject<RenderParagraph>(find.text('Show secret phrase'))
           .didExceedMaxLines,
       isFalse,
     );
-    expect(find.text('View viewing key'), findsOneWidget);
+    expect(find.text('Show viewing key'), findsOneWidget);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     _expectVerticalTextOrder(tester, const [
-      'View secret phrase',
-      'View viewing key',
+      'Show secret phrase',
+      'Show viewing key',
       'Edit account',
       'Copy address',
       'Remove account',
     ]);
 
     final shortcutItem = find.ancestor(
-      of: find.text('View secret phrase'),
+      of: find.text('Show secret phrase'),
       matching: find.byType(AppContextMenuItem),
     );
     expect(shortcutItem, findsOneWidget);
@@ -414,7 +414,7 @@ void main() {
       AppIcons.key,
     );
 
-    await tester.tap(find.text('View secret phrase'));
+    await tester.tap(find.text('Show secret phrase'));
     await tester.pumpAndSettle();
 
     expect(find.text('secret passphrase route account-1'), findsOneWidget);
@@ -436,9 +436,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret phrase'), findsOneWidget);
+    expect(find.text('Show secret phrase'), findsOneWidget);
 
-    await tester.tap(find.text('View secret phrase'));
+    await tester.tap(find.text('Show secret phrase'));
     await tester.pumpAndSettle();
 
     expect(find.text('secret passphrase route account-3'), findsOneWidget);
@@ -476,12 +476,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret phrase'), findsNothing);
+    expect(find.text('Show secret phrase'), findsNothing);
     // Unlike the secret passphrase, a UFVK export never grants spend
     // authority, so hardware accounts still get the viewing-key shortcut.
-    expect(find.text('View viewing key'), findsOneWidget);
+    expect(find.text('Show viewing key'), findsOneWidget);
 
-    await tester.tap(find.text('View viewing key'));
+    await tester.tap(find.text('Show viewing key'));
     await tester.pumpAndSettle();
 
     expect(find.text('viewing key route hardware-account'), findsOneWidget);

@@ -377,7 +377,8 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         _submitPhase != _SetPasswordSubmitPhase.idle ||
             _submission.requiresRecovery
         ? null
-        : standardArgs.persona != null
+        : standardArgs.persona != null &&
+              standardArgs.flow != SetPasswordFlow.create
         ? onboarding_chrome.OnboardingBackTarget.route(
             label: context.l10n.commonCustomiseAccount,
             routePath: desktopImportLocation(
@@ -393,7 +394,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                 : CustomiseAccountArgs(setupArgs: standardArgs),
           )
         : onboarding_chrome.OnboardingBackTarget.route(
-            label: _backLabel(context.l10n, standardArgs.flow),
+            label: standardArgs.defersSetup
+                ? context.l10n.onboardingWelcome
+                : _backLabel(context.l10n, standardArgs.flow),
             routePath: desktopImportLocation(
               context,
               standardArgs.backRoutePath,

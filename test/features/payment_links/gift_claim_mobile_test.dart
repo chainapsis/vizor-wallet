@@ -432,6 +432,18 @@ void main() {
     expect(find.text('Gift found'), findsOneWidget);
   });
 
+  testWidgets('the Gift screen fades its cut scroll edge like every page', (
+    tester,
+  ) async {
+    // Short enough that the Gift screen scrolls.
+    await pumpWelcome(tester, size: const Size(393, 520));
+    await tester.tap(keyed('mobile_welcome_redeem_card'));
+    await tester.pumpAndSettle();
+
+    expect(location(tester), '/gift');
+    expect(keyed('mobile_scroll_edge_fade_bottom'), findsOneWidget);
+  });
+
   testWidgets('the initial Gift screen stays below the top safe area', (
     tester,
   ) async {
@@ -601,7 +613,7 @@ void main() {
     if (location(tester) != '/home') await tester.pumpAndSettle();
   }
 
-  Future<void> submitPersonaOrRetry(WidgetTester tester) async {
+  Future<void> submitSecurityOrRetry(WidgetTester tester) async {
     if (keyed('mobile_passcode_retry_setup').evaluate().isNotEmpty) {
       await tester.tap(keyed('mobile_passcode_retry_setup'));
     } else {
@@ -641,7 +653,7 @@ void main() {
 
     gate.complete(null);
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/customise');
+    expect(location(tester), '/gift/passcode');
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(location(tester), '/gift');
@@ -665,12 +677,12 @@ void main() {
     gate.completeError(StateError('Storage unavailable'));
     await tester.pumpAndSettle();
     expect(location(tester), '/gift');
-    expect(find.text('Couldn’t save the card. Try again.'), findsOneWidget);
+    expect(find.text('Couldn’t finish this step. Try again.'), findsOneWidget);
 
     store.loadGate = null;
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/customise');
+    expect(location(tester), '/gift/passcode');
     expect(tester.takeException(), isNull);
   });
 
@@ -685,7 +697,7 @@ void main() {
 
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await pumpGiftTransition(tester);
-    expect(location(tester), '/gift/customise');
+    expect(location(tester), '/gift/passcode');
 
     await pumpGiftTransition(tester);
 
@@ -699,11 +711,7 @@ void main() {
       await container.read(paymentLinkReceivedStoreProvider).load(),
       isEmpty,
     );
-    await tester.enterText(
-      keyed('mobile_customise_account_name_field'),
-      'My gift wallet',
-    );
-    await submitPersonaOrRetry(tester);
+    await submitSecurityOrRetry(tester);
     await pumpGiftTransition(tester);
     expect(location(tester), '/home');
     expect(operations.bindDestinations, ['new-account']);
@@ -734,7 +742,7 @@ void main() {
     expect(find.text('Redeeming a card...'), findsOneWidget);
   });
 
-  Future<ProviderContainer> reachGiftCustomise(WidgetTester tester) async {
+  Future<ProviderContainer> reachGiftSecurity(WidgetTester tester) async {
     final container = await pumpWelcome(tester, biometric: _FaceBiometrics());
     container
         .read(paymentLinkIntakeProvider.notifier)
@@ -747,47 +755,45 @@ void main() {
     return container;
   }
 
-  testWidgets('back after failed Gift passcode requires new confirmation', (
-    tester,
-  ) async {
-    final container = await reachGiftCustomise(tester);
-    final security = container.read(appSecurityProvider.notifier) as _Security;
-    security.prepareError = StateError('Passcode preparation unavailable');
-    await tester.enterText(
-      keyed('mobile_customise_account_name_field'),
-      'Draft gift',
-    );
-    await submitPersonaOrRetry(tester);
-    expect(location(tester), '/gift/passcode');
-    expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNotNull);
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    expect(location(tester), '/gift/customise');
-    expect(find.text('Draft gift'), findsOneWidget);
-    expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNull);
-    security.prepareError = null;
-    await tester.tap(keyed('mobile_customise_account_continue'));
-    await tester.pumpAndSettle();
-    expect(location(tester), '/gift/passcode');
-    expect(
-      (container.read(accountProvider.notifier) as _NoAccounts).creationCalls,
-      0,
-    );
-    expect(find.text('Create Passcode'), findsOneWidget);
-    await submitPersonaOrRetry(tester);
-    expect(location(tester), '/onboarding/biometrics');
-    expect(
-      (container.read(accountProvider.notifier) as _NoAccounts).creationCalls,
-      1,
-    );
-    container.read(paymentLinkClaimCoordinatorProvider).pause();
-  });
+  testWidgets(
+    'back after failed Gift passcode returns to the Card and requires new confirmation',
+    (tester) async {
+      final container = await reachGiftSecurity(tester);
+      final security =
+          container.read(appSecurityProvider.notifier) as _Security;
+      security.prepareError = StateError('Passcode preparation unavailable');
+      await submitSecurityOrRetry(tester);
+      expect(location(tester), '/gift/passcode');
+      expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNotNull);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(location(tester), '/gift');
+      expect(find.text('Gift found'), findsOneWidget);
+      expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNull);
+      security.prepareError = null;
+      await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
+      await tester.pumpAndSettle();
+      expect(location(tester), '/gift/passcode');
+      expect(
+        (container.read(accountProvider.notifier) as _NoAccounts).creationCalls,
+        0,
+      );
+      expect(find.text('Create Passcode'), findsOneWidget);
+      await submitSecurityOrRetry(tester);
+      expect(location(tester), '/onboarding/biometrics');
+      expect(
+        (container.read(accountProvider.notifier) as _NoAccounts).creationCalls,
+        1,
+      );
+      container.read(paymentLinkClaimCoordinatorProvider).pause();
+    },
+  );
 
   testWidgets('a slow broadcast does not hold Face ID or Home', (tester) async {
-    final container = await reachGiftCustomise(tester);
+    final container = await reachGiftSecurity(tester);
     final broadcast = Completer<void>();
     operations.broadcastGate = broadcast;
-    await submitPersonaOrRetry(tester);
+    await submitSecurityOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/onboarding/biometrics');
     expect(broadcast.isCompleted, isFalse);
@@ -811,7 +817,7 @@ void main() {
   testWidgets('a post-creation storage failure recovers before Face ID', (
     tester,
   ) async {
-    final container = await reachGiftCustomise(tester);
+    final container = await reachGiftSecurity(tester);
     final accounts = container.read(accountProvider.notifier) as _NoAccounts;
     accounts.creationError = GiftClaimAccountCreatedException(
       'new-account',
@@ -826,7 +832,7 @@ void main() {
     };
     final broadcast = Completer<void>();
     operations.broadcastGate = broadcast;
-    await submitPersonaOrRetry(tester);
+    await submitSecurityOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/onboarding/biometrics');
     expect(accounts.creationCalls, 1);
@@ -854,7 +860,7 @@ void main() {
   testWidgets(
     'failed storage recovery retries the same account on the screen',
     (tester) async {
-      final container = await reachGiftCustomise(tester);
+      final container = await reachGiftSecurity(tester);
       final accounts = container.read(accountProvider.notifier) as _NoAccounts;
       accounts
         ..creationError = GiftClaimAccountCreatedException(
@@ -863,7 +869,7 @@ void main() {
         )
         ..recoveryError = StateError('storage still unavailable');
       for (var attempt = 0; attempt < 2; attempt++) {
-        await submitPersonaOrRetry(tester);
+        await submitSecurityOrRetry(tester);
         await tester.pumpAndSettle();
         expect(location(tester), '/gift/passcode');
         expect(
@@ -884,7 +890,7 @@ void main() {
       }
 
       accounts.recoveryError = null;
-      await submitPersonaOrRetry(tester);
+      await submitSecurityOrRetry(tester);
       await tester.pumpAndSettle();
       expect(location(tester), '/onboarding/biometrics');
       expect(accounts.creationCalls, 1);
@@ -901,7 +907,7 @@ void main() {
   testWidgets('incomplete recovery does not continue without a saved Card', (
     tester,
   ) async {
-    final container = await reachGiftCustomise(tester);
+    final container = await reachGiftSecurity(tester);
     final accounts = container.read(accountProvider.notifier) as _NoAccounts;
     accounts
       ..creationError = GiftClaimAccountCreatedException(
@@ -909,7 +915,7 @@ void main() {
         StateError('storage unavailable'),
       )
       ..skipRecoverySave = true;
-    await submitPersonaOrRetry(tester);
+    await submitSecurityOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/gift/passcode');
     expect(find.text('Retry setup'), findsOneWidget);
@@ -921,7 +927,7 @@ void main() {
   testWidgets(
     'locking during a storage retry leaves setup for unlock recovery',
     (tester) async {
-      final container = await reachGiftCustomise(tester);
+      final container = await reachGiftSecurity(tester);
       final accounts = container.read(accountProvider.notifier) as _NoAccounts;
       accounts
         ..creationError = GiftClaimAccountCreatedException(
@@ -929,7 +935,7 @@ void main() {
           StateError('storage unavailable'),
         )
         ..recoveryError = StateError('storage still unavailable');
-      await submitPersonaOrRetry(tester);
+      await submitSecurityOrRetry(tester);
       await tester.pumpAndSettle();
       expect(location(tester), '/gift/passcode');
       expect(
@@ -950,10 +956,10 @@ void main() {
   testWidgets('an unknown DB result asks to reopen and disables recreation', (
     tester,
   ) async {
-    final container = await reachGiftCustomise(tester);
+    final container = await reachGiftSecurity(tester);
     (container.read(accountProvider.notifier) as _NoAccounts).creationError =
         GiftClaimAccountCreatedException(null, StateError('DB unavailable'));
-    await submitPersonaOrRetry(tester);
+    await submitSecurityOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/gift/passcode');
     expect(
@@ -981,11 +987,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      keyed('mobile_customise_account_name_field'),
-      'My gift wallet',
-    );
-    await submitPersonaOrRetry(tester);
+    await submitSecurityOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/home');
     expect(operations.claimedDestinations, ['new-account']);
@@ -1007,18 +1009,14 @@ void main() {
       await pumpGiftTransition(tester);
 
       await pumpGiftTransition(tester);
-      await tester.enterText(
-        keyed('mobile_customise_account_name_field'),
-        'My gift wallet',
-      );
-      await submitPersonaOrRetry(tester);
+      await submitSecurityOrRetry(tester);
       await pumpGiftTransition(tester);
 
       expect(location(tester), '/onboarding/biometrics');
       expect(find.byType(MobileBiometricsScreen), findsOneWidget);
       expect(
         container.read(accountProvider).value?.activeAccount?.name,
-        'My gift wallet',
+        isNotEmpty,
       );
       expect(container.read(appSecurityProvider).isPasswordConfigured, isTrue);
       expect(operations.claimedDestinations, ['new-account']);
@@ -1050,11 +1048,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      keyed('mobile_customise_account_name_field'),
-      'My gift wallet',
-    );
-    await submitPersonaOrRetry(tester);
+    await submitSecurityOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/home');
     expect(operations.bindDestinations, ['new-account']);
@@ -1077,7 +1071,7 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      await submitPersonaOrRetry(tester);
+      await submitSecurityOrRetry(tester);
       await tester.pumpAndSettle();
       expect(location(tester), '/onboarding/biometrics');
       expect(container.read(giftClaimFailureNoticeProvider), isNotNull);
@@ -1120,11 +1114,11 @@ void main() {
   testWidgets('a failure after Home opens shows the toast there', (
     tester,
   ) async {
-    final container = await reachGiftCustomise(tester);
+    final container = await reachGiftSecurity(tester);
     final gate = Completer<void>();
     operations.bindGate = gate;
     operations.bindFails = true;
-    await submitPersonaOrRetry(tester);
+    await submitSecurityOrRetry(tester);
     await tester.pumpAndSettle();
     await tester.tap(keyed('mobile_biometrics_not_now'));
     await tester.pumpAndSettle();
@@ -1342,9 +1336,8 @@ void main() {
       await pumpGiftTransition(tester);
       await tester.tap(keyed('gift_claim_create_an_account_to_claim'));
       await pumpGiftTransition(tester);
-      expect(find.byType(MobileCustomiseAccountScreen), findsOneWidget);
+      expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
       expect(find.byType(MobilePasscodeScreen), findsNothing);
-      await submitPersonaOrRetry(tester);
       await pumpGiftTransition(tester);
       expect(location(tester), '/home');
       expect(
@@ -1364,7 +1357,7 @@ void main() {
   );
 
   testWidgets(
-    'locking during additional Gift customisation cleans up after unlock',
+    'locking during additional Gift storage recovery preserves the created account',
     (tester) async {
       final container = await pumpWelcome(
         tester,
@@ -1379,9 +1372,17 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Paste card link'));
       await tester.pumpAndSettle();
+      final accounts = container.read(accountProvider.notifier) as _NoAccounts;
+      accounts
+        ..creationError = GiftClaimAccountCreatedException(
+          'new-account',
+          StateError('storage unavailable'),
+        )
+        ..recoveryError = StateError('storage still unavailable');
       await tester.tap(keyed('gift_claim_create_an_account_to_claim'));
-      await tester.pumpAndSettle();
-      expect(find.byType(MobileCustomiseAccountScreen), findsOneWidget);
+      await pumpGiftTransition(tester);
+      expect(find.text('Retry setup'), findsOneWidget);
+      expect(accounts.creationCalls, 1);
       container
           .read(paymentLinkIntakeProvider.notifier)
           .prioritize(incomingLink);
@@ -1395,14 +1396,12 @@ void main() {
       expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
       expect(
         container.read(accountProvider).value!.accounts.map((a) => a.uuid),
-        ['original'],
+        ['original', 'new-account'],
       );
 
-      security.commitPasswordSetup();
-      await tester.pumpAndSettle();
-      expect(location(tester), '/home');
-      expect(operations.discarded, hasLength(1));
+      expect(container.read(giftClaimFlowProvider), isNull);
       expect(operations.claimedDestinations, isEmpty);
+      expect(accounts.creationCalls, 1);
       expect(find.byType(GiftClaimScreen), findsNothing);
     },
   );

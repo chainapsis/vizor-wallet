@@ -1,14 +1,13 @@
 import 'dart:io';
-import 'dart:math';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../src/app_bootstrap.dart';
+import '../src/features/onboarding/shared/account_persona_draft.dart';
 import '../src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import '../src/features/payment_links/screens/desktop_payment_link_scan_screen.dart';
-import '../src/features/onboarding/create/customise_account_screen.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/providers/gift_card_entry_price_provider.dart';
 import '../src/features/payment_links/providers/gift_claim_flow_provider.dart';
@@ -137,21 +136,6 @@ Widget buildDesktopGiftPasswordUseCase(BuildContext context) => const _Capture(
   screen: DesktopGiftPasswordScreen(),
   phase: GiftClaimPhase.inspected,
 );
-Widget buildDesktopGiftCustomiseUseCase(BuildContext context) => _Capture(
-  screen: CustomiseAccountScreen.gift(
-    configuresPassword: true,
-    onFinish: (_, _) async {},
-    random: Random(1234),
-  ),
-);
-Widget buildDesktopGiftAdditionalCustomiseUseCase(BuildContext context) =>
-    _Capture(
-      screen: CustomiseAccountScreen.gift(
-        configuresPassword: false,
-        onFinish: (_, _) async {},
-        random: Random(1234),
-      ),
-    );
 Widget buildDesktopGiftCheckErrorUseCase(BuildContext context) =>
     const _Capture(screen: GiftClaimScreen(), phase: GiftClaimPhase.failed);
 Widget buildDesktopGiftLongScanUseCase(BuildContext context) => const _Capture(
@@ -217,5 +201,10 @@ class _GiftFlow extends GiftClaimFlowNotifier {
               ? GiftClaimFailure.network
               : null,
           inspection: phase == GiftClaimPhase.inspected ? _inspection : null,
+          setupPersona: const AccountPersona(
+            name: 'Windborne Protector',
+            profilePictureId: 'pfp-01',
+          ),
+          walletSetupInProgress: phase == GiftClaimPhase.inspected,
         );
 }

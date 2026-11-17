@@ -37,7 +37,7 @@ void main() {
 
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_address_field'))),
-      const Size(361, 60),
+      const Size(353, 60),
     );
     expect(
       find.byKey(const ValueKey('mobile_send_address_action_slot')),
@@ -103,7 +103,7 @@ void main() {
       );
       expect(
         tester.getSize(find.byKey(const ValueKey('mobile_send_address_field'))),
-        const Size(361, 60),
+        const Size(353, 60),
       );
       expect(
         tester
@@ -169,19 +169,20 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_amount_field')))
           .height,
-      164,
+      // 164 plus the 48pt of breathing room a full-height phone gives it.
+      164 + 48,
     );
     expect(
       tester.getSize(
         find.byKey(const ValueKey('mobile_send_amount_top_content')),
       ),
-      const Size(361, 285),
+      const Size(353, 285 + 48),
     );
     expect(
       tester.getTopLeft(
         find.byKey(const ValueKey('mobile_send_amount_top_content')),
       ),
-      const Offset(16, 88),
+      const Offset(20, 88),
     );
     final amountInput = tester.widget<TextField>(
       find.byKey(const ValueKey('mobile_send_amount_input')),
@@ -203,7 +204,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('mobile_send_amount_recipient_block')),
       ),
-      const Size(361, 97),
+      const Size(353, 97),
     );
     expect(
       tester
@@ -215,7 +216,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_button'))),
-      const Size(361, 50),
+      const Size(353, 50),
     );
     expect(
       find.byKey(const ValueKey('mobile_send_amount_keypad')),
@@ -410,15 +411,15 @@ void main() {
     expect(find.text('Confirm & Send'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_info'))),
-      const Size(361, 268),
+      const Size(353, 268),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_wrap'))),
-      const Size(361, 161),
+      const Size(353, 161),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_buttons'))),
-      const Size(361, 112),
+      const Size(353, 112),
     );
     expect(
       tester
@@ -444,7 +445,7 @@ void main() {
     expect(find.textContaining('Zcash is a privacy-focused'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_review_wrap'))),
-      const Size(361, 161),
+      const Size(353, 161),
     );
   });
 

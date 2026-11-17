@@ -248,10 +248,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsUpdatePicture => 'Update picture';
 
   @override
-  String get accountsViewSecretPhrase => 'View secret phrase';
+  String get accountsViewSecretPhrase => 'Show secret phrase';
 
   @override
-  String get accountsViewViewingKey => 'View viewing key';
+  String get accountsViewViewingKey => 'Show viewing key';
+
+  @override
+  String get activityAddAddressToContacts => 'Add address to contacts';
 
   @override
   String get activityAddressUnified => 'Unified address';
@@ -267,6 +270,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityBalanceOrchard => 'Orchard balance';
+
+  @override
+  String get activityBalanceTransparent => 'Transparent balance';
 
   @override
   String get activityDetailsLoadFailed => 'Failed — try again';
@@ -482,6 +488,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptOutput => 'Output';
 
   @override
+  String get activityReceiptRecipient => 'Recipient';
+
+  @override
   String get activityReceiptRefreshFailed =>
       'Latest transaction status could not be refreshed.';
 
@@ -579,7 +588,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityTitleReceiveInProgress => 'Receive in progress...';
 
   @override
+  String get activityTitleReceiveZecFailed => 'Receive ZEC failed';
+
+  @override
   String get activityTitleReceivedSuccessfully => 'Received successfully';
+
+  @override
+  String get activityTitleReceivedZec => 'Received ZEC';
 
   @override
   String get activityTitleReceiving => 'Receiving...';
@@ -588,10 +603,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityTitleReceivingVerb => 'Receiving';
 
   @override
+  String get activityTitleReceivingZec => 'Receiving ZEC...';
+
+  @override
+  String get activityTitleSendZecFailed => 'Send ZEC failed';
+
+  @override
   String get activityTitleSendingVerb => 'Sending';
 
   @override
+  String get activityTitleSendingZec => 'Sending ZEC...';
+
+  @override
   String get activityTitleSent => 'Sent';
+
+  @override
+  String get activityTitleSentZec => 'Sent ZEC';
 
   @override
   String get activityTitleShielded => 'Shielded';
@@ -1151,6 +1178,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonBackToWallet => 'Back to wallet';
+
+  @override
+  String get commonBalanceHidden => 'Balance hidden';
+
+  @override
+  String get commonBalanceShown => 'Balance shown';
 
   @override
   String get commonCalculatingEllipsis => 'Calculating…';
@@ -2194,6 +2227,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeReceiveFirstZec => 'Receive your first ZEC';
+
+  @override
+  String get homeReceiveReceiveSubtitle => 'Share your address or QR code';
+
+  @override
+  String get homeReceiveRedeemGiftCard => 'Redeem gift card';
+
+  @override
+  String get homeReceiveRedeemGiftCardSubtitle => 'Add a card someone sent you';
+
+  @override
+  String get homeReceiveRequestSubtitle => 'Ask for an exact amount';
 
   @override
   String get homeRecentActivity => 'Recent activity';
@@ -6635,6 +6680,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingIntroTitle => 'The Shielded World';
 
   @override
+  String get onboardingIntroTitleMobile => 'About Zcash';
+
+  @override
   String get onboardingLinkVizorDesktop => 'Link Vizor Desktop';
 
   @override
@@ -7072,9 +7120,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paySaveContactError => 'Couldn\'t save this contact. Try again.';
-
-  @override
-  String get payScanBarrierDismiss => 'Dismiss';
 
   @override
   String get payScanCaption => 'Scan the recipient address QR code';
@@ -8090,6 +8135,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'QR code could not be generated';
 
   @override
+  String get paymentLinkQrExpandSemantic =>
+      'Show gift card QR code full screen';
+
+  @override
   String get paymentLinkQrSaveFailed => 'Gift card QR could not be saved.';
 
   @override
@@ -8489,6 +8538,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get poolTransparent => 'Transparent';
 
   @override
+  String get privacyBalanceHiddenSaveFailed =>
+      'Balance hidden, but the setting couldn\'t be saved.';
+
+  @override
+  String get privacyBalanceShowFailed =>
+      'Couldn\'t show your balance. Try again.';
+
+  @override
   String get privateQueriesOptOutUnfinished =>
       'Turning off Private queries didn\'t finish. Turn it off again in Settings to use transparent funds.';
 
@@ -8658,9 +8715,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get receiveRequestZecButton => 'Request ZEC';
-
-  @override
-  String get receiveShareAddress => 'Share address';
 
   @override
   String get receiveShareFailed =>
@@ -9215,6 +9269,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendRecipientLabel => 'Send to';
 
   @override
+  String sendRecipientOwnAccountName(String name) {
+    return '$name (you)';
+  }
+
+  @override
   String get sendRecipientUnreadableRequestLink =>
       'This request link couldn\'t be read';
 
@@ -9638,6 +9697,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsExplorerUrlLabel => 'Explorer URL';
+
+  @override
+  String get settingsFlipToHide => 'Flip to hide';
+
+  @override
+  String get settingsFlipToHideDescription =>
+      'Turn your phone screen-down to hide amounts on any screen. To show them again, flip it down and back up within 2 seconds.';
+
+  @override
+  String get settingsFlipToHideUpdateFailed =>
+      'Couldn\'t update flip to hide setting.';
+
+  @override
+  String get settingsHideBalanceOnUnlock => 'Hide balance on unlock';
+
+  @override
+  String get settingsHideBalanceOnUnlockDescription =>
+      'Hide your balance every time you unlock. Tap the eye icon to show it again.';
+
+  @override
+  String get settingsHideBalanceOnUnlockUpdateFailed =>
+      'Couldn\'t update hide balance on unlock setting.';
+
+  @override
+  String get settingsHideBalanceTitle => 'Hide balance';
 
   @override
   String get settingsIncorrectPasscode => 'Incorrect passcode';
@@ -10312,7 +10396,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Confirm access again to try loading this key.';
 
   @override
+  String get settingsViewingKeyCopied => 'Viewing key copied';
+
+  @override
   String get settingsViewingKeyCopy => 'Copy viewing key';
+
+  @override
+  String get settingsViewingKeyCopyFailed =>
+      'Couldn\'t copy the viewing key. Try again.';
 
   @override
   String get settingsViewingKeyExplanation =>
@@ -10926,9 +11017,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapDepositZecButton => 'Deposit ZEC';
 
   @override
-  String get swapDismissBarrierLabel => 'Dismiss';
-
-  @override
   String get swapFailureAmountPrecision =>
       'Amount has too many decimal places.\nUse fewer decimals and try again.';
 
@@ -11350,6 +11438,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapStatusRowLabel => 'Status';
 
   @override
+  String get swapSwitchDirection => 'Switch swap direction';
+
+  @override
   String get swapTimeoutBody => 'Please, start another swap transaction.';
 
   @override
@@ -11604,11 +11695,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingConfigCustomSource => 'Custom source';
 
   @override
-  String votingConfigDeleteNamed(String name) {
-    return 'Delete $name';
-  }
-
-  @override
   String get votingConfigDeleteSaved => 'Delete saved source';
 
   @override
@@ -11677,7 +11763,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Display authenticated rounds whose titles begin with [TEST].';
 
   @override
-  String get votingConfigSources => 'Sources';
+  String get votingConfigSource => 'Source';
 
   @override
   String get votingConfigTestVisibilityFailed =>

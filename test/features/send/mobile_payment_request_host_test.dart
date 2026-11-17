@@ -18,6 +18,9 @@ import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/ios_native_tab_bar.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/ios_native_tab_bar_root.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -183,6 +186,7 @@ Future<_Harness> _pumpHost(
   FutureOr<List<AddressBookContact>> contacts = const [],
   FutureOr<Map<String, AccountInfo>> ownAccounts = const {},
   PaymentRequestScanner? scanner,
+  bool nativeTabRoot = false,
 }) async {
   tester.view.physicalSize = const Size(393, 852);
   tester.view.devicePixelRatio = 1.0;
@@ -279,7 +283,14 @@ Future<_Harness> _pumpHost(
             builder: (context, child) => AppTheme(
               data: AppThemeData.light,
               child: AppToastHost(
-                child: PaymentRequestHost(router: router, child: child!),
+                child: nativeTabRoot
+                    ? IosNativeTabBarRootHost(
+                        child: PaymentRequestHost(
+                          router: router,
+                          child: child!,
+                        ),
+                      )
+                    : PaymentRequestHost(router: router, child: child!),
               ),
             ),
           );
@@ -296,6 +307,57 @@ Future<_Harness> _pumpHost(
 }
 
 void main() {
+  testWidgets('native tab owner stays blocked through the actual payment card '
+      'closing lifetime', (tester) async {
+    late IosNativeTabBarCoordinator coordinator;
+    var selections = 0;
+    final harness = await _pumpHost(
+      tester,
+      nativeTabRoot: true,
+      home: Builder(
+        builder: (context) {
+          coordinator = IosNativeTabBarScope.maybeOf(context)!;
+          return AppMobileShell(
+            body: const Text('Tab body'),
+            tabBar: const SizedBox(height: 64),
+            nativeTabBar: IosNativeTabBarConfiguration(
+              items: const [
+                IosNativeTabBarItem(
+                  id: '/home',
+                  iconName: 'home',
+                  label: 'Home',
+                ),
+              ],
+              selectedId: '/home',
+              onSelect: (_) => selections++,
+            ),
+          );
+        },
+      ),
+    );
+    coordinator.select('/home');
+    expect(selections, 1);
+    final notifier = harness.container.read(
+      paymentRequestFlowProvider.notifier,
+    );
+    await notifier.present(_request, source: PaymentRequestSource.link);
+    coordinator.select('/home');
+    expect(selections, 1);
+    await tester.pumpAndSettle();
+    notifier.dismiss();
+    expect(harness.container.read(paymentRequestFlowProvider), isNull);
+    coordinator.select('/home');
+    expect(selections, 1);
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(find.text('Payment request'), findsOneWidget);
+    coordinator.select('/home');
+    expect(selections, 1);
+    await tester.pumpAndSettle();
+    expect(find.text('Payment request'), findsNothing);
+    coordinator.select('/home');
+    expect(selections, 2);
+  });
+
   registerPaymentRequestScannerTests((tester, scanner) async {
     final harness = await _pumpHost(tester, scanner: scanner);
     return (harness.container, harness.router);

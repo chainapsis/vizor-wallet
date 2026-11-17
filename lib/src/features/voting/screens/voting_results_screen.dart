@@ -10,6 +10,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/untranslated_details.dart';
@@ -28,6 +29,7 @@ import '../voting_flow_models.dart';
 import '../voting_poll_ordering.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../../../core/widgets/mobile/mobile_surface_card.dart';
 
 const int _ballotDivisorZatoshi = 12500000;
 const _pendingTallyRefreshInterval = Duration(seconds: 10);
@@ -224,7 +226,7 @@ class VotingResultsContent extends StatelessWidget {
     return VotingPaneScrollView(
       maxWidth: 560,
       padding: EdgeInsets.symmetric(
-        horizontal: showDesktopToolbar ? 0 : AppSpacing.sm,
+        horizontal: showDesktopToolbar ? 0 : kMobilePageMargin,
       ),
       scrollPadding: const EdgeInsets.only(
         top: kAppFormFactor == AppFormFactor.mobile ? AppSpacing.s : 0,
@@ -621,13 +623,7 @@ class _MobileResultCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: [
-          BoxShadow(
-            color: colors.shadows.subtle,
-            offset: const Offset(0, 1),
-            blurRadius: 2,
-          ),
-        ],
+        boxShadow: mobileSurfaceShadows(colors),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

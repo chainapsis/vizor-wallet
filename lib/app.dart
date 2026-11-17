@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -33,6 +34,7 @@ import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/navigation/windows_update_prompt_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
+import 'src/core/motion/platform_reduce_motion_scope.dart';
 import 'src/core/security/background_auto_lock_host.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
@@ -103,9 +105,6 @@ import 'src/features/payment_links/screens/gift_claim_screen.dart';
 import 'src/features/payment_links/screens/desktop_payment_link_scan_screen.dart';
 import 'src/features/send/screens/payment_request_scan_screen.dart';
 import 'src/features/payment_links/screens/desktop_gift_password_screen.dart';
-import 'src/features/payment_links/screens/desktop_gift_customise_screen.dart';
-import 'src/features/payment_links/screens/gift_customise_account_screen.dart'
-    show GiftCustomiseAccountArgs;
 import 'src/features/payment_links/screens/payment_links_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -176,6 +175,7 @@ import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/incoming_uri_service.dart';
 import 'src/providers/payment_request_flow_provider.dart';
+import 'src/core/layout/mobile/ios_native_tab_bar_root.dart';
 
 /// Prints an app log line. Identifier-shaped values are masked in every build
 /// mode; see [redactLogText] for what that does and does not catch.
@@ -730,7 +730,7 @@ String? appRedirect({
   // actionable on this screen; locking still takes precedence.
   if (hasWallet &&
       ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true &&
-      (state.matchedLocation == '/gift/customise' ||
+      (state.matchedLocation == '/gift' ||
           state.matchedLocation == '/gift/set-password' ||
           state.matchedLocation == '/gift/passcode')) {
     return requiresUnlock ? '/unlock' : null;
@@ -894,23 +894,6 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
     redirect: (_, _) =>
         ref.read(giftClaimFlowProvider)?.setupPersona == null ? '/gift' : null,
     builder: (_, _) => const DesktopGiftPasswordScreen(),
-  ),
-  GoRoute(
-    path: '/gift/customise',
-    redirect: (_, _) =>
-        ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true
-        ? null
-        : '/gift',
-    builder: (_, _) {
-      final setup = ref.read(giftClaimFlowProvider)!;
-      return DesktopGiftCustomiseScreen(
-        args: GiftCustomiseAccountArgs(
-          passcode: setup.setupPasscode,
-          passwordInputSource: setup.setupPasswordInputSource,
-          inspection: setup.inspection!,
-        ),
-      );
-    },
   ),
   GoRoute(
     path: '/import/method',
@@ -1139,6 +1122,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       child: OnboardingSplitViewShell(
         activeStep: onboardingStepFromLocation(state.matchedLocation),
         showPasswordStep: !ref.read(appSecurityProvider).isPasswordConfigured,
+        showEducationSteps:
+            !(state.extra is SetPasswordScreenArgs &&
+                (state.extra as SetPasswordScreenArgs).defersSetup),
         child: child,
       ),
       transitionsBuilder: (_, _, _, child) => child,
@@ -1199,31 +1185,13 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
               args.persona != null) {
             return null;
           }
-          return OnboardingStep.secretPassphrase.routePath;
+          return '/welcome';
         },
         pageBuilder: (context, state) => CustomTransitionPage<void>(
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
-          transitionsBuilder: _onboardingFadeTransition,
-        ),
-      ),
-      GoRoute(
-        path: '/onboarding/customise-account',
-        redirect: (_, state) =>
-            state.extra is CustomiseAccountArgs &&
-                (state.extra as CustomiseAccountArgs).flow ==
-                    SetPasswordFlow.create
-            ? null
-            : OnboardingStep.secretPassphrase.routePath,
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: CustomiseAccountScreen(
-            args: state.extra as CustomiseAccountArgs,
-          ),
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),
@@ -1867,6 +1835,41 @@ Widget _onboardingFadeTransition(
   );
 }
 
+class _WalletNativeTabBarRootHost extends ConsumerWidget {
+  const _WalletNativeTabBarRootHost({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (kAppFormFactor != AppFormFactor.mobile ||
+        kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return child;
+    }
+    final security = ref.watch(appSecurityProvider);
+    final privacyLocked = ref.watch(syncKeepAwakePrivacyLockVisibleProvider);
+    final account = ref.watch(accountProvider).value;
+    final payment = ref.watch(paymentRequestFlowProvider) != null;
+    return IosNativeTabBarRootHost(
+      hideImmediately:
+          security.requiresUnlock ||
+          privacyLocked ||
+          (account?.accounts.isEmpty ?? true),
+      covered: payment,
+      sessionIdentity: account?.activeAccountUuid,
+      canInteract: () =>
+          !ref.read(appSecurityProvider).requiresUnlock &&
+          !ref.read(syncKeepAwakePrivacyLockVisibleProvider) &&
+          (ref.read(accountProvider).value?.accounts.isNotEmpty ?? false) &&
+          ref.read(paymentRequestFlowProvider) == null &&
+          !ref
+              .read(externalActionGuardProvider)
+              .blocks(ExternalAction.navigation),
+      child: child,
+    );
+  }
+}
+
 class ZcashWalletApp extends ConsumerWidget {
   const ZcashWalletApp({super.key});
 
@@ -1938,15 +1941,17 @@ class ZcashWalletApp extends ConsumerWidget {
                                     // and the keep-awake hosts above it. The
                                     // link intake that feeds it lives further
                                     // up, in `_IncomingLinkHost`.
-                                    child: PaymentRequestHost(
-                                      router: router,
-                                      child: LedgerOperationRecoveryHost(
-                                        child: MobileKeyboardToolbar(
-                                          child: BackgroundAutoLockHost(
-                                            router: router,
-                                            child: AppReviewHost(
+                                    child: _WalletNativeTabBarRootHost(
+                                      child: PaymentRequestHost(
+                                        router: router,
+                                        child: LedgerOperationRecoveryHost(
+                                          child: MobileKeyboardToolbar(
+                                            child: BackgroundAutoLockHost(
                                               router: router,
-                                              child: child!,
+                                              child: AppReviewHost(
+                                                router: router,
+                                                child: child!,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1972,12 +1977,18 @@ class ZcashWalletApp extends ConsumerWidget {
         final localized = NativeLanguageSync(
           child: LocaleTypography(child: app),
         );
-        return kAppFormFactor == AppFormFactor.mobile
-            ? MobileWindowPolicyScope(
-                policy: MobileWindowPolicy.resolve(MediaQuery.of(context)),
-                child: localized,
-              )
-            : localized;
+        return PlatformReduceMotionScope(
+          child: kAppFormFactor == AppFormFactor.mobile
+              // Only this scope reads MediaQuery. Read in this builder, every
+              // host above would rebuild on each frame of a keyboard animation.
+              ? Builder(
+                  builder: (context) => MobileWindowPolicyScope(
+                    policy: MobileWindowPolicy.resolve(MediaQuery.of(context)),
+                    child: localized,
+                  ),
+                )
+              : localized,
+        );
       },
     );
   }

@@ -160,9 +160,14 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
             AppButton(
               key: const ValueKey('mobile_import_review_continue'),
               expand: true,
+              constrainContent: true,
               onPressed: () => _continue(context),
               trailing: const AppIcon(AppIcons.chevronForward),
-              child: Text(context.l10n.onboardingReviewConfirmContinue),
+              child: Text(
+                context.l10n.onboardingReviewConfirmContinue,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),

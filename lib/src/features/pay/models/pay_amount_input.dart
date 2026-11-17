@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/l10n/locale_typography.dart';
 import '../../swap/domain/swap_direction.dart';
 import '../../swap/models/swap_state.dart';
 
@@ -16,11 +17,19 @@ double payAmountInputWidth({
 }) {
   final displayText = text.trim().isEmpty ? '0' : text.trim();
   final painter = TextPainter(
-    text: TextSpan(text: displayText, style: style),
+    text: TextSpan(
+      text: displayText,
+      style: withLocaleFontFallback(context, style),
+    ),
     maxLines: 1,
     textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
   )..layout();
-  return (painter.width + additionalWidth).clamp(minWidth, maxWidth).toDouble();
+  final width = (painter.width + additionalWidth)
+      .clamp(minWidth, maxWidth)
+      .toDouble();
+  painter.dispose();
+  return width;
 }
 
 /// Whether the Pay amount step can advance on either form factor.

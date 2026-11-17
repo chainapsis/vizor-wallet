@@ -18,6 +18,7 @@ import '../src/core/theme/app_theme.dart';
 import '../src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../src/features/receive/screens/receive_screen.dart';
 import '../src/features/receive/widgets/mobile/receive_address_info_sheet.dart';
+import '../src/features/receive/widgets/mobile/receive_options_sheet.dart';
 import '../src/features/receive/widgets/receive_desktop_preview.dart';
 import '../src/features/receive/widgets/receive_address_widgets.dart';
 import '../src/providers/account_provider.dart';
@@ -137,6 +138,10 @@ Widget buildReceiveMobileTransparentSheetUseCase(BuildContext context) {
   return const _ReceiveMobileSheetHarness(type: ReceiveAddressType.transparent);
 }
 
+Widget buildReceiveMobileOptionsSheetUseCase(BuildContext context) {
+  return const _ReceiveOptionsSheetHarness();
+}
+
 class _ReceiveDesktopHarness extends StatelessWidget {
   const _ReceiveDesktopHarness({required this.state});
 
@@ -227,6 +232,36 @@ class _ReceiveMobileSheetHarness extends StatelessWidget {
               child: MobileModalCard(
                 child: ReceiveAddressInfoSheet(type: type),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The mobile Home Receive sheet over the scrim, at the 393x852 artboard.
+class _ReceiveOptionsSheetHarness extends StatelessWidget {
+  const _ReceiveOptionsSheetHarness();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 393,
+      height: 852,
+      child: Stack(
+        children: [
+          Positioned.fill(child: ColoredBox(color: colors.background.window)),
+          Positioned.fill(
+            child: ColoredBox(color: colors.background.neutralScrim),
+          ),
+          const Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: MobileModalCard(child: ReceiveOptionsSheet()),
             ),
           ),
         ],

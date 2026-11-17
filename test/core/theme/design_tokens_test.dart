@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
@@ -263,10 +265,25 @@ void main() {
     expect(dark.surface.input.secondary, Primitives.p150Dark);
     expect(dark.surface.input.focus, Primitives.p100Dark);
 
-    expect(light.button.disabled.bg, const Color(0x33B8B8B8));
-    expect(light.button.disabled.label, const Color(0x80858686));
-    expect(dark.button.disabled.bg, const Color(0x334D5252));
-    expect(dark.button.disabled.label, const Color(0x80858686));
+    // Disabled buttons are solid, so content under a floating one never
+    // shows through, and their labels stay readable (at least 4.5:1).
+    expect(light.button.disabled.bg, Primitives.p100Light);
+    expect(light.button.disabled.label, Primitives.p600Light);
+    expect(dark.button.disabled.bg, Primitives.p150Dark);
+    expect(dark.button.disabled.label, Primitives.p600Dark);
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance();
+      final lb = b.computeLuminance();
+      return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+    }
+
+    for (final colors in [light, dark]) {
+      expect(colors.button.disabled.bg.a, 1);
+      expect(
+        contrast(colors.button.disabled.label, colors.button.disabled.bg),
+        greaterThanOrEqualTo(4.5),
+      );
+    }
 
     expect(light.button.secondary.bg, Primitives.p0Light);
     expect(light.button.secondary.bgHover, Primitives.p100Light);

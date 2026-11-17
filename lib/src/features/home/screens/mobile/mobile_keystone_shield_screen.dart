@@ -12,6 +12,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -706,7 +707,7 @@ class _MobileKeystoneShieldScreenState
           AppSpacing.md,
           AppSpacing.s,
           AppSpacing.md,
-          AppSpacing.md,
+          kMobileFooterGap,
         ),
         child: canRetry
             ? Row(

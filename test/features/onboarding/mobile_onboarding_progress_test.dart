@@ -6,15 +6,12 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 
 void main() {
   const expected = {
-    OnboardingFlow.gift: [
-      OnboardingStage.customiseAccount,
-      OnboardingStage.passcode,
-    ],
+    OnboardingFlow.createDeferred: [OnboardingStage.passcode],
+    OnboardingFlow.gift: [OnboardingStage.passcode],
     OnboardingFlow.create: [
       OnboardingStage.addressTypes,
       OnboardingStage.thingsToKnow,
       OnboardingStage.secretPassphrase,
-      OnboardingStage.customiseAccount,
       OnboardingStage.passcode,
     ],
     OnboardingFlow.importWallet: [

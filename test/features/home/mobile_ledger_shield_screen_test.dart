@@ -349,7 +349,7 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 600));
 
-      final amount = privacyModeEnabled ? '******' : '0.01';
+      final amount = privacyModeEnabled ? '••••••' : '0.01';
       expect(
         tester.widget<MobileShieldScene>(find.byType(MobileShieldScene)).amount,
         amount,

@@ -171,7 +171,8 @@ class _MobileLedgerAccessContentState
                           ? c.continueSigning
                           : c.scan,
                     ),
-                    if (helpAvailable)
+                    if (helpAvailable) ...[
+                      const SizedBox(height: AppSpacing.s),
                       AppButton(
                         variant: AppButtonVariant.ghost,
                         expand: true,
@@ -184,6 +185,7 @@ class _MobileLedgerAccessContentState
                               : l10n.ledgerConnectionHelp,
                         ),
                       ),
+                    ],
                   ],
                 ),
           children: [
@@ -227,7 +229,7 @@ class _MobileLedgerAccessContentState
                                 const SizedBox(height: AppSpacing.xxs),
                                 Text(
                                   l10n.ledgerDifferentFromSaved,
-                                  style: AppTypography.bodySmall.copyWith(
+                                  style: AppTypography.bodyMedium.copyWith(
                                     color: context.colors.text.secondary,
                                   ),
                                 ),

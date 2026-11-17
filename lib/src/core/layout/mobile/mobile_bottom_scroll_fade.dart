@@ -1,6 +1,8 @@
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
+import 'mobile_scroll_edge_fades.dart';
 
 /// Soft bottom edge for a scroll area: a window-colored gradient over the
 /// last rows while more content waits below, as on the mobile Endpoints list.
@@ -11,6 +13,7 @@ class MobileBottomScrollFade extends StatefulWidget {
   const MobileBottomScrollFade({
     required this.child,
     this.height = AppSpacing.xl,
+    this.color,
     super.key,
   });
 
@@ -19,6 +22,10 @@ class MobileBottomScrollFade extends StatefulWidget {
 
   /// Height of the fade band above the bottom edge.
   final double height;
+
+  /// The surface the content fades into; the window background when null.
+  /// Lists inside a sheet pass the sheet's surface.
+  final Color? color;
 
   @override
   State<MobileBottomScrollFade> createState() => _MobileBottomScrollFadeState();
@@ -34,21 +41,36 @@ class _MobileBottomScrollFadeState extends State<MobileBottomScrollFade> {
   bool _onMetrics(int depth, ScrollMetrics metrics) {
     if (depth != 0) return false;
     final t = (metrics.extentAfter / _activationDistance).clamp(0.0, 1.0);
-    final next = t * t * (3 - 2 * t);
-    if (next != _progress) setState(() => _progress = next);
+    _setProgress(t * t * (3 - 2 * t));
     return false; // Observe only — let the notification bubble on.
+  }
+
+  void _setProgress(double next) {
+    if (next == _progress) return;
+    // A scroll position re-settling after its content changed size notifies
+    // mid-layout, when no rebuild may be scheduled; apply those after the
+    // frame instead.
+    final scheduler = SchedulerBinding.instance;
+    if (scheduler.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      scheduler.addPostFrameCallback((_) {
+        if (mounted && _progress != next) setState(() => _progress = next);
+      });
+      return;
+    }
+    setState(() => _progress = next);
   }
 
   @override
   Widget build(BuildContext context) {
-    final window = context.colors.background.window;
+    final window = widget.color ?? context.colors.background.window;
     return NotificationListener<ScrollMetricsNotification>(
       onNotification: (n) => _onMetrics(n.depth, n.metrics),
       child: NotificationListener<ScrollNotification>(
         onNotification: (n) => _onMetrics(n.depth, n.metrics),
         child: Stack(
           children: [
-            widget.child,
+            // This band replaces the standard bottom fade here.
+            MobileScrollEdgeFades(bottomHeight: 0, child: widget.child),
             Positioned(
               left: 0,
               right: 0,
