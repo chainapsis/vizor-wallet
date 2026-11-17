@@ -42,7 +42,7 @@ void main() {
     },
   );
 
-  testWidgets('a long confirming amount is cut to fit beside Max', (
+  testWidgets('a long confirming amount is cut to fit, in the sheet too', (
     tester,
   ) async {
     await setWidgetTestViewport(tester, const Size(393, 852));
@@ -60,5 +60,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('+1234.56 ZEC in 1–3 min'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_spendable_wait_line')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('+1234.56 ZEC'), findsOneWidget);
+    expect(find.text('1235.76 ZEC'), findsOneWidget);
   });
 }
