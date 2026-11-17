@@ -34,6 +34,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.recents,
     required this.busy,
     this.enabled = true,
+    this.waitLabel,
     this.selectedContactId,
     required this.externalAsset,
     required this.onAddressChanged,
@@ -41,6 +42,7 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.onChooseRecipient,
     required this.onSelectRecipient,
     required this.onAddToContacts,
+    this.selectLabel,
     super.key,
   });
 
@@ -52,6 +54,9 @@ class MobilePayRecipientStep extends StatefulWidget {
   final List<PayRecentRecipient> recents;
   final bool busy;
   final bool enabled;
+
+  /// Why Continue can't fetch a quote yet, as its label.
+  final String? waitLabel;
   final String? selectedContactId;
   final SwapAsset externalAsset;
   final ValueChanged<String> onAddressChanged;
@@ -59,6 +64,9 @@ class MobilePayRecipientStep extends StatefulWidget {
   final ValueChanged<PayRecipientSelection> onChooseRecipient;
   final VoidCallback onSelectRecipient;
   final VoidCallback onAddToContacts;
+
+  /// Replaces "Continue", e.g. with a quote recovery action.
+  final String? selectLabel;
 
   @override
   State<MobilePayRecipientStep> createState() => _MobilePayRecipientStepState();
@@ -257,13 +265,23 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                   expand: true,
                   trailing: widget.busy ? const AppIcon(AppIcons.loader) : null,
                   iconGap: AppSpacing.xxs,
-                  onPressed: widget.busy || !widget.enabled
+                  onPressed:
+                      widget.busy || !widget.enabled || widget.waitLabel != null
                       ? null
                       : widget.onSelectRecipient,
-                  child: Text(
-                    widget.busy
-                        ? context.l10n.payFetchingQuote
-                        : context.l10n.commonContinue,
+                  // "Get confidential quote" outgrows the row at large text
+                  // sizes; it scales down on one line, as the Swap CTA does.
+                  constrainContent: true,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      widget.busy
+                          ? context.l10n.payFetchingQuote
+                          : widget.waitLabel ??
+                                widget.selectLabel ??
+                                context.l10n.commonContinue,
+                      maxLines: 1,
+                    ),
                   ),
                 ),
               ],

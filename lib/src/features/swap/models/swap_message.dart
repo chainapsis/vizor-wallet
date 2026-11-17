@@ -63,6 +63,8 @@ enum SwapNoticeKind {
   startNotFinished,
   nearSwapPrivacyUnknown,
   recoveryUpdateRequired,
+  noQuoteForAmount,
+  noConfidentialQuoteForAmount,
 }
 
 /// A message that swap state or a persisted swap record keeps. It records
@@ -144,6 +146,9 @@ final class SwapNotice extends SwapMessage {
     SwapNoticeKind.nearSwapPrivacyUnknown =>
       l10n.swapNoticeNearSwapPrivacyUnknown,
     SwapNoticeKind.recoveryUpdateRequired => l10n.swapRecoveryUpdateRequired,
+    SwapNoticeKind.noQuoteForAmount => l10n.swapNoticeNoQuoteForAmount,
+    SwapNoticeKind.noConfidentialQuoteForAmount =>
+      l10n.swapNoticeNoConfidentialQuoteForAmount,
   };
 
   @override
@@ -246,7 +251,9 @@ String swapFailureText(
           : l10n.swapFailureStillProcessing,
     SwapFailureCategory.zecDepositFunding => l10n.swapFailureZecDepositFunding,
     SwapFailureCategory.zecDepositIronwoodFunding =>
-      l10n.swapFailureZecDepositIronwoodFunding,
+      pay
+          ? l10n.swapFailureZecDepositIronwoodFundingPay
+          : l10n.swapFailureZecDepositIronwoodFunding,
     SwapFailureCategory.walletPreflight => l10n.swapFailureZecDepositPreflight,
     SwapFailureCategory.depositNotFound => l10n.swapFailureDepositNotIndexed,
     SwapFailureCategory.depositRejected => l10n.swapFailureDepositRejected,

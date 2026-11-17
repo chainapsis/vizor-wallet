@@ -15,6 +15,7 @@ import '../../../../core/widgets/pool_badge.dart';
 import '../../../swap/models/swap_models.dart';
 import '../../../swap/widgets/swap_asset_icon.dart';
 import '../../../swap/widgets/swap_quote_error_text.dart';
+import '../../../swap/widgets/swap_confidential_ui.dart';
 import '../../../../core/widgets/mobile/mobile_amount_card.dart';
 import '../../models/pay_amount_input.dart';
 
@@ -30,11 +31,13 @@ class MobilePayAmountStep extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.zecAvailableZatoshi,
+    this.balanceMessage,
     required this.onAmountChanged,
     required this.onFiatAmountChanged,
     required this.onToggleFiatInputMode,
     required this.onOpenAssetSelector,
     required this.slippageLabel,
+    required this.confidentialReveal,
     required this.onOpenSlippage,
     required this.onContinue,
     super.key,
@@ -44,11 +47,18 @@ class MobilePayAmountStep extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final BigInt zecAvailableZatoshi;
+
+  /// Why [zecAvailableZatoshi] can't fund the payment, in place of
+  /// "Not enough ZEC".
+  final String? balanceMessage;
   final ValueChanged<String> onAmountChanged;
   final ValueChanged<String> onFiatAmountChanged;
   final VoidCallback onToggleFiatInputMode;
   final VoidCallback onOpenAssetSelector;
   final String slippageLabel;
+
+  /// Raised each time confidential turns on, landing the mark once.
+  final int confidentialReveal;
   final VoidCallback onOpenSlippage;
   final VoidCallback onContinue;
 
@@ -95,10 +105,12 @@ class MobilePayAmountStep extends StatelessWidget {
                   const SizedBox(height: AppSpacing.s),
                   SwapQuoteErrorText(
                     message: balanceExceeded
-                        ? context.l10n.commonNotEnoughZec
+                        ? balanceMessage ?? context.l10n.commonNotEnoughZec
                         : errorText!,
                     textKey: const ValueKey('mobile_pay_amount_error'),
-                    maxLines: 2,
+                    maxLines: balanceExceeded && balanceMessage != null
+                        ? null
+                        : 2,
                     style: AppTypography.bodyMedium,
                   ),
                 ],
@@ -138,6 +150,14 @@ class MobilePayAmountStep extends StatelessWidget {
                     horizontal: AppSpacing.xxs,
                   ),
                   onPressed: onOpenSlippage,
+                  // Marks the button while the confidential route is set in
+                  // the settings it opens.
+                  leading: state.confidential
+                      ? SwapConfidentialIcon(
+                          reveal: confidentialReveal,
+                          labeled: true,
+                        )
+                      : null,
                   trailing: const AppIcon(
                     AppIcons.cog,
                     size: _slippageIconSize,

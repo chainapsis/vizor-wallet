@@ -58,7 +58,12 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_receive_reservatio
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show PlatformInt64Util;
 import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart'
-    show ReceiveDeposit, ReceiveError, ReceiveErrorKind;
+    show
+        ReceiveDeposit,
+        ReceiveError,
+        ReceiveErrorKind,
+        SwapAccountReadiness,
+        SwapRecoveryStatus;
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -72,6 +77,7 @@ import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_asset_icon.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_confidential_ui.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_review_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
@@ -82,14 +88,16 @@ import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/wallet_pir_server_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
 
+import '../../support/full_text_expectations.dart';
 import '../../support/localized_test_scope.dart';
 import '../../support/test_l10n.dart';
 import '../../support/leading_decimal_input.dart';
-
+import '../../support/widget_test_viewport.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -1131,6 +1139,72 @@ void main() {
     expect(find.text('First'), findsNothing);
   });
 
+  testWidgets('Pay recovers a missing standard quote on the hidden route', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(standardLiquidityUnavailable: true);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        addressBookRepository: _FakeAddressBookRepository([
+          const AddressBookContact(
+            id: 'merchant',
+            label: 'Merchant',
+            network: AddressBookNetwork.ethereum,
+            address: '0x52908400098527886e0f7030069857d2e4169ee7',
+            profilePictureId: 'pfp-01',
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('pay_slippage_button')),
+        matching: find.byType(SwapConfidentialIcon),
+      ),
+      findsNothing,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Merchant'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests.single.confidential, isFalse);
+    expect(find.text('No quote for this amount'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('pay_select_recipient_button')),
+        matching: find.text('Get confidential quote'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests.last.confidential, isTrue);
+    expect(find.byKey(const ValueKey('pay_review_step')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_confidential_route')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Pay retry waits for its original dynamic asset', (tester) async {
     await _setDesktopViewport(tester);
     final savedBaseUsdc = SwapAsset.live(
@@ -1347,6 +1421,50 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('swap status draws the recorded confidential route', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(1080, 720));
+    Future<void> pumpStatus({required bool confidential}) async {
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/activity/swap/status-route?from=swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _PricingSwapProvider([200]),
+          seedSwapActivityFixtures: false,
+          sessionStore: _FakeSwapPersistenceStore(
+            initialIntents: [
+              _persistedIntent(
+                id: 'status-route',
+                txHash: '',
+                status: SwapIntentStatus.complete,
+                nextAction: 'Swap complete',
+              ).copyWith(confidential: confidential),
+            ],
+          ),
+        ),
+      );
+      await _pumpUntilPresent(
+        tester,
+        find.byKey(const ValueKey('swap_review_info')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpStatus(confidential: true);
+    expect(
+      find.byKey(const ValueKey('swap_confidential_route')),
+      findsOneWidget,
+    );
+
+    // Drop the first ProviderScope so its swap state does not carry over.
+    await tester.pumpWidget(const SizedBox());
+    await pumpStatus(confidential: false);
+    expect(find.byKey(const ValueKey('swap_confidential_route')), findsNothing);
   });
 
   testWidgets('status progress route shows the animated active-step loader', (
@@ -3479,12 +3597,10 @@ void main() {
         'account-1': SwapComposerPreferences(
           direction: SwapDirection.zecToExternal,
           externalAsset: SwapAsset.usdc,
-          slippageBps: 50,
         ),
         'account-2': SwapComposerPreferences(
           direction: SwapDirection.externalToZec,
           externalAsset: SwapAsset.near,
-          slippageBps: 200,
         ),
       },
     );
@@ -3510,7 +3626,10 @@ void main() {
       tester.element(find.byType(SwapScreen)),
       listen: false,
     );
-    expect(container.read(swapStateProvider).slippageBps, 50);
+    expect(
+      container.read(swapStateProvider).slippageBps,
+      defaultSwapSlippageBps,
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),
@@ -3543,7 +3662,6 @@ void main() {
       initialPreferences: const SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.dai,
-        slippageBps: 150,
       ),
     );
 
@@ -3608,7 +3726,7 @@ void main() {
     final restoredSwapState = container.read(swapStateProvider);
     expect(restoredSwapState.payMode, isFalse);
     expect(restoredSwapState.externalAsset, SwapAsset.dai);
-    expect(restoredSwapState.slippageBps, 150);
+    expect(restoredSwapState.slippageBps, defaultSwapSlippageBps);
     expect(sessionStore.savePreferencesCount, savesBeforePay);
 
     notifier.selectExternalAsset(SwapAsset.eth);
@@ -3676,7 +3794,7 @@ void main() {
     },
   );
 
-  testWidgets('pay persists its asset separately and shares only slippage', (
+  testWidgets('pay persists its asset and keeps its quote settings separate', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -3684,7 +3802,6 @@ void main() {
       initialPreferences: const SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.dai,
-        slippageBps: 150,
       ),
     );
 
@@ -3707,6 +3824,8 @@ void main() {
     final notifier = container.read(swapStateProvider.notifier);
     final savesBeforePay = sessionStore.savePreferencesCount;
 
+    notifier.updateQuoteSettings(slippageBps: 150, confidential: true);
+
     notifier.preparePayFromShieldedZec();
     notifier.selectPayExternalAsset(SwapAsset.sol);
     await tester.pump();
@@ -3715,17 +3834,13 @@ void main() {
     expect(sessionStore.savedPayAsset, SwapAsset.sol);
     expect(sessionStore.savePreferencesCount, savesBeforePay);
 
-    notifier.updateSlippageBps(200);
+    expect(container.read(swapStateProvider).slippageBps, 200);
+    expect(container.read(swapStateProvider).confidential, isFalse);
+    notifier.updateQuoteSettings(slippageBps: 125, confidential: false);
     await tester.pump();
 
-    // Slippage is shared with swap, but Pay must not overwrite the saved
-    // swap composer direction/asset.
-    expect(sessionStore.savedPreferences?.slippageBps, 200);
-    expect(
-      sessionStore.savedPreferences?.direction,
-      SwapDirection.zecToExternal,
-    );
-    expect(sessionStore.savedPreferences?.externalAsset, SwapAsset.dai);
+    // Pay slippage is session-only and must not rewrite the swap preference.
+    expect(sessionStore.savePreferencesCount, savesBeforePay);
 
     notifier.prepareSwapComposer();
     await tester.pump();
@@ -3733,7 +3848,24 @@ void main() {
     final restored = container.read(swapStateProvider);
     expect(restored.payMode, isFalse);
     expect(restored.externalAsset, SwapAsset.dai);
-    expect(restored.slippageBps, 200);
+    expect(restored.slippageBps, 150);
+    expect(restored.confidential, isTrue);
+
+    notifier.preparePayFromShieldedZec();
+    expect(container.read(swapStateProvider).slippageBps, 125);
+    expect(container.read(swapStateProvider).confidential, isFalse);
+
+    notifier.resetComposerQuoteSettings();
+    expect(
+      container.read(swapStateProvider).slippageBps,
+      defaultSwapSlippageBps,
+    );
+    notifier.prepareSwapComposer();
+    expect(
+      container.read(swapStateProvider).slippageBps,
+      defaultSwapSlippageBps,
+    );
+    expect(container.read(swapStateProvider).confidential, isFalse);
   });
 
   testWidgets('pay restores its saved payout asset on startup', (tester) async {
@@ -4153,7 +4285,6 @@ void main() {
       initialPreferences: const SwapComposerPreferences(
         direction: SwapDirection.externalToZec,
         externalAsset: SwapAsset.near,
-        slippageBps: 125,
       ),
     );
 
@@ -4175,7 +4306,7 @@ void main() {
     expect(find.text('Add refund address...'), findsOneWidget);
     expect(find.text('NEAR'), findsWidgets);
     expect(find.text('Wallet staging'), findsNothing);
-    expect(find.text('1.25%'), findsWidgets);
+    expect(find.text('2%'), findsWidgets);
   });
 
   testWidgets('swap composer preserves the saved live asset chain', (
@@ -4193,7 +4324,6 @@ void main() {
       initialPreferences: SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: baseUsdc,
-        slippageBps: 50,
       ),
     );
     final swapProvider = _FakeSwapProvider(
@@ -4865,12 +4995,6 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsOneWidget);
     expect(find.text('Slippage'), findsOneWidget);
-    expect(
-      find.text(
-        "Sets the maximum rate change you'll accept. Network fees are separate.",
-      ),
-      findsOneWidget,
-    );
 
     await tester.tap(find.byKey(const ValueKey('swap_slippage_200bps')));
     await tester.pumpAndSettle();
@@ -4881,7 +5005,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
     expect(find.text('2%'), findsWidgets);
-    expect(sessionStore.savedPreferences?.slippageBps, 200);
+    expect(sessionStore.savedPreferences, isNull);
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),
@@ -4897,6 +5021,121 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(swapProvider.requests.single.slippageBps, 200);
+  });
+
+  testWidgets('the confidential setting sends the confidential route', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final mark = find.descendant(
+      of: find.byKey(const ValueKey('swap_settings_button')),
+      matching: find.byType(SwapConfidentialIcon),
+    );
+    expect(mark, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+    await tester.pumpAndSettle();
+    // Nothing applies until Update, and Cancel drops the choice.
+    expect(mark, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_cancel_button')));
+    await tester.pumpAndSettle();
+    expect(mark, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_update_button')));
+    await tester.pumpAndSettle();
+    expect(mark, findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests.single.confidential, isTrue);
+    expect(find.byType(SwapReviewScreen), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_confidential_route')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a missing standard quote offers the confidential route', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(standardLiquidityUnavailable: true);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests.single.confidential, isFalse);
+    expect(find.text('No quote for this amount'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_button')),
+        matching: find.text('Get confidential quote'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('swap_confidential_route')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests, hasLength(2));
+    expect(swapProvider.requests.last.confidential, isTrue);
+    expect(find.byType(SwapReviewScreen), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_confidential_route')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('custom slippage settings are sent with the next quote request', (
@@ -4922,14 +5161,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
     await tester.pumpAndSettle();
 
-    final slippageModalTop = tester
-        .getTopLeft(find.byKey(const ValueKey('swap_slippage_modal')))
-        .dy;
+    final explainerTop = tester.getBottomLeft(find.text('Slippage')).dy;
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
         .dy;
-    // The explainer occupies three lines and a 16dp gap before the presets.
-    expect(customCardTop - slippageModalTop, 296);
+    // Below the confidential setting, a 16dp gap sits between the Slippage
+    // heading and the presets.
+    expect(customCardTop - explainerTop, 160);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_slippage_50bps'))).height,
       40,
@@ -4970,7 +5208,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
     expect(find.text('1.25%'), findsWidgets);
-    expect(sessionStore.savedPreferences?.slippageBps, 125);
+    expect(sessionStore.savedPreferences, isNull);
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),
@@ -5005,6 +5243,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+        listen: false,
+      );
       await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
       await tester.pumpAndSettle();
       final field = find.byKey(const ValueKey('swap_slippage_custom_input'));
@@ -5044,7 +5286,8 @@ void main() {
         find.byKey(const ValueKey('swap_slippage_update_button')),
       );
       await tester.pumpAndSettle();
-      expect(sessionStore.savedPreferences?.slippageBps, 50);
+      expect(container.read(swapStateProvider).slippageBps, 50);
+      expect(sessionStore.savedPreferences, isNull);
     },
   );
 
@@ -5079,7 +5322,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsOneWidget);
-    expect(sessionStore.savedPreferences?.slippageBps, isNull);
+    expect(sessionStore.savedPreferences, isNull);
   });
 
   testWidgets('slippage modal cancel keeps the existing setting', (
@@ -5110,7 +5353,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
-    expect(sessionStore.savedPreferences?.slippageBps, isNull);
+    expect(sessionStore.savedPreferences, isNull);
     expect(find.text('2%'), findsOneWidget);
   });
 
@@ -6144,13 +6387,14 @@ void main() {
       findsNothing,
     );
 
-    // Tapping the deposit-tx row's value pill (which carries the explorer
-    // linkUri and the external-link arrow) opens url_launcher, not the
-    // clipboard.
-    final depositTxValue = find.text('0xdeadbee ... eadbeef');
-    await tester.ensureVisible(depositTxValue);
+    // Tapping the Tx ID row (which carries the explorer linkUri and the
+    // external-link arrow) opens url_launcher, not the clipboard.
+    final txIdRow = find.byWidgetPredicate(
+      (widget) => widget is ReviewListRow && widget.label == 'Tx ID',
+    );
+    await tester.ensureVisible(txIdRow);
     await tester.pumpAndSettle();
-    await tester.tap(depositTxValue);
+    await tester.tap(txIdRow);
     await tester.pumpAndSettle();
 
     expect(launchedUrls, hasLength(1));
@@ -7222,7 +7466,7 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is ReviewListRow &&
-            widget.label.startsWith('Deposit ') &&
+            widget.label == 'Tx ID' &&
             widget.value == '0xstored-deposit',
       ),
       findsOneWidget,
@@ -9192,11 +9436,328 @@ void main() {
     });
   }
 
+  testWidgets(
+    'with NEAR swap privacy on, an address still unchecked after its retry '
+    'waits on the button until the next round',
+    (tester) async {
+      final container = await _pumpSwapScreen(
+        tester,
+        swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+        nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+        reservationStore: _StaleFirstReservationStore(),
+        reserveSwapAddress: ({required accountUuid, required direction}) async {
+          throw const ReceiveError(
+            message: 'Preparing a private swap address. Try again in a moment.',
+            kind: ReceiveErrorKind.receiveHistory,
+          );
+        },
+      );
+      final notifier = container.read(swapStateProvider.notifier);
+      notifier.selectDirection(SwapDirection.externalToZec);
+      notifier.updateAmount('25');
+      notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+      await notifier.showReview();
+      await tester.pumpAndSettle();
+
+      final button = find.byKey(const ValueKey('swap_review_button'));
+      expect(container.read(swapStateProvider).quoteError, isNull);
+      expect(
+        find.descendant(of: button, matching: find.text('Preparing address…')),
+        findsOneWidget,
+      );
+      expect(tester.widget<AppButton>(button).onPressed, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('swap_one_time_address_payout')),
+          matching: find.text('Preparing address…'),
+        ),
+        findsOneWidget,
+      );
+
+      // The next round may have checked it, so the button asks again.
+      container.read(swapRecoveryRoundsProvider.notifier).ended();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: button, matching: find.text('Review swap')),
+        findsOneWidget,
+      );
+      expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+    },
+  );
+
+  testWidgets('the history lookup after turning on NEAR swap privacy holds the '
+      'button before any quote', (tester) async {
+    final container = await _pumpSwapScreen(
+      tester,
+      swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+      nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+    );
+    final sync = container.read(syncProvider.notifier) as _FakeSwapSyncNotifier;
+    sync.swapAccountReadinessResult = const SwapAccountReadiness(
+      seedWalk: true,
+      lookups: false,
+      awaitingAdmission: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.externalToZec);
+    notifier.updateAmount('25');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    container.read(swapRecoveryRoundsProvider.notifier).ended();
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Preparing address…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+
+    // A failed round lets a press show why instead of waiting.
+    container.read(swapRecoveryRoundFailedProvider.notifier).set(true);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+  });
+
+  testWidgets('an unfinished history check whose round waits for a server '
+      'asks for one, and the button opens the server picker', (tester) async {
+    final container = await _pumpSwapScreen(
+      tester,
+      swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+      nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+    );
+    final sync = container.read(syncProvider.notifier) as _FakeSwapSyncNotifier;
+    sync.swapAccountReadinessResult = const SwapAccountReadiness(
+      seedWalk: true,
+      lookups: false,
+      awaitingAdmission: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.externalToZec);
+    notifier.updateAmount('25');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    container.read(swapRecoveryNeedsServerProvider.notifier).set(true);
+    container.read(swapRecoveryRoundsProvider.notifier).ended();
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Choose a server')),
+      findsOneWidget,
+    );
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    final popup = find.byKey(const ValueKey('wallet_pir_server_popup'));
+    expect(popup, findsOneWidget);
+    Navigator.of(tester.element(popup)).pop();
+    await tester.pumpAndSettle();
+
+    // Choosing a server clears it, and the address is prepared as usual.
+    container.read(swapRecoveryNeedsServerProvider.notifier).set(false);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: button, matching: find.text('Preparing address…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
+  testWidgets('a ZEC swap with a one-time refund address waits for sync', (
+    tester,
+  ) async {
+    final container = await _pumpSwapScreen(
+      tester,
+      swapProvider: _FakeSwapProvider(),
+      nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+      syncHeights: (chainTip: 1000, scanned: 900),
+      ironwoodBalance: BigInt.from(10000000000),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.zecToExternal);
+    notifier.updateAmount('1');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Waiting for sync…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
+  testWidgets('a payment with a one-time refund address waits for sync', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        seedSwapActivityFixtures: false,
+        nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+        syncHeights: (chainTip: 1000, scanned: 900),
+        ironwoodBalance: BigInt.from(10000000000),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('pay_select_recipient_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Waiting for sync…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
+  for (final privacy in [true, false]) {
+    testWidgets(
+      'a ZEC amount above the Ironwood balance '
+      '${privacy ? 'is short with NEAR swap privacy on' : 'is fine with it off'}',
+      (tester) async {
+        final container = await _pumpSwapScreen(
+          tester,
+          swapProvider: _FakeSwapProvider(),
+          nearSwapPrivacy: privacy
+              ? _OnNearSwapPrivacyNotifier.new
+              : _FakeNearSwapPrivacyNotifier.new,
+          ironwoodBalance: BigInt.from(820000000),
+        );
+        final notifier = container.read(swapStateProvider.notifier);
+        notifier.selectDirection(SwapDirection.zecToExternal);
+        notifier.updateAmount('9');
+        notifier.updateDestination(
+          '0x52908400098527886e0f7030069857d2e4169ee7',
+        );
+        await tester.pumpAndSettle();
+
+        final button = find.byKey(const ValueKey('swap_review_button'));
+        const message =
+            'Private swaps use Ironwood ZEC only. You have 8.2\u00A0ZEC there.';
+        if (privacy) {
+          expect(
+            find.descendant(of: button, matching: find.text('Not enough ZEC')),
+            findsOneWidget,
+          );
+          expect(find.text(message), findsOneWidget);
+        } else {
+          expect(
+            find.descendant(of: button, matching: find.text('Review swap')),
+            findsOneWidget,
+          );
+          expect(find.text(message), findsNothing);
+        }
+      },
+    );
+  }
+
+  for (final (shortfall, name) in [
+    (true, 'wraps the Ironwood shortfall in full'),
+    (false, 'keeps two lines for not enough ZEC'),
+  ]) {
+    testWidgets('the Pay review $name with large text in the narrowest '
+        'window', (tester) async {
+      await ignoringFlexOverflows(() async {
+        await setWidgetTestViewport(
+          tester,
+          const Size(AppWindowSizing.minWidth, AppWindowSizing.minHeight),
+        );
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpWidget(
+          _routerHarness(
+            GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+            seedSwapActivityFixtures: false,
+            swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+            nearSwapPrivacy: shortfall
+                ? _OnNearSwapPrivacyNotifier.new
+                : _FakeNearSwapPrivacyNotifier.new,
+            reserveSwapAddress: shortfall
+                ? _CountingReservations('u1pay').reserve
+                : null,
+            spendableBalance: shortfall ? null : BigInt.from(1000),
+            ironwoodBalance: BigInt.from(1000),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_amount_input')),
+          '25',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('pay_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_recipient_search_field')),
+          '0x52908400098527886e0f7030069857d2e4169ee7',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('pay_select_recipient_button')),
+        );
+        await tester.pumpAndSettle();
+
+        if (shortfall) {
+          await expectTextFullyShown(
+            tester,
+            'Private payments use Ironwood ZEC only. '
+            'You have 0.00001\u00A0ZEC there.',
+          );
+        } else {
+          final reason = tester.widget<Text>(
+            find.text(
+              "You don't have enough ZEC for this payment. "
+              'Try a smaller amount.',
+            ),
+          );
+          expect(reason.maxLines, 2);
+          expect(reason.overflow, TextOverflow.ellipsis);
+        }
+      });
+    });
+  }
+
+  testWidgets('privacy mode masks the Ironwood balance in a shortfall', (
+    tester,
+  ) async {
+    final container = await _pumpSwapScreen(
+      tester,
+      swapProvider: _FakeSwapProvider(),
+      nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+      bootstrap: _privacyModeBootstrap,
+      ironwoodBalance: BigInt.from(820000000),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.zecToExternal);
+    notifier.updateAmount('9');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Private swaps use Ironwood ZEC only. You have •••••• ZEC there.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   for (final (failure, message, name) in <(Object?, String, String)>[
     (
       null,
       testL10n.swapNoticePrivateReceiveAddressLimit,
-      'a round that succeeded keeps the wallet wording',
+      'a round that succeeded says too many swaps are waiting',
     ),
     (
       const ReceiveError(
@@ -9206,7 +9767,7 @@ void main() {
         kind: ReceiveErrorKind.waitingForService,
       ),
       testL10n.swapNoticePrivateReceiveAddressLimit,
-      'a round waiting for the receiver service keeps the wallet wording',
+      'a round waiting for the receiver service says the same',
     ),
     (
       const ReceiveError(message: 'HTTP 503', kind: ReceiveErrorKind.other),
@@ -9250,6 +9811,13 @@ void main() {
       // One round ran, and the address was asked for again after it.
       expect(sync.swapRecoveryRounds, rounds + 1);
       expect(reservations, 2);
+      // Only the waiting swaps can free an address, so it links to them.
+      expect(
+        find.text('View swaps'),
+        message == testL10n.swapNoticePrivateReceiveAddressLimit
+            ? findsOneWidget
+            : findsNothing,
+      );
     });
   }
 
@@ -9682,6 +10250,17 @@ void main() {
     await _openActivitySurface(tester);
     await _openActivityDetail(tester, 'left-starting');
     expect(find.text(testL10n.swapNoticeStartNotFinished), findsOneWidget);
+    // A warning, not the sync icon of a swap still starting.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_activity_start_pending')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon && widget.name == AppIcons.warningCircle,
+        ),
+      ),
+      findsOneWidget,
+    );
     expect(find.byType(SwapDepositTokensPageContent), findsNothing);
   });
 
@@ -12614,6 +13193,8 @@ Future<ProviderContainer> _pumpSwapScreen(
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
   SwapDepositSender? depositSender,
+  ({int chainTip, int scanned})? syncHeights,
+  BigInt? ironwoodBalance,
 }) async {
   await _setDesktopViewport(tester);
   await tester.pumpWidget(
@@ -12633,6 +13214,8 @@ Future<ProviderContainer> _pumpSwapScreen(
       reservationStore: reservationStore,
       nearSwapPrivacy: nearSwapPrivacy,
       onProviderSnapshot: onProviderSnapshot,
+      syncHeights: syncHeights,
+      ironwoodBalance: ironwoodBalance,
     ),
   );
   await tester.pumpAndSettle();
@@ -12672,6 +13255,8 @@ Widget _routerHarness(
   onProviderSnapshot,
   SwapActivityStore? activityStore,
   NetworkUpgradeWindowState? upgradeWindow,
+  ({int chainTip, int scanned})? syncHeights,
+  BigInt? ironwoodBalance,
   NearIntentsServiceStatus? serviceStatus,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
@@ -12697,12 +13282,16 @@ Widget _routerHarness(
         accountProvider.overrideWith(accountNotifier),
       if (nearSwapPrivacy != null)
         nearSwapPrivacyProvider.overrideWith(nearSwapPrivacy),
+      walletPirServerProvider.overrideWith(_NoWalletPirServers.new),
       syncProvider.overrideWith(
         () => _FakeSwapSyncNotifier(
           spendableBalance ?? BigInt.from(10000000000),
           displaySpendableBalance: displaySpendableBalance,
           displaySpendableFreshness: displaySpendableFreshness,
           recentTransactions: recentTransactions,
+          chainTipHeight: syncHeights?.chainTip ?? 0,
+          scannedHeight: syncHeights?.scanned ?? 0,
+          ironwoodBalance: ironwoodBalance,
         ),
       ),
       payDepositTransactionLoaderProvider.overrideWithValue(
