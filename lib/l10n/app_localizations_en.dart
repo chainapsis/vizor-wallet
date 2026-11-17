@@ -503,11 +503,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Latest transaction status could not be refreshed.';
 
   @override
-  String activityReceiptSpendableAfter(String count) {
-    return 'New funds can be spent after $count confirmations.';
-  }
-
-  @override
   String get activityReceiptStatus => 'Status';
 
   @override

@@ -483,11 +483,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityReceiptRefreshFailed => '최‍신 거‍래 상‍태‍를 불‍러‍오‍지 못‍했‍어‍요.';
 
   @override
-  String activityReceiptSpendableAfter(String count) {
-    return '새‍로 받‍은 자‍금‍은 확‍인 $count‍회 후‍에 사‍용‍할 수 있‍어‍요.';
-  }
-
-  @override
   String get activityReceiptStatus => '상‍태';
 
   @override
