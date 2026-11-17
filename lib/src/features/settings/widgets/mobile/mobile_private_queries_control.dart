@@ -150,8 +150,10 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
             color: colors.text.secondary,
           ),
         ),
-        // The server settings matter only while private queries are on.
-        if (enhancePirEnabled) ...[
+        // The server settings matter only while private queries are on, or
+        // while swap recovery queries the server without them.
+        if (enhancePirEnabled ||
+            ref.watch(swapRecoveryUsesServerProvider).value == true) ...[
           const SizedBox(height: AppSpacing.sm),
           const MobileSectionDivider(),
           WalletPirServerSettingsRow(enabled: interactive),

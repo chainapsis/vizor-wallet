@@ -68,6 +68,10 @@ mod private_recovery_reorg_tests;
 mod progress_work;
 mod retry_progress;
 pub(crate) mod scan_power;
+mod swap_private;
+pub(crate) use swap_private::{
+    cancel_recovery, filter_step, recover, recovery_generation, RecoveryError, Round, Wait,
+};
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;

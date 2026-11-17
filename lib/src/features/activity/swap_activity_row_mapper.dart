@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/models/swap_models.dart';
+import '../swap/models/swap_payout_discovery.dart';
 import '../swap/models/swap_privacy_mask.dart';
 import 'activity_amount_text.dart';
 import 'activity_row_mapper.dart';
@@ -33,6 +34,9 @@ class SwapActivityRowItem {
     this.depositedAmountText,
     this.refundedAmountText,
     this.payMode = false,
+    this.startPending = false,
+    this.privateAddress = false,
+    this.confidential = false,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
@@ -78,6 +82,9 @@ class SwapActivityRowItem {
       depositedAmountText: depositedAmountText,
       refundedAmountText: record.providerRefundInfo?.refundedAmountText,
       payMode: record.payMode,
+      startPending: record.startPending,
+      privateAddress: record.privateAddress,
+      confidential: record.confidential,
     );
   }
 
@@ -116,6 +123,27 @@ class SwapActivityRowItem {
   final String? refundedAmountText;
 
   final bool payMode;
+
+  /// See [SwapIntent.startPending].
+  final bool startPending;
+
+  /// See [SwapIntent.privateAddress].
+  final bool privateAddress;
+
+  /// The [ActivityRowData.stableId] of this swap's row.
+  String get stableId => 'swap:$intentId';
+
+  /// The payout the wallet may still be finding (see
+  /// [swapPayoutAwaitingDiscovery]).
+  String? get payoutAwaitingDiscovery => swapPayoutAwaitingDiscovery(
+    privateAddress: privateAddress,
+    direction: direction,
+    status: status,
+    walletTxid: receiveWalletTxidHex,
+  );
+
+  /// Started on NEAR Intents' confidential route.
+  final bool confidential;
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -132,6 +160,7 @@ ActivityRowData buildSwapActivityRow({
   VoidCallback? onTap,
   String? receivedAmountText,
   VoidCallback? onReceivedLegTap,
+  bool findingPayout = false,
 }) {
   final colors = context.colors;
   final l10n = context.l10n;
@@ -143,12 +172,16 @@ ActivityRowData buildSwapActivityRow({
   final sellAsset = _swapActivitySellAsset(item);
   final receiveAsset = _swapActivityReceiveAsset(item);
   final progress = _swapActivityProgress(item);
+  final starting = item.startPending && !item.status.isTerminal;
   final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
 
   return ActivityRowData(
-    stableId: 'swap:${item.intentId}',
+    stableId: item.stableId,
+    // Until the wallet finds the payout, the swap reads as in progress.
     title: payMode
         ? _payActivityTitle(l10n, item.status)
+        : findingPayout
+        ? _swapActivityTitle(l10n, SwapIntentStatus.processing)
         : _swapActivityTitle(l10n, item.status),
     leadingIconName: payMode ? AppIcons.coins : AppIcons.swapArrows,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
@@ -157,10 +190,16 @@ ActivityRowData buildSwapActivityRow({
     subtitle: payMode
         ? _payActivitySubtitle(l10n, receiveAsset)
         : _swapActivityAssetSubtitle(l10n, sellAsset) ?? item.providerLabel,
+    // Only the confidential route is marked; standard rows stay unmarked.
+    subtitleIconName: item.confidential ? AppIcons.incognito : null,
+    subtitleIconSemanticLabel: item.confidential
+        ? l10n.swapConfidentialLabel
+        : null,
     amountText: activityAmountTextForFormFactor(
       payMode
           ? _payActivityAmountText(item, privacyModeEnabled: privacyModeEnabled)
           : _swapActivityAmountText(
+              l10n,
               item,
               includeSign: !(returnsFunds || timedOut),
               privacyModeEnabled: privacyModeEnabled,
@@ -170,9 +209,20 @@ ActivityRowData buildSwapActivityRow({
     amountSubtitle: timedOut ? l10n.activitySwapTimeout : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
-    statusText: _swapActivityStatusText(l10n, item.status, progress),
-    statusIsRoutine: _swapActivityStatusIsRoutine(item.status),
-    statusIconName: failed
+    statusText: starting
+        ? l10n.swapStartPending
+        : findingPayout
+        ? l10n.swapFindingPayout
+        : _swapActivityStatusText(l10n, item.status, progress),
+    // The feed shows a starting swap's status, and a payout the wallet is
+    // still finding, not its timestamp.
+    statusIsRoutine:
+        !starting &&
+        !findingPayout &&
+        _swapActivityStatusIsRoutine(item.status),
+    statusIconName: findingPayout
+        ? null
+        : failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
         ? AppIcons.uturnUp
@@ -199,6 +249,7 @@ ActivityRowData buildSwapActivityRow({
       receivedAmountText: receivedAmountText,
       onReceivedLegTap: onReceivedLegTap,
       dateOnlyTimestamp: dateOnlyTimestamp,
+      findingPayout: findingPayout,
     ),
     onTap: onTap,
   );
@@ -214,13 +265,17 @@ List<ActivityRowData> _swapActivityChildRows({
   required String? receivedAmountText,
   required VoidCallback? onReceivedLegTap,
   required bool dateOnlyTimestamp,
+  required bool findingPayout,
 }) {
   final direction = item.direction;
   if (direction == null || receiveAsset == null) return const [];
   if (item.payMode && direction == SwapDirection.zecToExternal) {
     return const [];
   }
-  if (item.status != SwapIntentStatus.complete) return const [];
+  // A payout the wallet hasn't found yet isn't settled.
+  if (item.status != SwapIntentStatus.complete || findingPayout) {
+    return const [];
+  }
 
   final colors = context.colors;
   final l10n = context.l10n;
@@ -233,6 +288,7 @@ List<ActivityRowData> _swapActivityChildRows({
           privacyModeEnabled: privacyModeEnabled,
         )
       : _swapActivityReceiveAmountText(
+          l10n,
           item,
           privacyModeEnabled: privacyModeEnabled,
         );
@@ -271,6 +327,7 @@ String _swapActivityAmountTextForPrivacy(
 }
 
 String _swapActivityAmountText(
+  AppLocalizations l10n,
   SwapActivityRowItem item, {
   required bool includeSign,
   required bool privacyModeEnabled,
@@ -283,6 +340,7 @@ String _swapActivityAmountText(
       ? refundedAmount!
       : item.sellAmountText;
   if (amount.trim().isEmpty) return '--';
+  if (amount == kSwapNotReportedToken) return l10n.swapActivityNotReported;
   return _swapActivityAmountTextForPrivacy(
     includeSign ? '-$amount' : amount,
     privacyModeEnabled: privacyModeEnabled,
@@ -290,11 +348,13 @@ String _swapActivityAmountText(
 }
 
 String _swapActivityReceiveAmountText(
+  AppLocalizations l10n,
   SwapActivityRowItem item, {
   required bool privacyModeEnabled,
 }) {
   final amount = item.receiveEstimateText.trim();
   if (amount.isEmpty) return '--';
+  if (amount == kSwapNotReportedToken) return l10n.swapActivityNotReported;
   return _swapActivityAmountTextForPrivacy(
     amount.startsWith('+') ? amount : '+$amount',
     privacyModeEnabled: privacyModeEnabled,

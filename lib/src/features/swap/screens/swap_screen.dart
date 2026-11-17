@@ -23,15 +23,19 @@ import '../../address_book/contact_label_generator.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../settings/widgets/wallet_pir_server_popup.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_models.dart';
 import '../models/swap_address_book_helpers.dart';
 import '../providers/swap_state_provider.dart';
+import '../providers/swap_address_wait_provider.dart';
+import '../providers/swap_funding_balance_provider.dart';
+import '../providers/swap_zec_staging_address_service.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
+import '../widgets/swap_confidential_ui.dart';
 import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_slippage_modal.dart';
 import '../widgets/near_intents_service_notice_host.dart';
@@ -58,6 +62,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     debugLabel: 'swap_toast_overlay_context',
   );
   _SwapModalSurface? _swapModal;
+  final _confidentialReveal = SwapConfidentialRevealCounter();
 
   @override
   void initState() {
@@ -100,7 +105,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
 
   void _closeSwapModal() {
     if (_swapModal == null) return;
-    setState(() => _swapModal = null);
+    final settingsClosed = _swapModal == _SwapModalSurface.slippageSettings;
+    setState(() {
+      _swapModal = null;
+      if (settingsClosed) {
+        _confidentialReveal.settingsClosed(
+          confidential: ref.read(swapStateProvider).confidential,
+        );
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shortcutFocusNode.requestFocus();
@@ -173,19 +186,45 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         setState(() => _swapModal = null);
       },
     );
+    ref.listen(swapStateProvider.select((state) => state.confidential), (
+      previous,
+      next,
+    ) {
+      if (previous != false || !next) return;
+      final changed = _confidentialReveal.turnedOn(
+        settingsOpen: _swapModal == _SwapModalSurface.slippageSettings,
+      );
+      if (changed) setState(() {});
+    });
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
+    final oneTimeZecAddress = ref.watch(swapUsesOneTimeAddressProvider);
+    final addressWait = ref.watch(
+      swapAddressWaitProvider(swapState.direction.sendsZec),
+    );
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: oneTimeZecAddress && swapState.direction.sendsZec,
+      )),
     );
+    final zecSpendable = funding.spendable;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final zecAvailableText = hideAmountIfPrivacyMode(
       ZecAmount.fromZatoshi(
-        migrationSpendable,
+        zecSpendable,
       ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
-      privacyModeEnabled: ref.watch(privacyModeProvider),
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    final balanceMessage = swapIronwoodOnlyShortfallMessage(
+      context.l10n,
+      funding,
+      (available) => _reviewAmountExceedsAvailableZec(swapState, available),
+      payment: false,
+      privacyModeEnabled: privacyModeEnabled,
     );
     void openReview() {
       unawaited(() async {
@@ -198,6 +237,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
           await context.push('/swap/review');
         }
       }());
+    }
+
+    void getConfidentialQuote() {
+      swapNotifier.selectConfidential(true);
+      openReview();
     }
 
     void refreshStatus() {
@@ -252,6 +296,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final panel = SwapComposerPanel(
+                        confidentialReveal: _confidentialReveal.value,
                         state: swapState,
                         onAmountChanged: swapNotifier.updateAmount,
                         onAmountFiatChanged: swapNotifier.updateAmountFiat,
@@ -270,12 +315,17 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                             _swapModal == _SwapModalSurface.slippageSettings,
                         onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                         zecAvailableText: zecAvailableText,
-                        zecAvailableZatoshi: migrationSpendable,
+                        zecAvailableZatoshi: zecSpendable,
+                        balanceMessage: balanceMessage,
+                        onViewSwaps: () => context.go('/activity'),
                         destinationContactName: swapDestinationContactFor(
                           swapState,
                           ref.watch(addressBookProvider).value?.contacts ??
                               const [],
                         )?.label,
+                        oneTimeZecAddress: oneTimeZecAddress,
+                        preparingOneTimeAddress:
+                            addressWait == SwapAddressWait.preparing,
                       );
                       // Figma container (420×656, 16px vertical padding): the
                       // title is pinned under the toolbar, the attribution and
@@ -299,9 +349,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                           const SizedBox(height: AppSpacing.md),
                           _SwapReviewFooter(
                             state: swapState,
-                            zecAvailableZatoshi: migrationSpendable,
+                            addressWait: addressWait,
+                            zecAvailableZatoshi: zecSpendable,
                             onOpenDestinationAddress: _openAddressEditor,
                             onReviewQuote: openReview,
+                            onGetConfidentialQuote: getConfidentialQuote,
                           ),
                         ],
                       );
@@ -378,8 +430,12 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                           ),
                         _SwapModalSurface.slippageSettings => SwapSlippageModal(
                           slippageBps: swapState.slippageBps,
-                          onSubmitted: (value) {
-                            swapNotifier.updateSlippageBps(value);
+                          confidential: swapState.confidential,
+                          onSubmitted: (slippageBps, confidential) {
+                            swapNotifier.updateQuoteSettings(
+                              slippageBps: slippageBps,
+                              confidential: confidential,
+                            );
                             _closeSwapModal();
                           },
                           onCancel: _closeSwapModal,
@@ -439,15 +495,19 @@ class _SwapPageTitle extends StatelessWidget {
 class _SwapReviewFooter extends StatelessWidget {
   const _SwapReviewFooter({
     required this.state,
+    required this.addressWait,
     required this.zecAvailableZatoshi,
     required this.onOpenDestinationAddress,
     required this.onReviewQuote,
+    required this.onGetConfidentialQuote,
   });
 
   final SwapState state;
+  final SwapAddressWait? addressWait;
   final BigInt zecAvailableZatoshi;
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
+  final VoidCallback onGetConfidentialQuote;
 
   @override
   Widget build(BuildContext context) {
@@ -458,11 +518,22 @@ class _SwapReviewFooter extends StatelessWidget {
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
     final destinationFormatError = state.destinationAddressFormatIssue
         ?.localizedMessage(context.l10n);
-    final canReview = state.canReviewQuote && !balanceExceeded;
+    final waiting = addressWait != null && !state.quoteLoading;
+    final canReview = state.canReviewQuote && !balanceExceeded && !waiting;
+    final chooseServer =
+        waiting &&
+        addressWait == SwapAddressWait.server &&
+        destinationFormatError == null &&
+        !balanceExceeded;
+    final offersConfidential = canReview && state.offersConfidentialQuote;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
+        : offersConfidential
+        ? onGetConfidentialQuote
         : canReview
         ? onReviewQuote
+        : chooseServer
+        ? () => unawaited(showWalletPirServerPopup(context))
         : null;
     final loading = state.quoteLoading && !needsDestinationAddress;
     final label = needsDestinationAddress
@@ -472,12 +543,17 @@ class _SwapReviewFooter extends StatelessWidget {
                   ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
                   ? context.l10n.swapActionGettingQuote
+                  : waiting
+                  ? swapAddressWaitLabel(context.l10n, addressWait!)
+                  : offersConfidential
+                  ? context.l10n.swapActionGetConfidentialQuote
                   : context.l10n.commonReviewSwap);
     final reviewReady =
         !needsDestinationAddress &&
         destinationFormatError == null &&
         !balanceExceeded &&
-        !state.quoteLoading;
+        !state.quoteLoading &&
+        !waiting;
 
     return Center(
       child: SizedBox(

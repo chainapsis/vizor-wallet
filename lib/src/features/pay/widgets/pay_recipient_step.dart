@@ -225,6 +225,8 @@ class PayRecipientActions extends StatelessWidget {
     required this.onSelectRecipient,
     required this.onAddToContacts,
     this.enabled = true,
+    this.waitLabel,
+    this.selectLabel,
     super.key,
   });
 
@@ -234,8 +236,14 @@ class PayRecipientActions extends StatelessWidget {
   final bool busy;
   final bool enabled;
   final String? quoteError;
+
+  /// Why the button can't fetch a quote yet, as its label.
+  final String? waitLabel;
   final VoidCallback onSelectRecipient;
   final VoidCallback onAddToContacts;
+
+  /// Replaces "Select recipient", e.g. with a quote recovery action.
+  final String? selectLabel;
 
   bool get visible {
     final typed = typedAddress.trim();
@@ -288,11 +296,13 @@ class PayRecipientActions extends StatelessWidget {
           minWidth: PayWizardActionMetrics.width,
           trailing: busy ? const AppIcon(AppIcons.loader) : null,
           iconGap: AppSpacing.xxs,
-          onPressed: busy || !enabled ? null : onSelectRecipient,
+          onPressed: busy || !enabled || waitLabel != null
+              ? null
+              : onSelectRecipient,
           child: Text(
             busy
                 ? context.l10n.payFetchingQuote
-                : context.l10n.paySelectRecipient,
+                : waitLabel ?? selectLabel ?? context.l10n.paySelectRecipient,
           ),
         ),
       ],
