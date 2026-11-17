@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+
 import '../../rust/api/sync.dart' as rust_sync;
 import '../l10n/l10n.dart';
 import 'block_spacing.dart';
@@ -66,8 +68,20 @@ class SpendableWait {
     required this.receivedWaiting,
     this.changeWait,
     this.receivedWait,
+    List<SpendableArrival>? arrivals,
   }) : assert(changeWaiting > BigInt.zero == (changeWait != null)),
-       assert(receivedWaiting > BigInt.zero == (receivedWait != null));
+       assert(receivedWaiting > BigInt.zero == (receivedWait != null)),
+       arrivals =
+           arrivals ??
+           [
+             if (changeWait != null) (wait: changeWait, value: changeWaiting),
+             if (receivedWait != null)
+               (wait: receivedWait, value: receivedWaiting),
+           ] {
+    assert(
+      this.arrivals.fold(BigInt.zero, (sum, a) => sum + a.value) == waiting,
+    );
+  }
 
   final BigInt availableNow;
 
@@ -76,8 +90,16 @@ class SpendableWait {
 
   /// Funds received from others, short of their confirmations.
   final BigInt receivedWaiting;
+
+  /// When all of [changeWaiting] is spendable.
   final AvailableIn? changeWait;
+
+  /// When all of [receivedWaiting] is spendable.
   final AvailableIn? receivedWait;
+
+  /// Each waiting amount with its own wait: transactions at different depths
+  /// arrive at different times. Defaults to one arrival per cause.
+  final List<SpendableArrival> arrivals;
 
   BigInt get waiting => changeWaiting + receivedWaiting;
   BigInt get total => availableNow + waiting;
@@ -98,12 +120,9 @@ class SpendableWait {
   AvailableIn? waitFor(BigInt amount, {bool includesFee = true}) {
     final needed = includesFee ? amount : amount + kSpendableWaitFeeReserve;
     if (needed <= availableNow || needed > total) return null;
-    final buckets = [
-      if (changeWait != null) (changeWait!, changeWaiting),
-      if (receivedWait != null) (receivedWait!, receivedWaiting),
-    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    final ordered = [...arrivals]..sort((a, b) => a.wait.compareTo(b.wait));
     var covered = availableNow;
-    for (final (wait, value) in buckets) {
+    for (final (:wait, :value) in ordered) {
       covered += value;
       if (needed <= covered) return wait;
     }
@@ -117,7 +136,8 @@ class SpendableWait {
       other.changeWaiting == changeWaiting &&
       other.receivedWaiting == receivedWaiting &&
       other.changeWait == changeWait &&
-      other.receivedWait == receivedWait;
+      other.receivedWait == receivedWait &&
+      listEquals(other.arrivals, arrivals);
 
   @override
   int get hashCode => Object.hash(
@@ -126,8 +146,12 @@ class SpendableWait {
     receivedWaiting,
     changeWait,
     receivedWait,
+    Object.hashAll(arrivals),
   );
 }
+
+/// An amount that becomes spendable after [wait].
+typedef SpendableArrival = ({AvailableIn wait, BigInt value});
 
 /// The funds the wallet listed as waiting only on confirmations in one
 /// balance read, with the chain tip that read counted from.
@@ -183,7 +207,12 @@ SpendableWait spendableWaitOf({
   var receivedWaiting = BigInt.zero;
   var changeBlocks = 0;
   var receivedBlocks = 0;
+  final arrivals = <SpendableArrival>[];
   for (final (:entry, :blocks, confirmations: _) in pending.at(scannedHeight)) {
+    arrivals.add((
+      wait: _waitForBlocks(blocks, height, spacing),
+      value: entry.value,
+    ));
     if (entry.isChange) {
       changeWaiting += entry.value;
       changeBlocks = math.max(changeBlocks, blocks);
@@ -202,6 +231,7 @@ SpendableWait spendableWaitOf({
     receivedWait: receivedWaiting == BigInt.zero
         ? null
         : _waitForBlocks(receivedBlocks, height, spacing),
+    arrivals: arrivals,
   );
 }
 

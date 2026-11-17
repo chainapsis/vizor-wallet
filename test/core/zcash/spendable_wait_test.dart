@@ -93,6 +93,24 @@ void main() {
       expect(wait.receivedWait, const AvailableIn.minutes(1, 3));
     });
 
+    test('an amount waits only for the transactions that cover it', () {
+      final wait = spendableWaitOf(
+        availableNow: BigInt.zero,
+        pending: PendingSpendable(
+          tipHeight: _tip,
+          entries: [_entry('late', blocks: 5), _entry('soon', blocks: 1)],
+        ),
+        scannedHeight: _tip,
+        spacing: _nu7,
+      );
+      // The cause as a whole waits for its last receipt.
+      expect(wait.receivedWait, const AvailableIn.minutes(1, 3));
+      // Half of the first receipt needs only that one.
+      expect(wait.waitFor(_zec ~/ BigInt.two), const AvailableIn.underMinute());
+      expect(wait.waitFor(_zec), const AvailableIn.underMinute());
+      expect(wait.waitFor(_zec + BigInt.one), const AvailableIn.minutes(1, 3));
+    });
+
     test('blocks are timed at the spacing of the tip', () {
       SpendableWait at(BlockSpacing spacing) => spendableWaitOf(
         availableNow: _zec,
