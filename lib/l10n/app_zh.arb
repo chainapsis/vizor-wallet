@@ -2987,7 +2987,7 @@
   "swapComposerYouReceive": "你将收到",
   "swapConfidentialLabel": "保密",
   "swapConfidentialRouteTooltip": "在 NEAR Intents 上无法将你的存入与收款对应起来，也无法在其区块浏览器中查到。两笔交易仍会显示在各自的链上。",
-  "swapConfidentialSettingDescription": "无法将你的存入与收款相互关联追踪。报价可能与普通路径不同。",
+  "swapConfidentialSettingDescription": "无法将你的存入与收款相互关联追踪。",
   "swapContactAlreadyInAddressBook": "已在你的地址簿中",
   "swapContactAlreadySaved": "已在你的联系人中",
   "swapDepositAmountCopiedDesktop": "已复制金额",

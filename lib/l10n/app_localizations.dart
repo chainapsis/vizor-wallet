@@ -18099,7 +18099,7 @@ abstract class AppLocalizations {
   /// Description under the Confidential toggle in the swap and Pay settings modal.
   ///
   /// In en, this message translates to:
-  /// **'Your deposit and payout can\'t be tracked to each other. Quotes can differ from the standard route.'**
+  /// **'Your deposit and payout can\'t be tracked to each other.'**
   String get swapConfidentialSettingDescription;
 
   /// Toast on mobile after the user tries to save a swap address that is already in the address book.

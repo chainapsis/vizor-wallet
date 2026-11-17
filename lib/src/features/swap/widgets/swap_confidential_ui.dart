@@ -6,6 +6,8 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../settings/widgets/mobile/mobile_tor_control.dart'
+    show MobilePrivacyToggle;
 import '../../settings/widgets/network_privacy_control.dart' show PrivacyToggle;
 import '../models/swap_models.dart';
 
@@ -48,37 +50,74 @@ class SwapConfidentialSetting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Row(
-      key: const ValueKey('swap_confidential_setting'),
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final l10n = context.l10n;
+    void toggle() => onChanged(!confidential);
+    final text = Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  const SwapConfidentialIcon(),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Flexible(
-                    child: Text(
-                      context.l10n.swapConfidentialLabel,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
+              const SwapConfidentialIcon(),
+              const SizedBox(width: AppSpacing.xxs),
+              Flexible(
+                child: Text(
+                  l10n.swapConfidentialLabel,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
                   ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                context.l10n.swapConfidentialSettingDescription,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
                 ),
               ),
             ],
           ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            l10n.swapConfidentialSettingDescription,
+            // Mobile text stays at 16px or more, like the Settings descriptions.
+            style:
+                (kAppFormFactor == AppFormFactor.mobile
+                        ? AppTypography.bodyMedium
+                        : AppTypography.bodySmall)
+                    .copyWith(color: colors.text.secondary),
+          ),
+        ],
+      ),
+    );
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      // The whole row flips it, like a Settings toggle row.
+      return Semantics(
+        container: true,
+        button: true,
+        enabled: true,
+        toggled: confidential,
+        label: l10n.swapConfidentialLabel,
+        hint: l10n.swapConfidentialSettingDescription,
+        onTap: toggle,
+        excludeSemantics: true,
+        child: GestureDetector(
+          key: const ValueKey('swap_confidential_setting'),
+          behavior: HitTestBehavior.opaque,
+          onTap: toggle,
+          child: Row(
+            children: [
+              text,
+              const SizedBox(width: AppSpacing.s),
+              // The Settings switch, so mobile has one switch size.
+              MobilePrivacyToggle(
+                key: const ValueKey('swap_confidential_switch'),
+                enabled: confidential,
+                interactive: true,
+                thumbKey: const ValueKey('swap_confidential_switch_thumb'),
+              ),
+            ],
+          ),
         ),
+      );
+    }
+    return Row(
+      key: const ValueKey('swap_confidential_setting'),
+      children: [
+        text,
         const SizedBox(width: AppSpacing.s),
         // The Settings privacy toggle, so privacy switches look alike. Its own
         // node carries no tap action, so this one lets screen readers flip it.
@@ -87,14 +126,14 @@ class SwapConfidentialSetting extends StatelessWidget {
           button: true,
           enabled: true,
           toggled: confidential,
-          label: context.l10n.swapConfidentialLabel,
-          onTap: () => onChanged(!confidential),
+          label: l10n.swapConfidentialLabel,
+          onTap: toggle,
           excludeSemantics: true,
           child: PrivacyToggle(
             enabled: confidential,
             trackKey: const ValueKey('swap_confidential_switch'),
-            semanticsLabel: context.l10n.swapConfidentialLabel,
-            onToggle: () => onChanged(!confidential),
+            semanticsLabel: l10n.swapConfidentialLabel,
+            onToggle: toggle,
           ),
         ),
       ],

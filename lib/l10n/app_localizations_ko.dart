@@ -10886,7 +10886,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      '입‍금‍과 수‍령‍을 서‍로 추‍적‍할 수 없‍어‍요. 일‍반 경‍로‍와 견‍적‍이 다‍를 수 있‍어‍요.';
+      '입‍금‍과 수‍령‍을 서‍로 추‍적‍할 수 없‍어‍요.';
 
   @override
   String get swapContactAlreadyInAddressBook => '이‍미 주‍소‍록‍에 있‍어‍요';

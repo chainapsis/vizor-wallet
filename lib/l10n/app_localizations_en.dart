@@ -11055,7 +11055,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      'Your deposit and payout can\'t be tracked to each other. Quotes can differ from the standard route.';
+      'Your deposit and payout can\'t be tracked to each other.';
 
   @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';

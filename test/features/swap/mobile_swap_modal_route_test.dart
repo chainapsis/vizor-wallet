@@ -515,6 +515,13 @@ void main() {
         find.byKey(const ValueKey('swap_slippage_update_button')),
       );
       expect(update().onPressed, isNull);
+      // The whole row flips it, its text included.
+      await tester.tap(find.textContaining("can't be tracked to each other"));
+      await tester.pumpAndSettle();
+      expect(update().onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+      await tester.pumpAndSettle();
+      expect(update().onPressed, isNull);
       await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
       await tester.pumpAndSettle();
       // The flip enables Update and waits for it.

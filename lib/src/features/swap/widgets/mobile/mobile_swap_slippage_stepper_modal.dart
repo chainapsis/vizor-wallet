@@ -9,6 +9,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../../core/widgets/decimal_amount_input_formatter.dart';
+import '../../../../core/widgets/mobile/mobile_section.dart';
 import '../swap_confidential_ui.dart';
 
 /// Mobile slippage editor — Figma `Slippage` (`_Modal Type` 4755:84761): a
@@ -169,9 +170,10 @@ class _MobileSwapSlippageStepperModalState
                       onChanged: (value) =>
                           setState(() => _confidential = value),
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Container(height: 1, color: colors.border.regular),
-                    const SizedBox(height: AppSpacing.sm),
+                    // Sections 24 apart, split by the mobile hairline.
+                    const SizedBox(height: AppSpacing.s),
+                    const MobileSectionDivider(),
+                    const SizedBox(height: AppSpacing.s),
                     Text(
                       context.l10n.swapSlippageTitle,
                       style: AppTypography.labelLarge.copyWith(
