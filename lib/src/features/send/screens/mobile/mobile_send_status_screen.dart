@@ -5,7 +5,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../providers/account_provider.dart';
 import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/sync_provider.dart';
 
@@ -280,10 +279,10 @@ class _MobileSendStatusScreenState
   /// Read in build, so the sentence appears once the balance refresh after
   /// the send lands.
   String? get _sendAgainSubtitle {
-    final accountUuid = ref.watch(
-      accountProvider.select((value) => value.value?.activeAccountUuid),
+    // The paying account, which the user may have switched away from.
+    final spendable = ref.watch(
+      spendableWaitProvider(widget.args.proposalAccountUuid),
     );
-    final spendable = ref.watch(spendableWaitProvider(accountUuid));
     final wait = spendable?.waitFor(BigInt.one, includesFee: false);
     if (spendable == null ||
         wait == null ||

@@ -61,7 +61,13 @@ Widget _app({
     overrides: [
       syncProvider.overrideWith(FakeSyncNotifier.new),
       if (spendableWait != null)
-        spendableWaitProvider.overrideWith((ref, accountUuid) => spendableWait),
+        // Only the paying account has the wait, whichever account is active.
+        spendableWaitProvider.overrideWith(
+          (ref, accountUuid) =>
+              accountUuid == (args ?? _args).proposalAccountUuid
+              ? spendableWait
+              : null,
+        ),
     ],
     child: MaterialApp(
       localizationsDelegates: appLocalizationsDelegates,
