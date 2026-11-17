@@ -1458,9 +1458,9 @@ void main() {
       );
     });
 
-    test('moves a transaction when a preview round would exceed 64 KiB', () {
-      // The preview partitioner reserves 16 KiB of the 80-KiB QR ceiling for
-      // request framing. Production uses Rust's exact encoded size.
+    test('moves a transaction when a preview round would exceed 28 KiB', () {
+      // The preview partitioner reserves 4 KiB of the 32-KiB firmware ceiling
+      // for request framing. Production uses Rust's exact encoded size.
       final rounds = keystoneSigningRoundsForTest([
         for (var i = 0; i < 40; i++) message('m$i', 4 * 1024),
       ], 40);
@@ -1470,7 +1470,7 @@ void main() {
           0,
           (total, item) => total + item.redactedPczt.length + item.id.length,
         );
-        expect(bytes, lessThanOrEqualTo(64 * 1024));
+        expect(bytes, lessThanOrEqualTo(28 * 1024));
       }
       expect(rounds.expand((round) => round).map((item) => item.id).toList(), [
         for (var i = 0; i < 40; i++) 'm$i',
@@ -1478,10 +1478,10 @@ void main() {
     });
 
     test('splits large synthetic PCZTs at the byte budget', () {
-      // Use 14-KiB payloads to make the preview byte ceiling override the
+      // Use 6-KiB payloads to make the preview byte ceiling override the
       // 40-message count limit.
       final rounds = keystoneSigningRoundsForTest([
-        for (var i = 0; i < 11; i++) message('m$i', 14 * 1024),
+        for (var i = 0; i < 11; i++) message('m$i', 6 * 1024),
       ], 40);
 
       expect(rounds.map((round) => round.length), [4, 4, 3]);
@@ -1501,7 +1501,7 @@ void main() {
     });
 
     test('still packs a message that only just fits', () {
-      const budget = 64 * 1024;
+      const budget = 28 * 1024;
       final rounds = keystoneSigningRoundsForTest([
         message('big', budget - 'big'.length),
         message('small', 10),
