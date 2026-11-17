@@ -3118,6 +3118,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             spendable,
+                            const SizedBox(height: AppSpacing.xxs),
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -3126,7 +3127,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                     waitLine,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: AppTypography.bodySmall.copyWith(
+                                    style: AppTypography.labelLarge.copyWith(
                                       color: colors.text.secondary,
                                     ),
                                   ),

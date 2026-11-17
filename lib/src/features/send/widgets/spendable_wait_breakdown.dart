@@ -10,7 +10,11 @@ import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_context_menu.dart' show appContextMenuShadow;
+import '../../../core/config/network_config.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/mobile/mobile_section.dart';
+import '../../../core/widgets/mobile/mobile_serif_amount.dart';
+import '../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../core/zcash/spendable_wait.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/spendable_wait_provider.dart';
@@ -32,6 +36,14 @@ class SpendableWaitBreakdown extends StatelessWidget {
 
   /// Desktop popover metrics.
   final bool compact;
+
+  /// The amount without its ticker, for the sheet's serif figure.
+  String _bareAmount(BigInt zatoshi) => hideIfPrivacyMode(
+    ZecAmount.fromZatoshi(
+      zatoshi,
+    ).pretty(denomStyle: ZecDenomStyle.none).toString(),
+    privacyModeEnabled: privacyModeEnabled,
+  );
 
   String _amount(BigInt zatoshi, {bool added = false}) {
     final text = ZecAmount.fromZatoshi(
@@ -63,133 +75,171 @@ class SpendableWaitBreakdown extends StatelessWidget {
           amount: wait.receivedWaiting,
         ),
     ];
-    return Column(
+    // The popover has room only for the small type; the sheet follows the
+    // mobile standards (16px text, the shared card and hairline).
+    final detailStyle =
+        (compact ? AppTypography.bodySmall : AppTypography.bodyMedium).copyWith(
+          color: colors.text.secondary,
+        );
+    final waitingRows = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                l10n.sendAvailableTitle,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                _amount(wait.availableNow),
-                key: const ValueKey('spendable_wait_available_now'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    (compact
-                            ? AppTypography.headlineMedium
-                            : AppTypography.headlineLarge)
-                        .copyWith(color: colors.text.accent),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(height: compact ? AppSpacing.s : AppSpacing.sm),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.background.neutralSubtleOpacity,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s,
-              vertical: AppSpacing.xs,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+        for (final row in rows) ...[
+          Padding(
+            key: ValueKey('spendable_wait_row_${row.key}'),
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Row(
               children: [
-                for (final row in rows) ...[
-                  Padding(
-                    key: ValueKey('spendable_wait_row_${row.key}'),
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.xs,
-                    ),
-                    child: Row(
-                      children: [
-                        AppIcon(
-                          AppIcons.time,
-                          size: compact ? 18 : 20,
-                          color: colors.icon.muted,
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                row.label,
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: colors.text.primary,
-                                ),
-                              ),
-                              Text(
-                                availableInLabel(l10n, row.wait),
-                                style: AppTypography.bodySmall.copyWith(
-                                  color: colors.text.secondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(
-                          _amount(row.amount, added: true),
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.primary,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(height: 1, color: colors.border.regular),
-                ],
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                  child: Row(
+                AppIcon(
+                  AppIcons.time,
+                  size: compact ? 18 : 20,
+                  color: compact ? colors.icon.muted : colors.icon.accent,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          l10n.commonTotal,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.secondary,
-                          ),
+                      Text(
+                        row.label,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.primary,
                         ),
                       ),
                       Text(
-                        _amount(wait.total),
-                        key: const ValueKey('spendable_wait_total'),
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.primary,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
+                        availableInLabel(l10n, row.wait),
+                        style: detailStyle,
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  _amount(row.amount, added: true),
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.primary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               ],
             ),
           ),
+          if (compact)
+            Container(height: 1, color: colors.border.regular)
+          else
+            const MobileSectionDivider(),
+        ],
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n.commonTotal,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ),
+              Text(
+                _amount(wait.total),
+                key: const ValueKey('spendable_wait_total'),
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.primary,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
         ),
+      ],
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (compact)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.sendAvailableTitle,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  _amount(wait.availableNow),
+                  key: const ValueKey('spendable_wait_available_now'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.headlineMedium.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          // The sheet's title names the amount; a long one shrinks to fit.
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text.rich(
+                key: const ValueKey('spendable_wait_available_now'),
+                TextSpan(
+                  children: [
+                    serifPrivacyMaskSpan(
+                      '${_bareAmount(wait.availableNow)} ',
+                      kMobileSerifAmountStyle.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                    TextSpan(
+                      text: kZcashDefaultCurrencyTicker,
+                      style: kMobileSerifTickerStyle.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+              ),
+            ),
+          ),
+        SizedBox(height: compact ? AppSpacing.s : AppSpacing.sm),
+        if (compact)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background.neutralSubtleOpacity,
+              borderRadius: BorderRadius.circular(AppRadii.medium),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s,
+                vertical: AppSpacing.xs,
+              ),
+              child: waitingRows,
+            ),
+          )
+        else
+          MobileSurfaceCard(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.xs,
+            ),
+            child: waitingRows,
+          ),
         SizedBox(height: compact ? AppSpacing.xs : AppSpacing.s),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-          child: Text(
-            l10n.sendAvailableFootnote,
-            style: AppTypography.bodySmall.copyWith(
-              color: colors.text.secondary,
-            ),
-          ),
+          child: Text(l10n.sendAvailableFootnote, style: detailStyle),
         ),
       ],
     );
@@ -252,14 +302,10 @@ class SpendableWaitSheetContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return MobileModalScaffold(
       key: const ValueKey('mobile_spendable_wait_sheet'),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.base,
-        AppSpacing.sm,
-        AppSpacing.base,
-      ),
+      title: context.l10n.sendAvailableTitle,
+      onClose: onClose,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -28,7 +28,9 @@ void main() {
   testWidgets('lists what is spendable, each wait and the total', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(SpendableWaitBreakdown(wait: _wait)));
+    await tester.pumpWidget(
+      _app(SpendableWaitBreakdown(wait: _wait, compact: true)),
+    );
 
     expect(find.text('Available now'), findsOneWidget);
     expect(find.text('1 ZEC'), findsOneWidget);
@@ -41,9 +43,49 @@ void main() {
     expect(find.text('3.5 ZEC'), findsOneWidget);
   });
 
+  testWidgets('the sheet titles the amount and lists the same rows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(SpendableWaitSheetContent(wait: _wait, onClose: () {})),
+    );
+
+    // The title is the sheet's; the amount under it is one serif figure.
+    expect(find.text('Available now'), findsOneWidget);
+    expect(find.text('1 ZEC', findRichText: true), findsOneWidget);
+    expect(find.text('Finishing your last payment'), findsOneWidget);
+    expect(find.text('+1.2 ZEC'), findsOneWidget);
+    expect(find.text('3.5 ZEC'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
+  });
+
+  testWidgets('the sheet masks every amount in privacy mode', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        SpendableWaitSheetContent(
+          wait: _wait,
+          privacyModeEnabled: true,
+          onClose: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('1 ZEC', findRichText: true), findsNothing);
+    expect(find.textContaining('1.2', findRichText: true), findsNothing);
+    expect(find.textContaining('1.3', findRichText: true), findsNothing);
+    expect(find.textContaining('3.5', findRichText: true), findsNothing);
+    expect(find.text('Available in 1–3 min'), findsOneWidget);
+  });
+
   testWidgets('privacy mode masks every amount', (tester) async {
     await tester.pumpWidget(
-      _app(SpendableWaitBreakdown(wait: _wait, privacyModeEnabled: true)),
+      _app(
+        SpendableWaitBreakdown(
+          wait: _wait,
+          privacyModeEnabled: true,
+          compact: true,
+        ),
+      ),
     );
 
     for (final amount in ['1 ZEC', '+1.2 ZEC', '+1.3 ZEC', '3.5 ZEC']) {
