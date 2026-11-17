@@ -1,7 +1,7 @@
 @Tags(['mobile'])
 library;
 
-import 'dart:ui' show Tristate;
+import 'dart:ui' show Tristate, PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -460,6 +460,25 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+  testWidgets('trackpad drag retains selection behavior', (tester) async {
+    await pumpBar(tester);
+    final gesture = await tester.createGesture(
+      kind: PointerDeviceKind.trackpad,
+    );
+    final start = tab(tester, 0);
+    await gesture.panZoomStart(start);
+    for (var i = 1; i <= 12; i++) {
+      await gesture.panZoomUpdate(
+        start,
+        pan: Offset(6.0 * i, 0),
+        timeStamp: Duration(milliseconds: i * 50),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await gesture.panZoomEnd(timeStamp: const Duration(milliseconds: 650));
+    await tester.pumpAndSettle();
+    expect(selected, [1]);
+  });
   testWidgets('vertical bar keeps its original selected-tab drag origin', (
     tester,
   ) async {

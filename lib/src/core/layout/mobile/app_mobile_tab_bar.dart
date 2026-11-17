@@ -211,16 +211,27 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
         event.buttons != kPrimaryButton) {
       return;
     }
-    final position = _horizontalPosition;
     final index = (event.localPosition.dx / _itemExtent).floor().clamp(
       0,
       widget.items.length - 1,
     );
+    _beginTouch(event.pointer, index);
+  }
+
+  void _handlePanZoomStart(PointerPanZoomStartEvent event) {
+    if (_activePointer != null || widget.items.isEmpty) return;
+    // Trackpads have no pressed destination: preserve their selected-tab
+    // origin while sharing release, momentum and cancellation handling.
+    _beginTouch(event.pointer, _selectedIndex);
+  }
+
+  void _beginTouch(int pointer, int index) {
+    final position = _horizontalPosition;
     _horizontalPill.stop();
     _horizontalPill.value = position;
     setState(() {
-      _activePointer = event.pointer;
-      _touch = _TabBarTouch(event.pointer, index, event.localPosition.dx);
+      _activePointer = pointer;
+      _touch = _TabBarTouch(index);
     });
     _movePill(
       index.toDouble(),
@@ -255,7 +266,15 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
   }
 
   void _handlePointerUp(PointerUpEvent event) {
-    if (_activePointer != event.pointer) return;
+    _endPointer(event.pointer);
+  }
+
+  void _handlePanZoomEnd(PointerPanZoomEndEvent event) {
+    _endPointer(event.pointer);
+  }
+
+  void _endPointer(int pointer) {
+    if (_activePointer != pointer) return;
     _activePointer = null;
     _cancelUnclaimedTouch(_touch);
   }
@@ -317,7 +336,9 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
     if (!_vertical) {
       final touch = _touch;
       if (touch == null || !touch.dragging) return;
-      touch.delta = (details.localPosition.dx - touch.origin) / _itemExtent;
+      // Delta is a vector for both touch and trackpad events; pan-zoom
+      // localPosition can include a translated pan origin.
+      touch.delta += details.delta.dx / _itemExtent;
       final hovered = (touch.index + touch.delta)
           .clamp(0.0, widget.items.length - 1.0)
           .round();
@@ -458,6 +479,8 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
                   onPointerDown: vertical ? null : _handlePointerDown,
                   onPointerUp: vertical ? null : _handlePointerUp,
                   onPointerCancel: vertical ? null : _handlePointerCancel,
+                  onPointerPanZoomStart: vertical ? null : _handlePanZoomStart,
+                  onPointerPanZoomEnd: vertical ? null : _handlePanZoomEnd,
                   child: RawGestureDetector(
                     gestures: {
                       if (!vertical)
@@ -553,11 +576,9 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
 }
 
 class _TabBarTouch {
-  _TabBarTouch(this.pointer, this.index, this.origin) : hoveredIndex = index;
+  _TabBarTouch(this.index) : hoveredIndex = index;
 
-  final int pointer;
   final int index;
-  final double origin;
   double delta = 0;
   bool dragging = false;
   int hoveredIndex;
@@ -573,6 +594,10 @@ class _SinglePointerHorizontalDragRecognizer
       _pointer == null && super.isPointerAllowed(event);
 
   @override
+  bool isPointerPanZoomAllowed(PointerPanZoomStartEvent event) =>
+      _pointer == null && super.isPointerPanZoomAllowed(event);
+
+  @override
   void handleNonAllowedPointer(PointerDownEvent event) {
     // OneSequenceGestureRecognizer's default rejects every tracked pointer.
     // Ignoring a second finger must leave the first finger's arena intact.
@@ -580,9 +605,20 @@ class _SinglePointerHorizontalDragRecognizer
   }
 
   @override
+  void handleNonAllowedPointerPanZoom(PointerPanZoomStartEvent event) {
+    if (_pointer == null) super.handleNonAllowedPointerPanZoom(event);
+  }
+
+  @override
   void addAllowedPointer(PointerDownEvent event) {
     _pointer = event.pointer;
     super.addAllowedPointer(event);
+  }
+
+  @override
+  void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {
+    _pointer = event.pointer;
+    super.addAllowedPointerPanZoom(event);
   }
 
   @override
