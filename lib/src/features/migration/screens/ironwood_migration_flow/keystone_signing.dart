@@ -2133,11 +2133,12 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
 // This local partitioner is used by deterministic previews and helper tests.
 // Production requests use Rust's post-resolution size-aware partitioner.
 const _keystoneSigningRoundMaxMessages = 40;
-const _keystoneSigningRoundMaxTotalBytes = 80 * 1024;
-// Reserve 16 KiB for the request id, per-message Postcard framing, and the
+// Keystone firmware 3.1.4+ rejects a batch request larger than 32 KiB.
+const _keystoneSigningRoundMaxTotalBytes = 32 * 1024;
+// Reserve 4 KiB for the request id, per-message Postcard framing, and the
 // outer CBOR envelope.
 const _keystoneSigningRoundByteBudget =
-    _keystoneSigningRoundMaxTotalBytes - 16 * 1024;
+    _keystoneSigningRoundMaxTotalBytes - 4 * 1024;
 
 @visibleForTesting
 List<List<rust_sync.KeystoneMigrationMessage>> keystoneSigningRoundsForTest(
