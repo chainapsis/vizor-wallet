@@ -218,9 +218,9 @@ class SyncState {
   final BigInt orchardPendingBalance;
   final BigInt ironwoodPendingBalance;
 
-  /// The part of the pending balances above that is the wallet's own change
-  /// short of its trusted depth. Only shielded pools hold any.
-  final BigInt changePendingConfirmation;
+  /// The part of the shielded pending balances above that waits only on
+  /// confirmations, by transaction, as of the same balance read.
+  final List<rust_sync.PendingSpendableEntry> pendingSpendable;
   final bool canShieldTransparentBalance;
   final BigInt shieldTransparentFee;
   final BigInt shieldTransparentAmount;
@@ -482,7 +482,7 @@ class SyncState {
       saplingPendingBalance: balance?.saplingPending,
       orchardPendingBalance: balance?.orchardPending,
       ironwoodPendingBalance: balance?.ironwoodPending,
-      changePendingConfirmation: balance?.changePendingConfirmation,
+      pendingSpendable: balance?.pendingSpendable,
       canShieldTransparentBalance: hasAuthoritativeBalance
           ? canShieldTransparentBalance ?? this.canShieldTransparentBalance
           : this.canShieldTransparentBalance,
@@ -562,7 +562,7 @@ class SyncState {
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
     BigInt? ironwoodPendingBalance,
-    BigInt? changePendingConfirmation,
+    List<rust_sync.PendingSpendableEntry>? pendingSpendable,
     this.canShieldTransparentBalance = false,
     BigInt? shieldTransparentFee,
     BigInt? shieldTransparentAmount,
@@ -605,7 +605,7 @@ class SyncState {
        saplingPendingBalance = saplingPendingBalance ?? BigInt.zero,
        orchardPendingBalance = orchardPendingBalance ?? BigInt.zero,
        ironwoodPendingBalance = ironwoodPendingBalance ?? BigInt.zero,
-       changePendingConfirmation = changePendingConfirmation ?? BigInt.zero,
+       pendingSpendable = pendingSpendable ?? const [],
        shieldTransparentFee = shieldTransparentFee ?? BigInt.zero,
        shieldTransparentAmount = shieldTransparentAmount ?? BigInt.zero,
        spendableBalance = spendableBalance ?? BigInt.zero,
@@ -670,7 +670,7 @@ class SyncState {
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
     BigInt? ironwoodPendingBalance,
-    BigInt? changePendingConfirmation,
+    List<rust_sync.PendingSpendableEntry>? pendingSpendable,
     bool? canShieldTransparentBalance,
     BigInt? shieldTransparentFee,
     BigInt? shieldTransparentAmount,
@@ -752,8 +752,7 @@ class SyncState {
           orchardPendingBalance ?? this.orchardPendingBalance,
       ironwoodPendingBalance:
           ironwoodPendingBalance ?? this.ironwoodPendingBalance,
-      changePendingConfirmation:
-          changePendingConfirmation ?? this.changePendingConfirmation,
+      pendingSpendable: pendingSpendable ?? this.pendingSpendable,
       canShieldTransparentBalance:
           canShieldTransparentBalance ?? this.canShieldTransparentBalance,
       shieldTransparentFee: shieldTransparentFee ?? this.shieldTransparentFee,
@@ -1913,7 +1912,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
-        changePendingConfirmation: scopedPrev?.changePendingConfirmation,
+        pendingSpendable: scopedPrev?.pendingSpendable,
         canShieldTransparentBalance:
             carried?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -2332,7 +2331,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
-        changePendingConfirmation: scopedPrev?.changePendingConfirmation,
+        pendingSpendable: scopedPrev?.pendingSpendable,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -2470,7 +2469,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
-        changePendingConfirmation: scopedPrev?.changePendingConfirmation,
+        pendingSpendable: scopedPrev?.pendingSpendable,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -3326,7 +3325,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? saplingPending;
     BigInt? orchardPending;
     BigInt? ironwoodPending;
-    BigInt? changePending;
+    List<rust_sync.PendingSpendableEntry>? pendingSpendable;
     BigInt? spendable;
     BigInt? total;
     bool? canShieldTransparentBalance;
@@ -3365,7 +3364,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           saplingPending = balance.saplingPending;
           orchardPending = balance.orchardPending;
           ironwoodPending = balance.ironwoodPending;
-          changePending = balance.changePendingConfirmation;
+          pendingSpendable = balance.pendingSpendable;
           spendable = balance.spendable;
           total = balance.total;
           hasAuthoritativeBalance = true;
@@ -3610,9 +3609,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ironwoodPendingBalance: useFetchedBalance
             ? ironwoodPending
             : carriedPrev?.ironwoodPendingBalance,
-        changePendingConfirmation: useFetchedBalance
-            ? changePending
-            : carriedPrev?.changePendingConfirmation,
+        pendingSpendable: useFetchedBalance
+            ? pendingSpendable
+            : carriedPrev?.pendingSpendable,
         canShieldTransparentBalance: useFetchedBalance
             ? canShieldTransparentBalance ??
                   carriedPrev?.canShieldTransparentBalance ??

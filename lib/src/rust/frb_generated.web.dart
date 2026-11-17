@@ -825,6 +825,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NextStepView> dco_decode_list_next_step_view(dynamic raw);
 
   @protected
+  List<PendingSpendableEntry> dco_decode_list_pending_spendable_entry(
+    dynamic raw,
+  );
+
+  @protected
   List<PirSnapshotEndpointDiagnosticView>
   dco_decode_list_pir_snapshot_endpoint_diagnostic_view(dynamic raw);
 
@@ -1197,6 +1202,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PaymentLinkSpendEvidence dco_decode_payment_link_spend_evidence(dynamic raw);
+
+  @protected
+  PendingSpendableEntry dco_decode_pending_spendable_entry(dynamic raw);
 
   @protected
   PirLayout dco_decode_pir_layout(dynamic raw);
@@ -2490,6 +2498,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PendingSpendableEntry> sse_decode_list_pending_spendable_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<PirSnapshotEndpointDiagnosticView>
   sse_decode_list_pir_snapshot_endpoint_diagnostic_view(
     SseDeserializer deserializer,
@@ -2950,6 +2963,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PaymentLinkSpendEvidence sse_decode_payment_link_spend_evidence(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PendingSpendableEntry sse_decode_pending_spendable_entry(
     SseDeserializer deserializer,
   );
 
@@ -4549,6 +4567,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_pending_spendable_entry(
+    List<PendingSpendableEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_pir_snapshot_endpoint_diagnostic_view(
     List<PirSnapshotEndpointDiagnosticView> self,
     SseSerializer serializer,
@@ -5091,6 +5115,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_payment_link_spend_evidence(
     PaymentLinkSpendEvidence self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pending_spendable_entry(
+    PendingSpendableEntry self,
     SseSerializer serializer,
   );
 

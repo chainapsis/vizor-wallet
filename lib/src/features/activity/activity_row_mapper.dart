@@ -39,7 +39,7 @@ ActivityRowData buildTransactionActivityRow({
   String? giftCardDisplayPool,
   ActivityEta? pendingEta,
   String? pendingFallbackLabel,
-  SpendableWaitClock? spendableWaitClock,
+  Map<String, ReceivedSpendableWait> spendableWaits = const {},
   bool showPendingEstimate = true,
   bool privacyModeEnabled = false,
   bool privateQueriesEnabled = false,
@@ -77,13 +77,9 @@ ActivityRowData buildTransactionActivityRow({
       showPendingEstimate && isPending && (isInbound || isSent || isShielded);
   // A mined receipt the account cannot spend yet says when it can, in the
   // pool label's place.
-  final spendableWait =
-      spendableWaitClock == null ||
-          giftCardKind != null ||
-          isPending ||
-          isFailed
+  final spendableWait = giftCardKind != null || isPending || isFailed
       ? null
-      : receivedSpendableWait(transaction, spendableWaitClock)?.wait;
+      : receivedSpendableWaitFor(transaction, spendableWaits)?.wait;
   final subtitle = replacesPool
       ? pendingEta?.label(l10n) ??
             pendingFallbackLabel ??

@@ -57,7 +57,11 @@ Widget buildReceivedReceiptSpendableWaitUseCase(BuildContext context) {
       isShieldedReceivingAddress: true,
       timestampText: '16 Nov, 14:02',
       txIdText: '9c41e0…7ab2f1',
-      spendableWait: (wait: const AvailableIn.minutes(1, 3), confirmations: 2),
+      spendableWait: (
+        wait: const AvailableIn.minutes(1, 3),
+        confirmations: 2,
+        requiredConfirmations: 6,
+      ),
       onTxIdPressed: () {},
     ),
   );

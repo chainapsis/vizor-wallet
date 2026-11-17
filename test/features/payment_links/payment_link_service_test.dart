@@ -3400,6 +3400,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     orchardPending: BigInt.zero,
     ironwoodPending: BigInt.zero,
     changePendingConfirmation: BigInt.zero,
+    pendingSpendable: const [],
     valuePendingSpendability: BigInt.zero,
     uneconomicValue: BigInt.zero,
     spendable: BigInt.zero,

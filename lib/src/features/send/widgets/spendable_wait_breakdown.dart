@@ -52,14 +52,14 @@ class SpendableWaitBreakdown extends StatelessWidget {
         (
           key: 'change',
           label: l10n.sendAvailableChangeRow,
-          wait: wait.changeWait,
+          wait: wait.changeWait!,
           amount: wait.changeWaiting,
         ),
       if (wait.receivedWaiting > BigInt.zero)
         (
           key: 'received',
           label: l10n.sendAvailableReceivedRow,
-          wait: wait.receivedWait,
+          wait: wait.receivedWait!,
           amount: wait.receivedWaiting,
         ),
     ];
@@ -132,13 +132,12 @@ class SpendableWaitBreakdown extends StatelessWidget {
                                   color: colors.text.primary,
                                 ),
                               ),
-                              if (row.wait != null)
-                                Text(
-                                  availableInLabel(l10n, row.wait!),
-                                  style: AppTypography.bodySmall.copyWith(
-                                    color: colors.text.secondary,
-                                  ),
+                              Text(
+                                availableInLabel(l10n, row.wait),
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: colors.text.secondary,
                                 ),
+                              ),
                             ],
                           ),
                         ),
@@ -222,8 +221,8 @@ class _SpendableWaitSheetBody extends ConsumerStatefulWidget {
 
 class _SpendableWaitSheetBodyState
     extends ConsumerState<_SpendableWaitSheetBody> {
-  // The balance is unsettled while a new block is scanned; keep the last
-  // settled breakdown rather than blanking the sheet for that moment.
+  // No wait is stated after a failed sync; keep the last breakdown rather
+  // than blanking a sheet that is open.
   SpendableWait? _last;
 
   @override

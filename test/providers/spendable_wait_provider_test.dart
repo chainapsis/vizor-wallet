@@ -34,32 +34,33 @@ void main() {
     return container;
   }
 
-  SyncState settled({
-    bool syncComplete = true,
-    bool isSyncing = false,
-    bool startedFromCompletedSync = false,
-    int? chainTipHeight,
-    int scannedHeight = _tip,
-    SpendableBalanceFreshness freshness =
-        SpendableBalanceFreshness.authoritative,
+  SyncState state({
     SyncFailure? failure,
+    List<rust_sync.PendingSpendableEntry>? pendingSpendable,
   }) => SyncState(
-    isSyncing: isSyncing,
-    startedFromCompletedSync: startedFromCompletedSync,
-    displaySpendableFreshness: freshness,
     failure: failure,
     accountUuid: _account,
     hasAccountScopedData: true,
-    isSyncComplete: syncComplete,
-    scannedHeight: scannedHeight,
-    chainTipHeight: chainTipHeight ?? _tip,
+    isSyncComplete: true,
+    scannedHeight: _tip,
+    chainTipHeight: _tip,
     spendableBalance: _zec,
     orchardPendingBalance: _zec,
-    recentTransactions: [_received(minedHeight: _tip)],
+    pendingSpendable:
+        pendingSpendable ??
+        [
+          rust_sync.PendingSpendableEntry(
+            txidHex: 'received',
+            isChange: false,
+            value: _zec,
+            blocksUntilSpendable: 5,
+            confirmations: 1,
+          ),
+        ],
   );
 
-  test('a settled balance with a confirming receipt states its wait', () async {
-    final c = container(settled());
+  test('a balance with a confirming receipt states its wait', () async {
+    final c = container(state());
     await c.read(syncProvider.future);
     final sub = c.listen(spendableWaitProvider(_account), (_, _) {});
     addTearDown(sub.close);
@@ -69,101 +70,49 @@ void main() {
     expect(wait.receivedWaiting, _zec);
     expect(wait.wait, const AvailableIn.minutes(1, 3));
 
-    final clock = c.listen(
-      receivedSpendableWaitClockProvider(_account),
+    final receipts = c.listen(
+      receivedSpendableWaitsProvider(_account),
       (_, _) {},
     );
-    addTearDown(clock.close);
-    expect(clock.read()?.tipHeight, _tip);
+    addTearDown(receipts.close);
+    expect(receipts.read()['received']?.confirmations, 1);
+    expect(receipts.read()['received']?.requiredConfirmations, 6);
   });
 
-  test('the wait holds through the catch-up each new block starts', () async {
-    final notifier = _SyncNotifier(settled());
-    final c = ProviderContainer(
-      overrides: [
-        syncProvider.overrideWith(() => notifier),
-        blockSpacingProvider.overrideWithValue(
-          const BlockSpacing(
-            preNu7BlockSeconds: 75,
-            nu7BlockSeconds: 25,
-            nu7ActivationHeight: 1,
-          ),
-        ),
-        ironwoodHomeMigrationPresentationProvider.overrideWithValue(
-          const IronwoodHomeMigrationCtaState.hidden(),
-        ),
-      ],
-    );
-    addTearDown(c.dispose);
-    await c.read(syncProvider.future);
-    final seen = <SpendableWait?>[];
-    final sub = c.listen(
-      spendableWaitProvider(_account),
-      (_, next) => seen.add(next),
-      fireImmediately: true,
-    );
-    addTearDown(sub.close);
-    final clock = c.listen(
-      receivedSpendableWaitClockProvider(_account),
-      (_, _) {},
-    );
-    addTearDown(clock.close);
-
-    // A new block: the tip moves first, then the sync restarts on the last
-    // completed balance, then it settles one block higher.
-    notifier.set(settled(chainTipHeight: _tip + 1));
-    await c.pump();
-    expect(sub.read()?.receivedWait, const AvailableIn.minutes(1, 2));
-
-    notifier.set(
-      settled(
-        syncComplete: false,
-        isSyncing: true,
-        startedFromCompletedSync: true,
-        chainTipHeight: _tip + 1,
-        freshness: SpendableBalanceFreshness.lastCompletedSync,
-      ),
-    );
-    await c.pump();
-    expect(sub.read()?.receivedWait, const AvailableIn.minutes(1, 2));
-    expect(clock.read()?.catchingUp, isTrue);
-    expect(clock.read()?.tipHeight, _tip + 1);
-
-    notifier.set(settled(chainTipHeight: _tip + 1, scannedHeight: _tip + 1));
-    await c.pump();
-    expect(sub.read()?.receivedWait, const AvailableIn.minutes(1, 2));
-    expect(clock.read()?.catchingUp, isFalse);
-    expect(seen, everyElement(isNotNull));
-  });
-
-  test('a first scan or a failed sync states nothing', () async {
-    final scanning = container(
-      settled(
-        syncComplete: false,
-        isSyncing: true,
-        freshness: SpendableBalanceFreshness.lastCompletedSync,
-      ),
-    );
-    await scanning.read(syncProvider.future);
-    final scanningSub = scanning.listen(
-      spendableWaitProvider(_account),
-      (_, _) {},
-    );
-    addTearDown(scanningSub.close);
-    expect(scanningSub.read(), isNull);
-  });
-
-  test('a balance still syncing states nothing', () async {
-    final c = container(settled(syncComplete: false));
+  test('pending value the wallet lists no wait for is not waiting', () async {
+    final c = container(state(pendingSpendable: const []));
     await c.read(syncProvider.future);
     final sub = c.listen(spendableWaitProvider(_account), (_, _) {});
     addTearDown(sub.close);
 
+    expect(sub.read()!.hasWait, isFalse);
+    expect(sub.read()!.total, _zec);
+  });
+
+  test('a failed sync states nothing', () async {
+    final c = container(
+      state(
+        failure: const SyncFailure(
+          kind: SyncFailureKind.network,
+          rawMessage: 'offline',
+        ),
+      ),
+    );
+    await c.read(syncProvider.future);
+    final sub = c.listen(spendableWaitProvider(_account), (_, _) {});
+    addTearDown(sub.close);
+    final receipts = c.listen(
+      receivedSpendableWaitsProvider(_account),
+      (_, _) {},
+    );
+    addTearDown(receipts.close);
+
     expect(sub.read(), isNull);
+    expect(receipts.read(), isEmpty);
   });
 
   test('another account reads no wait from this balance', () async {
-    final c = container(settled());
+    final c = container(state());
     await c.read(syncProvider.future);
     final sub = c.listen(spendableWaitProvider('account-2'), (_, _) {});
     addTearDown(sub.close);
@@ -179,26 +128,4 @@ class _SyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => _state;
-
-  void set(SyncState next) => state = AsyncData(next);
-}
-
-rust_sync.TransactionInfo _received({required int minedHeight}) {
-  return rust_sync.TransactionInfo(
-    txidHex: 'received',
-    minedHeight: BigInt.from(minedHeight),
-    expiredUnmined: false,
-    accountBalanceDelta: 0,
-    fee: BigInt.zero,
-    feeState: rust_sync.TransactionFeeState.notApplicable,
-    detailsComplete: true,
-    provisional: false,
-    amountIncludesFee: false,
-    blockTime: BigInt.from(1800000000),
-    isTransparent: false,
-    txKind: 'received',
-    displayAmount: _zec,
-    displayPool: 'shielded',
-    createdTime: BigInt.from(1800000000),
-  );
 }

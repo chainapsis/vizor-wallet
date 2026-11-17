@@ -13447,6 +13447,20 @@ impl SseDecode for Vec<zcash_voting::wire::NextStepView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::sync::PendingSpendableEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::sync::PendingSpendableEntry>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<zcash_voting::wire::PirSnapshotEndpointDiagnosticView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -14831,6 +14845,24 @@ impl SseDecode for crate::api::sync::PaymentLinkSpendEvidence {
             conflicted_txids: var_conflictedTxids,
             local_claim_txids: var_localClaimTxids,
             verified_height: var_verifiedHeight,
+        };
+    }
+}
+
+impl SseDecode for crate::api::sync::PendingSpendableEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_txidHex = <String>::sse_decode(deserializer);
+        let mut var_isChange = <bool>::sse_decode(deserializer);
+        let mut var_value = <u64>::sse_decode(deserializer);
+        let mut var_blocksUntilSpendable = <u32>::sse_decode(deserializer);
+        let mut var_confirmations = <u32>::sse_decode(deserializer);
+        return crate::api::sync::PendingSpendableEntry {
+            txid_hex: var_txidHex,
+            is_change: var_isChange,
+            value: var_value,
+            blocks_until_spendable: var_blocksUntilSpendable,
+            confirmations: var_confirmations,
         };
     }
 }
@@ -16233,6 +16265,8 @@ impl SseDecode for crate::api::sync::WalletBalance {
         let mut var_spendable = <u64>::sse_decode(deserializer);
         let mut var_locked = <u64>::sse_decode(deserializer);
         let mut var_total = <u64>::sse_decode(deserializer);
+        let mut var_pendingSpendable =
+            <Vec<crate::api::sync::PendingSpendableEntry>>::sse_decode(deserializer);
         return crate::api::sync::WalletBalance {
             availability: var_availability,
             transparent_authority: var_transparentAuthority,
@@ -16257,6 +16291,7 @@ impl SseDecode for crate::api::sync::WalletBalance {
             spendable: var_spendable,
             locked: var_locked,
             total: var_total,
+            pending_spendable: var_pendingSpendable,
         };
     }
 }
@@ -19907,6 +19942,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::PaymentLinkSpendEvidenc
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::PendingSpendableEntry {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.txid_hex.into_into_dart().into_dart(),
+            self.is_change.into_into_dart().into_dart(),
+            self.value.into_into_dart().into_dart(),
+            self.blocks_until_spendable.into_into_dart().into_dart(),
+            self.confirmations.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::PendingSpendableEntry
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::PendingSpendableEntry>
+    for crate::api::sync::PendingSpendableEntry
+{
+    fn into_into_dart(self) -> crate::api::sync::PendingSpendableEntry {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::config::PirLayout> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -21665,6 +21724,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
             self.spendable.into_into_dart().into_dart(),
             self.locked.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
+            self.pending_spendable.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -23685,6 +23745,16 @@ impl SseEncode for Vec<zcash_voting::wire::NextStepView> {
     }
 }
 
+impl SseEncode for Vec<crate::api::sync::PendingSpendableEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::sync::PendingSpendableEntry>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<zcash_voting::wire::PirSnapshotEndpointDiagnosticView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -24743,6 +24813,17 @@ impl SseEncode for crate::api::sync::PaymentLinkSpendEvidence {
         <Vec<String>>::sse_encode(self.conflicted_txids, serializer);
         <Vec<String>>::sse_encode(self.local_claim_txids, serializer);
         <u64>::sse_encode(self.verified_height, serializer);
+    }
+}
+
+impl SseEncode for crate::api::sync::PendingSpendableEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.txid_hex, serializer);
+        <bool>::sse_encode(self.is_change, serializer);
+        <u64>::sse_encode(self.value, serializer);
+        <u32>::sse_encode(self.blocks_until_spendable, serializer);
+        <u32>::sse_encode(self.confirmations, serializer);
     }
 }
 
@@ -25847,6 +25928,10 @@ impl SseEncode for crate::api::sync::WalletBalance {
         <u64>::sse_encode(self.spendable, serializer);
         <u64>::sse_encode(self.locked, serializer);
         <u64>::sse_encode(self.total, serializer);
+        <Vec<crate::api::sync::PendingSpendableEntry>>::sse_encode(
+            self.pending_spendable,
+            serializer,
+        );
     }
 }
 

@@ -4,12 +4,6 @@ import '../../rust/api/sync.dart' as rust_sync;
 import '../l10n/l10n.dart';
 import 'block_spacing.dart';
 
-/// Confirmations before the wallet spends its own change, and before it
-/// spends funds received from others. Mirrors `TRUSTED_CONFIRMATIONS` and
-/// `UNTRUSTED_CONFIRMATIONS` in `rust/src/wallet/mod.rs`; display only.
-const kChangeSpendableConfirmations = 3;
-const kReceivedSpendableConfirmations = 6;
-
 /// Held back for the fee of an amount whose fee is not known yet: the
 /// two-action minimum before NU7, the larger of the two eras. Display only.
 ///
@@ -63,68 +57,17 @@ String availableInLabel(AppLocalizations l10n, AvailableIn wait) =>
         wait.maxMinutes.toString(),
       );
 
-/// Blocks still needed before an output mined at [minedHeight] (0 when
-/// unmined) can be spent, or null while the tip is unknown.
-///
-/// An output needing `n` confirmations is spendable once the tip is `n - 1`
-/// blocks above the block that mined it.
-int? blocksUntilSpendable({
-  required int minedHeight,
-  required int tipHeight,
-  required int requiredConfirmations,
-}) {
-  if (tipHeight <= 0) return null;
-  if (minedHeight <= 0 || minedHeight > tipHeight) {
-    return requiredConfirmations;
-  }
-  final confirmations = tipHeight - minedHeight + 1;
-  return math.max(0, requiredConfirmations - confirmations);
-}
-
-/// Blocks past its last confirmation that an output still counts as waiting
-/// while the wallet catches up: the balance it is pending in was read a few
-/// blocks ago and is about to be read again.
-const _catchUpGraceBlocks = 3;
-
-/// Blocks an output still waits, or null when it explains no wait.
-///
-/// While the wallet is [catchingUp], an output the unscanned blocks just
-/// completed still counts, as a wait of no blocks: its value stays pending
-/// until the scan lands, moments later.
-int? _waitingBlocks({
-  required int minedHeight,
-  required int tipHeight,
-  required int requiredConfirmations,
-  required bool catchingUp,
-}) {
-  final blocks = blocksUntilSpendable(
-    minedHeight: minedHeight,
-    tipHeight: tipHeight,
-    requiredConfirmations: requiredConfirmations,
-  );
-  if (blocks == null) return null;
-  if (blocks > 0) return blocks;
-  final blocksPast = tipHeight - minedHeight + 1 - requiredConfirmations;
-  return catchingUp && blocksPast <= _catchUpGraceBlocks ? 0 : null;
-}
-
-AvailableIn _waitForBlocks(int blocks, int tipHeight, BlockSpacing spacing) =>
-    AvailableIn.fromSeconds(
-      spacing.secondsBetween(tipHeight, tipHeight + blocks),
-    );
-
-/// Shielded funds the account holds but cannot spend yet, split by cause.
-///
-/// A cause carries a wait only when a recent transaction explains it; without
-/// one the wait is null and no surface states a time.
+/// Shielded funds the account holds that wait only on confirmations, split
+/// by cause. A cause has a wait exactly when it has an amount.
 class SpendableWait {
-  const SpendableWait({
+  SpendableWait({
     required this.availableNow,
     required this.changeWaiting,
     required this.receivedWaiting,
     this.changeWait,
     this.receivedWait,
-  });
+  }) : assert(changeWaiting > BigInt.zero == (changeWait != null)),
+       assert(receivedWaiting > BigInt.zero == (receivedWait != null));
 
   final BigInt availableNow;
 
@@ -139,33 +82,25 @@ class SpendableWait {
   BigInt get waiting => changeWaiting + receivedWaiting;
   BigInt get total => availableNow + waiting;
 
-  /// Whether every waiting amount has a stated wait.
-  bool get hasWait =>
-      waiting > BigInt.zero &&
-      (changeWaiting == BigInt.zero || changeWait != null) &&
-      (receivedWaiting == BigInt.zero || receivedWait != null);
+  bool get hasWait => waiting > BigInt.zero;
 
   /// When all of [waiting] is spendable.
   AvailableIn? get wait {
-    if (!hasWait) return null;
-    final waits = [
-      if (changeWaiting > BigInt.zero) changeWait!,
-      if (receivedWaiting > BigInt.zero) receivedWait!,
-    ]..sort();
-    return waits.last;
+    final waits = [?changeWait, ?receivedWait]..sort();
+    return waits.isEmpty ? null : waits.last;
   }
 
   /// The earliest wait after which [amount] fits the spendable balance, or
-  /// null when it fits now, never fits, or no wait can be stated.
+  /// null when it fits now or never fits.
   ///
   /// Pass [includesFee] false for an amount whose fee is still unknown;
   /// [kSpendableWaitFeeReserve] is then held back for it.
   AvailableIn? waitFor(BigInt amount, {bool includesFee = true}) {
     final needed = includesFee ? amount : amount + kSpendableWaitFeeReserve;
-    if (!hasWait || needed <= availableNow || needed > total) return null;
+    if (needed <= availableNow || needed > total) return null;
     final buckets = [
-      if (changeWaiting > BigInt.zero) (changeWait!, changeWaiting),
-      if (receivedWaiting > BigInt.zero) (receivedWait!, receivedWaiting),
+      if (changeWait != null) (changeWait!, changeWaiting),
+      if (receivedWait != null) (receivedWait!, receivedWaiting),
     ]..sort((a, b) => a.$1.compareTo(b.$1));
     var covered = availableNow;
     for (final (wait, value) in buckets) {
@@ -194,140 +129,75 @@ class SpendableWait {
   );
 }
 
-/// Splits the account's pending shielded balance into change and received
-/// funds, with a wait for each from [transactions].
+/// The wallet's waiting funds as [SpendableWait].
 ///
-/// [changePending] is the wallet's pending change over every pool, with two
-/// quirks this accounts for:
-///
-/// * Only a shielded pool ever holds pending change: a transparent output is
-///   either spendable or pending value. So [changePending] is all shielded.
-/// * Change counts as pending change only until its second confirmation.
-///   For the one block after that, until the anchor reaches it, the wallet
-///   reports it as pending value. So the rest of [shieldedPending] is
-///   received funds, except that with no receipt waiting and a payment on its
-///   second confirmation, it is that payment's change.
-///
-/// [transactions] is the newest few, so "no receipt waiting" holds only when
-/// the list reaches back past the wait: a receipt missing from a list of
-/// nothing but recent entries may simply have been pushed out of it.
-///
-/// Returns null if [changePending] exceeds [shieldedPending].
-SpendableWait? resolveSpendableWait({
+/// [entries] come with the balance [availableNow] was read from and count
+/// blocks from the chain tip of that read; [tipHeight] only picks the block
+/// spacing.
+SpendableWait spendableWaitOf({
   required BigInt availableNow,
-  required BigInt shieldedPending,
-  required BigInt changePending,
+  required Iterable<rust_sync.PendingSpendableEntry> entries,
   required int tipHeight,
   required BlockSpacing spacing,
-  required List<rust_sync.TransactionInfo> transactions,
-  bool catchingUp = false,
 }) {
-  if (shieldedPending == BigInt.zero) {
-    return SpendableWait(
-      availableNow: availableNow,
-      changeWaiting: BigInt.zero,
-      receivedWaiting: BigInt.zero,
-    );
+  var changeWaiting = BigInt.zero;
+  var receivedWaiting = BigInt.zero;
+  var changeBlocks = 0;
+  var receivedBlocks = 0;
+  for (final entry in entries) {
+    if (entry.isChange) {
+      changeWaiting += entry.value;
+      changeBlocks = math.max(changeBlocks, entry.blocksUntilSpendable);
+    } else {
+      receivedWaiting += entry.value;
+      receivedBlocks = math.max(receivedBlocks, entry.blocksUntilSpendable);
+    }
   }
-  if (changePending > shieldedPending) return null;
-  final receivedPending = shieldedPending - changePending;
-  List<int> waitingBlocks(
-    bool Function(rust_sync.TransactionInfo) matches,
-    int requiredConfirmations,
-  ) => [
-    for (final transaction in transactions)
-      if (!transaction.expiredUnmined && matches(transaction))
-        ?_waitingBlocks(
-          minedHeight: transaction.minedHeight.toInt(),
-          tipHeight: tipHeight,
-          requiredConfirmations: requiredConfirmations,
-          catchingUp: catchingUp,
-        ),
-  ];
-
-  final changeBlocks = waitingBlocks(
-    _createsChange,
-    kChangeSpendableConfirmations,
-  );
-  final receivedBlocks = waitingBlocks(
-    _isShieldedReceipt,
-    kReceivedSpendableConfirmations,
-  );
-  // Any payment on its second confirmation, however many others are newer.
-  final changeInLastBlock = changeBlocks.any((blocks) => blocks <= 1);
-  // An entry old enough to spend means every newer one is listed too.
-  final listCoversWait = transactions.any(
-    (transaction) =>
-        blocksUntilSpendable(
-          minedHeight: transaction.minedHeight.toInt(),
-          tipHeight: tipHeight,
-          requiredConfirmations: kReceivedSpendableConfirmations,
-        ) ==
-        0,
-  );
-  final restIsChange =
-      receivedPending > BigInt.zero &&
-      receivedBlocks.isEmpty &&
-      changeInLastBlock &&
-      listCoversWait;
-  final changeWaiting = restIsChange ? shieldedPending : changePending;
-  final receivedWaiting = restIsChange ? BigInt.zero : receivedPending;
   return SpendableWait(
     availableNow: availableNow,
     changeWaiting: changeWaiting,
     receivedWaiting: receivedWaiting,
-    changeWait: changeWaiting == BigInt.zero || changeBlocks.isEmpty
+    changeWait: changeWaiting == BigInt.zero
         ? null
-        : _waitForBlocks(changeBlocks.reduce(math.max), tipHeight, spacing),
-    receivedWait: receivedWaiting == BigInt.zero || receivedBlocks.isEmpty
+        : _waitForBlocks(changeBlocks, tipHeight, spacing),
+    receivedWait: receivedWaiting == BigInt.zero
         ? null
-        : _waitForBlocks(receivedBlocks.reduce(math.max), tipHeight, spacing),
+        : _waitForBlocks(receivedBlocks, tipHeight, spacing),
   );
 }
 
-bool _createsChange(rust_sync.TransactionInfo transaction) =>
-    transaction.txKind == 'sent' || transaction.txKind == 'migration';
+AvailableIn _waitForBlocks(int blocks, int tipHeight, BlockSpacing spacing) =>
+    AvailableIn.fromSeconds(
+      spacing.secondsBetween(tipHeight, tipHeight + blocks),
+    );
 
-/// The largest value the wallet treats as uneconomic to spend, the ZIP 317
-/// marginal fee its balance uses. It counts such a note apart from the
-/// pending balances, whatever its confirmations.
-final _uneconomicValue = BigInt.from(5000);
-
-// A memo-only or dust receipt is in no pending balance, so it explains none.
-bool _isShieldedReceipt(rust_sync.TransactionInfo transaction) =>
-    (transaction.txKind == 'received' || transaction.txKind == 'receiving') &&
-    !transaction.isTransparent &&
-    transaction.displayAmount > _uneconomicValue;
-
-/// The chain position waits are measured from, and whether the wallet is
-/// still scanning up to it.
-typedef SpendableWaitClock = ({
-  int tipHeight,
-  BlockSpacing spacing,
-  bool catchingUp,
+/// A mined receipt the account cannot spend yet: when it can, and how far
+/// along its confirmations are.
+typedef ReceivedSpendableWait = ({
+  AvailableIn wait,
+  int confirmations,
+  int requiredConfirmations,
 });
 
-/// The wait a mined, shielded receipt still has before it can be spent, with
-/// its confirmation count; null once spendable or when not a receipt.
-({AvailableIn wait, int confirmations})? receivedSpendableWait(
+/// The waiting receipts among [entries], by [rust_sync.TransactionInfo.txidHex].
+///
+/// A receipt still in the mempool is left to its pending row.
+Map<String, ReceivedSpendableWait> receivedSpendableWaits({
+  required Iterable<rust_sync.PendingSpendableEntry> entries,
+  required int tipHeight,
+  required BlockSpacing spacing,
+}) => {
+  for (final entry in entries)
+    if (!entry.isChange && entry.confirmations > 0)
+      entry.txidHex: (
+        wait: _waitForBlocks(entry.blocksUntilSpendable, tipHeight, spacing),
+        confirmations: entry.confirmations,
+        requiredConfirmations: entry.confirmations + entry.blocksUntilSpendable,
+      ),
+};
+
+/// [transaction]'s entry in [waits] when it is a receipt.
+ReceivedSpendableWait? receivedSpendableWaitFor(
   rust_sync.TransactionInfo transaction,
-  SpendableWaitClock clock,
-) {
-  if (transaction.txKind != 'received' ||
-      !_isShieldedReceipt(transaction) ||
-      transaction.expiredUnmined ||
-      transaction.minedHeight <= BigInt.zero) {
-    return null;
-  }
-  final blocks = _waitingBlocks(
-    minedHeight: transaction.minedHeight.toInt(),
-    tipHeight: clock.tipHeight,
-    requiredConfirmations: kReceivedSpendableConfirmations,
-    catchingUp: clock.catchingUp,
-  );
-  if (blocks == null) return null;
-  return (
-    wait: _waitForBlocks(blocks, clock.tipHeight, clock.spacing),
-    confirmations: kReceivedSpendableConfirmations - blocks,
-  );
-}
+  Map<String, ReceivedSpendableWait> waits,
+) => transaction.txKind == 'received' ? waits[transaction.txidHex] : null;

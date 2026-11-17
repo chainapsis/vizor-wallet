@@ -529,12 +529,12 @@ class _MobileTransactionStatusScreenState
     // "From transparent balance" -> "Shielded balance". No Figma frame for
     // this state yet; mobile is aligned to the (more informative) desktop
     // shape pending one.
-    final spendableWaitClock = ref.watch(
-      activeReceivedSpendableWaitClockProvider,
-    );
-    final spendableWait = giftCard != null || spendableWaitClock == null
+    final spendableWait = giftCard != null
         ? null
-        : receivedSpendableWait(tx, spendableWaitClock);
+        : receivedSpendableWaitFor(
+            tx,
+            ref.watch(activeReceivedSpendableWaitsProvider),
+          );
     final reviewChildren = giftCard != null
         ? <Widget>[]
         : _isMigration
@@ -717,7 +717,7 @@ class _MobileTransactionStatusScreenState
                           ),
                           child: Text(
                             l10n.activityReceiptSpendableAfter(
-                              kReceivedSpendableConfirmations.toString(),
+                              spendableWait.requiredConfirmations.toString(),
                             ),
                             style: AppTypography.bodySmall.copyWith(
                               color: colors.text.secondary,
@@ -1005,7 +1005,7 @@ class _DetailCard extends StatelessWidget {
 
   /// A completed receipt the account cannot spend yet: the Status says when
   /// it can, and a row counts its confirmations.
-  final ({AvailableIn wait, int confirmations})? spendableWait;
+  final ReceivedSpendableWait? spendableWait;
   final bool failed;
   final String? memo;
   final bool memoLoading;
@@ -1054,7 +1054,7 @@ class _DetailCard extends StatelessWidget {
               value: _ValueWithIcon(
                 text: context.l10n.activityReceiptConfirmationsProgress(
                   spendableWait!.confirmations.toString(),
-                  kReceivedSpendableConfirmations.toString(),
+                  spendableWait!.requiredConfirmations.toString(),
                 ),
               ),
             ),

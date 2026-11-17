@@ -14687,6 +14687,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PendingSpendableEntry> dco_decode_list_pending_spendable_entry(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_pending_spendable_entry)
+        .toList();
+  }
+
+  @protected
   List<PirSnapshotEndpointDiagnosticView>
   dco_decode_list_pir_snapshot_endpoint_diagnostic_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -15639,6 +15649,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       conflictedTxids: dco_decode_list_String(arr[1]),
       localClaimTxids: dco_decode_list_String(arr[2]),
       verifiedHeight: dco_decode_u_64(arr[3]),
+    );
+  }
+
+  @protected
+  PendingSpendableEntry dco_decode_pending_spendable_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return PendingSpendableEntry(
+      txidHex: dco_decode_String(arr[0]),
+      isChange: dco_decode_bool(arr[1]),
+      value: dco_decode_u_64(arr[2]),
+      blocksUntilSpendable: dco_decode_u_32(arr[3]),
+      confirmations: dco_decode_u_32(arr[4]),
     );
   }
 
@@ -16657,8 +16682,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 23)
-      throw Exception('unexpected arr length: expect 23 but see ${arr.length}');
+    if (arr.length != 24)
+      throw Exception('unexpected arr length: expect 24 but see ${arr.length}');
     return WalletBalance(
       availability: dco_decode_wallet_balance_availability(arr[0]),
       transparentAuthority: dco_decode_transparent_balance_authority(arr[1]),
@@ -16685,6 +16710,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       spendable: dco_decode_u_64(arr[20]),
       locked: dco_decode_u_64(arr[21]),
       total: dco_decode_u_64(arr[22]),
+      pendingSpendable: dco_decode_list_pending_spendable_entry(arr[23]),
     );
   }
 
@@ -19602,6 +19628,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PendingSpendableEntry> sse_decode_list_pending_spendable_entry(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PendingSpendableEntry>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_pending_spendable_entry(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<PirSnapshotEndpointDiagnosticView>
   sse_decode_list_pir_snapshot_endpoint_diagnostic_view(
     SseDeserializer deserializer,
@@ -21055,6 +21095,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PendingSpendableEntry sse_decode_pending_spendable_entry(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_txidHex = sse_decode_String(deserializer);
+    var var_isChange = sse_decode_bool(deserializer);
+    var var_value = sse_decode_u_64(deserializer);
+    var var_blocksUntilSpendable = sse_decode_u_32(deserializer);
+    var var_confirmations = sse_decode_u_32(deserializer);
+    return PendingSpendableEntry(
+      txidHex: var_txidHex,
+      isChange: var_isChange,
+      value: var_value,
+      blocksUntilSpendable: var_blocksUntilSpendable,
+      confirmations: var_confirmations,
+    );
+  }
+
+  @protected
   PirLayout sse_decode_pir_layout(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_pirDepth = sse_decode_u_32(deserializer);
@@ -22352,6 +22411,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_spendable = sse_decode_u_64(deserializer);
     var var_locked = sse_decode_u_64(deserializer);
     var var_total = sse_decode_u_64(deserializer);
+    var var_pendingSpendable = sse_decode_list_pending_spendable_entry(
+      deserializer,
+    );
     return WalletBalance(
       availability: var_availability,
       transparentAuthority: var_transparentAuthority,
@@ -22376,6 +22438,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       spendable: var_spendable,
       locked: var_locked,
       total: var_total,
+      pendingSpendable: var_pendingSpendable,
     );
   }
 
@@ -24868,6 +24931,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_pending_spendable_entry(
+    List<PendingSpendableEntry> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_pending_spendable_entry(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_pir_snapshot_endpoint_diagnostic_view(
     List<PirSnapshotEndpointDiagnosticView> self,
     SseSerializer serializer,
@@ -26104,6 +26179,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_pending_spendable_entry(
+    PendingSpendableEntry self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.txidHex, serializer);
+    sse_encode_bool(self.isChange, serializer);
+    sse_encode_u_64(self.value, serializer);
+    sse_encode_u_32(self.blocksUntilSpendable, serializer);
+    sse_encode_u_32(self.confirmations, serializer);
+  }
+
+  @protected
   void sse_encode_pir_layout(PirLayout self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.pirDepth, serializer);
@@ -27083,6 +27171,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.spendable, serializer);
     sse_encode_u_64(self.locked, serializer);
     sse_encode_u_64(self.total, serializer);
+    sse_encode_list_pending_spendable_entry(self.pendingSpendable, serializer);
   }
 
   @protected

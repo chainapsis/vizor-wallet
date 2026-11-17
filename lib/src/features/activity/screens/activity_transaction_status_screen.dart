@@ -301,9 +301,7 @@ class _ActivityTransactionStatusScreenState
       ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[],
     );
 
-    final spendableWaitClock = ref.watch(
-      activeReceivedSpendableWaitClockProvider,
-    );
+    final spendableWaits = ref.watch(activeReceivedSpendableWaitsProvider);
 
     return _ReceiptContentColumn(
       child: ReceivedReceiptView(
@@ -332,9 +330,7 @@ class _ActivityTransactionStatusScreenState
         memoText: memo,
         memoExpanded: _messageExpanded,
         detailsLoading: receiptDetailsLoading,
-        spendableWait: spendableWaitClock == null
-            ? null
-            : receivedSpendableWait(tx, spendableWaitClock),
+        spendableWait: receivedSpendableWaitFor(tx, spendableWaits),
         onShowFullAddress: hasFromAddress
             ? () => _showVerifyAddress(fromAddress)
             : null,

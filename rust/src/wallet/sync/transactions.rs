@@ -246,6 +246,36 @@ pub(crate) fn get_wallet_balance(
         .expect("get_wallet_balances returns one entry per requested account"))
 }
 
+/// One transaction's shielded outputs to an account that are waiting only on
+/// confirmations: its change, or the funds it received from elsewhere.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PendingSpendable {
+    pub txid: Vec<u8>,
+    /// The account's own change, as opposed to funds received.
+    pub is_change: bool,
+    pub value: u64,
+    /// Blocks after the chain tip before the outputs can be spent.
+    pub blocks_until_spendable: u32,
+    /// Confirmations the transaction has; zero while unmined.
+    pub confirmations: u32,
+}
+
+/// [`get_wallet_balance`] with the account's [`PendingSpendable`] entries,
+/// read from the same snapshot.
+pub(crate) fn get_wallet_balance_with_pending(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<(WalletBalance, Vec<PendingSpendable>), String> {
+    let account = parse_account_uuid(account_uuid)?;
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    let mut balances =
+        read_wallet_balances_with_pending(&mut db, db_path, network, &[account], true)?;
+    Ok(balances
+        .pop()
+        .expect("read_wallet_balances_with_pending returns one entry per requested account"))
+}
+
 /// Balances for several accounts from a single `get_wallet_summary`.
 ///
 /// `get_wallet_summary` computes every account's balance regardless of
@@ -286,11 +316,28 @@ pub(crate) fn read_wallet_balances(
     network: WalletNetwork,
     target_ids: &[AccountUuid],
 ) -> Result<Vec<WalletBalance>, String> {
+    Ok(
+        read_wallet_balances_with_pending(db, db_path, network, target_ids, false)?
+            .into_iter()
+            .map(|(balance, _)| balance)
+            .collect(),
+    )
+}
+
+/// [`read_wallet_balances`], with each account's [`PendingSpendable`] entries
+/// when `with_pending` asks for them.
+fn read_wallet_balances_with_pending(
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    target_ids: &[AccountUuid],
+    with_pending: bool,
+) -> Result<Vec<(WalletBalance, Vec<PendingSpendable>)>, String> {
     // Read durable policy, summary, and authority from one snapshot. The
     // library resolves this handle under a policy another connection applied
     // since `db` was opened, so a private-policy summary's suppressed zero is
     // never labeled as current funds.
-    db.transactionally(|db| {
+    db.transactionally_with_extension(|db, ext| {
         let durable = db.applied_transparent_policy()?.mode;
         let private = durable == TransparentLedgerMode::PrivateRequired;
         // No run recovers a private wallet while private queries are off.
@@ -301,21 +348,28 @@ pub(crate) fn read_wallet_balances(
             return Ok(target_ids
                 .iter()
                 .map(|_| {
-                    WalletBalance::unavailable(
-                        WalletBalanceAvailability::SummaryUnavailable,
-                        private,
+                    (
+                        WalletBalance::unavailable(
+                            WalletBalanceAvailability::SummaryUnavailable,
+                            private,
+                        ),
+                        Vec::new(),
                     )
                 })
                 .collect());
         };
+        let target_height = u32::from(summary.chain_tip_height()) + 1;
 
         target_ids
             .iter()
             .map(|target_id| {
                 let Some(b) = summary.account_balances().get(target_id) else {
-                    return Ok(WalletBalance::unavailable(
-                        WalletBalanceAvailability::AccountUnavailable,
-                        private,
+                    return Ok((
+                        WalletBalance::unavailable(
+                            WalletBalanceAvailability::AccountUnavailable,
+                            private,
+                        ),
+                        Vec::new(),
                     ));
                 };
                 let shielded = [
@@ -336,12 +390,18 @@ pub(crate) fn read_wallet_balances(
                         status.stop = Some(reason);
                     }
                 }
-                Ok(WalletBalance::from_pools(
+                let balance = WalletBalance::from_pools(
                     WalletBalanceAvailability::Available,
                     status,
                     transparent,
                     shielded,
-                ))
+                );
+                let pending = if with_pending {
+                    pending_spendable::for_balance(ext, *target_id, target_height, &balance)?
+                } else {
+                    Vec::new()
+                };
+                Ok((balance, pending))
             })
             .collect::<Result<Vec<_>, zcash_client_sqlite::error::SqliteClientError>>()
     })
@@ -2914,6 +2974,9 @@ pub(super) mod resubmission_tests;
 #[cfg(test)]
 #[path = "transactions/history_summary_tests.rs"]
 mod history_summary_tests;
+
+#[path = "transactions/pending_spendable.rs"]
+mod pending_spendable;
 
 #[cfg(test)]
 #[path = "transactions/private_shielding_tests.rs"]

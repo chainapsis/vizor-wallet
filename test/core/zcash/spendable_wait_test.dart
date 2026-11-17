@@ -14,52 +14,6 @@ const _nu7 = BlockSpacing(
 final _zec = BigInt.from(100000000);
 
 void main() {
-  group('blocksUntilSpendable', () {
-    test('a receipt is spendable on its sixth confirmation', () {
-      int? blocks(int tip) => blocksUntilSpendable(
-        minedHeight: 100,
-        tipHeight: tip,
-        requiredConfirmations: kReceivedSpendableConfirmations,
-      );
-      expect(blocks(100), 5);
-      expect(blocks(104), 1);
-      expect(blocks(105), 0);
-      expect(blocks(200), 0);
-    });
-
-    test('change is spendable on its third confirmation', () {
-      int? blocks(int tip) => blocksUntilSpendable(
-        minedHeight: 100,
-        tipHeight: tip,
-        requiredConfirmations: kChangeSpendableConfirmations,
-      );
-      expect(blocks(100), 2);
-      expect(blocks(102), 0);
-    });
-
-    test('an unmined output needs every confirmation', () {
-      expect(
-        blocksUntilSpendable(
-          minedHeight: 0,
-          tipHeight: _tip,
-          requiredConfirmations: kChangeSpendableConfirmations,
-        ),
-        3,
-      );
-    });
-
-    test('says nothing while the tip is unknown', () {
-      expect(
-        blocksUntilSpendable(
-          minedHeight: 100,
-          tipHeight: 0,
-          requiredConfirmations: kReceivedSpendableConfirmations,
-        ),
-        isNull,
-      );
-    });
-  });
-
   test('a wait is a minute range around the target block time', () {
     expect(AvailableIn.fromSeconds(25), const AvailableIn.underMinute());
     expect(AvailableIn.fromSeconds(75), const AvailableIn.minutes(1, 2));
@@ -78,253 +32,55 @@ void main() {
     );
   });
 
-  group('resolveSpendableWait', () {
-    // [received] is the pending shielded value that is not pending change.
-    SpendableWait? resolve({
-      BigInt? change,
-      BigInt? received,
-      List<rust_sync.TransactionInfo> transactions = const [],
-      bool catchingUp = false,
-    }) {
-      final c = change ?? BigInt.zero;
-      return resolveSpendableWait(
-        availableNow: _zec,
-        shieldedPending: c + (received ?? BigInt.zero),
-        changePending: c,
-        tipHeight: _tip,
-        spacing: _nu7,
-        transactions: transactions,
-        catchingUp: catchingUp,
-      );
-    }
+  group('spendableWaitOf', () {
+    SpendableWait of(List<rust_sync.PendingSpendableEntry> entries) =>
+        spendableWaitOf(
+          availableNow: _zec,
+          entries: entries,
+          tipHeight: _tip,
+          spacing: _nu7,
+        );
 
-    test('nothing pending has no wait', () {
-      final wait = resolve()!;
+    test('nothing waiting has no wait', () {
+      final wait = of(const []);
+      expect(wait.availableNow, _zec);
       expect(wait.hasWait, isFalse);
-      expect(wait.total, _zec);
-    });
-
-    test('a receipt just mined waits five more blocks', () {
-      final wait = resolve(
-        received: _zec,
-        transactions: [_tx('received', minedHeight: _tip)],
-      )!;
-      expect(wait.receivedWaiting, _zec);
-      expect(wait.receivedWait, const AvailableIn.minutes(1, 3));
-      expect(wait.wait, const AvailableIn.minutes(1, 3));
-    });
-
-    test('change from a payment not yet mined waits three blocks', () {
-      final wait = resolve(change: _zec, transactions: [_tx('sent')])!;
-      expect(wait.changeWait, const AvailableIn.minutes(1, 2));
-    });
-
-    test('the whole wait is the later of the two causes', () {
-      final wait = resolve(
-        change: _zec,
-        received: _zec,
-        transactions: [
-          _tx('sent', minedHeight: _tip),
-          _tx('received', minedHeight: _tip),
-        ],
-      )!;
-      expect(wait.changeWait, const AvailableIn.underMinute());
-      expect(wait.wait, const AvailableIn.minutes(1, 3));
-    });
-
-    test('states no time without a transaction that explains the wait', () {
-      final wait = resolve(received: _zec, transactions: [_tx('sent')])!;
-      expect(wait.receivedWait, isNull);
-      expect(wait.hasWait, isFalse);
+      expect(wait.wait, isNull);
       expect(wait.waitFor(_zec + BigInt.one), isNull);
     });
 
-    test('ignores expired, transparent and already spendable entries', () {
-      final wait = resolve(
-        received: _zec,
-        transactions: [
-          _tx('received', minedHeight: _tip, expiredUnmined: true),
-          _tx('received', minedHeight: _tip, isTransparent: true),
-          _tx('received', minedHeight: _tip - 10),
-        ],
-      )!;
-      expect(wait.receivedWait, isNull);
-    });
-
-    test('a receipt the unscanned tip just completed still waits a moment '
-        'while catching up', () {
-      final justCompleted = [_tx('received', minedHeight: _tip - 5)];
-      expect(
-        resolve(
-          received: _zec,
-          transactions: justCompleted,
-          catchingUp: true,
-        )!.receivedWait,
-        const AvailableIn.underMinute(),
-      );
-      expect(
-        resolve(received: _zec, transactions: justCompleted)!.receivedWait,
-        isNull,
-      );
-      expect(
-        resolve(
-          received: _zec,
-          transactions: [_tx('received', minedHeight: _tip - 9)],
-          catchingUp: true,
-        )!.receivedWait,
-        isNull,
-      );
-    });
-
-    test('change on its second confirmation, reported as pending value, '
-        'still reads as change', () {
-      // The wallet stops counting change as pending change one block before
-      // the anchor reaches it; for that block it is pending value.
-      final wait = resolve(
-        received: _zec,
-        transactions: [
-          _tx('sent', minedHeight: _tip - 1),
-          _old,
-        ],
-      )!;
-      expect(wait.changeWaiting, _zec);
-      expect(wait.receivedWaiting, BigInt.zero);
-      expect(wait.changeWait, const AvailableIn.underMinute());
-      expect(wait.hasWait, isTrue);
-    });
-
-    test('a list of nothing but recent entries cannot rule out a receipt', () {
-      // The receipt behind the pending value may have been pushed out of the
-      // newest-few list, so it is not read as change, and no wait is stated.
-      final wait = resolve(
-        received: _zec,
-        transactions: [
-          _tx('sent', minedHeight: _tip - 1),
-          _tx('sent', minedHeight: _tip - 3),
-        ],
-      )!;
-      expect(wait.changeWaiting, BigInt.zero);
-      expect(wait.receivedWaiting, _zec);
-      expect(wait.hasWait, isFalse);
-    });
-
-    test('a dust receipt explains no pending value', () {
-      // At the marginal fee the wallet counts a note as uneconomic, not
-      // pending; one zatoshi more and it is pending like any other.
-      final dust = _tx(
-        'received',
-        minedHeight: _tip,
-        amount: BigInt.from(5000),
-      );
-      expect(
-        resolve(received: _zec, transactions: [dust])!.receivedWait,
-        isNull,
-      );
-      expect(
-        resolve(
-          received: _zec,
-          transactions: [
-            _tx('received', minedHeight: _tip, amount: BigInt.from(5001)),
-          ],
-        )!.receivedWait,
-        const AvailableIn.minutes(1, 3),
-      );
-    });
-
-    test('a memo-only receipt explains no pending value', () {
-      final memoOnly = _tx('received', minedHeight: _tip, amount: BigInt.zero);
-      final wait = resolve(
-        received: _zec,
-        transactions: [
-          memoOnly,
-          _tx('received', minedHeight: _tip - 3),
-        ],
-      )!;
-      // The older receipt's two remaining blocks, not the memo's five.
-      expect(wait.receivedWait, const AvailableIn.underMinute());
-      expect(
-        resolve(received: _zec, transactions: [memoOnly])!.receivedWait,
-        isNull,
-      );
-      expect(
-        receivedSpendableWait(memoOnly, (
-          tipHeight: _tip,
-          spacing: _nu7,
-          catchingUp: false,
-        )),
-        isNull,
-      );
-    });
-
-    test('pending value is received funds while a receipt is waiting', () {
-      final wait = resolve(
-        received: _zec * BigInt.two,
-        transactions: [
-          _tx('sent', minedHeight: _tip - 1),
-          _tx('received', minedHeight: _tip),
-        ],
-      )!;
-      expect(wait.changeWaiting, BigInt.zero);
+    test('sums each cause and waits for its last transaction', () {
+      final wait = of([
+        _entry('a', blocks: 5),
+        _entry('b', blocks: 2),
+        _entry('c', isChange: true, blocks: 3),
+        _entry('d', isChange: true, blocks: 1),
+      ]);
       expect(wait.receivedWaiting, _zec * BigInt.two);
       expect(wait.receivedWait, const AvailableIn.minutes(1, 3));
-    });
-
-    test('pending value no payment or receipt explains has no wait', () {
-      final wait = resolve(
-        received: _zec,
-        transactions: [_tx('sent', minedHeight: _tip)],
-      )!;
-      expect(wait.receivedWaiting, _zec);
-      expect(wait.hasWait, isFalse);
-    });
-
-    test('one payment on its second confirmation is found among newer '
-        'ones', () {
-      // The newer payment's change is still pending change; the older one's
-      // has moved to pending value.
-      final wait = resolve(
-        change: _zec,
-        received: _zec,
-        transactions: [
-          _tx('sent'),
-          _tx('sent', minedHeight: _tip - 1),
-          _old,
-        ],
-      )!;
       expect(wait.changeWaiting, _zec * BigInt.two);
-      expect(wait.receivedWaiting, BigInt.zero);
       expect(wait.changeWait, const AvailableIn.minutes(1, 2));
-      expect(wait.hasWait, isTrue);
+      expect(wait.wait, const AvailableIn.minutes(1, 3));
+      expect(wait.total, _zec * BigInt.from(5));
     });
 
-    test('several blocks landing in one catch-up do not drop the wait', () {
-      final wait = resolve(
-        received: _zec,
-        transactions: [_tx('received', minedHeight: _tip - 7)],
-        catchingUp: true,
-      )!;
-      expect(wait.receivedWait, const AvailableIn.underMinute());
-      expect(
-        resolve(
-          received: _zec,
-          transactions: [_tx('received', minedHeight: _tip - 20)],
-          catchingUp: true,
-        )!.receivedWait,
-        isNull,
+    test('blocks are timed at the spacing of the tip', () {
+      SpendableWait at(BlockSpacing spacing) => spendableWaitOf(
+        availableNow: _zec,
+        entries: [_entry('a', blocks: 5)],
+        tipHeight: _tip,
+        spacing: spacing,
       );
-    });
-
-    test('more pending change than pending shielded value is unknown', () {
+      expect(at(_nu7).receivedWait, const AvailableIn.minutes(1, 3));
       expect(
-        resolveSpendableWait(
-          availableNow: _zec,
-          shieldedPending: _zec,
-          changePending: _zec * BigInt.two,
-          tipHeight: _tip,
-          spacing: _nu7,
-          transactions: const [],
-        ),
-        isNull,
+        at(
+          const BlockSpacing(
+            preNu7BlockSeconds: 75,
+            nu7BlockSeconds: 25,
+            nu7ActivationHeight: _tip * 2,
+          ),
+        ).receivedWait,
+        const AvailableIn.minutes(5, 7),
       );
     });
   });
@@ -371,40 +127,53 @@ void main() {
     });
   });
 
-  test('a mined shielded receipt reports its wait and confirmations', () {
-    const clock = (tipHeight: _tip, spacing: _nu7, catchingUp: false);
-    final waiting = receivedSpendableWait(
-      _tx('received', minedHeight: _tip - 1),
-      clock,
-    )!;
-    expect(waiting.confirmations, 2);
-    expect(waiting.wait, const AvailableIn.minutes(1, 2));
-    expect(
-      receivedSpendableWait(_tx('received', minedHeight: _tip - 5), clock),
-      isNull,
+  group('receivedSpendableWaits', () {
+    final waits = receivedSpendableWaits(
+      entries: [
+        _entry('mined', blocks: 4, confirmations: 2),
+        _entry('mempool', blocks: 6, confirmations: 0),
+        _entry('change', isChange: true, blocks: 2, confirmations: 1),
+      ],
+      tipHeight: _tip,
+      spacing: _nu7,
     );
-    expect(receivedSpendableWait(_tx('received'), clock), isNull);
-    expect(
-      receivedSpendableWait(_tx('sent', minedHeight: _tip), clock),
-      isNull,
-    );
+
+    test('a mined receipt reports its wait and confirmations', () {
+      expect(waits.keys, ['mined']);
+      expect(waits['mined']!.wait, const AvailableIn.minutes(1, 2));
+      expect(waits['mined']!.confirmations, 2);
+      expect(waits['mined']!.requiredConfirmations, 6);
+    });
+
+    test('only a receipt row reads it', () {
+      expect(
+        receivedSpendableWaitFor(_tx('received', 'mined'), waits),
+        isNotNull,
+      );
+      expect(receivedSpendableWaitFor(_tx('sent', 'mined'), waits), isNull);
+      expect(receivedSpendableWaitFor(_tx('received', 'other'), waits), isNull);
+    });
   });
 }
 
-/// An entry old enough to spend: the list reaches back past the wait.
-final _old = _tx('received', minedHeight: _tip - 50);
+rust_sync.PendingSpendableEntry _entry(
+  String txid, {
+  bool isChange = false,
+  required int blocks,
+  int confirmations = 1,
+}) => rust_sync.PendingSpendableEntry(
+  txidHex: txid,
+  isChange: isChange,
+  value: _zec,
+  blocksUntilSpendable: blocks,
+  confirmations: confirmations,
+);
 
-rust_sync.TransactionInfo _tx(
-  String kind, {
-  int minedHeight = 0,
-  bool expiredUnmined = false,
-  bool isTransparent = false,
-  BigInt? amount,
-}) {
+rust_sync.TransactionInfo _tx(String kind, String txid) {
   return rust_sync.TransactionInfo(
-    txidHex: '$kind-$minedHeight',
-    minedHeight: BigInt.from(minedHeight),
-    expiredUnmined: expiredUnmined,
+    txidHex: txid,
+    minedHeight: BigInt.from(_tip),
+    expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
     feeState: rust_sync.TransactionFeeState.notApplicable,
@@ -412,10 +181,10 @@ rust_sync.TransactionInfo _tx(
     provisional: false,
     amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
-    isTransparent: isTransparent,
+    isTransparent: false,
     txKind: kind,
-    displayAmount: amount ?? _zec,
-    displayPool: isTransparent ? 'transparent' : 'shielded',
+    displayAmount: _zec,
+    displayPool: 'shielded',
     createdTime: BigInt.from(1800000000),
   );
 }

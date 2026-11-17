@@ -102,7 +102,7 @@ class ReceivedReceiptView extends StatelessWidget {
 
   /// A completed receipt the account cannot spend yet: the Status row says
   /// when it can, and a row counts its confirmations.
-  final ({AvailableIn wait, int confirmations})? spendableWait;
+  final ReceivedSpendableWait? spendableWait;
 
   /// "Show full address" ghost action on the From row.
   final VoidCallback? onShowFullAddress;
@@ -260,7 +260,7 @@ class ReceivedReceiptView extends StatelessWidget {
                     label: l10n.activityReceiptConfirmations,
                     value: l10n.activityReceiptConfirmationsProgress(
                       spendableWait!.confirmations.toString(),
-                      kReceivedSpendableConfirmations.toString(),
+                      spendableWait!.requiredConfirmations.toString(),
                     ),
                   ),
                 ReviewListRow(
@@ -288,7 +288,7 @@ class ReceivedReceiptView extends StatelessWidget {
             ),
             child: Text(
               l10n.activityReceiptSpendableAfter(
-                kReceivedSpendableConfirmations.toString(),
+                spendableWait!.requiredConfirmations.toString(),
               ),
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,

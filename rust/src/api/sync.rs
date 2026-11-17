@@ -917,6 +917,25 @@ pub struct WalletBalance {
     pub locked: u64,
     /// Sum of spendable + locked + pending balances across all pools.
     pub total: u64,
+    /// The shielded pending value that waits only on confirmations, by
+    /// transaction, read in the same snapshot as the amounts above. Empty
+    /// while the wallet still has older blocks to scan; pending value it does
+    /// not list has no known wait.
+    pub pending_spendable: Vec<PendingSpendableEntry>,
+}
+
+/// Shielded funds one transaction gave the account that are short of
+/// confirmations: its change, or what it received.
+pub struct PendingSpendableEntry {
+    /// As [`TransactionInfo::txid_hex`].
+    pub txid_hex: String,
+    /// Change from the account's own transaction, not funds received.
+    pub is_change: bool,
+    pub value: u64,
+    /// Blocks after the wallet's chain tip before the funds can be spent.
+    pub blocks_until_spendable: u32,
+    /// Confirmations the transaction has; zero while unmined.
+    pub confirmations: u32,
 }
 
 pub struct ScanRangeInfo {
@@ -1132,7 +1151,8 @@ pub fn get_balance(
 ) -> Result<WalletBalance, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let b = wallet_sync::get_wallet_balance(&db_path, network, &account_uuid)?;
+        let (b, pending_spendable) =
+            wallet_sync::get_wallet_balance_with_pending(&db_path, network, &account_uuid)?;
         let availability = match b.availability {
             wallet_sync::WalletBalanceAvailability::Available => {
                 WalletBalanceAvailability::Available
@@ -1198,6 +1218,16 @@ pub fn get_balance(
             spendable,
             locked,
             total: total_spendable + locked + pending,
+            pending_spendable: pending_spendable
+                .into_iter()
+                .map(|entry| PendingSpendableEntry {
+                    txid_hex: hex::encode(&entry.txid),
+                    is_change: entry.is_change,
+                    value: entry.value,
+                    blocks_until_spendable: entry.blocks_until_spendable,
+                    confirmations: entry.confirmations,
+                })
+                .collect(),
         })
     })
 }

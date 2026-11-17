@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
@@ -59,17 +58,15 @@ void main() {
   testWidgets('a confirming receipt row says when it is available', (
     tester,
   ) async {
-    const clock = (
-      tipHeight: 1000,
-      spacing: BlockSpacing(
-        preNu7BlockSeconds: 75,
-        nu7BlockSeconds: 25,
-        nu7ActivationHeight: 1,
+    const waits = <String, ReceivedSpendableWait>{
+      'received-1000': (
+        wait: AvailableIn.minutes(1, 3),
+        confirmations: 1,
+        requiredConfirmations: 6,
       ),
-      catchingUp: false,
-    );
+    };
     late ActivityRowData waiting;
-    late ActivityRowData withoutClock;
+    late ActivityRowData withoutWaits;
     late ActivityRowData spendable;
     await tester.pumpWidget(
       _app(
@@ -78,16 +75,16 @@ void main() {
             waiting = buildTransactionActivityRow(
               context: context,
               transaction: _received(minedHeight: 1000),
-              spendableWaitClock: clock,
+              spendableWaits: waits,
             );
-            withoutClock = buildTransactionActivityRow(
+            withoutWaits = buildTransactionActivityRow(
               context: context,
               transaction: _received(minedHeight: 1000),
             );
             spendable = buildTransactionActivityRow(
               context: context,
               transaction: _received(minedHeight: 990),
-              spendableWaitClock: clock,
+              spendableWaits: waits,
             );
             return const SizedBox.shrink();
           },
@@ -97,8 +94,8 @@ void main() {
 
     expect(waiting.title, 'Received');
     expect(waiting.subtitle, 'Available in 1–3 min');
-    expect(withoutClock.subtitle, isNot(contains('Available')));
-    expect(spendable.subtitle, withoutClock.subtitle);
+    expect(withoutWaits.subtitle, isNot(contains('Available')));
+    expect(spendable.subtitle, withoutWaits.subtitle);
   });
 }
 

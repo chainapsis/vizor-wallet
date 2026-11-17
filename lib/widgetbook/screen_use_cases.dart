@@ -55,7 +55,6 @@ import '../src/core/profile_pictures.dart';
 import '../src/core/l10n/app_language.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
-import '../src/core/zcash/block_spacing.dart';
 import '../src/core/zcash/spendable_wait.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
@@ -1178,23 +1177,21 @@ Widget buildMobileHomeActivitySkeletonUseCase(BuildContext context) =>
 Widget buildMobileHomeFiveActivitiesUseCase(BuildContext context) =>
     _buildHomeActivityComparison(mobile: true, loading: false);
 
-// Funds still confirming: the newest receipt was mined at the tip, with
-// NU7's 25-second blocks.
-const _spendableWaitPreviewTip = 3_428_143;
-const _spendableWaitPreviewClock = (
-  tipHeight: _spendableWaitPreviewTip,
-  spacing: BlockSpacing(
-    preNu7BlockSeconds: 75,
-    nu7BlockSeconds: 25,
-    nu7ActivationHeight: 1,
+// Funds still confirming: the newest receipt has the first of its six
+// confirmations, with NU7's 25-second blocks.
+final _homeWaitingReceipt = _homeTx(5, minedHeight: 3_428_143);
+final _homeReceivedWaits = <String, ReceivedSpendableWait>{
+  _homeWaitingReceipt.txidHex: (
+    wait: const AvailableIn.minutes(1, 3),
+    confirmations: 1,
+    requiredConfirmations: 6,
   ),
-  catchingUp: false,
-);
+};
 
 SyncState _homeReceivedWaitingState() => _homeSyncedState(
   orchardBalance: BigInt.from(120000000),
   recentTransactions: [
-    _homeTx(5, minedHeight: _spendableWaitPreviewTip),
+    _homeWaitingReceipt,
     for (var i = 4; i >= 1; i--) _homeTx(i),
   ],
 ).copyWith(hasRecentTransactionsData: true);
@@ -1206,7 +1203,7 @@ Widget buildMobileHomeReceivedWaitingUseCase(BuildContext context) =>
       syncState: _homeReceivedWaitingState(),
       votingVisible: false,
       constrainToPreviewFrame: false,
-      spendableWaitClock: _spendableWaitPreviewClock,
+      receivedSpendableWaits: _homeReceivedWaits,
     );
 
 Widget buildDesktopHomeReceivedWaitingUseCase(BuildContext context) =>
@@ -1215,7 +1212,7 @@ Widget buildDesktopHomeReceivedWaitingUseCase(BuildContext context) =>
       syncState: _homeReceivedWaitingState(),
       migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
       zecUsdPrice: 70,
-      spendableWaitClock: _spendableWaitPreviewClock,
+      receivedSpendableWaits: _homeReceivedWaits,
     );
 
 /// Desktop Send with an amount that funds still confirming will cover.
@@ -1265,11 +1262,13 @@ Widget buildMobileReceiptSpendableWaitUseCase(BuildContext context) {
       historyLoader: (_, _) async => [tx],
       detailLoader: (_, _) async => detail,
     ),
-    spendableWaitClock: (
-      tipHeight: tx.minedHeight.toInt() + 1,
-      spacing: _spendableWaitPreviewClock.spacing,
-      catchingUp: false,
-    ),
+    receivedSpendableWaits: {
+      tx.txidHex: (
+        wait: const AvailableIn.minutes(1, 2),
+        confirmations: 2,
+        requiredConfirmations: 6,
+      ),
+    },
   );
 }
 
@@ -2475,13 +2474,13 @@ Widget _mobileZeroValueReceipt(String kind) {
 
 Widget _buildMobileZeroValueUseCase(
   Widget screen, {
-  SpendableWaitClock? spendableWaitClock,
+  Map<String, ReceivedSpendableWait>? receivedSpendableWaits,
 }) {
   return ProviderScope(
     overrides: [
-      if (spendableWaitClock != null)
-        activeReceivedSpendableWaitClockProvider.overrideWithValue(
-          spendableWaitClock,
+      if (receivedSpendableWaits != null)
+        activeReceivedSpendableWaitsProvider.overrideWithValue(
+          receivedSpendableWaits,
         ),
       appBootstrapProvider.overrideWithValue(
         _homeBootstrap(_accountsDesignState),
@@ -3835,7 +3834,7 @@ Widget _buildMobileHomeUseCase({
   bool constrainToPreviewFrame = true,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
-  SpendableWaitClock? spendableWaitClock,
+  Map<String, ReceivedSpendableWait>? receivedSpendableWaits,
 }) {
   final harness = _MobileHomeHarness(
     adaptive: adaptive,
@@ -3848,9 +3847,9 @@ Widget _buildMobileHomeUseCase({
   );
   return ProviderScope(
     overrides: [
-      if (spendableWaitClock != null)
-        activeReceivedSpendableWaitClockProvider.overrideWithValue(
-          spendableWaitClock,
+      if (receivedSpendableWaits != null)
+        activeReceivedSpendableWaitsProvider.overrideWithValue(
+          receivedSpendableWaits,
         ),
       if (sidebarLocked)
         externalActionGuardProvider.overrideWith(
@@ -3991,15 +3990,15 @@ Widget _buildDesktopHomeUseCase({
   bool? privateQueries,
   String initialLocation = '/home',
   bool setupPreview = false,
-  SpendableWaitClock? spendableWaitClock,
+  Map<String, ReceivedSpendableWait>? receivedSpendableWaits,
   SpendableWait? spendableWait,
   Widget? sendScreen,
 }) {
   return ProviderScope(
     overrides: [
-      if (spendableWaitClock != null)
-        activeReceivedSpendableWaitClockProvider.overrideWithValue(
-          spendableWaitClock,
+      if (receivedSpendableWaits != null)
+        activeReceivedSpendableWaitsProvider.overrideWithValue(
+          receivedSpendableWaits,
         ),
       if (spendableWait != null)
         spendableWaitProvider.overrideWith((ref, accountUuid) => spendableWait),

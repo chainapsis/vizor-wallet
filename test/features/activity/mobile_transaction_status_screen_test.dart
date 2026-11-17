@@ -14,7 +14,6 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
-import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
@@ -182,15 +181,13 @@ Widget _app(
   bool privateQueriesEnabled = false,
   String? routeTxid,
   List<rust_sync.TransactionInfo>? history,
-  SpendableWaitClock? spendableWaitClock,
+  Map<String, ReceivedSpendableWait>? spendableWaits,
 }) {
   final resolvedDetail = detail ?? _detail(kind: tx.txKind);
   return ProviderScope(
     overrides: [
-      if (spendableWaitClock != null)
-        activeReceivedSpendableWaitClockProvider.overrideWithValue(
-          spendableWaitClock,
-        ),
+      if (spendableWaits != null)
+        activeReceivedSpendableWaitsProvider.overrideWithValue(spendableWaits),
       swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
       privacyModeProvider.overrideWith(() => _FixedPrivacy(privacyEnabled)),
       enhancePirProvider.overrideWith(
@@ -430,15 +427,13 @@ void main() {
     await tester.pumpWidget(
       _app(
         received,
-        spendableWaitClock: (
-          tipHeight: 2500001,
-          spacing: const BlockSpacing(
-            preNu7BlockSeconds: 75,
-            nu7BlockSeconds: 25,
-            nu7ActivationHeight: 1,
+        spendableWaits: {
+          received.txidHex: (
+            wait: const AvailableIn.minutes(1, 2),
+            confirmations: 2,
+            requiredConfirmations: 6,
           ),
-          catchingUp: false,
-        ),
+        },
       ),
     );
     await tester.pumpAndSettle();

@@ -387,9 +387,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             row: buildTransactionActivityRow(
               context: context,
               transaction: tx,
-              spendableWaitClock: ref.watch(
-                activeReceivedSpendableWaitClockProvider,
-              ),
+              spendableWaits: ref.watch(activeReceivedSpendableWaitsProvider),
               privateQueriesEnabled: ref.watch(enhancePirProvider),
               showPendingEstimate: !ref
                   .watch(activityEtaExcludedTxidsProvider)
