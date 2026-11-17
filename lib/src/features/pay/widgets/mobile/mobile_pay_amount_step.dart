@@ -150,14 +150,13 @@ class MobilePayAmountStep extends StatelessWidget {
                     horizontal: AppSpacing.xxs,
                   ),
                   onPressed: onOpenSlippage,
-                  // Marks the button while the confidential route is set in
-                  // the settings it opens.
-                  leading: state.confidential
-                      ? SwapConfidentialIcon(
-                          reveal: confidentialReveal,
-                          labeled: true,
-                        )
-                      : null,
+                  // Shows the confidential route the settings it opens can
+                  // set, crimson while it is on.
+                  leading: SwapConfidentialIcon(
+                    on: state.confidential,
+                    reveal: confidentialReveal,
+                    labeled: state.confidential,
+                  ),
                   trailing: const AppIcon(
                     AppIcons.cog,
                     size: _slippageIconSize,

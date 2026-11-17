@@ -492,9 +492,19 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Swap').last);
       await tester.pumpAndSettle();
       final settings = find.byKey(const ValueKey('swap_settings_button'));
+      // The muted mark shows the setting exists; it turns crimson when on.
+      expect(
+        find.descendant(
+          of: settings,
+          matching: find.byType(SwapConfidentialIcon),
+        ),
+        findsOneWidget,
+      );
       final mark = find.descendant(
         of: settings,
-        matching: find.byType(SwapConfidentialIcon),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is SwapConfidentialIcon && widget.on,
+        ),
       );
       expect(mark, findsNothing);
 

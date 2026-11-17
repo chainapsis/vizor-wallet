@@ -1168,7 +1168,9 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('pay_slippage_button')),
-        matching: find.byType(SwapConfidentialIcon),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is SwapConfidentialIcon && widget.on,
+        ),
       ),
       findsNothing,
     );
@@ -5042,9 +5044,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // The muted mark shows the setting exists; it turns crimson when on.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_settings_button')),
+        matching: find.byType(SwapConfidentialIcon),
+      ),
+      findsOneWidget,
+    );
     final mark = find.descendant(
       of: find.byKey(const ValueKey('swap_settings_button')),
-      matching: find.byType(SwapConfidentialIcon),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is SwapConfidentialIcon && widget.on,
+      ),
     );
     expect(mark, findsNothing);
     await tester.tap(find.byKey(const ValueKey('swap_settings_button')));

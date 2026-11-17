@@ -436,9 +436,11 @@ class _ConfidentialSwapPreviewState extends State<_ConfidentialSwapPreview> {
   Widget _settingsButton({bool mobile = false}) {
     final colors = context.colors;
     final alpha = widget.loading ? 0.45 : 1.0;
-    final mark = _confidential
-        ? SwapConfidentialIcon(alpha: alpha, reveal: _confidentialReveal.value)
-        : null;
+    final mark = SwapConfidentialIcon(
+      on: _confidential,
+      alpha: alpha,
+      reveal: _confidentialReveal.value,
+    );
     return Semantics(
       label:
           'Slippage settings, ${formatSwapSlippage(_slippageBps)}'
@@ -468,10 +470,8 @@ class _ConfidentialSwapPreviewState extends State<_ConfidentialSwapPreview> {
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (mark != null) ...[
-                    mark,
-                    const SizedBox(width: AppSpacing.xxs),
-                  ],
+                  mark,
+                  const SizedBox(width: AppSpacing.xxs),
                   Text(
                     formatSwapSlippage(_slippageBps),
                     style: AppTypography.labelLarge.copyWith(

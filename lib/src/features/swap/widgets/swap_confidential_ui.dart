@@ -173,15 +173,19 @@ class SwapConfidentialRevealCounter {
 /// lands beside the settings button.
 const kSwapConfidentialRevealDuration = Duration(milliseconds: 900);
 
-/// The confidential mark: on the settings button while the mode is on, and
-/// beside the setting itself.
+/// The confidential mark: on the settings button, crimson while the mode is
+/// on and muted while it is off, and beside the setting itself.
 class SwapConfidentialIcon extends StatelessWidget {
   const SwapConfidentialIcon({
+    this.on = true,
     this.alpha = 1,
     this.reveal = 0,
     this.labeled = false,
     super.key,
   });
+
+  /// Off draws the mark muted, so the setting shows before it is turned on.
+  final bool on;
 
   final double alpha;
 
@@ -201,7 +205,9 @@ class SwapConfidentialIcon extends StatelessWidget {
   }
 
   Widget _mark(BuildContext context) {
-    final color = context.colors.icon.brandCrimson;
+    final color = on
+        ? context.colors.icon.brandCrimson
+        : context.colors.icon.muted;
     final icon = AppIcon(
       AppIcons.incognito,
       size: 16,

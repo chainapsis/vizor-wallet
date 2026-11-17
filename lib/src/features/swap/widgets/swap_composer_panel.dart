@@ -1091,14 +1091,13 @@ class _SlippageControl extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (confidential) ...[
-                SwapConfidentialIcon(
-                  alpha: enabled ? 1 : 0.45,
-                  reveal: confidentialReveal,
-                  labeled: true,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-              ],
+              SwapConfidentialIcon(
+                on: confidential,
+                alpha: enabled ? 1 : 0.45,
+                reveal: confidentialReveal,
+                labeled: confidential,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
               Text(
                 label,
                 style: AppTypography.labelLarge.copyWith(
