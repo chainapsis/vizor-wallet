@@ -15,6 +15,7 @@ import 'desktop_onboarding_recovery_capture.dart';
 import 'desktop_backup_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
+import 'mobile_swap_address_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'ledger_pairing_capture.dart';
 import 'caps_lock_capture.dart';
@@ -174,6 +175,28 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
     allowPointer: true,
     outsideScaffold: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-swap-address-scale-review',
+    description: 'Swap recipient address feedback at accessibility text sizes',
+    builder: buildMobileSwapAddressCapture,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-swap-refund-address-scale-review',
+    description: 'Swap refund address feedback at accessibility text sizes',
+    builder: buildMobileSwapRefundAddressCapture,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
   ),
   FigmaCompareScenario(
     id: 'mobile-account-edit-scale-review',
