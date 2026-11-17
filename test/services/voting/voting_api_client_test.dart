@@ -1,5 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/network/network_http_client.dart';
+import 'package:zcash_wallet/src/rust/api/network_privacy.dart'
+    as rust_network_privacy;
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/voting/voting_api_client.dart';
+import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
 
 import 'fake_voting_http.dart';
@@ -457,4 +464,77 @@ void main() {
       'vote-secondary.example',
     ]);
   });
+
+  group('over Tor', () {
+    final rust = _ExitLookupFailureRustApi(
+      failingHost: 'vote-primary.example',
+      body: jsonEncode({
+        'round': {'vote_round_id': encodedRoundId, 'status': 'active'},
+      }),
+    );
+    setUpAll(() => RustLib.initMock(api: rust));
+    tearDownAll(RustLib.dispose);
+
+    test(
+      'fails over round reads when an exit cannot resolve the primary',
+      () async {
+        final network = NetworkHttpClient(
+          torDesired: () => true,
+          torBootstrapping: () => false,
+        );
+        addTearDown(network.close);
+        final client = VotingApiClient(
+          baseUrl: Uri.parse('https://vote-primary.example'),
+          fallbackBaseUrls: [Uri.parse('https://vote-secondary.example')],
+          httpClient: DartIoVotingHttpClient(networkClient: network),
+          readRetryPolicy: VotingRetryPolicy.transientHttp(
+            name: 'test-tor-failover-read',
+            delays: const [],
+          ),
+          delay: (_) async {},
+        );
+
+        final status = await client.getRoundStatus(hexRoundId);
+
+        expect(status.roundId, hexRoundId);
+        expect(rust.hosts, ['vote-primary.example', 'vote-secondary.example']);
+      },
+    );
+  });
+}
+
+/// Rust Tor bridge whose exit relay cannot resolve [failingHost] and that
+/// answers every other GET with [body].
+class _ExitLookupFailureRustApi implements RustLibApi {
+  _ExitLookupFailureRustApi({required this.failingHost, required this.body});
+
+  final String failingHost;
+  final String body;
+  final hosts = <String>[];
+
+  @override
+  Future<rust_network_privacy.NetworkHttpResponse>
+  crateApiNetworkPrivacyTorHttpGet({
+    required String url,
+    required List<rust_network_privacy.NetworkHttpHeader> headers,
+    BigInt? timeoutMilliseconds,
+    BigInt? requestId,
+    BigInt? maxBodyBytes,
+  }) async {
+    final host = Uri.parse(url).host;
+    hosts.add(host);
+    if (host == failingHost) {
+      throw 'Tor HTTP connection could not be opened: Tor error: tor: remote '
+          'hostname lookup failure: Protocol error while launching a data '
+          'stream';
+    }
+    return rust_network_privacy.NetworkHttpResponse(
+      statusCode: 200,
+      headers: const [],
+      body: utf8.encode(body),
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

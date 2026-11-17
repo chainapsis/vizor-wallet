@@ -8933,11 +8933,18 @@ class AppLocalizationsZh extends AppLocalizations {
       '交易链接会在此区块浏览器中打开。你可以使用 ZecBlock 或其他你喜欢的网站。发送后打开公共区块浏览器，可能会将你的 IP 地址与该交易关联。';
 
   @override
+  String get settingsExplorerPrivateCopy =>
+      'ZecBlock 不会被告知你打开了哪笔交易，但仍能看到你的 IP 地址。页面加载较慢，新交易被打包进区块后才会显示。';
+
+  @override
+  String get settingsExplorerPrivateSubtitle => '私密浏览';
+
+  @override
   String get settingsExplorerSaveFailed => '无法保存该区块浏览器网址。';
 
   @override
   String settingsExplorerTemplateHint(String txid, String txHash) {
-    return '在路径中使用 $txid 或 $txHash，或只输入域名。';
+    return '在交易 ID 所在的位置使用 $txid 或 $txHash，或只输入域名。';
   }
 
   @override

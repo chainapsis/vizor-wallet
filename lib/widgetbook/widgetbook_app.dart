@@ -947,8 +947,16 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSettingsExplorerCustomUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Explorer private',
+                      builder: buildSettingsExplorerPrivateUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Mobile explorer',
                       builder: buildMobileExplorerUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile explorer private',
+                      builder: buildMobileExplorerPrivateUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Mobile explorer custom',

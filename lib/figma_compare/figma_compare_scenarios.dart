@@ -2974,6 +2974,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsExplorerCustomUseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-explorer-private',
+    description: 'Desktop explorer settings with ZecBlock Private selected',
+    builder: buildSettingsExplorerPrivateUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-settings-explorer',
     description: 'Mobile settings scrolled to the Explorer row',
     builder: buildMobileSettingsExplorerUseCase,
@@ -2984,6 +2989,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-explorer',
     description: 'Mobile explorer settings with ZecBlock selected',
     builder: buildMobileExplorerUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-explorer-private',
+    description: 'Mobile explorer settings with ZecBlock Private selected',
+    builder: buildMobileExplorerPrivateUseCase,
     desktop: false,
     mobile: true,
   ),

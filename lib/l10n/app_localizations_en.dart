@@ -9687,11 +9687,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.';
 
   @override
+  String get settingsExplorerPrivateCopy =>
+      'ZecBlock isn\'t told which transaction you open, though it still sees your IP address. Pages take longer to load, and a new transaction shows up only after it\'s in a block.';
+
+  @override
+  String get settingsExplorerPrivateSubtitle => 'Explore privately';
+
+  @override
   String get settingsExplorerSaveFailed => 'Couldn\'t save that explorer URL.';
 
   @override
   String settingsExplorerTemplateHint(String txid, String txHash) {
-    return 'Use $txid or $txHash in the path, or enter just the origin.';
+    return 'Put $txid or $txHash where the transaction ID goes, or enter just the domain.';
   }
 
   @override

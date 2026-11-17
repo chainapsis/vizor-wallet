@@ -15842,6 +15842,18 @@ abstract class AppLocalizations {
   /// **'Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.'**
   String get settingsExplorerPrivacyCopy;
 
+  /// [security] Privacy note under the block explorer setting while the ZecBlock Private card is selected, saved or not, so describe the option rather than saying links already open there. Claim only that ZecBlock is not sent the transaction; it still sees the IP address. Also say it loads slower and that unmined transactions are not found.
+  ///
+  /// In en, this message translates to:
+  /// **'ZecBlock isn\'t told which transaction you open, though it still sees your IP address. Pages take longer to load, and a new transaction shows up only after it\'s in a block.'**
+  String get settingsExplorerPrivateCopy;
+
+  /// Subtitle of the ZecBlock Private option card in the block explorer setting: one short, friendly line; the note below it carries the trade-offs.
+  ///
+  /// In en, this message translates to:
+  /// **'Explore privately'**
+  String get settingsExplorerPrivateSubtitle;
+
   /// Error shown under the custom explorer URL field when saving it failed.
   ///
   /// In en, this message translates to:
@@ -15851,7 +15863,7 @@ abstract class AppLocalizations {
   /// Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation.
   ///
   /// In en, this message translates to:
-  /// **'Use {txid} or {txHash} in the path, or enter just the origin.'**
+  /// **'Put {txid} or {txHash} where the transaction ID goes, or enter just the domain.'**
   String settingsExplorerTemplateHint(String txid, String txHash);
 
   /// Title of the block explorer setting, used as the Settings row label and the screen heading; the explorer is the website used to look up transactions.

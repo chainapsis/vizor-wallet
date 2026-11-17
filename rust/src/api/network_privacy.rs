@@ -24,6 +24,7 @@ use zcash_client_backend::tor::{
 };
 
 pub use crate::network_privacy::NetworkPrivacyStatus;
+use crate::network_privacy::{tor_stream_open_recovery, TOR_STREAM_OPEN_RECOVERY_RETRIES};
 use crate::wallet::block_times::{self, BlockTimePoint};
 use crate::wallet::network::WalletNetwork;
 
@@ -35,6 +36,7 @@ const TOR_API_RESPONSE_BODY_TIMEOUT: Duration = Duration::from_secs(30);
 /// [tor_http_download], which streams to disk and is not subject to it.
 const TOR_API_RESPONSE_BODY_MAX_BYTES: u64 = 16 * 1024 * 1024;
 const TOR_HTTP_REQUEST_TIMEOUT_ERROR: &str = "Tor HTTP request timed out";
+const TOR_HTTP_CONNECTION_FAILED_ERROR: &str = "Tor HTTP connection could not be opened";
 const TOR_HTTP_REQUEST_CANCELLED_ERROR: &str = "Tor HTTP request cancelled";
 const MAINNET_SAPLING_ACTIVATION_HEIGHT: u64 = 419_200;
 const MAINNET_SAPLING_ACTIVATION_TIME: u32 = 1_540_779_337;
@@ -162,8 +164,8 @@ pub async fn tor_http_get(
                 uri,
                 |builder| apply_headers(builder, &headers),
                 move |body| collect_body(body, max_body_bytes),
-                0,
-                |_| None,
+                TOR_STREAM_OPEN_RECOVERY_RETRIES,
+                tor_stream_open_recovery,
             ),
         )
         .await
@@ -203,8 +205,8 @@ pub async fn tor_http_post(
                 |builder| apply_headers(builder, &headers),
                 Full::new(Bytes::from(body)),
                 move |body| collect_body(body, max_body_bytes),
-                0,
-                |_| None,
+                TOR_STREAM_OPEN_RECOVERY_RETRIES,
+                tor_stream_open_recovery,
             ),
         )
         .await
@@ -295,11 +297,11 @@ pub async fn tor_http_download(
             uri,
             |builder| apply_headers(builder, &headers),
             move |body| write_body_to_file(body, destination),
-            0,
-            |_| None,
+            TOR_STREAM_OPEN_RECOVERY_RETRIES,
+            tor_stream_open_recovery,
         )
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(normalize_tor_http_error)?;
     network_http_response(response.map(|_| Vec::new()))
 }
 
@@ -321,13 +323,16 @@ async fn with_tor_http_request_timeout<T>(
     result.map_err(normalize_tor_http_error)
 }
 
-/// Gives Arti's phase-specific HTTP timeouts the stable marker consumed by
-/// Dart, without relying on Arti's human-readable error wording across FFI.
+/// Gives Arti's phase-specific HTTP timeouts and stream-opening failures the
+/// stable markers consumed by Dart, without relying on Arti's human-readable
+/// error wording across FFI.
 fn normalize_tor_http_error(error: TorError) -> String {
     match &error {
         TorError::Http(HttpError::Timeout(phase)) => {
             format!("{TOR_HTTP_REQUEST_TIMEOUT_ERROR} while {phase}")
         }
+        // A bare Tor error comes only from opening the stream, so nothing was sent.
+        TorError::Tor(_) => format!("{TOR_HTTP_CONNECTION_FAILED_ERROR}: {error}"),
         _ => error.to_string(),
     }
 }
@@ -671,7 +676,7 @@ mod tests {
         with_api_response_body_timeout, with_tor_http_request_cancellation,
         with_tor_http_request_timeout, BlockTimePoint, MainnetTipReply, TreeState,
         MAINNET_SAPLING_ACTIVATION_HEIGHT, MAINNET_SAPLING_ACTIVATION_TIME,
-        TOR_HTTP_REQUEST_TIMEOUT_ERROR,
+        TOR_HTTP_CONNECTION_FAILED_ERROR, TOR_HTTP_REQUEST_TIMEOUT_ERROR,
     };
 
     #[tokio::test]
@@ -848,6 +853,26 @@ mod tests {
             normalize_tor_http_error(Error::Http(HttpError::NonHttpUrl)),
             "HTTP-over-Tor error: Only HTTP or HTTPS URLs are supported"
         );
+    }
+
+    /// Dart treats the marker as proof nothing was sent. Arti's error has no
+    /// public constructor, so only the cases that must stay unmarked are built.
+    #[test]
+    fn failures_that_may_follow_dispatch_get_no_connection_marker() {
+        for error in [
+            Error::MissingTorDirectory,
+            Error::Http(HttpError::NonHttpUrl),
+            Error::Http(HttpError::Tls(std::io::Error::other("handshake failed"))),
+            Error::Http(HttpError::Timeout(TimeoutPhase::Connect)),
+            Error::Http(HttpError::Timeout(TimeoutPhase::Request)),
+            Error::Io(std::io::Error::other("response stream failed")),
+        ] {
+            let error = normalize_tor_http_error(error);
+            assert!(
+                !error.contains(TOR_HTTP_CONNECTION_FAILED_ERROR),
+                "unexpected connection marker: {error}"
+            );
+        }
     }
 
     #[tokio::test]
