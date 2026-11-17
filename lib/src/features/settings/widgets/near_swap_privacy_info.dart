@@ -242,12 +242,10 @@ class NearSwapPrivacyInfoSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Flexible(
-              // The sheet's card paints the base surface.
-              child: _FadingScrollBody(
-                surface: colors.background.base,
-                child: const _Body(historyCheck: false),
-              ),
+            // The sheet fades the scroll view's cut edges itself
+            // (MobileScrollEdgeFades).
+            const Flexible(
+              child: SingleChildScrollView(child: _Body(historyCheck: false)),
             ),
             // Where the sheet's buttons go, so it is in reach without scrolling,
             // as far below the text as other sheets keep their buttons.
@@ -277,9 +275,10 @@ bool _showsHistoryCheck(WidgetRef ref) =>
             .any((account) => !account.isHardware) ??
         false);
 
-/// The explanation's scrolling body. It has no scrollbar; instead an edge with
-/// more of the body past it fades into the surface, as the endpoint list
-/// does, and the fade goes once that end is in view.
+/// The desktop dialog's scrolling body. It has no scrollbar; instead an edge
+/// with more of the body past it fades into the surface, as the endpoint list
+/// does, and the fade goes once that end is in view. Mobile sheets get this
+/// from MobileScrollEdgeFades instead.
 class _FadingScrollBody extends StatefulWidget {
   const _FadingScrollBody({required this.surface, required this.child});
 

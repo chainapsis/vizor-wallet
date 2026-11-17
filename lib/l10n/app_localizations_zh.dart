@@ -10463,6 +10463,12 @@ class AppLocalizationsZh extends AppLocalizations {
       '无法准备新的钱包接收地址。请在钱包同步后重试。';
 
   @override
+  String get swapNoticePrivateReceiveAddressPreparing => '正在准备隐私兑换地址。请稍后重试。';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale => '此兑换地址已不可用。请获取新报价。';
+
+  @override
   String get swapNoticePrivateReceiveAddressUnavailable => '隐私兑换暂时不可用。请几分钟后重试。';
 
   @override

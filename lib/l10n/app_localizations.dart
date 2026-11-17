@@ -18576,6 +18576,18 @@ abstract class AppLocalizations {
   /// **'Could not prepare a fresh wallet receive address. Try again after wallet sync.'**
   String get swapNoticePrivateReceiveAddressPreparationFailed;
 
+  /// Swap quote or start error with Enhance swap privacy on while the wallet is still checking the next one-time address's history or waiting for sync.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing a private swap address. Try again in a moment.'**
+  String get swapNoticePrivateReceiveAddressPreparing;
+
+  /// Swap quote or start error when the one-time address reserved for the quote expired or was retired.
+  ///
+  /// In en, this message translates to:
+  /// **'This swap address is no longer available. Request a new quote.'**
+  String get swapNoticePrivateReceiveAddressStale;
+
   /// Swap quote error with Enhance swap privacy on: no one-time receive address is available even after the wallet checked its swap history. Enhance swap privacy is the name of the setting.
   ///
   /// In en, this message translates to:

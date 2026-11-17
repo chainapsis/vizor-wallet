@@ -9361,7 +9361,7 @@ void main() {
   for (final (failure, message, name) in <(Object?, String, String)>[
     (
       null,
-      'Preparing a private swap address. Try again in a moment.',
+      testL10n.swapNoticePrivateReceiveAddressPreparing,
       'a round that leaves the check running asks to try again soon',
     ),
     (
@@ -9369,7 +9369,7 @@ void main() {
         message: 'Swap history check has not started.',
         kind: ReceiveErrorKind.waitingForSync,
       ),
-      'Preparing a private swap address. Try again in a moment.',
+      testL10n.swapNoticePrivateReceiveAddressPreparing,
       'a round waiting for wallet sync asks to try again soon',
     ),
     (
@@ -9379,7 +9379,7 @@ void main() {
             'wallet yet. Try again in a few minutes.',
         kind: ReceiveErrorKind.waitingForService,
       ),
-      'Preparing a private swap address. Try again in a moment.',
+      testL10n.swapNoticePrivateReceiveAddressPreparing,
       'a round waiting for the receiver service asks to try again soon',
     ),
     (
@@ -10288,7 +10288,7 @@ void main() {
 
     expect(
       container.read(swapStateProvider).statusError?.text(testL10n),
-      'Preparing a private swap address. Try again in a moment.',
+      testL10n.swapNoticePrivateReceiveAddressPreparing,
     );
     // The swap saved before the wallet start is removed, as if never started.
     expect(container.read(swapStateProvider).intents, isEmpty);
@@ -10328,7 +10328,7 @@ void main() {
 
     expect(
       container.read(swapStateProvider).statusError?.text(testL10n),
-      'This swap address is no longer available. Request a new quote.',
+      testL10n.swapNoticePrivateReceiveAddressStale,
     );
     expect(container.read(swapStateProvider).intents, isEmpty);
     expect(await sessionStore.loadRecords(accountUuid: 'account-1'), isEmpty);
