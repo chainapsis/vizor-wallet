@@ -253,8 +253,8 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
   }
 
   void _cancelUnclaimedTouch(_TabBarTouch? touch) {
-    // Tap cancellation also happens when the drag wins. Let the arena finish
-    // dispatching before deciding whether neither recognizer owns this touch.
+    // Drag rejection can precede the winning tap callback. Let the arena
+    // dispatch that callback before cleaning up an unclaimed pointer release.
     scheduleMicrotask(() {
       if (mounted &&
           touch != null &&
@@ -490,6 +490,9 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
                             >(
                               () => _SinglePointerHorizontalDragRecognizer(),
                               (instance) => instance
+                                ..gestureSettings =
+                                    MediaQuery.maybeGestureSettingsOf(context)
+                                ..onlyAcceptDragOnThreshold = true
                                 ..dragStartBehavior = DragStartBehavior.down
                                 ..onStart = _handleDragStart
                                 ..onUpdate = _handleDragUpdate
@@ -550,11 +553,6 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
                                     onTap: () => _handleTap(i),
                                     onSemanticsTap: () =>
                                         _handleTap(i, semantics: true),
-                                    onTapCancel: () {
-                                      if (!vertical && _touch?.index == i) {
-                                        _cancelUnclaimedTouch(_touch);
-                                      }
-                                    },
                                   ),
                                 ),
                             ],
@@ -635,7 +633,6 @@ class _TabBarItem extends StatefulWidget {
     required this.motion,
     required this.onTap,
     required this.onSemanticsTap,
-    required this.onTapCancel,
     this.highlight,
   });
 
@@ -644,7 +641,6 @@ class _TabBarItem extends StatefulWidget {
   final bool motion;
   final VoidCallback onTap;
   final VoidCallback onSemanticsTap;
-  final VoidCallback onTapCancel;
 
   /// While the pill is dragged, how much of it covers this item (0 → 1);
   /// the icon tint follows it directly. Null when nothing is dragged.
@@ -734,10 +730,9 @@ class _TabBarItemState extends State<_TabBarItem>
         excludeFromSemantics: true,
         behavior: HitTestBehavior.opaque,
         onTapDown: (_) => _setPressed(true),
-        onTapCancel: () {
-          _setPressed(false);
-          widget.onTapCancel();
-        },
+        // Losing the tap may only mean horizontal recognition is pending.
+        // The bar's drag recognizer and pointer lifecycle own cancellation.
+        onTapCancel: () => _setPressed(false),
         onTapUp: (_) => _setPressed(false),
         onTap: () {
           widget.onTap();

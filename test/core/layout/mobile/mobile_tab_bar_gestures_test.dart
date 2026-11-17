@@ -2,6 +2,8 @@
 library;
 
 import 'dart:ui' show Tristate, PointerDeviceKind;
+import 'dart:ui' as ui show GestureSettings;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -47,24 +49,32 @@ void main() {
     Axis axis = Axis.horizontal,
     bool acceptSelection = true,
     List<AppMobileTabItem> items = _items,
+    DeviceGestureSettings? gestureSettings,
+    Widget Function(Widget)? ancestor,
   }) => tester.pumpWidget(
     MaterialApp(
       home: AppTheme(
         data: AppThemeData.dark,
         child: MediaQuery(
-          data: MediaQueryData(disableAnimations: reducedMotion),
+          data: MediaQueryData.fromView(tester.view).copyWith(
+            disableAnimations: reducedMotion,
+            gestureSettings: gestureSettings,
+          ),
           child: Center(
             child: ValueListenableBuilder(
               valueListenable: selection,
-              builder: (_, index, _) => AppMobileTabBar(
-                items: items,
-                axis: axis,
-                currentIndex: index,
-                onSelect: (target) {
-                  selected.add(target);
-                  if (acceptSelection) selection.value = target;
-                },
-              ),
+              builder: (_, index, _) {
+                final bar = AppMobileTabBar(
+                  items: items,
+                  axis: axis,
+                  currentIndex: index,
+                  onSelect: (target) {
+                    selected.add(target);
+                    if (acceptSelection) selection.value = target;
+                  },
+                );
+                return ancestor?.call(bar) ?? bar;
+              },
             ),
           ),
         ),
@@ -479,6 +489,155 @@ void main() {
     await tester.pumpAndSettle();
     expect(selected, [1]);
   });
+  for (final slop in <double?>[null, 4, 8, 12, 18, 24]) {
+    for (final delta in const [
+      Offset(4, 0),
+      Offset(4, 3),
+      Offset(4, -3),
+      Offset(-4, 0),
+      Offset(-4, 3),
+      Offset(-4, -3),
+    ]) {
+      for (final duringArrival in [false, true]) {
+        testWidgets(
+          'touch slop $slop drag $delta follows the pointer '
+          '${duringArrival ? 'during' : 'after'} arrival with an ancestor tap',
+          (tester) async {
+            var parentTaps = 0;
+            await pumpBar(
+              tester,
+              gestureSettings: DeviceGestureSettings(touchSlop: slop),
+              ancestor: (child) =>
+                  GestureDetector(onTap: () => parentTaps++, child: child),
+            );
+            final origin = tab(tester, 2).dx;
+            final gesture = await tester.startGesture(tab(tester, 2));
+            final hold = duringArrival ? 20 : 100;
+            await tester.pump();
+            await tester.pump(Duration(milliseconds: hold));
+            for (var i = 1; i <= 18; i++) {
+              final elapsed = hold + i * 30;
+              await gesture.moveBy(
+                delta,
+                timeStamp: Duration(milliseconds: elapsed),
+              );
+              await tester.pump(const Duration(milliseconds: 30));
+              final travel = delta.dx * i;
+              if (elapsed >= 100 && travel.abs() > (slop ?? kTouchSlop)) {
+                // Check every accepted move, not just the final snap target.
+                expect(pill(tester).center.dx, closeTo(origin + travel, 0.01));
+              }
+              expect(selected, isEmpty);
+            }
+            await gesture.up(timeStamp: Duration(milliseconds: hold + 550));
+            await tester.pumpAndSettle();
+            expect(selected, [delta.dx > 0 ? 3 : 1]);
+            expect(parentTaps, 0);
+          },
+        );
+      }
+    }
+  }
+
+  for (final ratio in [1.0, 2.0, 3.0]) {
+    testWidgets(
+      'physical touch slop converts and drives the drag at DPR $ratio',
+      (tester) async {
+        tester.view.physicalSize = Size(360 * ratio, 800 * ratio);
+        tester.view.devicePixelRatio = ratio;
+        tester.view.gestureSettings = ui.GestureSettings(
+          physicalTouchSlop: 8 * ratio,
+        );
+        addTearDown(tester.view.reset);
+        await pumpBar(tester);
+        final context = tester.element(find.byType(AppMobileTabBar));
+        expect(MediaQuery.gestureSettingsOf(context).touchSlop, 8);
+        final origin = tab(tester, 2).dx;
+        final gesture = await tester.startGesture(tab(tester, 2));
+        await tester.pumpAndSettle();
+        await gesture.moveBy(const Offset(12, 0));
+        await tester.pump();
+        expect(pill(tester).center.dx, closeTo(origin + 12, 0.01));
+        expect(selected, isEmpty);
+        await gesture.cancel();
+        await tester.pumpAndSettle();
+        expect(pill(tester).center.dx, closeTo(tab(tester, 0).dx, 0.01));
+      },
+    );
+  }
+
+  testWidgets(
+    'diagonal tap rejection holds preview until horizontal acceptance',
+    (tester) async {
+      await pumpBar(
+        tester,
+        gestureSettings: const DeviceGestureSettings(touchSlop: 8),
+      );
+      final gesture = await tester.startGesture(tab(tester, 2));
+      await tester.pumpAndSettle();
+      await gesture.moveBy(const Offset(6, 8));
+      await tester.pumpAndSettle();
+      // Tap distance is 10 > 8; horizontal distance is still only 6 < 8.
+      expect(pill(tester).center.dx, closeTo(tab(tester, 2).dx, 0.01));
+      expect(haptics, isEmpty);
+      await gesture.moveBy(const Offset(4, 0));
+      await tester.pump();
+      expect(pill(tester).center.dx, closeTo(tab(tester, 2).dx + 10, 0.01));
+      expect(selected, isEmpty);
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(pill(tester).center.dx, closeTo(tab(tester, 0).dx, 0.01));
+    },
+  );
+
+  for (final slop in <double?>[null, 8, 18, 24]) {
+    testWidgets(
+      'pure vertical motion never commits a tab at touch slop $slop',
+      (tester) async {
+        await pumpBar(
+          tester,
+          gestureSettings: DeviceGestureSettings(touchSlop: slop),
+        );
+        final gesture = await tester.startGesture(tab(tester, 2));
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 12; i++) {
+          await gesture.moveBy(const Offset(0, 4));
+          await tester.pump(const Duration(milliseconds: 30));
+        }
+        expect(pill(tester).center.dx, closeTo(tab(tester, 2).dx, 0.01));
+        expect(haptics, isEmpty);
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(selected, isEmpty);
+        expect(pill(tester).center.dx, closeTo(tab(tester, 0).dx, 0.01));
+      },
+    );
+  }
+
+  testWidgets('an ancestor vertical drag still cancels the pending preview', (
+    tester,
+  ) async {
+    var verticalDrags = 0;
+    await pumpBar(
+      tester,
+      gestureSettings: const DeviceGestureSettings(touchSlop: 8),
+      ancestor: (child) => GestureDetector(
+        onVerticalDragStart: (_) => verticalDrags++,
+        child: child,
+      ),
+    );
+    final gesture = await tester.startGesture(tab(tester, 2));
+    await tester.pumpAndSettle();
+    await gesture.moveBy(const Offset(3, 12));
+    await tester.pumpAndSettle();
+    expect(verticalDrags, 1);
+    expect(selected, isEmpty);
+    expect(pill(tester).center.dx, closeTo(tab(tester, 0).dx, 0.01));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(selected, isEmpty);
+  });
+
   testWidgets('vertical bar keeps its original selected-tab drag origin', (
     tester,
   ) async {

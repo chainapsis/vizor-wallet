@@ -1380,6 +1380,10 @@ change. The subsections below this list carry the detailed rules.
   restores the actual selection. Keep the first pointer in control, one haptic
   per selection boundary, and instant arrivals under Reduce Motion. The vertical
   bar retains its selected-tab drag origin.
+  Raw drag recognizers inherit `MediaQuery` gesture settings and require the
+  horizontal threshold before accepting a drag. A tab's tap rejection only
+  releases its icon press; it must not discard a pending drag preview. Cover
+  device touch slop and diagonal movement in gesture regressions.
 - iOS 26+ uses the native Liquid Glass tab bar when available. Preserve the
   native root host, registration and `nativeBar` precedence in `AppMobileShell`.
   UIKit owns its sizing, safe area, selection lens, motion and press haptics;
