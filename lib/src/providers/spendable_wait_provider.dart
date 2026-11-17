@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/zcash/block_spacing.dart';
@@ -12,7 +10,7 @@ import 'sync_provider.dart';
 typedef _Waiting = ({
   BigInt availableNow,
   PendingSpendable pending,
-  int tipHeight,
+  int scannedHeight,
   BlockSpacing spacing,
 });
 
@@ -35,7 +33,7 @@ final _waitingProvider = Provider.autoDispose.family<_Waiting?, String?>((
             sync.hasBalanceData && sync.failure == null && sync.error == null,
         availableNow: sync.spendableBalance,
         pending: sync.pendingSpendable,
-        tipHeight: math.max(sync.scannedHeight, sync.chainTipHeight),
+        scannedHeight: sync.scannedHeight,
       );
     }),
   );
@@ -48,7 +46,7 @@ final _waitingProvider = Provider.autoDispose.family<_Waiting?, String?>((
   return (
     availableNow: sync.availableNow,
     pending: sync.pending,
-    tipHeight: sync.tipHeight,
+    scannedHeight: sync.scannedHeight,
     spacing: ref.watch(blockSpacingProvider),
   );
 });
@@ -62,7 +60,7 @@ final spendableWaitProvider = Provider.autoDispose
       return spendableWaitOf(
         availableNow: waiting.availableNow,
         pending: waiting.pending,
-        tipHeight: waiting.tipHeight,
+        scannedHeight: waiting.scannedHeight,
         spacing: waiting.spacing,
       );
     });
@@ -74,7 +72,7 @@ final receivedSpendableWaitsProvider = Provider.autoDispose
       if (waiting == null) return const {};
       return receivedSpendableWaits(
         pending: waiting.pending,
-        tipHeight: waiting.tipHeight,
+        scannedHeight: waiting.scannedHeight,
         spacing: waiting.spacing,
       );
     });

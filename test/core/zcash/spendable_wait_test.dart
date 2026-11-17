@@ -35,11 +35,11 @@ void main() {
   group('spendableWaitOf', () {
     SpendableWait of(
       List<rust_sync.PendingSpendableEntry> entries, {
-      int tipHeight = _tip,
+      int scannedHeight = _tip,
     }) => spendableWaitOf(
       availableNow: _zec,
       pending: PendingSpendable(tipHeight: _tip, entries: entries),
-      tipHeight: tipHeight,
+      scannedHeight: scannedHeight,
       spacing: _nu7,
     );
 
@@ -66,30 +66,30 @@ void main() {
       expect(wait.total, _zec * BigInt.from(5));
     });
 
-    test('each block since the read is one fewer to wait', () {
+    test('each block scanned since the read is one fewer to wait', () {
       final entries = [
         _entry('a', blocks: 5),
         _entry('c', isChange: true, blocks: 2),
       ];
       expect(
-        of(entries, tipHeight: _tip + 1).receivedWait,
+        of(entries, scannedHeight: _tip + 1).receivedWait,
         const AvailableIn.minutes(1, 2),
       );
       expect(
-        of(entries, tipHeight: _tip + 3).changeWait,
+        of(entries, scannedHeight: _tip + 3).changeWait,
         const AvailableIn.underMinute(),
       );
       // Past its last block the amount is still listed, about to be read
       // as spendable.
-      final past = of(entries, tipHeight: _tip + 10);
+      final past = of(entries, scannedHeight: _tip + 10);
       expect(past.waiting, _zec * BigInt.two);
       expect(past.wait, const AvailableIn.underMinute());
     });
 
-    test('an unmined entry waits as read whatever the tip', () {
+    test('an unmined entry waits as read whatever is scanned', () {
       final wait = of([
         _entry('a', blocks: 6, confirmations: 0),
-      ], tipHeight: _tip + 4);
+      ], scannedHeight: _tip + 4);
       expect(wait.receivedWait, const AvailableIn.minutes(1, 3));
     });
 
@@ -100,7 +100,7 @@ void main() {
           tipHeight: _tip,
           entries: [_entry('a', blocks: 5)],
         ),
-        tipHeight: _tip,
+        scannedHeight: _tip,
         spacing: spacing,
       );
       expect(at(_nu7).receivedWait, const AvailableIn.minutes(1, 3));
@@ -170,14 +170,14 @@ void main() {
     );
     final waits = receivedSpendableWaits(
       pending: pending,
-      tipHeight: _tip,
+      scannedHeight: _tip,
       spacing: _nu7,
     );
 
-    test('blocks since the read count as confirmations', () {
-      ReceivedSpendableWait at(int tipHeight) => receivedSpendableWaits(
+    test('blocks scanned since the read count as confirmations', () {
+      ReceivedSpendableWait at(int scannedHeight) => receivedSpendableWaits(
         pending: pending,
-        tipHeight: tipHeight,
+        scannedHeight: scannedHeight,
         spacing: _nu7,
       )['mined']!;
       expect(at(_tip + 1).confirmations, 3);
@@ -187,7 +187,7 @@ void main() {
       expect(at(_tip + 10).confirmations, 6);
       expect(at(_tip + 10).requiredConfirmations, 6);
       expect(at(_tip + 10).wait, const AvailableIn.underMinute());
-      // A tip behind the read's takes nothing back.
+      // A wallet still scanning up to the read's tip takes nothing back.
       expect(at(_tip - 1).confirmations, 2);
     });
 

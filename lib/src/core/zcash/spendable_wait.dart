@@ -143,15 +143,16 @@ class PendingSpendable {
   final int tipHeight;
   final List<rust_sync.PendingSpendableEntry> entries;
 
-  /// Each entry as it stands at [tipHeight], a chain tip at or after the
-  /// read's: a block since then is one fewer to wait and one more
-  /// confirmation. An unmined entry stays as read, since no block counts
-  /// toward it until one mines it.
+  /// Each entry as it stands once the wallet has scanned to [scannedHeight]:
+  /// a block scanned past the read's tip is one fewer to wait and one more
+  /// confirmation. A block the chain has but the wallet has not scanned does
+  /// not count, since the funds cannot be spent before it is. An unmined
+  /// entry stays as read, since no block counts toward it until one mines it.
   Iterable<
     ({rust_sync.PendingSpendableEntry entry, int blocks, int confirmations})
   >
-  at(int tipHeight) sync* {
-    final elapsed = math.max(0, tipHeight - this.tipHeight);
+  at(int scannedHeight) sync* {
+    final elapsed = math.max(0, scannedHeight - tipHeight);
     for (final entry in entries) {
       final passed = entry.confirmations == 0
           ? 0
@@ -165,7 +166,8 @@ class PendingSpendable {
   }
 }
 
-/// The wallet's waiting funds as [SpendableWait] at [tipHeight].
+/// The wallet's waiting funds as [SpendableWait] once it has scanned to
+/// [scannedHeight].
 ///
 /// [availableNow] is the spendable balance of the read [pending] came with.
 /// Funds whose blocks have all passed since are still listed, as available
@@ -173,14 +175,15 @@ class PendingSpendable {
 SpendableWait spendableWaitOf({
   required BigInt availableNow,
   required PendingSpendable pending,
-  required int tipHeight,
+  required int scannedHeight,
   required BlockSpacing spacing,
 }) {
+  final height = math.max(scannedHeight, pending.tipHeight);
   var changeWaiting = BigInt.zero;
   var receivedWaiting = BigInt.zero;
   var changeBlocks = 0;
   var receivedBlocks = 0;
-  for (final (:entry, :blocks, confirmations: _) in pending.at(tipHeight)) {
+  for (final (:entry, :blocks, confirmations: _) in pending.at(scannedHeight)) {
     if (entry.isChange) {
       changeWaiting += entry.value;
       changeBlocks = math.max(changeBlocks, blocks);
@@ -195,17 +198,15 @@ SpendableWait spendableWaitOf({
     receivedWaiting: receivedWaiting,
     changeWait: changeWaiting == BigInt.zero
         ? null
-        : _waitForBlocks(changeBlocks, tipHeight, spacing),
+        : _waitForBlocks(changeBlocks, height, spacing),
     receivedWait: receivedWaiting == BigInt.zero
         ? null
-        : _waitForBlocks(receivedBlocks, tipHeight, spacing),
+        : _waitForBlocks(receivedBlocks, height, spacing),
   );
 }
 
-AvailableIn _waitForBlocks(int blocks, int tipHeight, BlockSpacing spacing) =>
-    AvailableIn.fromSeconds(
-      spacing.secondsBetween(tipHeight, tipHeight + blocks),
-    );
+AvailableIn _waitForBlocks(int blocks, int height, BlockSpacing spacing) =>
+    AvailableIn.fromSeconds(spacing.secondsBetween(height, height + blocks));
 
 /// A mined receipt the account cannot spend yet: when it can, and how far
 /// along its confirmations are.
@@ -215,19 +216,23 @@ typedef ReceivedSpendableWait = ({
   int requiredConfirmations,
 });
 
-/// The waiting receipts in [pending] at [tipHeight], by
-/// [rust_sync.TransactionInfo.txidHex].
+/// The waiting receipts in [pending] once the wallet has scanned to
+/// [scannedHeight], by [rust_sync.TransactionInfo.txidHex].
 ///
 /// A receipt still in the mempool is left to its pending row.
 Map<String, ReceivedSpendableWait> receivedSpendableWaits({
   required PendingSpendable pending,
-  required int tipHeight,
+  required int scannedHeight,
   required BlockSpacing spacing,
 }) => {
-  for (final (:entry, :blocks, :confirmations) in pending.at(tipHeight))
+  for (final (:entry, :blocks, :confirmations) in pending.at(scannedHeight))
     if (!entry.isChange && confirmations > 0)
       entry.txidHex: (
-        wait: _waitForBlocks(blocks, tipHeight, spacing),
+        wait: _waitForBlocks(
+          blocks,
+          math.max(scannedHeight, pending.tipHeight),
+          spacing,
+        ),
         confirmations: confirmations,
         requiredConfirmations: confirmations + blocks,
       ),

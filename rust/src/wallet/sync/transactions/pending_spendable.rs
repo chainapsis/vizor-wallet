@@ -18,7 +18,8 @@ use zip32::Scope;
 use super::{PendingSpendable, WalletBalance};
 
 /// One of `account`'s unspent notes in a pool's `{pool}_received_notes` table
-/// that can still be short of confirmations at `target`, one row per call.
+/// that can still be short of confirmations at `target`: the first one
+/// after note `:after`, so each call resumes where the last one stopped.
 ///
 /// The transaction is mined above `floor`, or unmined and still able to be
 /// mined. A note at or below the marginal fee is uneconomic, which the summary
@@ -26,7 +27,8 @@ use super::{PendingSpendable, WalletBalance};
 /// has no address row to read one from.
 fn waiting_note_sql(pool: &str) -> String {
     format!(
-        "SELECT t.txid,
+        "SELECT rn.id,
+                t.txid,
                 rn.recipient_key_scope,
                 rn.value,
                 rn.is_change,
@@ -44,7 +46,8 @@ fn waiting_note_sql(pool: &str) -> String {
              AND tro.account_id = a.id
          LEFT OUTER JOIN transactions tt
              ON tt.id_tx = tro.transaction_id
-         WHERE a.uuid = :account
+         WHERE rn.id > :after
+           AND a.uuid = :account
            AND rn.value > :uneconomic
            AND (t.mined_height > :floor
                 OR (t.mined_height IS NULL
@@ -53,7 +56,7 @@ fn waiting_note_sql(pool: &str) -> String {
                SELECT {pool}_received_note_id FROM {pool}_received_note_spends)
          GROUP BY rn.id
          ORDER BY rn.id
-         LIMIT 1 OFFSET :offset"
+         LIMIT 1"
     )
 }
 
@@ -125,7 +128,8 @@ pub(super) fn read(
     let mut entries = BTreeMap::<(Vec<u8>, bool), PendingSpendable>::new();
     for (table, pool) in POOLS {
         let sql = waiting_note_sql(table);
-        for offset in 0u32.. {
+        let mut after = 0i64;
+        loop {
             let row = ext.query_row(
                 &sql,
                 rusqlite::named_params! {
@@ -133,24 +137,30 @@ pub(super) fn read(
                     ":uneconomic": u64::from(zip317::MARGINAL_FEE),
                     ":floor": floor,
                     ":target": target_height,
-                    ":offset": offset,
+                    ":after": after,
                 },
                 |row| {
-                    Ok(WaitingNote {
-                        txid: row.get(0)?,
-                        pool,
-                        scope: row.get(1)?,
-                        value: row.get(2)?,
-                        is_change: row.get(3)?,
-                        mined_height: row.get(4)?,
-                        tx_trusted: row.get(5)?,
-                        max_shielding_input_height: row.get(6)?,
-                        shielding_inputs_trusted: row.get(7)?,
-                    })
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        WaitingNote {
+                            txid: row.get(1)?,
+                            pool,
+                            scope: row.get(2)?,
+                            value: row.get(3)?,
+                            is_change: row.get(4)?,
+                            mined_height: row.get(5)?,
+                            tx_trusted: row.get(6)?,
+                            max_shielding_input_height: row.get(7)?,
+                            shielding_inputs_trusted: row.get(8)?,
+                        },
+                    ))
                 },
             );
             let note = match row {
-                Ok(note) => note,
+                Ok((id, note)) => {
+                    after = id;
+                    note
+                }
                 Err(rusqlite::Error::QueryReturnedNoRows) => break,
                 Err(error) => return Err(error.into()),
             };
@@ -478,6 +488,28 @@ mod tests {
         let (entries, _, pending) = snapshot(&mut st);
         assert_eq!(pending, 0);
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn every_waiting_note_is_read_once() {
+        let mut st = wallet();
+        let fvk = OrchardPoolTester::test_account_fvk(&st);
+        for _ in 0..3 {
+            let (height, _, _) = st.generate_next_block(
+                &IronwoodFvk(fvk.clone()),
+                AddressType::DefaultExternal,
+                zat(VALUE),
+            );
+            st.scan_cached_blocks(height, 1);
+        }
+
+        let (entries, _, pending) = snapshot(&mut st);
+        assert_eq!(pending, 3 * VALUE);
+        assert_eq!(entries.len(), 3);
+        let mut blocks: Vec<u32> = entries.iter().map(|e| e.blocks_until_spendable).collect();
+        blocks.sort_unstable();
+        assert_eq!(blocks, [3, 4, 5]);
+        assert!(entries.iter().all(|entry| entry.value == VALUE));
     }
 
     #[test]

@@ -37,14 +37,15 @@ void main() {
   SyncState state({
     SyncFailure? failure,
     List<rust_sync.PendingSpendableEntry>? entries,
-    int chainTipHeight = _tip,
+    int scannedHeight = _tip,
+    int? chainTipHeight,
   }) => SyncState(
     failure: failure,
     accountUuid: _account,
     hasAccountScopedData: true,
     isSyncComplete: true,
-    scannedHeight: _tip,
-    chainTipHeight: chainTipHeight,
+    scannedHeight: scannedHeight,
+    chainTipHeight: chainTipHeight ?? scannedHeight,
     spendableBalance: _zec,
     orchardPendingBalance: _zec,
     pendingSpendable: PendingSpendable(
@@ -83,13 +84,13 @@ void main() {
     expect(receipts.read()['received']?.requiredConfirmations, 6);
   });
 
-  test('a tip past the balance read shortens the wait it left', () async {
+  test('blocks scanned past the balance read shorten the wait', () async {
     for (final (ahead, wait, confirmations) in [
       (1, const AvailableIn.minutes(1, 2), 2),
       (3, const AvailableIn.underMinute(), 4),
       (10, const AvailableIn.underMinute(), 6),
     ]) {
-      final c = container(state(chainTipHeight: _tip + ahead));
+      final c = container(state(scannedHeight: _tip + ahead));
       await c.read(syncProvider.future);
       final sub = c.listen(spendableWaitProvider(_account), (_, _) {});
       final receipts = c.listen(
@@ -104,6 +105,21 @@ void main() {
       sub.close();
       receipts.close();
     }
+  });
+
+  test('blocks the wallet has not scanned do not shorten the wait', () async {
+    final c = container(state(chainTipHeight: _tip + 500));
+    await c.read(syncProvider.future);
+    final sub = c.listen(spendableWaitProvider(_account), (_, _) {});
+    addTearDown(sub.close);
+    final receipts = c.listen(
+      receivedSpendableWaitsProvider(_account),
+      (_, _) {},
+    );
+    addTearDown(receipts.close);
+
+    expect(sub.read()!.receivedWait, const AvailableIn.minutes(1, 3));
+    expect(receipts.read()['received']!.confirmations, 1);
   });
 
   test('pending value the wallet lists no wait for is not waiting', () async {
