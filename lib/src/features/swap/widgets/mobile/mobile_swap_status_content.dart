@@ -384,9 +384,11 @@ class _MobileStatusChipRow extends StatelessWidget {
     final textColor = paymentInProgress ? colors.text.primary : defaultColor;
     final iconColor = paymentInProgress ? colors.icon.regular : defaultColor;
     const labelStyle = AppTypography.labelLarge;
-    return SizedBox(
-      key: paymentMode ? const ValueKey('mobile_pay_status_row') : null,
-      height: 32,
+    return ConstrainedBox(
+      key: ValueKey(
+        paymentMode ? 'mobile_pay_status_row' : 'mobile_swap_status_row',
+      ),
+      constraints: const BoxConstraints(minHeight: AppSpacing.base),
       child: Row(
         children: [
           Padding(
