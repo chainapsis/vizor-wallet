@@ -3051,15 +3051,20 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
-  /// "+1.30 ZEC in 1–3 min" while funds are confirming, with the amount
-  /// masked like the balance above it.
+  /// "+1.3 ZEC in 1–3 min" while funds are confirming, with the amount
+  /// masked like the balance above it. The amount keeps the Home balance's
+  /// digits, cut rather than rounded, so the line fits beside Max; the sheet
+  /// it opens lists the exact amounts.
   String? _spendableWaitLine(SpendableWait? spendableWait) {
     final wait = spendableWait?.wait;
     if (spendableWait == null || wait == null) return null;
     final amount = hideAmountIfPrivacyMode(
-      ZecAmount.fromZatoshi(
-        spendableWait.waiting,
-      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      ZecAmount.fromZatoshi(spendableWait.waiting)
+          .compactBalancePretty(
+            minFractionDigits: 0,
+            denomStyle: ZecDenomStyle.upper,
+          )
+          .toString(),
       privacyModeEnabled: ref.watch(privacyModeProvider),
     );
     return wait.isUnderMinute

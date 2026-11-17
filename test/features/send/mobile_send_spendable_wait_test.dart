@@ -41,4 +41,24 @@ void main() {
       expect(find.text('2.5 ZEC'), findsOneWidget);
     },
   );
+
+  testWidgets('a long confirming amount is cut to fit beside Max', (
+    tester,
+  ) async {
+    await setWidgetTestViewport(tester, const Size(393, 852));
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: const Builder(
+            builder: buildMobileSendAmountWaitingLongUseCase,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('+1234.56 ZEC in 1–3 min'), findsOneWidget);
+  });
 }

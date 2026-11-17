@@ -100,6 +100,23 @@ void main() {
       );
     });
 
+    test('carries a denomination on compact balances', () {
+      // The mobile send amount step's "+… in 1–3 min" line.
+      String waiting(String value) => ZecAmount.tryParse(value)!
+          .compactBalancePretty(
+            minFractionDigits: 0,
+            denomStyle: ZecDenomStyle.upper,
+          )
+          .toString();
+      final ticker = kZcashDefaultCurrencyTicker;
+
+      expect(waiting('1.3'), '1.3 $ticker');
+      expect(waiting('0.01037757'), '0.01037 $ticker');
+      expect(waiting('12345.67891234'), '12345.6 $ticker');
+      expect(waiting('21000000.12345678'), '21000000 $ticker');
+      expect(waiting('0.000001'), '<0.00001 $ticker');
+    });
+
     test('formats fee preset with upper-case denom', () {
       expect(
         ZecAmount.fromZatoshi(BigInt.from(10000)).fee.toString(),

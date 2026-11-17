@@ -1744,6 +1744,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     allowFocus: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-send-amount-waiting-long',
+    description: 'Mobile amount step while a long amount is confirming',
+    builder: buildMobileSendAmountWaitingLongUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-send-available-sheet',
     description: 'Sheet listing what can be sent now and what is waiting',
     builder: buildMobileSpendableWaitSheetUseCase,
