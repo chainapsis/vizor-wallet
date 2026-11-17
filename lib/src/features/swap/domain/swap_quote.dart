@@ -6,6 +6,10 @@ import 'swap_fiat_value_basis.dart';
 /// inside this window is rejected because execution may not finish in time.
 const kSwapQuoteStartExpiryBuffer = Duration(seconds: 5);
 
+/// Runs once a quote request is ready to leave the device, with the deposit
+/// deadline it carries. If it fails, the request is not sent.
+typedef SwapQuoteSendHook = Future<void> Function(DateTime deadline);
+
 class SwapQuoteRequest {
   const SwapQuoteRequest({
     required this.direction,
@@ -20,6 +24,8 @@ class SwapQuoteRequest {
     this.dryRun = false,
     this.slippageBps,
     this.deadline,
+    this.beforeSend,
+    this.confidential = false,
   }) : assert(
          amount != null || sellAmount != null,
          'SwapQuoteRequest amount is required',
@@ -37,6 +43,11 @@ class SwapQuoteRequest {
   final bool dryRun;
   final int? slippageBps;
   final Duration? deadline;
+  final SwapQuoteSendHook? beforeSend;
+
+  /// Requests NEAR Intents' confidential route, which hides the link between
+  /// the deposit and the payout.
+  final bool confidential;
 
   SwapAsset get sellAsset => direction.fromAsset(externalAsset);
   SwapAsset get receiveAsset => direction.toAsset(externalAsset);
@@ -156,6 +167,9 @@ class SwapQuote {
     this.rateTextOverride,
     this.providerRefundInfo,
     this.fiatValueBasis,
+    this.swapRefundIndex,
+    this.receiveRequestId,
+    this.confidential = false,
   });
 
   factory SwapQuote.estimate({
@@ -243,6 +257,48 @@ class SwapQuote {
   final String? rateTextOverride;
   final SwapProviderRefundInfo? providerRefundInfo;
   final SwapFiatValueBasis? fiatValueBasis;
+
+  /// Local key identity. Never sent to the quote provider.
+  final BigInt? swapRefundIndex;
+
+  /// Local identity of the incoming quote request that reserved this quote's
+  /// receive address. Never sent to the quote provider.
+  final String? receiveRequestId;
+
+  /// Copies `quote`, replacing each local identity that is given.
+  SwapQuote.withLocalIdentity(
+    SwapQuote quote, {
+    BigInt? swapRefundIndex,
+    String? receiveRequestId,
+  }) : direction = quote.direction,
+       sellAsset = quote.sellAsset,
+       receiveAsset = quote.receiveAsset,
+       externalAsset = quote.externalAsset,
+       mode = quote.mode,
+       sellAmount = quote.sellAmount,
+       receiveAmount = quote.receiveAmount,
+       minimumReceiveAmount = quote.minimumReceiveAmount,
+       providerLabel = quote.providerLabel,
+       feeLabel = quote.feeLabel,
+       totalFeesText = quote.totalFeesText,
+       expiryLabel = quote.expiryLabel,
+       quoteExpiresAt = quote.quoteExpiresAt,
+       depositInstruction = quote.depositInstruction,
+       providerQuoteId = quote.providerQuoteId,
+       sellAmountBaseUnits = quote.sellAmountBaseUnits,
+       sellAmountTextOverride = quote.sellAmountTextOverride,
+       receiveEstimateTextOverride = quote.receiveEstimateTextOverride,
+       minimumReceiveTextOverride = quote.minimumReceiveTextOverride,
+       slippageToleranceTextOverride = quote.slippageToleranceTextOverride,
+       rateTextOverride = quote.rateTextOverride,
+       providerRefundInfo = quote.providerRefundInfo,
+       fiatValueBasis = quote.fiatValueBasis,
+       confidential = quote.confidential,
+       swapRefundIndex = swapRefundIndex ?? quote.swapRefundIndex,
+       receiveRequestId = receiveRequestId ?? quote.receiveRequestId;
+
+  /// Whether the provider confirmed the confidential route for this quote.
+  final bool confidential;
 
   /// Deadline used by review countdowns and the start gate. Provider quote
   /// expiries reserve [kSwapQuoteStartExpiryBuffer]; deposit-only deadlines

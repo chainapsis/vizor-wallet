@@ -44,6 +44,7 @@ class MobileSwapStatusContent extends StatelessWidget {
     required this.onTabChanged,
     required this.onToggleDetails,
     this.paymentHeader,
+    this.flowConnector,
     super.key,
   });
 
@@ -56,6 +57,9 @@ class MobileSwapStatusContent extends StatelessWidget {
   final VoidCallback onToggleDetails;
   final Widget? paymentHeader;
 
+  /// Optional replacement for the paying/receiving flow arrow row.
+  final Widget? flowConnector;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -67,6 +71,7 @@ class MobileSwapStatusContent extends StatelessWidget {
             MobileSwapReviewHeader(
               pay: payHeaderRow,
               receive: receiveHeaderRow,
+              flowConnector: flowConnector,
             ),
         const SizedBox(height: _mobileStatusHeaderToBodyGap),
         if (presentation.showTabs) ...[
@@ -137,6 +142,7 @@ class MobilePayStatusHeader extends StatelessWidget {
     this.label,
     this.recipientName,
     this.recipientProfilePictureId,
+    this.flowConnector,
     super.key,
   });
 
@@ -147,6 +153,9 @@ class MobilePayStatusHeader extends StatelessWidget {
   final String? label;
   final String? recipientName;
   final String? recipientProfilePictureId;
+
+  /// Optional replacement for the amount-to-recipient arrow.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +174,7 @@ class MobilePayStatusHeader extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
         child: ReviewInfoFlow(
+          connector: flowConnector,
           rows: [
             ReviewInfoRow(
               key: const ValueKey('mobile_pay_status_asset_row'),
@@ -469,6 +479,8 @@ class _MobilePaymentDetails extends StatelessWidget {
             kind: SwapStatusDetailKind.txId,
             value: payStatus.txIdText,
             linkUri: payStatus.txIdUri,
+            copyable: payStatus.txIdCopyText != null,
+            copyText: payStatus.txIdCopyText,
           );
     final convertedFrom = SwapStatusDetailRowData(
       label: context.l10n.swapPayStatusConvertedFrom,

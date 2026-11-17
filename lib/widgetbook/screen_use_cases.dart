@@ -883,6 +883,8 @@ Widget _buildMobileSettingsFooterUseCase({bool recoveryChanging = false}) {
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
       ),
+      // Previews read no wallet, so swap recovery watches nothing.
+      swapRecoveryUsesServerProvider.overrideWith((_) async => false),
     ],
     child: const _MobilePreviewFrame(
       constrainToDesignSize: false,
@@ -1171,6 +1173,7 @@ Widget _buildMobileSettingsTargetUseCase({
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
       ),
+      swapRecoveryUsesServerProvider.overrideWith((_) async => false),
     ],
     child: _MobilePreviewFrame(
       constrainToDesignSize: false,

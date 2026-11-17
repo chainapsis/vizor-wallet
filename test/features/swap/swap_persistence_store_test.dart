@@ -73,6 +73,9 @@ void main() {
       depositDeadline: DateTime.utc(2026, 5, 7, 12),
       accountUuid: 'account-1',
       payMode: true,
+      privateAddress: true,
+      walletReleased: true,
+      confidential: true,
       broadcastStatus: SwapDepositBroadcastStatus.broadcastedStorageFailed,
     );
 
@@ -133,6 +136,9 @@ void main() {
     expect(restored.single.userExternalContactId, 'contact-second');
     expect(restored.single.depositDeadline, DateTime.utc(2026, 5, 7, 12));
     expect(restored.single.payMode, isTrue);
+    expect(restored.single.privateAddress, isTrue);
+    expect(restored.single.walletReleased, isTrue);
+    expect(restored.single.confidential, isTrue);
     expect(restored.single.status, SwapIntentStatus.processing);
     expect(
       restored.single.broadcastStatus,
@@ -321,6 +327,9 @@ void main() {
     expect(restored.single.accountUuid, 'account-1');
     expect(restored.single.direction, SwapDirection.zecToExternal);
     expect(restored.single.payMode, isFalse);
+    expect(restored.single.privateAddress, isFalse);
+    expect(restored.single.walletReleased, isFalse);
+    expect(restored.single.confidential, isFalse);
     expect(restored.single.userExternalContactId, isNull);
     expect(
       await secureStore.readString(swapActivityStorageKeyForTest('account-1')),
@@ -362,7 +371,6 @@ void main() {
     const preferences = SwapComposerPreferences(
       direction: SwapDirection.externalToZec,
       externalAsset: SwapAsset.near,
-      slippageBps: 125,
     );
 
     await preferencesStore.savePreferences(
@@ -377,7 +385,33 @@ void main() {
     expect(restored, isNotNull);
     expect(restored!.direction, SwapDirection.externalToZec);
     expect(restored.externalAsset, SwapAsset.near);
-    expect(restored.slippageBps, 125);
+    final persisted =
+        jsonDecode(
+              (await secureStore.readString(
+                'zcash_swap_composer_preferences_v1:account-1',
+              ))!,
+            )
+            as Map<String, dynamic>;
+    expect(persisted, isNot(contains('slippageBps')));
+  });
+
+  test('ignores a slippage value from legacy composer preferences', () async {
+    await secureStore.writeString(
+      'zcash_swap_composer_preferences_v1:account-1',
+      jsonEncode({
+        'direction': SwapDirection.externalToZec.name,
+        'externalAsset': SwapAsset.near.toPersistedJson(),
+        'slippageBps': 50,
+      }),
+    );
+
+    final restored = await preferencesStore.loadPreferences(
+      accountUuid: 'account-1',
+    );
+
+    expect(restored, isNotNull);
+    expect(restored!.direction, SwapDirection.externalToZec);
+    expect(restored.externalAsset, SwapAsset.near);
   });
 
   test(
@@ -392,7 +426,6 @@ void main() {
       final preferences = SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: asset,
-        slippageBps: 150,
       );
 
       await preferencesStore.savePreferences(
@@ -409,7 +442,6 @@ void main() {
       expect(restored.externalAsset, asset);
       expect(restored.externalAsset.assetId, 'nep141:base-usdc.example');
       expect(restored.externalAsset.chainTicker, 'base');
-      expect(restored.slippageBps, 150);
     },
   );
 
@@ -419,12 +451,10 @@ void main() {
       const accountOnePreferences = SwapComposerPreferences(
         direction: SwapDirection.externalToZec,
         externalAsset: SwapAsset.near,
-        slippageBps: 125,
       );
       const accountTwoPreferences = SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
-        slippageBps: 200,
       );
 
       await preferencesStore.savePreferences(
@@ -445,10 +475,8 @@ void main() {
 
       expect(accountOne!.direction, SwapDirection.externalToZec);
       expect(accountOne.externalAsset, SwapAsset.near);
-      expect(accountOne.slippageBps, 125);
       expect(accountTwo!.direction, SwapDirection.zecToExternal);
       expect(accountTwo.externalAsset, SwapAsset.usdc);
-      expect(accountTwo.slippageBps, 200);
     },
   );
 }
