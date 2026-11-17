@@ -443,6 +443,23 @@ void main() {
     expect(selected, [2]);
   });
 
+  testWidgets(
+    'invalidating a held touch must not let another finger take over',
+    (tester) async {
+      await pumpBar(tester);
+      final first = await tester.startGesture(tab(tester, 2), pointer: 1);
+      await tester.pumpAndSettle();
+      selection.value = 1;
+      await tester.pumpAndSettle();
+      final second = await tester.startGesture(tab(tester, 3), pointer: 2);
+      await second.up();
+      await tester.pumpAndSettle();
+      expect(selected, isEmpty);
+      expect(pill(tester).center.dx, closeTo(tab(tester, 1).dx, 0.01));
+      await first.up();
+      await tester.pumpAndSettle();
+    },
+  );
   testWidgets('vertical bar keeps its original selected-tab drag origin', (
     tester,
   ) async {

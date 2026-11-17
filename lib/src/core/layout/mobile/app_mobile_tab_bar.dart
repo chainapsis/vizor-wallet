@@ -93,6 +93,8 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
   late final AnimationController _horizontalPill;
   late double _pillTarget;
   final _interactionKey = GlobalKey();
+  // Outlives an invalidated preview until that finger actually lifts.
+  int? _activePointer;
   _TabBarTouch? _touch;
 
   /// Pill position in tab units while a drag is in progress.
@@ -204,7 +206,7 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    if (_touch != null ||
+    if (_activePointer != null ||
         widget.items.isEmpty ||
         event.buttons != kPrimaryButton) {
       return;
@@ -217,6 +219,7 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
     _horizontalPill.stop();
     _horizontalPill.value = position;
     setState(() {
+      _activePointer = event.pointer;
       _touch = _TabBarTouch(event.pointer, index, event.localPosition.dx);
     });
     _movePill(
@@ -252,11 +255,15 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
   }
 
   void _handlePointerUp(PointerUpEvent event) {
-    if (_touch?.pointer == event.pointer) _cancelUnclaimedTouch(_touch);
+    if (_activePointer != event.pointer) return;
+    _activePointer = null;
+    _cancelUnclaimedTouch(_touch);
   }
 
   void _handlePointerCancel(PointerCancelEvent event) {
-    if (_touch?.pointer == event.pointer) _cancelTouch();
+    if (_activePointer != event.pointer) return;
+    _activePointer = null;
+    _cancelTouch();
   }
 
   void _handleTap(int index, {bool semantics = false}) {
