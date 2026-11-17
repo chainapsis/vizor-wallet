@@ -16,6 +16,7 @@ import 'desktop_backup_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
 import 'mobile_swap_address_capture.dart';
+import 'scaled_mobile_rows_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'ledger_pairing_capture.dart';
 import 'caps_lock_capture.dart';
@@ -175,6 +176,55 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
     allowPointer: true,
     outsideScaffold: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-contact-chain-scale-review',
+    description: 'Contact chain row with deterministic contact artwork',
+    builder: buildMobileContactChainCapture,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-contact-long-chain-scale-review',
+    description: 'Contact chain row with a long network name',
+    builder: buildMobileLongContactChainCapture,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-swap-status-row-scale-review',
+    description: 'Swap completed status row at accessibility text sizes',
+    builder: buildMobileSwapStatusRowCapture,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-warning-status-row-scale-review',
+    description: 'Swap warning status row at accessibility text sizes',
+    builder: buildMobileWarningStatusRowCapture,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-pay-status-row-scale-review',
+    description: 'Pay completed details status row at accessibility text sizes',
+    builder: buildMobilePayStatusRowCapture,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
   ),
   FigmaCompareScenario(
     id: 'mobile-swap-address-scale-review',

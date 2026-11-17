@@ -1,4 +1,5 @@
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/locale_typography.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -220,44 +221,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                 : null,
           ),
           const SizedBox(height: _fieldToNextContentGap),
-          SizedBox(
-            key: const ValueKey('mobile_pay_add_contact_chain_row'),
-            height: 32,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.xxs),
-                    child: Text(
-                      context.l10n.commonChainAndAddress,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AddressBookNetworkIcon(network: widget.network, size: 16),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Text(
-                      widget.network.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-              ],
-            ),
-          ),
+          _ContactChainRow(network: widget.network),
           const SizedBox(height: AppSpacing.xxs),
           Semantics(
             label: context.l10n.payAddressSemantics(widget.address),
@@ -340,5 +304,114 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
         ],
       ),
     );
+  }
+}
+
+class _ContactChainRow extends StatelessWidget {
+  const _ContactChainRow({required this.network});
+  final AddressBookNetwork network;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = context.l10n.commonChainAndAddress;
+    final labelStyle = AppTypography.labelLarge.copyWith(
+      color: context.colors.text.secondary,
+    );
+    final networkStyle = AppTypography.labelLarge.copyWith(
+      color: context.colors.text.accent,
+    );
+    Widget networkLabel({bool wrap = false}) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AddressBookNetworkIcon(network: network, size: 16),
+        const SizedBox(width: AppSpacing.xxs),
+        if (wrap)
+          Flexible(child: Text(network.label, style: networkStyle))
+        else
+          Text(
+            network.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: networkStyle,
+          ),
+      ],
+    );
+
+    return ConstrainedBox(
+      key: const ValueKey('mobile_pay_add_contact_chain_row'),
+      constraints: const BoxConstraints(minHeight: AppSpacing.base),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Preserve the original row whenever both scaled, localized labels fit.
+          // Reflow by available space rather than a text-scale threshold.
+          final requiredWidth =
+              _textWidth(context, label, labelStyle) +
+              _textWidth(context, network.label, networkStyle) +
+              AppSpacing.xxs * 4 +
+              AppSpacing.xs +
+              16;
+          if (requiredWidth <= constraints.maxWidth) {
+            return Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xxs),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: labelStyle,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                networkLabel(),
+                const SizedBox(width: AppSpacing.xxs),
+              ],
+            );
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xxs),
+                child: Text(label, style: labelStyle),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: networkLabel(wrap: true),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  double _textWidth(BuildContext context, String text, TextStyle style) {
+    // Match Text's inherited font metrics and accessibility bold override.
+    final defaults = DefaultTextStyle.of(context);
+    var effective = defaults.style.merge(
+      withLocaleFontFallback(context, style),
+    );
+    if (MediaQuery.boldTextOf(context)) {
+      effective = effective.copyWith(fontWeight: FontWeight.bold);
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: effective),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.localeOf(context),
+      textHeightBehavior: defaults.textHeightBehavior,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
   }
 }
