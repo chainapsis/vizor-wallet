@@ -92,6 +92,7 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _horizontalPill;
   late double _pillTarget;
+  final _interactionKey = GlobalKey();
   _TabBarTouch? _touch;
 
   /// Pill position in tab units while a drag is in progress.
@@ -109,8 +110,11 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
 
   bool get _vertical => widget.axis == Axis.vertical;
 
-  double get _itemExtent =>
-      _vertical ? AppMobileTabBar._itemHeight : AppMobileTabBar._itemWidth;
+  double get _itemExtent => _vertical
+      ? AppMobileTabBar._itemHeight
+      : (_interactionKey.currentContext?.size?.width ??
+                AppMobileTabBar._itemWidth * widget.items.length) /
+            widget.items.length;
 
   int get _selectedIndex => _releasedIndex ?? widget.currentIndex;
 
@@ -443,6 +447,7 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.xxs),
                 child: Listener(
+                  key: _interactionKey,
                   onPointerDown: vertical ? null : _handlePointerDown,
                   onPointerUp: vertical ? null : _handlePointerUp,
                   onPointerCancel: vertical ? null : _handlePointerCancel,

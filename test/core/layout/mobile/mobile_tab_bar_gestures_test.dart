@@ -428,6 +428,21 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   });
+  testWidgets('constrained tabs use their actual hit geometry', (tester) async {
+    tester.view.physicalSize = const Size(280, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpBar(tester);
+    final activityRect = tester.getRect(find.bySemanticsLabel('Activity'));
+    final gesture = await tester.startGesture(
+      activityRect.centerLeft + const Offset(2, 0),
+    );
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(selected, [2]);
+  });
+
   testWidgets('vertical bar keeps its original selected-tab drag origin', (
     tester,
   ) async {
