@@ -14777,6 +14777,14 @@
   "@swapSlippageDecrease": {
     "description": "Screen-reader label of the minus button in the mobile slippage stepper."
   },
+  "swapSlippageDescriptionPay": "Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.",
+  "@swapSlippageDescriptionPay": {
+    "description": "Explanation under the Slippage heading in the Pay settings modal: extra ZEC allowed when the quote moves."
+  },
+  "swapSlippageDescriptionSwap": "Sets the maximum rate change you'll accept. Network fees are separate.",
+  "@swapSlippageDescriptionSwap": {
+    "description": "Explanation under the Slippage heading in the swap settings modal: maximum rate change accepted."
+  },
   "swapSlippageIncrease": "Increase slippage",
   "@swapSlippageIncrease": {
     "description": "Screen-reader label of the plus button in the mobile slippage stepper."

@@ -45,7 +45,7 @@ Widget _modal({
 void main() {
   setUpAll(loadFigmaCompareFonts);
 
-  testWidgets('shows no explanation or warning under the Slippage heading', (
+  testWidgets('explains slippage under its heading, with no warning', (
     tester,
   ) async {
     final warningIcon = find.byWidgetPredicate(
@@ -57,6 +57,16 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('swap_slippage_100bps')));
       await tester.pump();
       expect(find.text('Slippage'), findsOneWidget);
+      expect(
+        find.text(
+          paymentMode
+              ? 'Allows this much extra ZEC for quote movement before '
+                    'execution fails. Network fees are separate.'
+              : "Sets the maximum rate change you'll accept. Network fees "
+                    'are separate.',
+        ),
+        findsOneWidget,
+      );
       expect(warningIcon, findsNothing);
     }
   });

@@ -62,6 +62,14 @@ void main() {
             );
 
             await tester.pumpAndSettle();
+            expect(
+              find.textContaining(
+                paymentMode
+                    ? 'Allows this much extra ZEC'
+                    : "Sets the maximum rate change you'll accept",
+              ),
+              findsOneWidget,
+            );
             final value = find.byKey(
               const ValueKey('mobile_swap_slippage_value'),
             );

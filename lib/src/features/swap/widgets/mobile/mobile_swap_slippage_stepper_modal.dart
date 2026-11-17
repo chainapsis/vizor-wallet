@@ -180,6 +180,17 @@ class _MobileSwapSlippageStepperModalState
                         color: colors.text.accent,
                       ),
                     ),
+                    // Heading and explanation, like the Confidential setting.
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      widget.paymentMode
+                          ? context.l10n.swapSlippageDescriptionPay
+                          : context.l10n.swapSlippageDescriptionSwap,
+                      key: const ValueKey('swap_slippage_description'),
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
                     ConstrainedBox(
                       key: const ValueKey('mobile_swap_slippage_stepper_area'),
                       constraints: const BoxConstraints(minHeight: 160),
