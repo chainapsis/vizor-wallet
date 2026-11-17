@@ -33,13 +33,15 @@ void main() {
   });
 
   group('spendableWaitOf', () {
-    SpendableWait of(List<rust_sync.PendingSpendableEntry> entries) =>
-        spendableWaitOf(
-          availableNow: _zec,
-          entries: entries,
-          tipHeight: _tip,
-          spacing: _nu7,
-        );
+    SpendableWait of(
+      List<rust_sync.PendingSpendableEntry> entries, {
+      int tipHeight = _tip,
+    }) => spendableWaitOf(
+      availableNow: _zec,
+      pending: PendingSpendable(tipHeight: _tip, entries: entries),
+      tipHeight: tipHeight,
+      spacing: _nu7,
+    );
 
     test('nothing waiting has no wait', () {
       final wait = of(const []);
@@ -64,10 +66,40 @@ void main() {
       expect(wait.total, _zec * BigInt.from(5));
     });
 
+    test('each block since the read is one fewer to wait', () {
+      final entries = [
+        _entry('a', blocks: 5),
+        _entry('c', isChange: true, blocks: 2),
+      ];
+      expect(
+        of(entries, tipHeight: _tip + 1).receivedWait,
+        const AvailableIn.minutes(1, 2),
+      );
+      expect(
+        of(entries, tipHeight: _tip + 3).changeWait,
+        const AvailableIn.underMinute(),
+      );
+      // Past its last block the amount is still listed, about to be read
+      // as spendable.
+      final past = of(entries, tipHeight: _tip + 10);
+      expect(past.waiting, _zec * BigInt.two);
+      expect(past.wait, const AvailableIn.underMinute());
+    });
+
+    test('an unmined entry waits as read whatever the tip', () {
+      final wait = of([
+        _entry('a', blocks: 6, confirmations: 0),
+      ], tipHeight: _tip + 4);
+      expect(wait.receivedWait, const AvailableIn.minutes(1, 3));
+    });
+
     test('blocks are timed at the spacing of the tip', () {
       SpendableWait at(BlockSpacing spacing) => spendableWaitOf(
         availableNow: _zec,
-        entries: [_entry('a', blocks: 5)],
+        pending: PendingSpendable(
+          tipHeight: _tip,
+          entries: [_entry('a', blocks: 5)],
+        ),
         tipHeight: _tip,
         spacing: spacing,
       );
@@ -128,15 +160,36 @@ void main() {
   });
 
   group('receivedSpendableWaits', () {
-    final waits = receivedSpendableWaits(
+    final pending = PendingSpendable(
+      tipHeight: _tip,
       entries: [
         _entry('mined', blocks: 4, confirmations: 2),
         _entry('mempool', blocks: 6, confirmations: 0),
         _entry('change', isChange: true, blocks: 2, confirmations: 1),
       ],
+    );
+    final waits = receivedSpendableWaits(
+      pending: pending,
       tipHeight: _tip,
       spacing: _nu7,
     );
+
+    test('blocks since the read count as confirmations', () {
+      ReceivedSpendableWait at(int tipHeight) => receivedSpendableWaits(
+        pending: pending,
+        tipHeight: tipHeight,
+        spacing: _nu7,
+      )['mined']!;
+      expect(at(_tip + 1).confirmations, 3);
+      expect(at(_tip + 1).wait, const AvailableIn.minutes(1, 2));
+      expect(at(_tip + 3).confirmations, 5);
+      expect(at(_tip + 3).wait, const AvailableIn.underMinute());
+      expect(at(_tip + 10).confirmations, 6);
+      expect(at(_tip + 10).requiredConfirmations, 6);
+      expect(at(_tip + 10).wait, const AvailableIn.underMinute());
+      // A tip behind the read's takes nothing back.
+      expect(at(_tip - 1).confirmations, 2);
+    });
 
     test('a mined receipt reports its wait and confirmations', () {
       expect(waits.keys, ['mined']);

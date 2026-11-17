@@ -922,6 +922,9 @@ pub struct WalletBalance {
     /// while the wallet still has older blocks to scan; pending value it does
     /// not list has no known wait.
     pub pending_spendable: Vec<PendingSpendableEntry>,
+    /// The wallet's chain tip when the entries were read: their block counts
+    /// and confirmations are measured from it.
+    pub pending_spendable_tip_height: u32,
 }
 
 /// Shielded funds one transaction gave the account that are short of
@@ -932,9 +935,10 @@ pub struct PendingSpendableEntry {
     /// Change from the account's own transaction, not funds received.
     pub is_change: bool,
     pub value: u64,
-    /// Blocks after the wallet's chain tip before the funds can be spent.
+    /// Blocks after [`WalletBalance::pending_spendable_tip_height`] before
+    /// the funds can be spent.
     pub blocks_until_spendable: u32,
-    /// Confirmations the transaction has; zero while unmined.
+    /// Confirmations the transaction has at that tip; zero while unmined.
     pub confirmations: u32,
 }
 
@@ -1218,7 +1222,9 @@ pub fn get_balance(
             spendable,
             locked,
             total: total_spendable + locked + pending,
+            pending_spendable_tip_height: pending_spendable.tip_height,
             pending_spendable: pending_spendable
+                .entries
                 .into_iter()
                 .map(|entry| PendingSpendableEntry {
                     txid_hex: hex::encode(&entry.txid),

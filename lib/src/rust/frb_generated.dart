@@ -16682,8 +16682,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 24)
-      throw Exception('unexpected arr length: expect 24 but see ${arr.length}');
+    if (arr.length != 25)
+      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
     return WalletBalance(
       availability: dco_decode_wallet_balance_availability(arr[0]),
       transparentAuthority: dco_decode_transparent_balance_authority(arr[1]),
@@ -16711,6 +16711,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       locked: dco_decode_u_64(arr[21]),
       total: dco_decode_u_64(arr[22]),
       pendingSpendable: dco_decode_list_pending_spendable_entry(arr[23]),
+      pendingSpendableTipHeight: dco_decode_u_32(arr[24]),
     );
   }
 
@@ -22414,6 +22415,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pendingSpendable = sse_decode_list_pending_spendable_entry(
       deserializer,
     );
+    var var_pendingSpendableTipHeight = sse_decode_u_32(deserializer);
     return WalletBalance(
       availability: var_availability,
       transparentAuthority: var_transparentAuthority,
@@ -22439,6 +22441,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       locked: var_locked,
       total: var_total,
       pendingSpendable: var_pendingSpendable,
+      pendingSpendableTipHeight: var_pendingSpendableTipHeight,
     );
   }
 
@@ -27172,6 +27175,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.locked, serializer);
     sse_encode_u_64(self.total, serializer);
     sse_encode_list_pending_spendable_entry(self.pendingSpendable, serializer);
+    sse_encode_u_32(self.pendingSpendableTipHeight, serializer);
   }
 
   @protected

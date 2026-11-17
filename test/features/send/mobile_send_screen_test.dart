@@ -470,6 +470,7 @@ class _PendingHistorySyncNotifier extends SyncNotifier {
       ironwoodPending: BigInt.zero,
       changePendingConfirmation: BigInt.zero,
       pendingSpendable: const [],
+      pendingSpendableTipHeight: 0,
       valuePendingSpendability: BigInt.zero,
       uneconomicValue: BigInt.zero,
       spendable: amount,

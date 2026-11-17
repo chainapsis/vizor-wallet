@@ -36,27 +36,31 @@ void main() {
 
   SyncState state({
     SyncFailure? failure,
-    List<rust_sync.PendingSpendableEntry>? pendingSpendable,
+    List<rust_sync.PendingSpendableEntry>? entries,
+    int chainTipHeight = _tip,
   }) => SyncState(
     failure: failure,
     accountUuid: _account,
     hasAccountScopedData: true,
     isSyncComplete: true,
     scannedHeight: _tip,
-    chainTipHeight: _tip,
+    chainTipHeight: chainTipHeight,
     spendableBalance: _zec,
     orchardPendingBalance: _zec,
-    pendingSpendable:
-        pendingSpendable ??
-        [
-          rust_sync.PendingSpendableEntry(
-            txidHex: 'received',
-            isChange: false,
-            value: _zec,
-            blocksUntilSpendable: 5,
-            confirmations: 1,
-          ),
-        ],
+    pendingSpendable: PendingSpendable(
+      tipHeight: _tip,
+      entries:
+          entries ??
+          [
+            rust_sync.PendingSpendableEntry(
+              txidHex: 'received',
+              isChange: false,
+              value: _zec,
+              blocksUntilSpendable: 5,
+              confirmations: 1,
+            ),
+          ],
+    ),
   );
 
   test('a balance with a confirming receipt states its wait', () async {
@@ -79,8 +83,31 @@ void main() {
     expect(receipts.read()['received']?.requiredConfirmations, 6);
   });
 
+  test('a tip past the balance read shortens the wait it left', () async {
+    for (final (ahead, wait, confirmations) in [
+      (1, const AvailableIn.minutes(1, 2), 2),
+      (3, const AvailableIn.underMinute(), 4),
+      (10, const AvailableIn.underMinute(), 6),
+    ]) {
+      final c = container(state(chainTipHeight: _tip + ahead));
+      await c.read(syncProvider.future);
+      final sub = c.listen(spendableWaitProvider(_account), (_, _) {});
+      final receipts = c.listen(
+        receivedSpendableWaitsProvider(_account),
+        (_, _) {},
+      );
+
+      expect(sub.read()!.receivedWait, wait, reason: '$ahead blocks ahead');
+      expect(sub.read()!.receivedWaiting, _zec);
+      expect(receipts.read()['received']!.confirmations, confirmations);
+      expect(receipts.read()['received']!.requiredConfirmations, 6);
+      sub.close();
+      receipts.close();
+    }
+  });
+
   test('pending value the wallet lists no wait for is not waiting', () async {
-    final c = container(state(pendingSpendable: const []));
+    final c = container(state(entries: const []));
     await c.read(syncProvider.future);
     final sub = c.listen(spendableWaitProvider(_account), (_, _) {});
     addTearDown(sub.close);

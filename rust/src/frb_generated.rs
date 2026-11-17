@@ -16267,6 +16267,7 @@ impl SseDecode for crate::api::sync::WalletBalance {
         let mut var_total = <u64>::sse_decode(deserializer);
         let mut var_pendingSpendable =
             <Vec<crate::api::sync::PendingSpendableEntry>>::sse_decode(deserializer);
+        let mut var_pendingSpendableTipHeight = <u32>::sse_decode(deserializer);
         return crate::api::sync::WalletBalance {
             availability: var_availability,
             transparent_authority: var_transparentAuthority,
@@ -16292,6 +16293,7 @@ impl SseDecode for crate::api::sync::WalletBalance {
             locked: var_locked,
             total: var_total,
             pending_spendable: var_pendingSpendable,
+            pending_spendable_tip_height: var_pendingSpendableTipHeight,
         };
     }
 }
@@ -21725,6 +21727,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
             self.locked.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
             self.pending_spendable.into_into_dart().into_dart(),
+            self.pending_spendable_tip_height
+                .into_into_dart()
+                .into_dart(),
         ]
         .into_dart()
     }
@@ -25932,6 +25937,7 @@ impl SseEncode for crate::api::sync::WalletBalance {
             self.pending_spendable,
             serializer,
         );
+        <u32>::sse_encode(self.pending_spendable_tip_height, serializer);
     }
 }
 

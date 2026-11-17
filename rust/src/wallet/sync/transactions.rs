@@ -260,13 +260,21 @@ pub(crate) struct PendingSpendable {
     pub confirmations: u32,
 }
 
+/// An account's [`PendingSpendable`] entries and the chain tip their block
+/// counts and confirmations are measured from.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PendingSpendableRead {
+    pub tip_height: u32,
+    pub entries: Vec<PendingSpendable>,
+}
+
 /// [`get_wallet_balance`] with the account's [`PendingSpendable`] entries,
 /// read from the same snapshot.
 pub(crate) fn get_wallet_balance_with_pending(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
-) -> Result<(WalletBalance, Vec<PendingSpendable>), String> {
+) -> Result<(WalletBalance, PendingSpendableRead), String> {
     let account = parse_account_uuid(account_uuid)?;
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let mut balances =
@@ -332,7 +340,7 @@ fn read_wallet_balances_with_pending(
     network: WalletNetwork,
     target_ids: &[AccountUuid],
     with_pending: bool,
-) -> Result<Vec<(WalletBalance, Vec<PendingSpendable>)>, String> {
+) -> Result<Vec<(WalletBalance, PendingSpendableRead)>, String> {
     // Read durable policy, summary, and authority from one snapshot. The
     // library resolves this handle under a policy another connection applied
     // since `db` was opened, so a private-policy summary's suppressed zero is
@@ -353,12 +361,12 @@ fn read_wallet_balances_with_pending(
                             WalletBalanceAvailability::SummaryUnavailable,
                             private,
                         ),
-                        Vec::new(),
+                        PendingSpendableRead::default(),
                     )
                 })
                 .collect());
         };
-        let target_height = u32::from(summary.chain_tip_height()) + 1;
+        let tip_height = u32::from(summary.chain_tip_height());
 
         target_ids
             .iter()
@@ -369,7 +377,7 @@ fn read_wallet_balances_with_pending(
                             WalletBalanceAvailability::AccountUnavailable,
                             private,
                         ),
-                        Vec::new(),
+                        PendingSpendableRead::default(),
                     ));
                 };
                 let shielded = [
@@ -396,12 +404,18 @@ fn read_wallet_balances_with_pending(
                     transparent,
                     shielded,
                 );
-                let pending = if with_pending {
-                    pending_spendable::for_balance(ext, *target_id, target_height, &balance)?
+                let entries = if with_pending {
+                    pending_spendable::for_balance(ext, *target_id, tip_height + 1, &balance)?
                 } else {
                     Vec::new()
                 };
-                Ok((balance, pending))
+                Ok((
+                    balance,
+                    PendingSpendableRead {
+                        tip_height,
+                        entries,
+                    },
+                ))
             })
             .collect::<Result<Vec<_>, zcash_client_sqlite::error::SqliteClientError>>()
     })

@@ -239,7 +239,7 @@ mod tests {
     use zcash_primitives::block::BlockHash;
 
     use super::super::private_shielding_tests::{
-        regtest, scan_unrelated_blocks, zat, State, NU6_3,
+        regtest, scan_unrelated_blocks, zat, State, NETWORK, NU6_3,
     };
     use super::*;
     use crate::wallet::network::configure_regtest_nu6_3_activation_height;
@@ -305,12 +305,26 @@ mod tests {
     /// Receives `VALUE` at `address_type` and follows it block by block: at
     /// every depth the entries account for all pending value, and the funds
     /// turn spendable exactly when the entry's block count runs out.
-    fn follows_the_summary(address_type: AddressType, blocks_at_first_confirmation: u32) {
+    ///
+    /// Scanning marks a note as change only when its transaction spends the
+    /// account's notes, which a generated block does not, so `is_change`
+    /// marks it by hand.
+    fn follows_the_summary(
+        address_type: AddressType,
+        is_change: bool,
+        blocks_at_first_confirmation: u32,
+    ) {
         let mut st = wallet();
         let fvk = OrchardPoolTester::test_account_fvk(&st);
         let (height, _, _) =
             st.generate_next_block(&IronwoodFvk(fvk.clone()), address_type, zat(VALUE));
         st.scan_cached_blocks(height, 1);
+        if is_change {
+            st.wallet()
+                .conn()
+                .execute("UPDATE ironwood_received_notes SET is_change = 1", [])
+                .unwrap();
+        }
 
         let mut expected = blocks_at_first_confirmation;
         let mut confirmations = 1;
@@ -331,6 +345,7 @@ mod tests {
             assert_eq!(entries[0].value, VALUE);
             assert_eq!(entries[0].blocks_until_spendable, expected);
             assert_eq!(entries[0].confirmations, confirmations);
+            assert_eq!(entries[0].is_change, is_change);
             mine_empty(&mut st);
             expected -= 1;
             confirmations += 1;
@@ -339,12 +354,17 @@ mod tests {
 
     #[test]
     fn a_receipt_waits_for_its_sixth_confirmation() {
-        follows_the_summary(AddressType::DefaultExternal, 5);
+        follows_the_summary(AddressType::DefaultExternal, false, 5);
     }
 
     #[test]
-    fn internal_funds_wait_for_their_third_confirmation() {
-        follows_the_summary(AddressType::Internal, 2);
+    fn change_waits_for_its_third_confirmation() {
+        follows_the_summary(AddressType::Internal, true, 2);
+    }
+
+    #[test]
+    fn internal_funds_that_are_not_change_wait_as_long() {
+        follows_the_summary(AddressType::Internal, false, 2);
     }
 
     /// A wallet holding one receipt of `VALUE` at its first confirmation.
@@ -377,6 +397,34 @@ mod tests {
         let (entries, spendable, _) = snapshot(&mut st);
         assert!(entries.is_empty());
         assert_eq!(spendable, 0);
+    }
+
+    /// The app finds a row's entry by transaction id, so both reads have to
+    /// spell it the same way.
+    #[test]
+    fn the_balance_read_names_the_transaction_as_its_history_row_does() {
+        let st = wallet_with_a_new_receipt();
+        let account = st.test_account().unwrap().id().expose_uuid().to_string();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        st.wallet()
+            .conn()
+            .execute("VACUUM INTO ?1", [&path])
+            .unwrap();
+
+        let (balance, pending) =
+            super::super::get_wallet_balance_with_pending(&path, NETWORK, &account).unwrap();
+        let rows = super::super::get_transaction_history(&path, NETWORK, None, &account).unwrap();
+
+        assert_eq!(balance.ironwood_pending, VALUE);
+        assert_eq!(
+            pending.tip_height,
+            u32::from(st.wallet().chain_height().unwrap().unwrap())
+        );
+        assert_eq!(pending.entries.len(), 1);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tx_kind, "received");
+        assert_eq!(hex::encode(&pending.entries[0].txid), rows[0].txid_hex);
     }
 
     #[test]

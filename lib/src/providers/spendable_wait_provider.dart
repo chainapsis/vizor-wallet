@@ -5,14 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/zcash/block_spacing.dart';
 import '../core/zcash/spendable_wait.dart';
 import '../features/migration/providers/ironwood_migration_announcement_provider.dart';
-import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
 import 'block_spacing_provider.dart';
 import 'sync_provider.dart';
 
 typedef _Waiting = ({
   BigInt availableNow,
-  List<rust_sync.PendingSpendableEntry> entries,
+  PendingSpendable pending,
   int tipHeight,
   BlockSpacing spacing,
 });
@@ -20,8 +19,8 @@ typedef _Waiting = ({
 /// [accountUuid]'s spendable balance with the funds the wallet reported as
 /// waiting on confirmations in the same balance read.
 ///
-/// Null without a balance read this session, and after a failed sync, whose
-/// block counts no longer run down. Also null while a migration limits sends
+/// Null without a balance read this session, and after a failed sync, which
+/// no longer follows the chain tip the waits are counted to. Also null while a migration limits sends
 /// to Ironwood, where the pools are not interchangeable.
 final _waitingProvider = Provider.autoDispose.family<_Waiting?, String?>((
   ref,
@@ -35,7 +34,7 @@ final _waitingProvider = Provider.autoDispose.family<_Waiting?, String?>((
         readable:
             sync.hasBalanceData && sync.failure == null && sync.error == null,
         availableNow: sync.spendableBalance,
-        entries: sync.pendingSpendable,
+        pending: sync.pendingSpendable,
         tipHeight: math.max(sync.scannedHeight, sync.chainTipHeight),
       );
     }),
@@ -48,7 +47,7 @@ final _waitingProvider = Provider.autoDispose.family<_Waiting?, String?>((
   }
   return (
     availableNow: sync.availableNow,
-    entries: sync.entries,
+    pending: sync.pending,
     tipHeight: sync.tipHeight,
     spacing: ref.watch(blockSpacingProvider),
   );
@@ -62,7 +61,7 @@ final spendableWaitProvider = Provider.autoDispose
       if (waiting == null) return null;
       return spendableWaitOf(
         availableNow: waiting.availableNow,
-        entries: waiting.entries,
+        pending: waiting.pending,
         tipHeight: waiting.tipHeight,
         spacing: waiting.spacing,
       );
@@ -74,7 +73,7 @@ final receivedSpendableWaitsProvider = Provider.autoDispose
       final waiting = ref.watch(_waitingProvider(accountUuid));
       if (waiting == null) return const {};
       return receivedSpendableWaits(
-        entries: waiting.entries,
+        pending: waiting.pending,
         tipHeight: waiting.tipHeight,
         spacing: waiting.spacing,
       );

@@ -347,6 +347,7 @@ rust_sync.WalletBalance _balance(
     ironwoodPending: BigInt.zero,
     changePendingConfirmation: BigInt.zero,
     pendingSpendable: const [],
+    pendingSpendableTipHeight: 0,
     valuePendingSpendability: BigInt.zero,
     uneconomicValue: BigInt.zero,
     spendable: BigInt.zero,

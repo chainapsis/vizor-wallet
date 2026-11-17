@@ -129,14 +129,50 @@ class SpendableWait {
   );
 }
 
-/// The wallet's waiting funds as [SpendableWait].
+/// The funds the wallet listed as waiting only on confirmations in one
+/// balance read, with the chain tip that read counted from.
+class PendingSpendable {
+  const PendingSpendable({required this.tipHeight, required this.entries});
+
+  PendingSpendable.of(rust_sync.WalletBalance balance)
+    : tipHeight = balance.pendingSpendableTipHeight,
+      entries = balance.pendingSpendable;
+
+  static const none = PendingSpendable(tipHeight: 0, entries: []);
+
+  final int tipHeight;
+  final List<rust_sync.PendingSpendableEntry> entries;
+
+  /// Each entry as it stands at [tipHeight], a chain tip at or after the
+  /// read's: a block since then is one fewer to wait and one more
+  /// confirmation. An unmined entry stays as read, since no block counts
+  /// toward it until one mines it.
+  Iterable<
+    ({rust_sync.PendingSpendableEntry entry, int blocks, int confirmations})
+  >
+  at(int tipHeight) sync* {
+    final elapsed = math.max(0, tipHeight - this.tipHeight);
+    for (final entry in entries) {
+      final passed = entry.confirmations == 0
+          ? 0
+          : math.min(elapsed, entry.blocksUntilSpendable);
+      yield (
+        entry: entry,
+        blocks: entry.blocksUntilSpendable - passed,
+        confirmations: entry.confirmations + passed,
+      );
+    }
+  }
+}
+
+/// The wallet's waiting funds as [SpendableWait] at [tipHeight].
 ///
-/// [entries] come with the balance [availableNow] was read from and count
-/// blocks from the chain tip of that read; [tipHeight] only picks the block
-/// spacing.
+/// [availableNow] is the spendable balance of the read [pending] came with.
+/// Funds whose blocks have all passed since are still listed, as available
+/// in under a minute, until the next read moves them to the balance.
 SpendableWait spendableWaitOf({
   required BigInt availableNow,
-  required Iterable<rust_sync.PendingSpendableEntry> entries,
+  required PendingSpendable pending,
   required int tipHeight,
   required BlockSpacing spacing,
 }) {
@@ -144,13 +180,13 @@ SpendableWait spendableWaitOf({
   var receivedWaiting = BigInt.zero;
   var changeBlocks = 0;
   var receivedBlocks = 0;
-  for (final entry in entries) {
+  for (final (:entry, :blocks, confirmations: _) in pending.at(tipHeight)) {
     if (entry.isChange) {
       changeWaiting += entry.value;
-      changeBlocks = math.max(changeBlocks, entry.blocksUntilSpendable);
+      changeBlocks = math.max(changeBlocks, blocks);
     } else {
       receivedWaiting += entry.value;
-      receivedBlocks = math.max(receivedBlocks, entry.blocksUntilSpendable);
+      receivedBlocks = math.max(receivedBlocks, blocks);
     }
   }
   return SpendableWait(
@@ -179,20 +215,21 @@ typedef ReceivedSpendableWait = ({
   int requiredConfirmations,
 });
 
-/// The waiting receipts among [entries], by [rust_sync.TransactionInfo.txidHex].
+/// The waiting receipts in [pending] at [tipHeight], by
+/// [rust_sync.TransactionInfo.txidHex].
 ///
 /// A receipt still in the mempool is left to its pending row.
 Map<String, ReceivedSpendableWait> receivedSpendableWaits({
-  required Iterable<rust_sync.PendingSpendableEntry> entries,
+  required PendingSpendable pending,
   required int tipHeight,
   required BlockSpacing spacing,
 }) => {
-  for (final entry in entries)
-    if (!entry.isChange && entry.confirmations > 0)
+  for (final (:entry, :blocks, :confirmations) in pending.at(tipHeight))
+    if (!entry.isChange && confirmations > 0)
       entry.txidHex: (
-        wait: _waitForBlocks(entry.blocksUntilSpendable, tipHeight, spacing),
-        confirmations: entry.confirmations,
-        requiredConfirmations: entry.confirmations + entry.blocksUntilSpendable,
+        wait: _waitForBlocks(blocks, tipHeight, spacing),
+        confirmations: confirmations,
+        requiredConfirmations: confirmations + blocks,
       ),
 };
 

@@ -3003,10 +3003,11 @@ class PendingSpendableEntry {
   final bool isChange;
   final BigInt value;
 
-  /// Blocks after the wallet's chain tip before the funds can be spent.
+  /// Blocks after [`WalletBalance::pending_spendable_tip_height`] before
+  /// the funds can be spent.
   final int blocksUntilSpendable;
 
-  /// Confirmations the transaction has; zero while unmined.
+  /// Confirmations the transaction has at that tip; zero while unmined.
   final int confirmations;
 
   const PendingSpendableEntry({
@@ -3882,6 +3883,10 @@ class WalletBalance {
   /// not list has no known wait.
   final List<PendingSpendableEntry> pendingSpendable;
 
+  /// The wallet's chain tip when the entries were read: their block counts
+  /// and confirmations are measured from it.
+  final int pendingSpendableTipHeight;
+
   const WalletBalance({
     required this.availability,
     required this.transparentAuthority,
@@ -3907,6 +3912,7 @@ class WalletBalance {
     required this.locked,
     required this.total,
     required this.pendingSpendable,
+    required this.pendingSpendableTipHeight,
   });
 
   @override
@@ -3934,7 +3940,8 @@ class WalletBalance {
       spendable.hashCode ^
       locked.hashCode ^
       total.hashCode ^
-      pendingSpendable.hashCode;
+      pendingSpendable.hashCode ^
+      pendingSpendableTipHeight.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3964,7 +3971,8 @@ class WalletBalance {
           spendable == other.spendable &&
           locked == other.locked &&
           total == other.total &&
-          pendingSpendable == other.pendingSpendable;
+          pendingSpendable == other.pendingSpendable &&
+          pendingSpendableTipHeight == other.pendingSpendableTipHeight;
 }
 
 enum WalletBalanceAvailability {
