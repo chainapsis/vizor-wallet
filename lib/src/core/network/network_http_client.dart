@@ -66,6 +66,10 @@ class _DirectRequestOperation<T> {
 /// must stop reception before buffering more than the requested body budget,
 /// and an omitted one must still be bounded (the Rust bridge caps every
 /// buffered reply at 16 MiB; large files belong in `download`).
+///
+/// A connection Tor could not open is reported as a [SocketException], as the
+/// direct route reports one, so callers' transport retry and failover apply.
+/// Nothing was sent, whatever the method.
 abstract interface class TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
@@ -96,6 +100,8 @@ class RustTorHttpBridge implements TorHttpBridge {
 
   static const _requestTimeoutError =
       'Tor HTTP request timed out'; // l10n-ignore: HTTP method or exception text for logs
+  static const _connectionFailedError =
+      'Tor HTTP connection could not be opened'; // l10n-ignore: HTTP method or exception text for logs
 
   @override
   Future<NetworkHttpResponse> get(
@@ -147,12 +153,16 @@ class RustTorHttpBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required String destinationPath,
   }) async {
-    final response = await rust_network_privacy.torHttpDownload(
-      url: uri.toString(),
-      headers: _rustHeaders(headers),
-      destinationPath: destinationPath,
-    );
-    return networkHttpResponseFromRust(response);
+    try {
+      final response = await rust_network_privacy.torHttpDownload(
+        url: uri.toString(),
+        headers: _rustHeaders(headers),
+        destinationPath: destinationPath,
+      );
+      return networkHttpResponseFromRust(response);
+    } catch (error, stackTrace) {
+      _throwClassified(error, stackTrace, null);
+    }
   }
 
   static BigInt? _timeoutMilliseconds(Duration? timeout) {
@@ -186,16 +196,30 @@ class RustTorHttpBridge implements TorHttpBridge {
     try {
       return networkHttpResponseFromRust(await send(requestId));
     } catch (error, stackTrace) {
-      if (error.toString().contains(_requestTimeoutError)) {
-        throw TimeoutException(_requestTimeoutError, timeout);
-      }
-      Error.throwWithStackTrace(error, stackTrace);
+      _throwClassified(error, stackTrace, timeout);
     } finally {
       completed = true;
       if (requestId != null) {
         rust_network_privacy.torHttpCancelRequest(requestId: requestId);
       }
     }
+  }
+
+  /// Rethrows a Rust bridge failure as the exception its stable marker names,
+  /// or unchanged when it carries none.
+  static Never _throwClassified(
+    Object error,
+    StackTrace stackTrace,
+    Duration? timeout,
+  ) {
+    final message = error.toString();
+    if (message.contains(_requestTimeoutError)) {
+      throw TimeoutException(_requestTimeoutError, timeout);
+    }
+    if (message.contains(_connectionFailedError)) {
+      Error.throwWithStackTrace(SocketException(message), stackTrace);
+    }
+    Error.throwWithStackTrace(error, stackTrace);
   }
 
   static List<rust_network_privacy.NetworkHttpHeader> _rustHeaders(

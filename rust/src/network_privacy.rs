@@ -19,7 +19,11 @@ use std::{
     time::Duration,
 };
 
-use zcash_client_backend::tor::{Client as TorClient, DormantMode, Timeouts as TorTimeouts};
+use http::StatusCode;
+use zcash_client_backend::tor::{
+    http::Retry, Client as TorClient, DormantMode, Error as TorError, ErrorKind, HasKind,
+    Timeouts as TorTimeouts,
+};
 
 /// `TorTimeouts` only bounds connect, request and response-body phases, so
 /// bootstrapping itself is unbounded: arti retries it 128 times with a growing
@@ -684,6 +688,35 @@ async fn tor_client_for_route_with_deadline(
             _ = status_changed.as_mut() => {}
             _ = tokio::time::sleep(BOOTSTRAP_ROUTE_POLL_INTERVAL) => {}
         }
+    }
+}
+
+/// How many times [`tor_stream_open_recovery`] may reopen one HTTP-over-Tor
+/// request.
+pub(crate) const TOR_STREAM_OPEN_RECOVERY_RETRIES: u8 = 1;
+
+/// HTTP-over-Tor retry filter: reopens a request on a fresh isolated circuit
+/// when its exit could not resolve the host, or Arti reported
+/// [`ErrorKind::RemoteNetworkTimeout`].
+///
+/// Top-level Tor errors come from opening the stream, before TLS or HTTP, so
+/// nothing was sent and the retry is safe for any method. HTTP errors,
+/// including the ambiguous connect deadline, stay excluded. The caller's
+/// deadline and cancellation cover both attempts. A fresh isolation context
+/// does not guarantee a different exit relay. Nothing is retried once the
+/// route has switched to direct.
+pub(crate) fn tor_stream_open_recovery(result: Result<StatusCode, &TorError>) -> Option<Retry> {
+    if !is_tor_desired() {
+        return None;
+    }
+    match result {
+        Err(error)
+            if error.is_tor_name_resolution_failure()
+                || matches!(error, TorError::Tor(error) if error.kind() == ErrorKind::RemoteNetworkTimeout) =>
+        {
+            Some(Retry::Isolated)
+        }
+        _ => None,
     }
 }
 
