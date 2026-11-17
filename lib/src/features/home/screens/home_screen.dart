@@ -1661,9 +1661,9 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
     final priceChangeColor = roundedPriceChangePct == null
         ? null
         : roundedPriceChangePct > 0
-        ? colors.text.positiveStrong
+        ? colors.text.homeCardPositive
         : roundedPriceChangePct < 0
-        ? colors.text.destructive
+        ? colors.text.homeCardNegative
         : colors.text.homeCard;
     final cardRadius = BorderRadius.circular(AppRadii.large);
     final showIronwoodMigrationState =

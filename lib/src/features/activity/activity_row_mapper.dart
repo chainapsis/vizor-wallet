@@ -19,12 +19,19 @@ const _activityAmountPrivacyMaskLength = 3;
 
 /// Color for the "outgoing"/neutral amount line (sent, swap). Mobile
 /// matches the transaction title (`text.accent`) so the amount reads as
-/// heavy as the type; desktop keeps the lighter `text.primary`. Inbound
-/// (green) and failed amounts keep their own semantic colors.
+/// heavy as the type; desktop keeps the lighter `text.primary`. Failed
+/// amounts keep their own color.
 Color outgoingAmountColor(AppColors colors) =>
     kAppFormFactor == AppFormFactor.mobile
     ? colors.text.accent
     : colors.text.primary;
+
+/// Color for an inbound amount. Mobile keeps the row to one tone, as the
+/// "+" sign already marks money in; desktop keeps the green.
+Color inboundAmountColor(AppColors colors) =>
+    kAppFormFactor == AppFormFactor.mobile
+    ? outgoingAmountColor(colors)
+    : colors.text.positiveStrong;
 
 ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
@@ -150,7 +157,7 @@ ActivityRowData buildTransactionActivityRow({
     amountColor: isFailed
         ? colors.text.accent
         : isInbound
-        ? colors.text.positiveStrong
+        ? inboundAmountColor(colors)
         : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero
         ? l10n.commonRefunded
@@ -316,15 +323,18 @@ String _txIcon(String kind, {required bool isPending}) {
       _ => AppIcons.history,
     };
   }
-  return switch (kind) {
-    'receiving' => AppIcons.arrowDownCircle,
-    'received' => AppIcons.arrowDownCircle,
-    'sent' => AppIcons.plane,
-    'shielded' => AppIcons.shieldKeyholeOutline,
-    'migration' => AppIcons.migrationFast,
-    _ => AppIcons.history,
-  };
+  return activityKindIconName(kind);
 }
+
+/// The icon of a transaction type (`txKind`), as its activity row shows it
+/// once settled; the transaction record's hero uses the same one.
+String activityKindIconName(String kind) => switch (kind) {
+  'receiving' || 'received' => AppIcons.arrowDownCircle,
+  'sent' => AppIcons.plane,
+  'shielded' => AppIcons.shieldKeyhole,
+  'migration' => AppIcons.migrationFast,
+  _ => AppIcons.history,
+};
 
 String? _poolLabel(
   AppLocalizations l10n,
@@ -345,9 +355,9 @@ String? _poolLabel(
 String? _poolIcon(String pool, {bool ordinary = false}) {
   return switch (pool) {
     'transparent' => AppIcons.transparentBalance,
-    'shielded' => AppIcons.shieldKeyholeOutline,
-    'orchard' || 'sapling' when ordinary => AppIcons.shieldKeyholeOutline,
-    'ironwood' => AppIcons.shieldKeyholeOutline,
+    'shielded' => AppIcons.shieldKeyhole,
+    'orchard' || 'sapling' when ordinary => AppIcons.shieldKeyhole,
+    'ironwood' => AppIcons.shieldKeyhole,
     _ => null,
   };
 }

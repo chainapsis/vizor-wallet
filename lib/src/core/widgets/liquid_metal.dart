@@ -80,6 +80,12 @@ class LiquidMetal extends StatefulWidget {
   /// on, the widget always shows the still frame at [frame].
   final bool adaptive;
 
+  /// Holds every instance still at its [frame]. Tests set it once (in
+  /// `test/flutter_test_config.dart`) so screens that show the endless motion
+  /// can still settle; the shape and colors paint as usual.
+  @visibleForTesting
+  static bool debugDisableMotion = false;
+
   @override
   State<LiquidMetal> createState() => _LiquidMetalState();
 }
@@ -147,7 +153,11 @@ class _LiquidMetalState extends State<LiquidMetal>
   void _syncTicker() {
     final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     if (reduceMotion) _time.value = widget.frame / 1000;
-    final animate = widget.speed != 0 && !reduceMotion && _motionTier < 2;
+    final animate =
+        widget.speed != 0 &&
+        !reduceMotion &&
+        _motionTier < 2 &&
+        !LiquidMetal.debugDisableMotion;
     if (animate && !_ticker.isActive) {
       _lastTick = Duration.zero;
       _probeFrames = 0;

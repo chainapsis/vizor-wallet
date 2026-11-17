@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:widgetbook/widgetbook.dart';
 
+import '../src/core/l10n/l10n.dart';
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/mobile/mobile_surface_card.dart';
 import '../src/features/settings/widgets/wallet_pir_server_settings.dart';
@@ -99,6 +101,47 @@ WidgetbookComponent buildWalletPirServerWidgetbookComponent() =>
       ],
     );
 
+/// The mobile server sheet as it opens, over the scrim, with two servers.
+Widget buildWalletPirServerMobileSheetUseCase(BuildContext context) {
+  final colors = context.colors;
+  return SizedBox(
+    width: 393,
+    height: 852,
+    child: Stack(
+      children: [
+        Positioned.fill(child: ColoredBox(color: colors.background.window)),
+        Positioned.fill(
+          child: ColoredBox(color: colors.background.neutralScrim),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: MobileModalCard(
+            child: MobileModalScaffold(
+              title: context.l10n.settingsPirServerTitle,
+              onClose: () {},
+              child: WalletPirServerSettingsView(
+                state: _twoServers,
+                onSelect: (_) {},
+                onCustom: () {},
+                actionButtons: true,
+                onUpdate: () {},
+                pingSamples: {
+                  _first.baseUrl: const WalletPirPingSample.available(
+                    Duration(milliseconds: 300),
+                  ),
+                  _second.baseUrl: const WalletPirPingSample.unavailable(),
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Holds the preview's state locally, so picking a server or refreshing is
 /// visible without any provider, storage, network or Rust.
 class _DemoPreview extends StatefulWidget {
@@ -113,6 +156,9 @@ class _DemoPreview extends StatefulWidget {
 
 class _DemoPreviewState extends State<_DemoPreview> {
   late WalletPirServerState _state = widget.initial;
+
+  /// Mobile marks a server and applies it with Update.
+  String? _pending;
 
   void _select(String baseUrl) {
     final config = _state.config;
@@ -130,9 +176,21 @@ class _DemoPreviewState extends State<_DemoPreview> {
 
   @override
   Widget build(BuildContext context) {
+    final pending = _pending;
     final view = WalletPirServerSettingsView(
       state: _state,
-      onSelect: _select,
+      onSelect: widget.mobile
+          ? (baseUrl) => setState(() => _pending = baseUrl)
+          : _select,
+      pendingBaseUrl: pending,
+      onCustom: () {},
+      actionButtons: widget.mobile,
+      onUpdate: pending == null
+          ? null
+          : () {
+              _select(pending);
+              setState(() => _pending = null);
+            },
       pingSamples: {
         _first.baseUrl: const WalletPirPingSample.available(
           Duration(milliseconds: 42),

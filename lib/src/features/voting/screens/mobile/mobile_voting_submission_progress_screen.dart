@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_scroll_edge_fades.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart';
@@ -88,181 +89,187 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
       canPop: false,
       child: Scaffold(
         backgroundColor: colors.background.window,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            const Positioned.fill(
-              child: Image(
-                image: mobileTransactionProgressBackgroundImage,
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-                excludeFromSemantics: true,
+        // The page fades paint the window color, which would band across the
+        // engraving behind the content; the content scrolls without them.
+        body: MobileScrollEdgeFades.off(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const Positioned.fill(
+                child: Image(
+                  image: mobileTransactionProgressBackgroundImage,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  excludeFromSemantics: true,
+                ),
               ),
-            ),
-            SafeArea(
-              child: Column(
-                children: [
-                  const SizedBox(height: kMobileTopNavHeight),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final textDirection = Directionality.of(context);
-                        final textScaler = MediaQuery.textScalerOf(context);
-                        final contentWidth =
-                            constraints.maxWidth - AppSpacing.sm * 2;
-                        final noticeHeight = _measureTextHeight(
-                          text: noticeText,
-                          style: withLocaleFontFallback(context, noticeStyle),
-                          maxWidth: contentWidth,
-                          textDirection: textDirection,
-                          textScaler: textScaler,
-                        );
-                        final titleHeight = _measureTextHeight(
-                          text: context.l10n.votingMobileSubmittingTitle,
-                          style: withLocaleFontFallback(context, titleStyle),
-                          maxWidth: contentWidth,
-                          textDirection: textDirection,
-                          textScaler: textScaler,
-                        );
-                        final proofNoticeHeight = _measureTextHeight(
-                          text: context.l10n.votingMobileProofNotice,
-                          style: withLocaleFontFallback(
-                            context,
-                            proofNoticeStyle,
-                          ),
-                          maxWidth: contentWidth - 66,
-                          textDirection: textDirection,
-                          textScaler: textScaler,
-                        );
-                        final paddedViewportHeight =
-                            constraints.maxHeight - AppSpacing.s * 2;
-                        final measuredFixedContentHeight =
-                            noticeHeight +
-                            _statusBadgeHeight +
-                            titleHeight +
-                            _stepsHeight +
-                            proofNoticeHeight;
-                        final contentHeight = math.max(
-                          math.max(
-                            _minimumContentHeight,
-                            measuredFixedContentHeight,
-                          ),
-                          paddedViewportHeight,
-                        );
-                        return _AnimatedNoticeHeight(
-                          noticeHeight: noticeHeight,
-                          builder: (context, animatedNoticeHeight) {
-                            final positions =
-                                _VotingSubmissionPositions.forHeight(
-                                  contentHeight,
-                                  noticeHeight: animatedNoticeHeight,
-                                  titleHeight: titleHeight,
-                                  proofNoticeHeight: proofNoticeHeight,
-                                );
-                            return SingleChildScrollView(
-                              key: const ValueKey(
-                                'mobile_voting_submission_progress_scroll_view',
-                              ),
-                              primary: false,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.sm,
-                                  vertical: AppSpacing.s,
+              SafeArea(
+                child: Column(
+                  children: [
+                    const SizedBox(height: kMobileTopNavHeight),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final textDirection = Directionality.of(context);
+                          final textScaler = MediaQuery.textScalerOf(context);
+                          final contentWidth =
+                              constraints.maxWidth - kMobilePageMargin * 2;
+                          final noticeHeight = _measureTextHeight(
+                            text: noticeText,
+                            style: withLocaleFontFallback(context, noticeStyle),
+                            maxWidth: contentWidth,
+                            textDirection: textDirection,
+                            textScaler: textScaler,
+                          );
+                          final titleHeight = _measureTextHeight(
+                            text: context.l10n.votingMobileSubmittingTitle,
+                            style: withLocaleFontFallback(context, titleStyle),
+                            maxWidth: contentWidth,
+                            textDirection: textDirection,
+                            textScaler: textScaler,
+                          );
+                          final proofNoticeHeight = _measureTextHeight(
+                            text: context.l10n.votingMobileProofNotice,
+                            style: withLocaleFontFallback(
+                              context,
+                              proofNoticeStyle,
+                            ),
+                            maxWidth: contentWidth - 66,
+                            textDirection: textDirection,
+                            textScaler: textScaler,
+                          );
+                          final paddedViewportHeight =
+                              constraints.maxHeight - AppSpacing.s * 2;
+                          final measuredFixedContentHeight =
+                              noticeHeight +
+                              _statusBadgeHeight +
+                              titleHeight +
+                              _stepsHeight +
+                              proofNoticeHeight;
+                          final contentHeight = math.max(
+                            math.max(
+                              _minimumContentHeight,
+                              measuredFixedContentHeight,
+                            ),
+                            paddedViewportHeight,
+                          );
+                          return _AnimatedNoticeHeight(
+                            noticeHeight: noticeHeight,
+                            builder: (context, animatedNoticeHeight) {
+                              final positions =
+                                  _VotingSubmissionPositions.forHeight(
+                                    contentHeight,
+                                    noticeHeight: animatedNoticeHeight,
+                                    titleHeight: titleHeight,
+                                    proofNoticeHeight: proofNoticeHeight,
+                                  );
+                              return SingleChildScrollView(
+                                key: const ValueKey(
+                                  'mobile_voting_submission_progress_scroll_view',
                                 ),
-                                child: SizedBox(
-                                  height: contentHeight,
-                                  child: Stack(
-                                    key: const ValueKey(
-                                      'mobile_voting_submission_progress_content',
-                                    ),
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Positioned(
-                                        top: positions.noticeTop,
-                                        left: 0,
-                                        right: 0,
-                                        child: _CrossfadedNotice(
-                                          text: noticeText,
-                                          style: noticeStyle,
-                                        ),
+                                primary: false,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: kMobilePageMargin,
+                                    vertical: AppSpacing.s,
+                                  ),
+                                  child: SizedBox(
+                                    height: contentHeight,
+                                    child: Stack(
+                                      key: const ValueKey(
+                                        'mobile_voting_submission_progress_content',
                                       ),
-                                      Positioned(
-                                        top: positions.statusBadgeTop,
-                                        left: 0,
-                                        right: 0,
-                                        child: Center(
-                                          key: const ValueKey(
-                                            'mobile_voting_submission_badge',
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Positioned(
+                                          top: positions.noticeTop,
+                                          left: 0,
+                                          right: 0,
+                                          child: _CrossfadedNotice(
+                                            text: noticeText,
+                                            style: noticeStyle,
                                           ),
-                                          child: MobileTransactionProgressBadge(
-                                            phase:
-                                                MobileTransactionProgressPhase
-                                                    .inProgress,
-                                            inProgressCircleColor:
-                                                colors.background.inverse,
-                                            inProgressIconColor:
-                                                colors.icon.inverse,
-                                            progressIconKey: const ValueKey(
-                                              'mobile_voting_submission_loader',
+                                        ),
+                                        Positioned(
+                                          top: positions.statusBadgeTop,
+                                          left: 0,
+                                          right: 0,
+                                          child: Center(
+                                            key: const ValueKey(
+                                              'mobile_voting_submission_badge',
+                                            ),
+                                            child: MobileTransactionProgressBadge(
+                                              phase:
+                                                  MobileTransactionProgressPhase
+                                                      .inProgress,
+                                              inProgressCircleColor:
+                                                  colors.background.inverse,
+                                              inProgressIconColor:
+                                                  colors.icon.inverse,
+                                              progressIconKey: const ValueKey(
+                                                'mobile_voting_submission_loader',
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                      Positioned(
-                                        top: positions.titleTop,
-                                        left: 0,
-                                        right: 0,
-                                        child: Text(
-                                          context
-                                              .l10n
-                                              .votingMobileSubmittingTitle,
-                                          key: const ValueKey(
-                                            'mobile_voting_submission_title',
+                                        Positioned(
+                                          top: positions.titleTop,
+                                          left: 0,
+                                          right: 0,
+                                          child: Text(
+                                            context
+                                                .l10n
+                                                .votingMobileSubmittingTitle,
+                                            key: const ValueKey(
+                                              'mobile_voting_submission_title',
+                                            ),
+                                            textAlign: TextAlign.center,
+                                            style: titleStyle,
                                           ),
-                                          textAlign: TextAlign.center,
-                                          style: titleStyle,
                                         ),
-                                      ),
-                                      Positioned(
-                                        top: positions.stepsTop,
-                                        left: 0,
-                                        right: 0,
-                                        child: _VotingSubmissionSteps(
-                                          key: const ValueKey(
-                                            'mobile_voting_submission_steps',
+                                        Positioned(
+                                          top: positions.stepsTop,
+                                          left: 0,
+                                          right: 0,
+                                          child: _VotingSubmissionSteps(
+                                            key: const ValueKey(
+                                              'mobile_voting_submission_steps',
+                                            ),
+                                            activeStep: activeStep,
+                                            activeStepProgress:
+                                                activeStepProgress,
                                           ),
-                                          activeStep: activeStep,
-                                          activeStepProgress:
-                                              activeStepProgress,
                                         ),
-                                      ),
-                                      Positioned(
-                                        top: positions.proofNoticeTop,
-                                        left: 33,
-                                        right: 33,
-                                        child: Text(
-                                          context.l10n.votingMobileProofNotice,
-                                          key: const ValueKey(
-                                            'mobile_voting_submission_proof_notice',
+                                        Positioned(
+                                          top: positions.proofNoticeTop,
+                                          left: 33,
+                                          right: 33,
+                                          child: Text(
+                                            context
+                                                .l10n
+                                                .votingMobileProofNotice,
+                                            key: const ValueKey(
+                                              'mobile_voting_submission_proof_notice',
+                                            ),
+                                            textAlign: TextAlign.center,
+                                            style: proofNoticeStyle,
                                           ),
-                                          textAlign: TextAlign.center,
-                                          style: proofNoticeStyle,
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
-                        );
-                      },
+                              );
+                            },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

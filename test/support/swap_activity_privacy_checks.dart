@@ -116,9 +116,9 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
 
     _expectHidden(['1.2468', '87.53', '0.0013', '62.34']);
     // Pay leg and its fee are ZEC; the receive leg keeps USDC.
-    expect(find.text('****** ZEC'), findsNWidgets(2));
-    expect(find.text('****** USDC'), findsOneWidget);
-    expect(find.text('******'), findsNWidgets(2));
+    expect(find.text('•••••• ZEC'), findsNWidgets(2));
+    expect(find.text('•••••• USDC'), findsOneWidget);
+    expect(find.text('••••••'), findsNWidgets(2));
     expect(find.text('0.37%'), findsOneWidget);
     _expectNoDenominationMix();
     semantics.dispose();
@@ -145,8 +145,8 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
 
     _expectHidden(['1.2468', '87.53', '86.42']);
     // Header receive leg plus the guaranteed minimum, both USDC.
-    expect(find.text('****** USDC'), findsNWidgets(2));
-    expect(find.text('****** ZEC'), findsOneWidget);
+    expect(find.text('•••••• USDC'), findsNWidgets(2));
+    expect(find.text('•••••• ZEC'), findsOneWidget);
     expect(find.text('1.5%'), findsOneWidget);
     if (!mobile) {
       // Fixed copy has no amount to hide.
@@ -188,8 +188,8 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
     await setPrivacy(tester, privacy, true);
 
     _expectHidden(['100.37', '1.4253', '99.81', '0.56']);
-    expect(find.text('****** USDC'), findsNWidgets(3));
-    expect(find.text('****** ZEC'), findsOneWidget);
+    expect(find.text('•••••• USDC'), findsNWidgets(3));
+    expect(find.text('•••••• ZEC'), findsOneWidget);
     expect(find.text(r'$--'), findsOneWidget);
     _expectNoDenominationMix();
     semantics.dispose();
@@ -210,10 +210,10 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
     await setPrivacy(tester, privacy, true);
 
     _expectHidden(['990.37', '4.1253', '0.0001']);
-    expect(find.text('****** USDC'), findsOneWidget);
+    expect(find.text('•••••• USDC'), findsOneWidget);
     // Converted from and the confirmed tx fee are ZEC.
-    expect(find.text('****** ZEC'), findsNWidgets(2));
-    expect(find.text('******'), findsOneWidget);
+    expect(find.text('•••••• ZEC'), findsNWidgets(2));
+    expect(find.text('••••••'), findsOneWidget);
     _expectNoDenominationMix();
     semantics.dispose();
   });
@@ -234,17 +234,15 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
       await setPrivacy(tester, privacy, true);
 
       _expectHidden(['990.37', '4.1253', '4.0833', '0.042']);
-      expect(find.text('****** USDC'), findsOneWidget);
+      expect(find.text('•••••• USDC'), findsOneWidget);
       // Refunded amount + refund fee, or the failed source amount; all ZEC.
-      expect(find.text('****** ZEC'), findsNWidgets(refunded ? 2 : 1));
+      expect(find.text('•••••• ZEC'), findsNWidgets(refunded ? 2 : 1));
       _expectNoDenominationMix();
       semantics.dispose();
     });
   }
 
-  testWidgets('awaiting-deposit page shows the amount to send', (
-    tester,
-  ) async {
+  testWidgets('awaiting-deposit page shows the amount to send', (tester) async {
     final clipboardWrites = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -288,7 +286,7 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
     // The user may send it from another device, so privacy mode keeps the
     // QR card headline and the amount row visible (docs/privacy-mode.md).
     expect(find.text('100.37 USDC'), findsNWidgets(2));
-    expect(find.textContaining('******'), findsNothing);
+    expect(find.textContaining('••••••'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_amount')));
     await tester.pump();
@@ -299,9 +297,7 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('hardware ZEC deposit page shows the ZEC amount', (
-    tester,
-  ) async {
+  testWidgets('hardware ZEC deposit page shows the ZEC amount', (tester) async {
     final semantics = tester.ensureSemantics();
     final privacy = await pump(
       tester,
@@ -327,7 +323,7 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
     await setPrivacy(tester, privacy, true);
 
     expect(find.text('0.0037 ZEC'), findsNWidgets(2));
-    expect(find.textContaining('******'), findsNothing);
+    expect(find.textContaining('••••••'), findsNothing);
 
     semantics.dispose();
     await tester.pumpWidget(const SizedBox.shrink());

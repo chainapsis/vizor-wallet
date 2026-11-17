@@ -9,7 +9,9 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_action_card.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_radio_card.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
@@ -57,6 +59,96 @@ void main() {
 
     await tester.tap(find.text('Change passcode'), warnIfMissed: false);
     expect(taps, 0);
+  });
+
+  testWidgets('MobileActionCard shows its action and reads as one button', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    var taps = 0;
+    await tester.pumpWidget(
+      _harness(
+        MobileActionCard(
+          icon: AppIcons.qr,
+          title: 'Receive ZEC',
+          subtitle: 'Share your address or QR code',
+          onTap: () => taps++,
+        ),
+      ),
+    );
+
+    expect(find.text('Receive ZEC'), findsOneWidget);
+    expect(find.text('Share your address or QR code'), findsOneWidget);
+    expect(tester.widget<AppIcon>(find.byType(AppIcon)).name, AppIcons.qr);
+    expect(
+      tester.getSemantics(find.byType(MobileActionCard)),
+      matchesSemantics(
+        label: 'Receive ZEC\nShare your address or QR code',
+        isButton: true,
+        hasTapAction: true,
+      ),
+    );
+
+    await tester.tap(find.text('Share your address or QR code'));
+    expect(taps, 1);
+    semantics.dispose();
+  });
+
+  testWidgets('MobileRadioCard strokes only the selected choice', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    var taps = 0;
+    Widget card({required bool selected}) => MobileRadioCard(
+      title: 'Demo server',
+      details: const ['pir.example', '300ms'],
+      selected: selected,
+      onTap: () => taps++,
+    );
+    BoxBorder? stroke() => tester
+        .widgetList<DecoratedBox>(
+          find.descendant(
+            of: find.byType(MobileRadioCard),
+            matching: find.byType(DecoratedBox),
+          ),
+        )
+        .map((box) => box.decoration)
+        .whereType<BoxDecoration>()
+        .map((decoration) => decoration.border)
+        .firstWhere((border) => border != null, orElse: () => null);
+
+    await tester.pumpWidget(_harness(card(selected: false)));
+    for (final text in ['Demo server', 'pir.example', '300ms']) {
+      expect(find.text(text), findsOneWidget);
+    }
+    // The unselected card is the plain mobile surface: no stroke.
+    expect(find.byType(MobileSurfaceCard), findsOneWidget);
+    expect(stroke(), isNull);
+    expect(
+      tester.getSemantics(find.byType(MobileRadioCard)),
+      matchesSemantics(
+        label: 'Demo server',
+        isButton: true,
+        hasSelectedState: true,
+        hasTapAction: true,
+      ),
+    );
+    await tester.tap(find.text('Demo server'));
+    expect(taps, 1);
+
+    await tester.pumpWidget(_harness(card(selected: true)));
+    expect(stroke(), isNotNull);
+    expect(
+      tester.getSemantics(find.byType(MobileRadioCard)),
+      matchesSemantics(
+        label: 'Demo server',
+        isButton: true,
+        hasSelectedState: true,
+        isSelected: true,
+        hasTapAction: true,
+      ),
+    );
+    semantics.dispose();
   });
 
   testWidgets('MobileSurfaceCard paints the ground surface', (tester) async {

@@ -173,7 +173,7 @@ class _StepOneContent extends StatelessWidget {
         builder: (context, constraints) {
           final compact = constraints.maxHeight < 720;
           final qrSize = math
-              .min(321.0, constraints.maxWidth - AppSpacing.sm * 2)
+              .min(321.0, constraints.maxWidth - kMobilePageMargin * 2)
               .clamp(200.0, 321.0)
               .toDouble();
           return SingleChildScrollView(
@@ -229,7 +229,7 @@ class _StepOneContent extends StatelessWidget {
                           'mobile_ironwood_keystone_signing_message_count',
                         ),
                         textAlign: TextAlign.center,
-                        style: AppTypography.bodySmall.copyWith(
+                        style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.secondary,
                         ),
                       ),
@@ -258,7 +258,7 @@ class _StepOneContent extends StatelessWidget {
                     const Spacer(),
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
+                        horizontal: kMobilePageMargin,
                       ),
                       child: SizedBox(
                         width: double.infinity,
@@ -604,7 +604,7 @@ class _ScannerContent extends StatelessWidget {
                 .min(
                   _scannerTargetSize,
                   math.min(
-                    constraints.maxWidth - AppSpacing.sm * 2,
+                    constraints.maxWidth - kMobilePageMargin * 2,
                     constraints.maxHeight - headerReserve - chromeReserve,
                   ),
                 )
@@ -707,8 +707,8 @@ class _ScannerContent extends StatelessWidget {
                     targetRect: targetRect,
                     maxActionTop: maxActionTop,
                   ),
-                  left: AppSpacing.sm,
-                  right: AppSpacing.sm,
+                  left: kMobilePageMargin,
+                  right: kMobilePageMargin,
                   child: SizedBox(
                     height: _scannerCaptionHeight,
                     child: Align(
@@ -729,8 +729,8 @@ class _ScannerContent extends StatelessWidget {
                   ),
                 ),
                 Positioned(
-                  left: AppSpacing.sm,
-                  right: AppSpacing.sm,
+                  left: kMobilePageMargin,
+                  right: kMobilePageMargin,
                   top: _actionTop(
                     constraints,
                     targetRect: targetRect,

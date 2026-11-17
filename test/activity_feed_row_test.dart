@@ -240,10 +240,10 @@ void main() {
       onRows: (value) => rows = value,
     );
 
-    expect(rows[0].amountText, '*** $ticker');
-    expect(rows[1].amountText, '*** $ticker');
-    expect(rows[2].amountText, '*** $ticker');
-    expect(find.text('*** $ticker'), findsNWidgets(3));
+    expect(rows[0].amountText, '••• $ticker');
+    expect(rows[1].amountText, '••• $ticker');
+    expect(rows[2].amountText, '••• $ticker');
+    expect(find.text('••• $ticker'), findsNWidgets(3));
     expect(find.text('+1.2345 $ticker'), findsNothing);
     expect(find.text('-1 $ticker'), findsNothing);
   });
@@ -261,7 +261,7 @@ void main() {
       onRows: (value) => rows = value,
     );
 
-    expect(rows[0].leadingIconName, AppIcons.shieldKeyholeOutline);
+    expect(rows[0].leadingIconName, AppIcons.shieldKeyhole);
   });
 
   testWidgets('transparent activity rows use the transparent subtitle icon', (

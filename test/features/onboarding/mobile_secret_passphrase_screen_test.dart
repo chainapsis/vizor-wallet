@@ -20,6 +20,9 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/seed_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import '../../fakes/fake_sync_notifier.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _mnemonic =
@@ -79,8 +82,8 @@ Widget _routerApp(Stream<void> screenshotStream) {
             MobileSecretPassphraseScreen(screenshotStream: screenshotStream),
       ),
       GoRoute(
-        path: '/onboarding/customise-account',
-        builder: (_, _) => const Text('customise route'),
+        path: '/onboarding/set-passcode',
+        builder: (_, _) => const Text('passcode route'),
       ),
     ],
   );
@@ -113,20 +116,15 @@ Widget _additionalAccountRouterApp() {
           args: CreateSecretPassphraseArgs(mnemonic: _mnemonic),
         ),
       ),
-      GoRoute(
-        path: '/onboarding/customise-account',
-        builder: (_, state) {
-          final args =
-              mobileOnboardingPayload(state.extra)! as CustomiseAccountArgs;
-          return Text('customise ${args.mnemonic}');
-        },
-      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('created home')),
     ],
   );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       appSecurityProvider.overrideWith(_ConfiguredSecurityNotifier.new),
+      accountProvider.overrideWith(_AdditionalAccounts.new),
+      syncProvider.overrideWith(_IdleSync.new),
     ],
     child: MaterialApp.router(
       localizationsDelegates: appLocalizationsDelegates,
@@ -198,7 +196,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(_stepsProgress(tester), closeTo(0.65306122449, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.72244897959, 0.0001));
   });
 
   testWidgets('copy puts the full phrase on the clipboard', (tester) async {
@@ -350,8 +348,8 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
-    expect(find.text('customise route'), findsOneWidget);
-    final customiseContext = tester.element(find.text('customise route'));
+    expect(find.text('passcode route'), findsOneWidget);
+    final customiseContext = tester.element(find.text('passcode route'));
     expect(GoRouter.of(customiseContext).canPop(), isFalse);
     final container = ProviderScope.containerOf(customiseContext);
     expect(container.read(createOnboardingMnemonicProvider), isNull);
@@ -364,19 +362,25 @@ void main() {
     expect(haptics, ['HapticFeedbackType.mediumImpact']);
   });
 
-  testWidgets('additional account continues to customisation before creation', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_additionalAccountRouterApp());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'additional account creates with a generated persona and opens Home',
+    (tester) async {
+      await tester.pumpWidget(_additionalAccountRouterApp());
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('customise $_mnemonic'), findsOneWidget);
-    final customiseContext = tester.element(find.text('customise $_mnemonic'));
-    expect(GoRouter.of(customiseContext).canPop(), isFalse);
-  });
+      expect(find.text('created home'), findsOneWidget);
+      final homeContext = tester.element(find.text('created home'));
+      final account = ProviderScope.containerOf(
+        homeContext,
+      ).read(accountProvider).requireValue.activeAccount!;
+      expect(account.name, isNotEmpty);
+      expect(account.profilePictureId, isNotNull);
+      expect(GoRouter.of(homeContext).canPop(), isFalse);
+    },
+  );
 
   testWidgets(
     'covers the phrase once revealed when the privacy controller is unsafe',
@@ -410,4 +414,51 @@ void main() {
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
     },
   );
+}
+
+class _AdditionalAccounts extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [AccountInfo(uuid: 'original', name: 'Original', order: 0)],
+    activeAccountUuid: 'original',
+  );
+
+  @override
+  Future<void> createAccountFromMnemonic({
+    required String mnemonic,
+    String? name,
+    String profilePictureId = 'pfp-01',
+  }) async {
+    if (mnemonic != _mnemonic) throw StateError('Wrong mnemonic');
+    state = AsyncData(
+      AccountState(
+        accounts: [
+          ...state.requireValue.accounts,
+          AccountInfo(
+            uuid: 'created',
+            name: name!,
+            order: 1,
+            profilePictureId: profilePictureId,
+          ),
+        ],
+        activeAccountUuid: 'created',
+      ),
+    );
+  }
+}
+
+class _IdleSync extends FakeSyncNotifier {
+  @override
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async => const WalletMutationSyncPause(
+    hadActiveSync: false,
+    hadPolling: false,
+    hadMempoolObserver: false,
+  );
+  @override
+  void resumeAfterWalletMutation(
+    WalletMutationSyncPause pause, {
+    bool forceRestart = false,
+  }) {}
 }

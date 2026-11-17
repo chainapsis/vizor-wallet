@@ -14,7 +14,6 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/sync_status_label.dart';
@@ -29,6 +28,8 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/untranslated_details.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/mobile/mobile_radio_card.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/network_privacy_provider.dart';

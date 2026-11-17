@@ -23,11 +23,18 @@ Future<void> runCustomisedAccountMutation(
     () async {
       switch (setupArgs.flow) {
         case SetPasswordFlow.create:
-          await accountNotifier.createAccountFromMnemonic(
-            mnemonic: setupArgs.requiredMnemonic,
-            name: accountName,
-            profilePictureId: profilePictureId,
-          );
+          if (setupArgs.defersSetup) {
+            await accountNotifier.createAccountForDeferredSetup(
+              name: accountName,
+              profilePictureId: profilePictureId,
+            );
+          } else {
+            await accountNotifier.createAccountFromMnemonic(
+              mnemonic: setupArgs.requiredMnemonic,
+              name: accountName,
+              profilePictureId: profilePictureId,
+            );
+          }
         case SetPasswordFlow.importWallet:
           await accountNotifier.importAccount(
             mnemonic: setupArgs.requiredMnemonic,

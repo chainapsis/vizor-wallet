@@ -16,6 +16,7 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -38,6 +39,7 @@ import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 import '../widgets/voting_proposal_list.dart';
+import '../../../core/widgets/mobile/mobile_surface_card.dart';
 
 class VotingProposalDetailScreen extends StatelessWidget {
   const VotingProposalDetailScreen({super.key, required this.roundId});
@@ -1098,45 +1100,43 @@ class VotingIneligibleDialog extends StatelessWidget {
           child: MobileModalCard(
             margin: EdgeInsets.zero,
             followsScreenCorners: false,
-            child: SingleChildScrollView(
-              child: MobileModalScaffold(
-                title: context.l10n.votingIneligibleTitle,
-                titleMaxLines: 3,
-                onClose: () => Navigator.of(context).pop(false),
-                bodyGap: AppSpacing.md,
-                bottomPadding: AppSpacing.base,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _MobileVotingEligibilityMessage(message: message),
-                    const SizedBox(height: AppSpacing.md),
-                    AppButton(
-                      key: const ValueKey('voting_ineligible_switch_account'),
-                      expand: true,
-                      constrainContent: true,
-                      height: actionHeight,
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: Text(
-                        context.l10n.votingSwitchAccount,
-                        textAlign: TextAlign.center,
-                      ),
+            child: MobileModalScaffold(
+              title: context.l10n.votingIneligibleTitle,
+              titleMaxLines: 3,
+              onClose: () => Navigator.of(context).pop(false),
+              bodyGap: AppSpacing.md,
+              bottomPadding: AppSpacing.base,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _MobileVotingEligibilityMessage(message: message),
+                  const SizedBox(height: AppSpacing.md),
+                  AppButton(
+                    key: const ValueKey('voting_ineligible_switch_account'),
+                    expand: true,
+                    constrainContent: true,
+                    height: actionHeight,
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text(
+                      context.l10n.votingSwitchAccount,
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: AppSpacing.s),
-                    AppButton(
-                      key: const ValueKey('voting_ineligible_close'),
-                      variant: AppButtonVariant.ghost,
-                      expand: true,
-                      constrainContent: true,
-                      height: actionHeight,
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: Text(
-                        context.l10n.commonClose,
-                        textAlign: TextAlign.center,
-                      ),
+                  ),
+                  const SizedBox(height: AppSpacing.s),
+                  AppButton(
+                    key: const ValueKey('voting_ineligible_close'),
+                    variant: AppButtonVariant.ghost,
+                    expand: true,
+                    constrainContent: true,
+                    height: actionHeight,
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: Text(
+                      context.l10n.commonClose,
+                      textAlign: TextAlign.center,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1683,9 +1683,9 @@ class VotingVotedPollContent extends StatelessWidget {
           child: VotingPaneScrollView(
             maxWidth: 560,
             padding: EdgeInsets.fromLTRB(
-              showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+              showDesktopToolbar ? AppSpacing.md : kMobilePageMargin,
               AppSpacing.s,
-              showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+              showDesktopToolbar ? AppSpacing.md : kMobilePageMargin,
               AppSpacing.md,
             ),
             child: Column(
@@ -1760,9 +1760,9 @@ class _PendingVoteContent extends StatelessWidget {
         Expanded(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-              showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+              showDesktopToolbar ? AppSpacing.md : kMobilePageMargin,
               0,
-              showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
+              showDesktopToolbar ? AppSpacing.md : kMobilePageMargin,
               AppSpacing.md,
             ),
             child: Column(
@@ -1940,13 +1940,15 @@ class _VotedPollHeader extends StatelessWidget {
           decoration: BoxDecoration(
             color: colors.background.ground,
             borderRadius: BorderRadius.circular(AppRadii.large),
-            boxShadow: [
-              BoxShadow(
-                color: colors.shadows.subtle,
-                offset: const Offset(0, 1),
-                blurRadius: 2,
-              ),
-            ],
+            boxShadow: kAppFormFactor == AppFormFactor.mobile
+                ? mobileSurfaceShadows(colors)
+                : [
+                    BoxShadow(
+                      color: colors.shadows.subtle,
+                      offset: const Offset(0, 1),
+                      blurRadius: 2,
+                    ),
+                  ],
           ),
           child: Column(
             children: [

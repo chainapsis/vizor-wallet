@@ -5,9 +5,11 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/mobile/receive_address_info_sheet.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/mobile/receive_options_sheet.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/widgetbook/receive_use_cases.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -48,18 +50,18 @@ void main() {
       find.byType(Scrollable).first,
     );
     expect(scrollable.position.maxScrollExtent, 0);
-    // Copy shares its row with the square share button: 300 - 8 - 50.
+    // Copy and request each span the QR card's width; share is in the nav.
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
-      const Size(242, 50),
+      const Size(260, 50),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
-      const Size(50, 50),
+      const Size(44, 44),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
-      const Size(300, 50),
+      const Size(260, 50),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('receive_address_type_tabs'))),
@@ -78,7 +80,7 @@ void main() {
           matching: find.byType(ReceiveQrSurface),
         ),
       ),
-      const Size(292, 308),
+      const Size(260, 276),
     );
     expect(
       tester.getTopLeft(
@@ -87,7 +89,7 @@ void main() {
           matching: find.byType(ReceiveQrSurface),
         ),
       ),
-      const Offset(50.5, 178.5),
+      const Offset(66.5, 178.5),
     );
   });
 
@@ -140,15 +142,9 @@ void main() {
     final closeButton = find.byKey(
       const ValueKey('receive_address_info_close'),
     );
-    final modalClose = find.byKey(
-      const ValueKey('receive_address_info_modal_close'),
-    );
-    final modalCloseIcon = find.byKey(
-      const ValueKey('receive_address_info_modal_close_icon'),
-    );
     expect(tester.getSize(closeButton), const Size(329, 50));
-    expect(tester.getSize(modalClose), const Size(32, 32));
-    expect(tester.getSize(modalCloseIcon), const Size(20, 20));
+    // The shared sheet template draws the title and its close button.
+    expect(find.byType(MobileModalScaffold), findsOneWidget);
     expect(
       tester.getTopLeft(secondItem).dy - tester.getBottomLeft(firstItem).dy,
       moreOrLessEquals(8, epsilon: 0.1),
@@ -160,8 +156,30 @@ void main() {
     expect(
       tester.getBottomLeft(find.byType(ReceiveAddressInfoSheet)).dy -
           tester.getBottomLeft(closeButton).dy,
-      moreOrLessEquals(32, epsilon: 0.1),
+      moreOrLessEquals(AppSpacing.md, epsilon: 0.1),
     );
+  });
+
+  testWidgets('receive mobile options sheet use case shows three ways', (
+    tester,
+  ) async {
+    await _pumpReceiveMobileUseCase(
+      tester,
+      buildReceiveMobileOptionsSheetUseCase,
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ReceiveOptionsSheet), findsOneWidget);
+    for (final label in [
+      'Receive ZEC',
+      'Share your address or QR code',
+      'Request ZEC',
+      'Ask for an exact amount',
+      'Redeem gift card',
+      'Add a card someone sent you',
+    ]) {
+      expect(find.text(label), findsOneWidget);
+    }
   });
 
   testWidgets('receive mobile transparent sheet use case opens info sheet', (

@@ -193,8 +193,8 @@ void main() {
     Widget scene(MobileShieldPhase phase) => host(
       MobileShieldScene(
         phase: phase,
-        amount: '******',
-        resultAmount: '******',
+        amount: '••••••',
+        resultAmount: '••••••',
         title: 'Transparent Balance',
       ),
     );
@@ -205,7 +205,7 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 17));
     }
-    expect(find.bySemanticsLabel('****** ZEC'), findsOneWidget);
+    expect(find.bySemanticsLabel('•••••• ZEC'), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
 
     // Particles exist only once the masked text was sampled successfully.

@@ -32,7 +32,9 @@ class AppSyncColors {
   static const light = AppSyncColors(
     text: GreenPrimitives.p700Light,
     textSyncing: GreenPrimitives.p900Alpha65Light,
-    textError: Primitives.p900Alpha50Light,
+    // Solid grey at 5.4:1 on the page; the 50% alpha read 3.4:1 and made a
+    // failure quieter than "synced".
+    textError: Primitives.p600Light,
     glow: GreenPrimitives.p200Light,
     lightSuccess: GreenPrimitives.p400Light,
     lightError: Primitives.p500Light,

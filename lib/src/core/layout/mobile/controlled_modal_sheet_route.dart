@@ -17,6 +17,7 @@ class ControlledModalSheetRoute<T> extends ModalBottomSheetRoute<T> {
     super.backgroundColor,
     super.elevation,
     super.constraints,
+    super.sheetAnimationStyle,
     this.canDismiss,
   });
 

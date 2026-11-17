@@ -72,9 +72,9 @@ void main() {
         amountZecText: '0.5 ZEC',
         spendableText: '0.21 ZEC',
         linkDifferences: differences,
-      ).withSpendableText('****** ZEC');
+      ).withSpendableText('•••••• ZEC');
 
-      expect(view.spendableText, '****** ZEC');
+      expect(view.spendableText, '•••••• ZEC');
       expect(view.linkDifferences, differences);
     });
 

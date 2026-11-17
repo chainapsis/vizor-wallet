@@ -8,6 +8,7 @@ class SwapQuoteErrorText extends StatelessWidget {
     required this.message,
     required this.textKey,
     this.maxLines,
+    this.style,
     super.key,
   });
 
@@ -16,6 +17,10 @@ class SwapQuoteErrorText extends StatelessWidget {
 
   /// Maximum visible lines for the composer error.
   final int? maxLines;
+
+  /// Text style before the destructive color, [AppTypography.bodySmall] when
+  /// null. Mobile composers use [AppTypography.bodyMedium].
+  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +31,9 @@ class SwapQuoteErrorText extends StatelessWidget {
       maxLines: maxLines,
       overflow: maxLines == null ? null : TextOverflow.ellipsis,
       textAlign: TextAlign.center,
-      style: AppTypography.bodySmall.copyWith(color: colors.text.destructive),
+      style: (style ?? AppTypography.bodySmall).copyWith(
+        color: colors.text.destructive,
+      ),
     );
   }
 }
