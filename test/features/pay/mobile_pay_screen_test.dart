@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -563,7 +564,7 @@ void main() {
     expect(
       find.text(
         'Private payments use Ironwood ZEC only. '
-        'You have ******\u00A0ZEC there.',
+        'You have ${fixedPrivacyMask()}\u00A0ZEC there.',
       ),
       findsOneWidget,
     );

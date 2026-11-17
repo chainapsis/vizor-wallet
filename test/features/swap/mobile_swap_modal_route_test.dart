@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -917,7 +918,7 @@ void main() {
       expect(
         find.text(
           'Private swaps use Ironwood ZEC only. '
-          'You have ${privacy ? '******' : '0.1'}\u00A0ZEC there.',
+          'You have ${privacy ? fixedPrivacyMask() : '0.1'}\u00A0ZEC there.',
         ),
         findsOneWidget,
       );
