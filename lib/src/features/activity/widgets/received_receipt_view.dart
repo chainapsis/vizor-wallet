@@ -277,24 +277,6 @@ class ReceivedReceiptView extends StatelessWidget {
             ),
           ],
         ),
-        if (status == ReceivedReceiptStatus.completed && spendableWait != null)
-          Padding(
-            key: const ValueKey('received_receipt_spendable_after'),
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sm,
-              AppSpacing.s,
-              AppSpacing.sm,
-              0,
-            ),
-            child: Text(
-              l10n.activityReceiptSpendableAfter(
-                spendableWait!.requiredConfirmations.toString(),
-              ),
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
       ],
     );
   }

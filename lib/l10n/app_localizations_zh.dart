@@ -468,11 +468,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityReceiptRefreshFailed => '无法刷新最新的交易状态。';
 
   @override
-  String activityReceiptSpendableAfter(String count) {
-    return '新收到的资金需经过 $count 次确认后才能使用。';
-  }
-
-  @override
   String get activityReceiptStatus => '状态';
 
   @override

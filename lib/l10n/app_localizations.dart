@@ -939,12 +939,6 @@ abstract class AppLocalizations {
   /// **'Latest transaction status could not be refreshed.'**
   String get activityReceiptRefreshFailed;
 
-  /// Caption under the detail card of a received transaction that cannot be spent yet.
-  ///
-  /// In en, this message translates to:
-  /// **'New funds can be spent after {count} confirmations.'**
-  String activityReceiptSpendableAfter(String count);
-
   /// Label of a row on a transaction receipt: the transaction status.
   ///
   /// In en, this message translates to:

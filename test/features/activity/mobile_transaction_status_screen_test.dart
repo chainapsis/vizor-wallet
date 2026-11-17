@@ -455,10 +455,6 @@ void main() {
     expect(find.text('Completed'), findsNothing);
     expect(find.text('Confirmations'), findsOneWidget);
     expect(find.text('2 of 6'), findsOneWidget);
-    expect(
-      find.text('New funds can be spent after 6 confirmations.'),
-      findsOneWidget,
-    );
   });
 
   testWidgets('ordinary receive shows no fee even when history is enriched', (

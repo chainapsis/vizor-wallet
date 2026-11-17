@@ -636,16 +636,6 @@
   "@activityReceiptRefreshFailed": {
     "description": "Message shown when the latest status of a transaction could not be refreshed."
   },
-  "activityReceiptSpendableAfter": "New funds can be spent after {count} confirmations.",
-  "@activityReceiptSpendableAfter": {
-    "description": "Caption under the detail card of a received transaction that cannot be spent yet.",
-    "placeholders": {
-      "count": {
-        "type": "String",
-        "example": "6"
-      }
-    }
-  },
   "activityReceiptStatus": "Status",
   "@activityReceiptStatus": {
     "description": "Label of a row on a transaction receipt: the transaction status."

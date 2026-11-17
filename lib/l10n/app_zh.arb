@@ -139,7 +139,6 @@
   "activityReceiptOutput": "输出",
   "activityReceiptRecipient": "收款方",
   "activityReceiptRefreshFailed": "无法刷新最新的交易状态。",
-  "activityReceiptSpendableAfter": "新收到的资金需经过 {count} 次确认后才能使用。",
   "activityReceiptStatus": "状态",
   "activityReceiptUnattributedFeeHelp": "此交易的总手续费。你的账户承担的部分未知。",
   "activityRowToday": "今天 {time}",

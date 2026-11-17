@@ -786,27 +786,6 @@ class _MobileTransactionStatusScreenState
                                   ),
                             detailsIncomplete: _showIncompleteDetails(tx),
                           ),
-                          if (spendableWait != null)
-                            Padding(
-                              key: const ValueKey(
-                                'mobile_tx_status_spendable_after',
-                              ),
-                              padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.xs,
-                                AppSpacing.s,
-                                AppSpacing.xs,
-                                0,
-                              ),
-                              child: Text(
-                                l10n.activityReceiptSpendableAfter(
-                                  spendableWait.requiredConfirmations
-                                      .toString(),
-                                ),
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: colors.text.secondary,
-                                ),
-                              ),
-                            ),
                           if (giftCard == null &&
                               detail?.transparentDetailsState != null)
                             TransparentDetailsSection(
@@ -855,9 +834,9 @@ class _MobileTransactionStatusScreenState
       return '--';
     }
     // A receive reads as money in, as its activity row does.
-    return ZecAmount.fromZatoshi(amountZatoshi)
-        .activityDetailPretty(signed: _isIncoming)
-        .toString();
+    return ZecAmount.fromZatoshi(
+      amountZatoshi,
+    ).activityDetailPretty(signed: _isIncoming).toString();
   }
 
   String _dateText(rust_sync.TransactionInfo? tx, {DateTime? override}) {

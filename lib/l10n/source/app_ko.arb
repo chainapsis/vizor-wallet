@@ -139,7 +139,6 @@
   "activityReceiptOutput": "출력",
   "activityReceiptRecipient": "받는 사람",
   "activityReceiptRefreshFailed": "최신 거래 상태를 불러오지 못했어요.",
-  "activityReceiptSpendableAfter": "새로 받은 자금은 확인 {count}회 후에 사용할 수 있어요.",
   "activityReceiptStatus": "상태",
   "activityReceiptUnattributedFeeHelp": "이 거래의 총 수수료예요. 내 계정이 부담한 금액은 알 수 없어요.",
   "activityRowToday": "오늘 {time}",
