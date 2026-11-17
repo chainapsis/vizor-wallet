@@ -22,7 +22,12 @@ final _update = find.byKey(const ValueKey('swap_slippage_update_button'));
 
 /// The composer shows the mode only as the mark on the settings button.
 bool _confidential(WidgetTester tester) => find
-    .descendant(of: _settings, matching: find.byType(SwapConfidentialIcon))
+    .descendant(
+      of: _settings,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is SwapConfidentialIcon && widget.on,
+      ),
+    )
     .evaluate()
     .isNotEmpty;
 

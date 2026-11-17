@@ -197,7 +197,8 @@ void main() {
         tester.getSize(
           find.byKey(const ValueKey('mobile_pay_slippage_button')),
         ),
-        const Size(90, 50),
+        // 90 plus the confidential mark's slot and gap.
+        const Size(114, 50),
       );
       expect(
         tester
