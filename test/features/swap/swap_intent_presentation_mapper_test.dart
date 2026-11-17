@@ -217,6 +217,42 @@ void main() {
     expect(updated.totalFeesText, '0.01 USDC');
   });
 
+  test('a status snapshot without the echo keeps the recorded route', () {
+    final intent = _intentFromRecord(
+      const SwapIntentRecord(
+        id: 'confidential-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> USDC',
+        sellAmountText: '1 ZEC',
+        receiveEstimateText: '70 USDC',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Swap is processing',
+        confidential: true,
+      ),
+    );
+
+    final updated = updateSwapIntentFromSnapshot(
+      intent,
+      const SwapIntentSnapshot(
+        id: 'confidential-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> USDC',
+        sellAmountText: '1 ZEC',
+        receiveEstimateText: '70 USDC',
+        status: SwapIntentStatus.complete,
+        nextAction: 'Swap completed',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.zec,
+          address: 't1deposit',
+          expiresInLabel: 'expired',
+          reuseWarning: 'Do not reuse',
+        ),
+      ),
+    );
+
+    expect(updated.confidential, isTrue);
+  });
+
   test('updates raw lifecycle facts from provider status snapshots', () {
     final createdAt = DateTime.utc(2026, 5, 7, 10);
     final checkedAt = DateTime.utc(2026, 5, 7, 10, 30);

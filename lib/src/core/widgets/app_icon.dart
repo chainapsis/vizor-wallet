@@ -65,6 +65,7 @@ abstract final class AppIcons {
   static const history = 'history';
   static const home = 'home';
   static const importWallet = 'import_wallet';
+  static const incognito = 'incognito';
   static const usb = 'usb';
   static const key = 'key';
   static const keystone = 'keystone';
@@ -73,6 +74,7 @@ abstract final class AppIcons {
   static const language = 'language';
   static const ledger = 'ledger';
   static const link = 'link';
+  static const linkOff = 'link_off';
   static const loader = 'loader';
   static const lock = 'lock';
   static const logOut = 'log_out';
