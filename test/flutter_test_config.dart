@@ -8,10 +8,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
+import 'package:zcash_wallet/src/core/widgets/liquid_metal.dart';
 
 import 'support/mobile_test_assets.dart';
 
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
+  // Liquid metal moves forever; tests wait for screens to settle.
+  LiquidMetal.debugDisableMotion = true;
+
   // In the app, MaterialApp's localization delegates load intl's CLDR date
   // data before any screen formats a date (core/formatting/date_format.dart).
   // Load the same data for tests that call formatters outside a widget tree.

@@ -1,5 +1,6 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -15,6 +16,7 @@ import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
+import '../../../../core/layout/mobile/mobile_tab_root_scroll_fades.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/route_stack.dart';
 import '../../../../core/profile_pictures.dart';
@@ -31,6 +33,8 @@ import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
+import '../../../../providers/flip_to_hide_balance_provider.dart';
+import '../../../../providers/hide_balance_on_unlock_provider.dart';
 import '../../../../core/l10n/app_language.dart';
 import '../../../../providers/app_language_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
@@ -39,6 +43,7 @@ import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
 import '../../../onboarding/shared/onboarding_welcome_art.dart'
     show VizorWordmark;
 import '../../widgets/mobile/mobile_network_privacy_card.dart';
+import '../../../../core/widgets/mobile/mobile_section.dart';
 import '../../widgets/language_picker.dart';
 import '../../widgets/settings_new_badge.dart';
 import '../../widgets/settings_option_card.dart';
@@ -76,9 +81,11 @@ class MobileSettingsScreen extends ConsumerWidget {
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
     final syncKeepAwake = ref.watch(syncKeepAwakeProvider);
+    final flipToHide = ref.watch(flipToHideBalanceProvider);
+    final hideOnUnlock = ref.watch(hideBalanceOnUnlockProvider);
     const settingsRowStyle = AppTypography.labelLarge;
     final settingsValueColor = context.colors.text.accent;
-    final settingsChevronColor = context.colors.icon.accent;
+    final settingsChevronColor = context.colors.icon.muted;
     final seedPhraseEnabled = account != null && !account.isHardware;
     final viewingKeyEnabled = account != null;
 
@@ -86,285 +93,331 @@ class MobileSettingsScreen extends ConsumerWidget {
       bottom: false,
       child: Column(
         children: [
-          MobileTopNav.back(title: context.l10n.navSettings),
+          MobileTopNav.back(
+            title: context.l10n.navSettings,
+            // Tab roots keep the large serif title.
+            titleStyle: AppTypography.headlineLarge,
+          ),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.sm,
-                AppSpacing.s,
-                AppSpacing.sm,
-                // The shell exposes the floating tab bar's full occupied
-                // height, including Android's navigation-bar inset.
-                math.max(
-                  MobileNavigationScope.bottomClearanceOf(
-                    context,
-                    kMobileTabBarHeight + AppSpacing.lg,
-                  ),
-                  MediaQuery.paddingOf(context).bottom + AppSpacing.md,
-                ),
-              ),
-              children: [
-                _SettingsGroup(
-                  title: context.l10n.settingsSectionPersonal,
-                  rows: [
-                    MobileListRow(
-                      key: const ValueKey(
-                        'mobile_settings_coinholder_voting_row',
-                      ),
-                      leading: _RowIcon(AppIcons.vote),
-                      label: context.l10n.commonCoinholderVoting,
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      onTap: () => context.push('/voting'),
-                    ),
-                    _GiftCardsRow(
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                    ),
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_address_book_row'),
-                      leading: _RowIcon(AppIcons.users),
-                      label: context.l10n.settingsRowAddressBook,
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      onTap: () => context.push('/settings/address-book'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _SettingsGroup(
-                  title: context.l10n.settingsSectionAccount,
-                  rows: [
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_seed_row'),
-                      leading: _RowIcon(AppIcons.key),
-                      label: context.l10n.secretPassphraseTitle,
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      enabled: seedPhraseEnabled,
-                      onTap: seedPhraseEnabled
-                          ? () => context.push('/settings/seed-phrase')
-                          : null,
-                    ),
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_viewing_key_row'),
-                      leading: _RowIcon(AppIcons.eye),
-                      label: context.l10n.settingsRowViewingKeyMobile,
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      enabled: viewingKeyEnabled,
-                      onTap: viewingKeyEnabled
-                          ? () => context.push('/settings/viewing-key')
-                          : null,
-                    ),
-                    MobileListRow(
-                      leading: _RowIcon(AppIcons.lock),
-                      label: context.l10n.settingsRowChangePasscode,
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      onTap: () => _openChangePasscode(context),
-                    ),
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_pfp_row'),
-                      leading: _RowIcon(AppIcons.user),
-                      label: context.l10n.settingsRowProfilePictureMobile,
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AppProfilePicture(
-                            profilePictureId: profilePictureId,
-                            size: AppProfilePictureSize.medium,
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 128),
-                            child: Text(
-                              profilePictureLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: settingsRowStyle.copyWith(
-                                color: account == null
-                                    ? context.colors.text.disabled
-                                    : settingsValueColor,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          AppIcon(
-                            AppIcons.chevronForward,
-                            size: AppIconSize.medium,
-                            color: account == null
-                                ? context.colors.icon.disabled
-                                : settingsChevronColor,
-                          ),
-                        ],
-                      ),
-                      enabled: account != null,
-                      onTap: account == null
-                          ? null
-                          : () => _updateProfilePicture(context, ref, account),
-                    ),
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_account_name_row'),
-                      leading: _RowIcon(AppIcons.scroll),
-                      label: context.l10n.settingsRowAccountNameMobile,
-                      value: account?.name ?? '',
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      valueTextStyle: settingsRowStyle,
-                      valueColor: account == null
-                          ? context.colors.text.disabled
-                          : settingsValueColor,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      enabled: account != null,
-                      onTap: account == null
-                          ? null
-                          : () => _editAccount(context, ref, account),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _SyncKeepAwakeSettingsCard(
-                  enabled: syncKeepAwake.enabled,
-                  onToggle: () => unawaited(
-                    _toggleSyncKeepAwake(
+            // Soft edges under the top nav and the tab bar, as on every tab.
+            child: MobileTabRootScrollFades(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  kMobilePageMargin,
+                  AppSpacing.s,
+                  kMobilePageMargin,
+                  // The shell exposes the floating tab bar's full occupied
+                  // height, including Android's navigation-bar inset.
+                  math.max(
+                    MobileNavigationScope.bottomClearanceOf(
                       context,
-                      ref,
-                      enabled: syncKeepAwake.enabled,
+                      kMobileTabBarHeight + AppSpacing.lg,
                     ),
+                    MediaQuery.paddingOf(context).bottom + AppSpacing.md,
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                _SettingsGroup(
-                  title: context.l10n.settingsSectionSystem,
-                  rows: [
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_endpoint_row'),
-                      leading: _RowIcon(AppIcons.endpoint),
-                      label: context.l10n.settingsEndpointTitle,
-                      value: endpoint,
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      valueTextStyle: settingsRowStyle,
-                      valueColor: settingsValueColor,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      onTap: () => context.push('/settings/endpoint'),
+                children: [
+                  if (account != null) ...[
+                    _SettingsAccountCard(
+                      key: const ValueKey('mobile_settings_account_card'),
+                      name: account.name,
+                      profilePictureId: profilePictureId,
+                      onTap: () => context.push('/accounts'),
                     ),
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_explorer_row'),
-                      leading: _RowIcon(AppIcons.globe),
-                      label: context.l10n.settingsExplorerTitle,
-                      value: explorer,
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      valueTextStyle: settingsRowStyle,
-                      valueColor: settingsValueColor,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      onTap: () => context.push('/settings/explorer'),
-                    ),
-                    MobileListRow(
-                      key: const ValueKey('mobile_settings_theme_row'),
-                      leading: _RowIcon(AppIcons.theme),
-                      label: context.l10n.settingsThemeTitle,
-                      value: _themeLabel(context.l10n, themeMode),
-                      minRowHeight: _settingsRowHeight,
-                      textStyle: settingsRowStyle,
-                      valueTextStyle: settingsRowStyle,
-                      valueColor: settingsValueColor,
-                      chevronColor: settingsChevronColor,
-                      showChevron: true,
-                      onTap: () => _showThemeSheet(context, ref, themeMode),
-                    ),
-                    // With English alone there is nothing to choose.
-                    if (languages.length > 1)
-                      MobileListRow(
-                        key: const ValueKey('mobile_settings_language_row'),
-                        leading: _RowIcon(AppIcons.language),
-                        label: context.l10n.settingsLanguageLabel,
-                        value: appLanguage.nativeName,
-                        minRowHeight: _settingsRowHeight,
-                        textStyle: settingsRowStyle,
-                        valueTextStyle: settingsRowStyle,
-                        valueColor: settingsValueColor,
-                        chevronColor: settingsChevronColor,
-                        showChevron: true,
-                        onTap: () => unawaited(
-                          _showLanguageSheet(
-                            context,
-                            ref,
-                            appLanguage,
-                            languages,
-                          ),
-                        ),
-                      ),
-                    // No Figma frame for this row yet — listed in
-                    // design_suggestion. Hidden on devices without
-                    // biometric hardware.
-                    if (biometric.availability.supported)
-                      MobileListRow(
-                        key: const ValueKey('mobile_settings_biometric_row'),
-                        leading: _RowIcon(AppIcons.lock),
-                        label: biometric.availability.kind.standaloneLabel(
-                          context.l10n,
-                        ),
-                        value: biometric.enabled
-                            ? context.l10n.settingsStatusOn
-                            : context.l10n.settingsStatusOff,
-                        minRowHeight: _settingsRowHeight,
-                        textStyle: settingsRowStyle,
-                        valueTextStyle: settingsRowStyle,
-                        valueColor: settingsValueColor,
-                        chevronColor: settingsChevronColor,
-                        showChevron: true,
-                        onTap: () => unawaited(_toggleBiometric(context, ref)),
-                      ),
+                    const SizedBox(height: AppSpacing.md),
                   ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const MobileNetworkPrivacyCard(),
-                if (donationFeatureEnabledForNetwork(
-                  endpointConfig.networkName,
-                )) ...[
-                  const SizedBox(height: AppSpacing.md),
                   _SettingsGroup(
-                    title: context.l10n.settingsSectionMisc,
+                    title: context.l10n.settingsSectionPersonal,
                     rows: [
                       MobileListRow(
-                        key: const ValueKey('mobile_settings_donation_row'),
-                        leading: _RowIcon(AppIcons.donation, glyphSize: 16.5),
-                        label: context.l10n.commonSupportVizor,
+                        key: const ValueKey(
+                          'mobile_settings_coinholder_voting_row',
+                        ),
+                        leading: _RowIcon(AppIcons.vote),
+                        label: context.l10n.commonCoinholderVoting,
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,
                         chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
                         showChevron: true,
-                        onTap: () => context.push('/donation'),
+                        onTap: () => context.push('/voting'),
+                      ),
+                      _GiftCardsRow(
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                      ),
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_address_book_row'),
+                        leading: _RowIcon(AppIcons.users),
+                        label: context.l10n.settingsRowAddressBook,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        onTap: () => context.push('/settings/address-book'),
                       ),
                     ],
                   ),
+                  const SizedBox(height: AppSpacing.md),
+                  _SettingsGroup(
+                    title: context.l10n.settingsSectionAccount,
+                    rows: [
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_seed_row'),
+                        leading: _RowIcon(AppIcons.key),
+                        label: context.l10n.secretPassphraseTitle,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        enabled: seedPhraseEnabled,
+                        onTap: seedPhraseEnabled
+                            ? () => context.push('/settings/seed-phrase')
+                            : null,
+                      ),
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_viewing_key_row'),
+                        leading: _RowIcon(AppIcons.eye),
+                        label: context.l10n.settingsRowViewingKeyMobile,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        enabled: viewingKeyEnabled,
+                        onTap: viewingKeyEnabled
+                            ? () => context.push('/settings/viewing-key')
+                            : null,
+                      ),
+                      MobileListRow(
+                        leading: _RowIcon(AppIcons.lock),
+                        label: context.l10n.settingsRowChangePasscode,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        onTap: () => _openChangePasscode(context),
+                      ),
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_pfp_row'),
+                        leading: _RowIcon(AppIcons.user),
+                        label: context.l10n.settingsRowProfilePictureMobile,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AppProfilePicture(
+                              profilePictureId: profilePictureId,
+                              size: AppProfilePictureSize.medium,
+                            ),
+                            const SizedBox(width: AppSpacing.xxs),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 128),
+                              child: Text(
+                                profilePictureLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: settingsRowStyle.copyWith(
+                                  color: account == null
+                                      ? context.colors.text.disabled
+                                      : settingsValueColor,
+                                ),
+                              ),
+                            ),
+                            // Same value-to-chevron gap as MobileListRow.
+                            const SizedBox(width: AppSpacing.xs),
+                            AppIcon(
+                              AppIcons.chevronForward,
+                              size: _settingsChevronSize,
+                              color: account == null
+                                  ? context.colors.icon.disabled
+                                  : settingsChevronColor,
+                            ),
+                          ],
+                        ),
+                        enabled: account != null,
+                        onTap: account == null
+                            ? null
+                            : () =>
+                                  _updateProfilePicture(context, ref, account),
+                      ),
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_account_name_row'),
+                        leading: _RowIcon(AppIcons.scroll),
+                        label: context.l10n.settingsRowAccountNameMobile,
+                        value: account?.name ?? '',
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        valueTextStyle: settingsRowStyle,
+                        valueColor: account == null
+                            ? context.colors.text.disabled
+                            : settingsValueColor,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        enabled: account != null,
+                        onTap: account == null
+                            ? null
+                            : () => _editAccount(context, ref, account),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _SyncKeepAwakeSettingsCard(
+                    enabled: syncKeepAwake.enabled,
+                    onToggle: () => unawaited(
+                      _toggleSyncKeepAwake(
+                        context,
+                        ref,
+                        enabled: syncKeepAwake.enabled,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _SettingsGroup(
+                    title: context.l10n.settingsSectionSystem,
+                    rows: [
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_endpoint_row'),
+                        leading: _RowIcon(AppIcons.endpoint),
+                        label: context.l10n.settingsEndpointTitle,
+                        value: endpoint,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        valueTextStyle: settingsRowStyle,
+                        valueColor: settingsValueColor,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        onTap: () => context.push('/settings/endpoint'),
+                      ),
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_explorer_row'),
+                        leading: _RowIcon(AppIcons.globe),
+                        label: context.l10n.settingsExplorerTitle,
+                        value: explorer,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        valueTextStyle: settingsRowStyle,
+                        valueColor: settingsValueColor,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        onTap: () => context.push('/settings/explorer'),
+                      ),
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_theme_row'),
+                        leading: _RowIcon(AppIcons.theme),
+                        label: context.l10n.settingsThemeTitle,
+                        value: _themeLabel(context.l10n, themeMode),
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        valueTextStyle: settingsRowStyle,
+                        valueColor: settingsValueColor,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        onTap: () => _showThemeSheet(context, ref, themeMode),
+                      ),
+                      // With English alone there is nothing to choose.
+                      if (languages.length > 1)
+                        MobileListRow(
+                          key: const ValueKey('mobile_settings_language_row'),
+                          leading: _RowIcon(AppIcons.language),
+                          label: context.l10n.settingsLanguageLabel,
+                          value: appLanguage.nativeName,
+                          minRowHeight: _settingsRowHeight,
+                          textStyle: settingsRowStyle,
+                          valueTextStyle: settingsRowStyle,
+                          valueColor: settingsValueColor,
+                          chevronColor: settingsChevronColor,
+                          chevronSize: _settingsChevronSize,
+                          showChevron: true,
+                          onTap: () => unawaited(
+                            _showLanguageSheet(
+                              context,
+                              ref,
+                              appLanguage,
+                              languages,
+                            ),
+                          ),
+                        ),
+                      // No Figma frame for this row yet — listed in
+                      // design_suggestion. Hidden on devices without
+                      // biometric hardware.
+                      if (biometric.availability.supported)
+                        MobileListRow(
+                          key: const ValueKey('mobile_settings_biometric_row'),
+                          leading: _RowIcon(AppIcons.lock),
+                          label: biometric.availability.kind.standaloneLabel(
+                            context.l10n,
+                          ),
+                          value: biometric.enabled
+                              ? context.l10n.settingsStatusOn
+                              : context.l10n.settingsStatusOff,
+                          minRowHeight: _settingsRowHeight,
+                          textStyle: settingsRowStyle,
+                          valueTextStyle: settingsRowStyle,
+                          valueColor: settingsValueColor,
+                          chevronColor: settingsChevronColor,
+                          chevronSize: _settingsChevronSize,
+                          showChevron: true,
+                          onTap: () =>
+                              unawaited(_toggleBiometric(context, ref)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  const MobileNetworkPrivacyCard(),
+                  const SizedBox(height: AppSpacing.md),
+                  _HideBalanceSettingsCard(
+                    hideOnUnlock: hideOnUnlock,
+                    onToggleHideOnUnlock: () => unawaited(
+                      _toggleHideOnUnlock(context, ref, enabled: hideOnUnlock),
+                    ),
+                    enabled: flipToHide,
+                    onToggle: () => unawaited(
+                      _toggleFlipToHide(context, ref, enabled: flipToHide),
+                    ),
+                  ),
+                  if (donationFeatureEnabledForNetwork(
+                    endpointConfig.networkName,
+                  )) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    _SettingsGroup(
+                      title: context.l10n.settingsSectionMisc,
+                      rows: [
+                        MobileListRow(
+                          key: const ValueKey('mobile_settings_donation_row'),
+                          leading: _RowIcon(
+                            AppIcons.donation,
+                            glyphSize: 16.5,
+                            brand: true,
+                          ),
+                          label: context.l10n.commonSupportVizor,
+                          minRowHeight: _settingsRowHeight,
+                          textStyle: settingsRowStyle,
+                          chevronColor: settingsChevronColor,
+                          chevronSize: _settingsChevronSize,
+                          showChevron: true,
+                          onTap: () => context.push('/donation'),
+                        ),
+                      ],
+                    ),
+                  ],
+                  // The About row stays hidden until the legal documents
+                  // are ready — the /about screen exists but must not be
+                  // user-reachable (product decision, 2026-06).
+                  const SizedBox(height: AppSpacing.base),
+                  const _SettingsVersionFooter(
+                    key: ValueKey('mobile_settings_version'),
+                  ),
                 ],
-                // The About row stays hidden until the legal documents
-                // are ready — the /about screen exists but must not be
-                // user-reachable (product decision, 2026-06).
-                const SizedBox(height: AppSpacing.base),
-                const _SettingsVersionFooter(
-                  key: ValueKey('mobile_settings_version'),
-                ),
-              ],
+              ),
             ),
           ),
         ],
@@ -538,15 +591,44 @@ class MobileSettingsScreen extends ConsumerWidget {
     WidgetRef ref, {
     required bool enabled,
   }) async {
+    // Every switch ticks as it flips, not once the setting has saved.
+    unawaited(AppHaptics.selection());
     try {
       await ref.read(syncKeepAwakeProvider.notifier).setEnabled(!enabled);
-      if (context.mounted &&
-          ref.read(syncKeepAwakeProvider).enabled != enabled) {
-        unawaited(AppHaptics.selection());
-      }
     } catch (_) {
       if (!context.mounted) return;
       showAppToast(context, context.l10n.settingsKeepAwakeUpdateFailed);
+    }
+  }
+
+  Future<void> _toggleHideOnUnlock(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool enabled,
+  }) async {
+    unawaited(AppHaptics.selection());
+    try {
+      await ref.read(hideBalanceOnUnlockProvider.notifier).set(!enabled);
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppToast(
+        context,
+        context.l10n.settingsHideBalanceOnUnlockUpdateFailed,
+      );
+    }
+  }
+
+  Future<void> _toggleFlipToHide(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool enabled,
+  }) async {
+    unawaited(AppHaptics.selection());
+    try {
+      await ref.read(flipToHideBalanceProvider.notifier).set(!enabled);
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppToast(context, context.l10n.settingsFlipToHideUpdateFailed);
     }
   }
 }
@@ -558,20 +640,11 @@ class _DisableBiometricSheet extends StatelessWidget {
 
   final BiometricKind kind;
 
-  static const _titleStyle = TextStyle(
-    fontFamily: 'Geist',
+  // The shared mobile sheet title and body, as on every other sheet.
+  static final _titleStyle = AppTypography.bodyLarge.copyWith(
     fontWeight: FontWeight.w600,
-    fontSize: 16,
-    height: 24 / 16,
-    letterSpacing: -0.24,
   );
-  static const _bodyStyle = TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w400,
-    fontSize: 14,
-    height: 21 / 14,
-    letterSpacing: -0.21,
-  );
+  static const _bodyStyle = AppTypography.bodyMedium;
 
   @override
   Widget build(BuildContext context) {
@@ -648,12 +721,83 @@ class _SettingsVersionFooter extends StatelessWidget {
             Flexible(
               child: Text(
                 'v$kVizorReleaseVersion',
-                style: AppTypography.codeSmall.copyWith(
+                style: AppTypography.codeMedium.copyWith(
                   color: context.colors.text.secondary,
                 ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The account at the top of Settings: its picture and name on a raised card
+/// that opens the account switcher, as Home's header does.
+class _SettingsAccountCard extends StatelessWidget {
+  const _SettingsAccountCard({
+    required this.name,
+    required this.profilePictureId,
+    required this.onTap,
+    super.key,
+  });
+
+  final String name;
+  final String profilePictureId;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: MobileSurfaceCard(
+          cornerRadius: AppRadii.large,
+          child: Row(
+            children: [
+              AppProfilePicture(
+                profilePictureId: profilePictureId,
+                size: AppProfilePictureSize.xLarge,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.headlineSmall.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colors.text.accent,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      context.l10n.accountsManage,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: FontWeight.w400,
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              AppIcon(
+                AppIcons.chevronForward,
+                size: _settingsChevronSize,
+                color: colors.icon.muted,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -668,32 +812,11 @@ class _SettingsGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MobileSurfaceCard(
-      cornerRadius: AppRadii.large,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.base,
-        AppSpacing.sm,
-        AppSpacing.base,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(
-              left: AppSpacing.xxs,
-              bottom: AppSpacing.xs,
-            ),
-            child: Text(
-              title,
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-          ),
-          ...rows,
-        ],
-      ),
+    // Rows fill the card's height and are split by hairlines; the title sits
+    // above the card.
+    return MobileSection(
+      title: title,
+      child: MobileSectionRows(rows: rows),
     );
   }
 }
@@ -710,27 +833,19 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MobileSurfaceCard(
-      cornerRadius: AppRadii.large,
+    return MobileSection(
+      title: context.l10n.commonSyncing,
+      // 8px above the toggle row, like the list sections; the description
+      // ends 24px above the card edge.
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        AppSpacing.base,
+        AppSpacing.xs,
         AppSpacing.sm,
-        AppSpacing.base,
+        AppSpacing.md,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Text(
-              context.l10n.commonSyncing,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
           Semantics(
             button: true,
             toggled: enabled,
@@ -740,31 +855,35 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
               key: const ValueKey('mobile_settings_sync_keep_awake_row'),
               behavior: HitTestBehavior.opaque,
               onTap: onToggle,
-              child: SizedBox(
-                height: _settingsRowHeight,
+              // A floor, not a fixed height: the label wraps at large text
+              // sizes instead of truncating.
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: _settingsRowHeight,
+                ),
+                // Same icon and label edges as the chevron rows.
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xxs,
+                  padding: const EdgeInsetsDirectional.only(
+                    end: AppSpacing.xxs,
                   ),
                   child: Row(
                     children: [
-                      const SizedBox.square(
-                        dimension: 32,
-                        child: Center(child: _RowIcon(AppIcons.day)),
-                      ),
+                      const _RowIcon(AppIcons.day),
                       const SizedBox(width: AppSpacing.s),
                       Expanded(
                         child: Text(
                           context.l10n.commonKeepScreenAwake,
-                          overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                           ),
                         ),
                       ),
-                      _SyncKeepAwakeToggle(
+                      _SettingsToggle(
                         key: const ValueKey(
                           'mobile_settings_sync_keep_awake_toggle',
+                        ),
+                        thumbKey: const ValueKey(
+                          'mobile_settings_sync_keep_awake_toggle_thumb',
                         ),
                         enabled: enabled,
                       ),
@@ -774,7 +893,6 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
           Text(
             context.l10n.settingsKeepAwakeDescription,
             style: AppTypography.bodyMedium.copyWith(
@@ -787,20 +905,141 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
   }
 }
 
-class _SyncKeepAwakeToggle extends StatelessWidget {
-  const _SyncKeepAwakeToggle({required this.enabled, super.key});
+/// Wallet-wide balance hiding preferences.
+class _HideBalanceSettingsCard extends StatelessWidget {
+  const _HideBalanceSettingsCard({
+    required this.enabled,
+    required this.onToggle,
+    required this.hideOnUnlock,
+    required this.onToggleHideOnUnlock,
+  });
 
   final bool enabled;
+  final VoidCallback onToggle;
+  final bool hideOnUnlock;
+  final VoidCallback onToggleHideOnUnlock;
+
+  @override
+  Widget build(BuildContext context) {
+    return MobileSection(
+      title: context.l10n.settingsHideBalanceTitle,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.xs,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _HideBalanceOption(
+            id: 'hide_on_unlock',
+            label: context.l10n.settingsHideBalanceOnUnlock,
+            description: context.l10n.settingsHideBalanceOnUnlockDescription,
+            enabled: hideOnUnlock,
+            onToggle: onToggleHideOnUnlock,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _HideBalanceOption(
+            id: 'flip_to_hide',
+            label: context.l10n.settingsFlipToHide,
+            description: context.l10n.settingsFlipToHideDescription,
+            enabled: enabled,
+            onToggle: onToggle,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HideBalanceOption extends StatelessWidget {
+  const _HideBalanceOption({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final String id;
+  final String label;
+  final String description;
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          button: true,
+          toggled: enabled,
+          label: label,
+          excludeSemantics: true,
+          child: GestureDetector(
+            key: ValueKey('mobile_settings_${id}_row'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onToggle,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: _settingsRowHeight),
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(end: AppSpacing.xxs),
+                child: Row(
+                  children: [
+                    const _RowIcon(AppIcons.eyeClosed),
+                    const SizedBox(width: AppSpacing.s),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    _SettingsToggle(
+                      key: ValueKey('mobile_settings_${id}_toggle'),
+                      thumbKey: ValueKey('mobile_settings_${id}_toggle_thumb'),
+                      enabled: enabled,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Text(
+          description,
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The Settings cards' on/off switch.
+class _SettingsToggle extends StatelessWidget {
+  const _SettingsToggle({
+    required this.enabled,
+    required this.thumbKey,
+    super.key,
+  });
+
+  final bool enabled;
+  final Key thumbKey;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final trackColor = enabled
         ? colors.background.brandCrimsonStrong
-        : colors.background.raised;
-    final borderColor = enabled
-        ? colors.border.brandCrimsonStrong
-        : colors.border.regular;
+        // A step further from the card than `raised`, so the off track reads
+        // without an outline, like the voting toggle.
+        : colors.background.overlay;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 140),
       curve: Curves.easeOutCubic,
@@ -810,17 +1049,19 @@ class _SyncKeepAwakeToggle extends StatelessWidget {
       decoration: BoxDecoration(
         color: trackColor,
         borderRadius: BorderRadius.circular(AppRadii.full),
-        border: Border.all(color: borderColor),
       ),
       child: AnimatedAlign(
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
         alignment: enabled ? Alignment.centerRight : Alignment.centerLeft,
         child: DecoratedBox(
-          key: const ValueKey('mobile_settings_sync_keep_awake_toggle_thumb'),
+          key: thumbKey,
+          // The thumb's own light outline shadow defines it on a light card,
+          // in place of a track outline.
           decoration: BoxDecoration(
             color: const Color(0xFFFFFFFF),
             borderRadius: BorderRadius.circular(AppRadii.full),
+            boxShadow: appSurfaceShadow(colors),
           ),
           child: const SizedBox(width: 40, height: 24),
         ),
@@ -829,19 +1070,34 @@ class _SyncKeepAwakeToggle extends StatelessWidget {
   }
 }
 
-const _settingsRowHeight = 44.0;
+/// Settings rows: 60px, split by hairlines.
+const _settingsRowHeight = 60.0;
+
+/// Settings chevrons: 20px, a step up from the list row's 16px default so the
+/// affordance holds its own beside the 20px leading icons.
+const _settingsChevronSize = 20.0;
 
 class _RowIcon extends StatelessWidget {
-  const _RowIcon(this.iconName, {this.glyphSize = 20});
+  const _RowIcon(this.iconName, {this.glyphSize = 20, this.brand = false});
 
   final String iconName;
   final double glyphSize;
 
+  /// Draws the glyph in the brand crimson, for the row that is about Vizor
+  /// itself (Support Vizor).
+  final bool brand;
+
   @override
   Widget build(BuildContext context) {
-    // Muted per the Figma settings rows — the leading glyphs are
-    // decorative, not max-contrast.
-    final icon = AppIcon(iconName, size: 20, color: context.colors.icon.muted);
+    // Leading glyphs carry the row's meaning at full contrast; the chevrons
+    // after them are the muted affordance.
+    final icon = AppIcon(
+      iconName,
+      size: 20,
+      color: brand
+          ? context.colors.icon.brandCrimson
+          : context.colors.icon.accent,
+    );
     return glyphSize == 20
         ? icon
         : Transform.scale(scale: glyphSize / 20, child: icon);
@@ -877,8 +1133,6 @@ class _ThemeSheetState extends State<_ThemeSheet> {
     return MobileModalScaffold(
       title: context.l10n.settingsThemeTitle,
       onClose: () => Navigator.of(context).pop(),
-      bodyGap: AppSpacing.md,
-      bottomPadding: AppSpacing.base,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -900,7 +1154,7 @@ class _ThemeSheetState extends State<_ThemeSheet> {
             onPressed: () => Navigator.of(context).pop(_selected),
             child: Text(context.l10n.commonUpdate),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
         ],
       ),
@@ -936,6 +1190,7 @@ class _GiftCardsRowState extends ConsumerState<_GiftCardsRow> {
       minRowHeight: _settingsRowHeight,
       textStyle: widget.textStyle,
       chevronColor: widget.chevronColor,
+      chevronSize: _settingsChevronSize,
       showChevron: true,
       onTap: _isOpening ? null : () => unawaited(_open()),
     );

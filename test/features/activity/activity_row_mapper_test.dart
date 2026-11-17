@@ -198,7 +198,7 @@ void main() {
           pendingLabel: 'Est. 1–3 min',
         );
         expect(row.title, 'Shielded');
-        expect(row.leadingIconName, AppIcons.shieldKeyholeOutline);
+        expect(row.leadingIconName, AppIcons.shieldKeyhole);
         expect(row.subtitle, isNull);
         expect(row.statusText, expired ? 'Failed' : 'Completed');
       }
@@ -210,9 +210,9 @@ void main() {
   ) async {
     for (final kind in ['sent', 'received']) {
       for (final (pool, label, icon) in [
-        ('ironwood', 'Shielded', AppIcons.shieldKeyholeOutline),
-        ('orchard', 'Orchard', AppIcons.shieldKeyholeOutline),
-        ('sapling', 'Sapling', AppIcons.shieldKeyholeOutline),
+        ('ironwood', 'Shielded', AppIcons.shieldKeyhole),
+        ('orchard', 'Orchard', AppIcons.shieldKeyhole),
+        ('sapling', 'Sapling', AppIcons.shieldKeyhole),
         ('transparent', 'Transparent', AppIcons.transparentBalance),
         ('mixed', 'Mixed', null),
         ('unknown', null, null),
@@ -256,7 +256,7 @@ void main() {
               ? isNull
               : label == 'Transparent'
               ? AppIcons.transparentBalance
-              : AppIcons.shieldKeyholeOutline,
+              : AppIcons.shieldKeyhole,
         );
         for (final (pool, expected) in [
           ('ironwood', 'Shielded'),
@@ -270,7 +270,7 @@ void main() {
             giftCardDisplayPool: pool,
           );
           expect(overridden.subtitle, expected);
-          expect(overridden.subtitleIconName, AppIcons.shieldKeyholeOutline);
+          expect(overridden.subtitleIconName, AppIcons.shieldKeyhole);
         }
         final pending = await mapRow(
           tester,
@@ -799,7 +799,7 @@ void main() {
           privateQueriesEnabled: true,
         );
         expect(row.title, 'Shielded');
-        expect(row.leadingIconName, AppIcons.shieldKeyholeOutline);
+        expect(row.leadingIconName, AppIcons.shieldKeyhole);
         expect(
           row.amountText,
           activityAmountTextForFormFactor(expected[index]),

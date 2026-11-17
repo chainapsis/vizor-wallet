@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
@@ -28,6 +29,7 @@ import '../voting_routes.dart';
 import '../widgets/voting_config_settings_panel.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../../../core/widgets/mobile/mobile_surface_card.dart';
 
 const _votingBetaLabelAsset =
     'assets/illustrations/desktop/voting_beta_label.webp';
@@ -153,7 +155,7 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
     final sortedItems = sortVotingRoundsForPollList(items);
     final horizontalPadding = widget.showDesktopChrome
         ? AppSpacing.md
-        : AppSpacing.sm;
+        : kMobilePageMargin;
     _preSyncVisibleRoundTrees(sortedItems);
     return VotingPaneListView.separated(
       maxWidth: 560,
@@ -468,13 +470,7 @@ class _DesktopPollCard extends StatelessWidget {
 BoxDecoration _mobilePollCardDecoration(BuildContext context) => BoxDecoration(
   color: context.colors.background.ground,
   borderRadius: BorderRadius.circular(AppRadii.large),
-  boxShadow: [
-    BoxShadow(
-      color: context.colors.shadows.subtle,
-      offset: const Offset(0, 1),
-      blurRadius: 2,
-    ),
-  ],
+  boxShadow: mobileSurfaceShadows(context.colors),
 );
 
 class _MobilePollCardContent extends ConsumerWidget {

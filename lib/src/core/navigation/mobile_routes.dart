@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +7,8 @@ import '../../features/donation/donation_config.dart';
 import '../../features/donation/screens/donation_screen.dart';
 import '../../features/donation/screens/mobile/mobile_donation_review_screen.dart';
 import '../../providers/rpc_endpoint_provider.dart';
+import '../../providers/app_security_provider.dart';
+import '../../providers/sync_keep_awake_provider.dart';
 
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
@@ -33,6 +34,7 @@ import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import '../../features/pay/models/pay_recent_recipients.dart';
 import '../../features/payment_links/providers/payment_link_cards_provider.dart';
 import '../../features/payment_links/screens/payment_links_screen.dart';
+import '../../features/receive/screens/mobile/mobile_receive_request_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
 import '../../features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../../features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
@@ -66,19 +68,25 @@ import '../../features/voting/screens/mobile/mobile_voting_screens.dart';
 import '../config/swap_feature_config.dart';
 import '../l10n/l10n.dart';
 import '../layout/mobile/app_mobile_shell.dart';
+import '../layout/mobile/covered_route_keyboard_hold.dart';
+import '../privacy/flip_to_hide_balance_host.dart';
 import '../layout/mobile/mobile_adaptive_frame.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
+import '../layout/mobile/ios_native_tab_bar.dart';
 import '../layout/mobile/mobile_navigation_scope.dart';
 import '../layout/mobile/mobile_page_viewport.dart';
 import 'mobile_destinations.dart';
+import 'external_action_guard_provider.dart';
+import 'mobile_sidebar_route_observer.dart';
 import 'route_owned_redirect.dart';
 import 'payload_page_key.dart';
+import 'mobile_page.dart';
 import 'mobile_shield_page.dart';
 
 /// The mobile route tree: the shared entry/onboarding routes, a
 /// stateful tab shell (home / swap / activity / settings), and
-/// full-screen flows pushed over the shell as [CupertinoPage]s so iOS
-/// edge-swipe back works.
+/// full-screen flows pushed over the shell as [MobilePage]s, which fade and
+/// zoom in, slide out on Back, and keep the iOS edge-swipe back.
 ///
 /// Route paths intentionally match the desktop tree so the shared
 /// redirect guard, deep links, and `bootstrap.initialLocation` work
@@ -93,7 +101,18 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       observers: [RouteOwnedNavigationObserver()],
       pageBuilder: (context, state, child) => NoTransitionPage(
         key: state.pageKey,
-        child: MobileAdaptiveFrame(router: GoRouter.of(context), child: child),
+        // Flip to hide works on every wallet page. Mounted in this root
+        // route, its toast shows in the root overlay, above pages and sheets.
+        child: FlipToHideBalanceHost(
+          // Root sheets cover the whole shell; it holds still while their
+          // keyboard moves.
+          child: CoveredRouteKeyboardHold(
+            child: MobileAdaptiveFrame(
+              router: GoRouter.of(context),
+              child: child,
+            ),
+          ),
+        ),
       ),
       routes: _walletRoutes(),
     ),
@@ -127,16 +146,6 @@ List<RouteBase> _walletRoutes() {
                 // routes below) so the bottom tab bar is hidden while
                 // they're open; nothing extra nests inside a branch.
               ),
-              // The Accounts screen lives in the home branch (its
-              // Figma frame keeps the tab bar) under its own path.
-              if (tab.path == '/home')
-                GoRoute(
-                  path: '/accounts',
-                  pageBuilder: (context, state) => _mobilePage(
-                    key: state.pageKey,
-                    child: const MobileAccountsScreen(),
-                  ),
-                ),
             ],
           ),
       ],
@@ -169,6 +178,13 @@ List<RouteBase> _walletRoutes() {
           showBackupIntro: true,
         ),
       ),
+    ),
+    // Accounts is a detail screen too: it covers the tab bar like the
+    // settings screens.
+    GoRoute(
+      path: '/accounts',
+      pageBuilder: (context, state) =>
+          _mobilePage(key: state.pageKey, child: const MobileAccountsScreen()),
     ),
     GoRoute(
       path: '/accounts/confirm-removal',
@@ -284,6 +300,7 @@ List<RouteBase> _walletRoutes() {
         key: state.pageKey,
         child: PaymentLinksScreen(
           initialReceivedCardAddress: state.uri.queryParameters['received'],
+          startOnRedeem: state.uri.queryParameters['redeem'] == '1',
           initialCards: state.extra is PaymentLinkCardsSnapshot
               ? state.extra! as PaymentLinkCardsSnapshot
               : null,
@@ -570,6 +587,16 @@ List<RouteBase> _walletRoutes() {
         child: const MobileReceiveScreen(),
       ),
     ),
+    // Opened with the address it requests to, snapshotted by the caller.
+    // Without one there is nothing to request to, so it falls back to Receive.
+    GoRoute(
+      path: kReceiveRequestPath,
+      redirect: (context, state) => state.extra is String ? null : '/receive',
+      pageBuilder: (context, state) => _mobilePage(
+        key: state.pageKey,
+        child: MobileReceiveRequestScreen(address: state.extra! as String),
+      ),
+    ),
     GoRoute(
       path: '/migration',
       pageBuilder: (context, state) => _mobilePage(
@@ -765,12 +792,12 @@ String? _mobileDonationRedirect(BuildContext context) =>
     ? null
     : '/settings';
 
-CupertinoPage<dynamic> _mobilePage({
+MobilePage<dynamic> _mobilePage({
   required LocalKey key,
   required Widget child,
   bool constrainContent = true,
   double? maxContentWidth,
-}) => CupertinoPage(
+}) => MobilePage(
   key: key,
   child: MobilePageViewport(
     constrainContent: constrainContent,
@@ -850,6 +877,24 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
     );
   }
 
+  String _nativeSelectedPath() {
+    final visible = [
+      for (final tab in widget.tabs)
+        if (ref.read(swapFeatureEnabledProvider) || tab.path != '/swap') tab,
+    ];
+    final requested = GoRouter.of(
+      context,
+    ).routeInformationProvider.value.uri.path;
+    if (visible.any((tab) => tab.path == requested)) return requested;
+    final index = widget.navigationShell.currentIndex;
+    final current = index >= 0 && index < widget.tabs.length
+        ? widget.tabs[index].path
+        : visible.first.path;
+    return visible.any((tab) => tab.path == current)
+        ? current
+        : visible.first.path;
+  }
+
   @override
   void dispose() {
     _navigation?.detach(this);
@@ -876,25 +921,76 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
         ? 0
         : currentVisibleIndex;
 
-    return AppMobileShell(
-      body: navigationShell,
-      tabBar: AppMobileTabBar(
-        axis:
-            MobileNavigationScope.maybeOf(context)?.mode ==
-                MobileNavigationMode.systemSideTabs
-            ? Axis.vertical
-            : Axis.horizontal,
-        items: [
-          for (final tab in visibleTabs)
-            AppMobileTabItem(
-              iconName: tab.iconName,
-              label: mobileDestinationLabel(context.l10n, tab.path),
-            ),
-        ],
-        currentIndex: tabBarCurrentIndex,
-        onSelect: (index) {
-          _selectPath(visibleTabs[index].path);
-        },
+    final routeObserver = ref.watch(mobileSidebarRouteObserverProvider);
+    final navigationBlocked = ref
+        .watch(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation);
+    final locked = ref.watch(appSecurityProvider).requiresUnlock;
+    final privacyLocked = ref.watch(syncKeepAwakePrivacyLockVisibleProvider);
+    return AnimatedBuilder(
+      animation: routeObserver,
+      builder: (context, _) => AppMobileShell(
+        body: navigationShell,
+        nativeTabBar: IosNativeTabBarConfiguration(
+          items: [
+            for (final tab in visibleTabs)
+              IosNativeTabBarItem(
+                id: tab.path,
+                iconName: tab.iconName,
+                label: mobileDestinationLabel(context.l10n, tab.path),
+              ),
+          ],
+          selectedId: visibleTabs[tabBarCurrentIndex].path,
+          readSelectedId: _nativeSelectedPath,
+          hidden: locked || privacyLocked,
+          inputEnabled: !routeObserver.hasPopup && !navigationBlocked,
+          onSelect: (path) {
+            if (!mounted) return;
+            // GoRouter publishes a requested detail route before Navigator
+            // changes isCurrent. A queued native callback cannot overtake it.
+            final requestedPath = GoRouter.of(
+              context,
+            ).routeInformationProvider.value.uri.path;
+            final requestedTabScope = visibleTabs.any(
+              (tab) => tab.path == requestedPath,
+            );
+            if (!requestedTabScope ||
+                ModalRoute.isCurrentOf(context) == false ||
+                !TickerMode.valuesOf(context).enabled ||
+                routeObserver.hasPopup ||
+                ref.read(appSecurityProvider).requiresUnlock ||
+                ref.read(syncKeepAwakePrivacyLockVisibleProvider) ||
+                ref
+                    .read(externalActionGuardProvider)
+                    .blocks(ExternalAction.navigation)) {
+              return;
+            }
+            // UIKit accessibility activation does not emit a Flutter pointer
+            // event or SemanticsAction, so record the deliberate action here.
+            ref
+                .read(syncKeepAwakeInteractionProvider.notifier)
+                .markInteraction();
+            _selectPath(path);
+          },
+        ),
+        tabBar: AppMobileTabBar(
+          axis:
+              MobileNavigationScope.maybeOf(context)?.mode ==
+                  MobileNavigationMode.systemSideTabs
+              ? Axis.vertical
+              : Axis.horizontal,
+          items: [
+            for (final tab in visibleTabs)
+              AppMobileTabItem(
+                iconName: tab.iconName,
+                label: mobileDestinationLabel(context.l10n, tab.path),
+              ),
+          ],
+          currentIndex: tabBarCurrentIndex,
+          onSelect: (index) {
+            _selectPath(visibleTabs[index].path);
+          },
+        ),
       ),
     );
   }

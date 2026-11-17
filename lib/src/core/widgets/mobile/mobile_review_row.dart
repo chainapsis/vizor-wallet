@@ -15,8 +15,10 @@ class MobileReviewZecBadge extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadii.full),
       child: Image.asset(
         'assets/swap/tokens/zec.webp',
-        width: 32,
-        height: 32,
+        // Same leading size as the icon badge and the contact avatar, so the
+        // review rows share one edge and centre.
+        width: AppAssetSize.size,
+        height: AppAssetSize.size,
         fit: BoxFit.cover,
       ),
     );
@@ -34,8 +36,8 @@ class MobileReviewIconBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 40,
-      height: 40,
+      width: AppAssetSize.size,
+      height: AppAssetSize.size,
       decoration: BoxDecoration(
         color: context.colors.background.neutralSubtleOpacity,
         shape: BoxShape.circle,

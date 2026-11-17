@@ -99,6 +99,209 @@ void main() {
     requireUnlockedSession: true,
   );
 
+  for (final additional in [false, true]) {
+    Future<void> prepareDeferred() async {
+      if (!additional) {
+        await container
+            .read(appSecurityProvider.notifier)
+            .preparePasswordSetup(_passcode);
+        return;
+      }
+      const original = AccountInfo(
+        uuid: 'original',
+        name: 'Original',
+        order: 0,
+        isSeedAnchor: true,
+      );
+      _rust.walletExists = true;
+      _rust.listedAccounts = [_listed('original')];
+      await store.writeString(
+        'zcash_accounts',
+        jsonEncode([original.toJson()]),
+      );
+      await store.writeString('zcash_active_account', 'original');
+      container.dispose();
+      container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _bootstrappedGiftAccount(account: original),
+          ),
+          accountProvider.overrideWith(
+            () => AccountNotifier.testing(store: store),
+          ),
+          appSecurityProvider.overrideWith(
+            () => AppSecurityNotifier.testing(store: store),
+          ),
+          rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
+            (_, _) async => BigInt.from(3000000),
+          ),
+        ],
+      );
+      await container.read(accountProvider.future);
+    }
+
+    test(
+      'deferred creation journals the unseen seed and schedules Home guidance: additional=$additional',
+      () async {
+        await prepareDeferred();
+        await accounts().createAccountForDeferredSetup(
+          name: _name,
+          profilePictureId: _profile,
+        );
+        final draft = jsonDecode(_rust.pendingAtImport!) as Map;
+        expect(draft['kind'], 'software');
+        expect(draft['deferSetup'], isTrue);
+        expect(draft.containsKey('giftLink'), isFalse);
+        final account = container
+            .read(accountProvider)
+            .requireValue
+            .activeAccount!;
+        expect(account.uuid, 'uuid-1');
+        expect(account.setupPending, isTrue);
+        expect(account.giftEducationPending, isTrue);
+        expect(account.name, _name);
+        expect(await store.readAccountMnemonic(account.uuid), _mnemonic);
+        expect(await pending(), isNull);
+        expect(_rust.importCalls, additional ? 0 : 1);
+        expect(_rust.addCalls, additional ? 1 : 0);
+      },
+    );
+
+    for (final key in [
+      'zcash_account_mnemonic_uuid-1',
+      'zcash_accounts',
+      'zcash_active_account',
+    ]) {
+      test(
+        'deferred creation recovers after $key fails: additional=$additional',
+        () async {
+          await prepareDeferred();
+          storage.failNextWriteFor(key);
+          await expectLater(
+            accounts().createAccountForDeferredSetup(
+              name: _name,
+              profilePictureId: _profile,
+            ),
+            throwsA(isA<WalletAccountSetupInterruptedException>()),
+          );
+          if (!additional) {
+            await container
+                .read(appSecurityProvider.notifier)
+                .finishPasswordSetupAfterFailure(accountMayExist: true);
+          }
+          expect(jsonDecode((await pending())!)['deferSetup'], isTrue);
+          await expectLater(
+            accounts().createAccountForDeferredSetup(
+              name: _name,
+              profilePictureId: _profile,
+            ),
+            throwsA(isA<WalletAccountSetupInterruptedException>()),
+          );
+          final bootstrap = await loadAppBootstrap(secureStore: store);
+          final restarted = ProviderContainer(
+            overrides: [
+              appBootstrapProvider.overrideWithValue(bootstrap),
+              accountProvider.overrideWith(
+                () => AccountNotifier.testing(store: store),
+              ),
+              appSecurityProvider.overrideWith(
+                () => AppSecurityNotifier.testing(store: store),
+              ),
+            ],
+          );
+          addTearDown(restarted.dispose);
+          await restarted.read(accountProvider.future);
+          await restarted.read(appSecurityProvider.notifier).unlock(_passcode);
+          await restarted.read(accountProvider.notifier).restoreAfterUnlock();
+          final account = restarted
+              .read(accountProvider)
+              .requireValue
+              .activeAccount!;
+          expect(account.uuid, 'uuid-1');
+          expect(account.name, _name);
+          expect(account.setupPending, isTrue);
+          expect(account.giftEducationPending, isTrue);
+          expect(await store.readAccountMnemonic(account.uuid), _mnemonic);
+          expect(await pending(), isNull);
+          expect(_rust.importCalls + _rust.addCalls, 1);
+        },
+      );
+    }
+
+    test(
+      'completed journal does not undo backup or selected account: additional=$additional',
+      () async {
+        await prepareDeferred();
+        storage.failNextDeleteFor(kPendingAccountMnemonicStorageKey);
+        await accounts().createAccountForDeferredSetup(
+          name: _name,
+          profilePictureId: _profile,
+        );
+        expect(jsonDecode((await pending())!)['completed'], isTrue);
+        await accounts().markBackedUp('uuid-1');
+        await accounts().markGiftEducationComplete('uuid-1');
+        if (additional) await accounts().switchAccount('original');
+        await accounts().restoreAfterUnlock();
+        final state = container.read(accountProvider).requireValue;
+        expect(state.activeAccountUuid, additional ? 'original' : 'uuid-1');
+        final created = state.accounts.firstWhere((a) => a.uuid == 'uuid-1');
+        expect(created.setupPending, isFalse);
+        expect(created.giftEducationPending, isFalse);
+        expect(await pending(), isNull);
+      },
+    );
+  }
+
+  test(
+    'deferred failure before DB creation discards unused seed and can retry',
+    () async {
+      _rust.importError = StateError('creation unavailable');
+      await expectLater(
+        accounts().createAccountForDeferredSetup(
+          name: _name,
+          profilePictureId: _profile,
+        ),
+        throwsStateError,
+      );
+      expect(await pending(), isNull);
+      _rust.importError = null;
+      await accounts().createAccountForDeferredSetup(
+        name: _name,
+        profilePictureId: _profile,
+      );
+      expect(_rust.importCalls, 2);
+      expect(
+        container.read(accountProvider).requireValue.accounts,
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'uncertain deferred creation retains the seed and refuses another creation',
+    () async {
+      _rust.importError = StateError('write uncertain');
+      _rust.createDbBeforeImportError = true;
+      _rust.listError = StateError('DB unreadable');
+      await expectLater(
+        accounts().createAccountForDeferredSetup(
+          name: _name,
+          profilePictureId: _profile,
+        ),
+        throwsA(isA<WalletAccountSetupInterruptedException>()),
+      );
+      expect(await pending(), isNotNull);
+      await expectLater(
+        accounts().createAccountForDeferredSetup(
+          name: _name,
+          profilePictureId: _profile,
+        ),
+        throwsA(isA<WalletAccountSetupInterruptedException>()),
+      );
+      expect(_rust.importCalls, 1);
+    },
+  );
+
   for (final flow in ['create', 'software', 'keystone', 'ledger', 'linked']) {
     test(
       'initial Home origin is registered before $flow account publication',

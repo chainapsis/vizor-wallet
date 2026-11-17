@@ -284,13 +284,17 @@
   "@accountsUpdatePicture": {
     "description": "Button in the mobile profile picture picker that confirms the selected picture."
   },
-  "accountsViewSecretPhrase": "View secret phrase",
+  "accountsViewSecretPhrase": "Show secret phrase",
   "@accountsViewSecretPhrase": {
     "description": "[security] Account menu item that shows the account's secret passphrase."
   },
-  "accountsViewViewingKey": "View viewing key",
+  "accountsViewViewingKey": "Show viewing key",
   "@accountsViewViewingKey": {
     "description": "[security] Account menu item that shows the account's viewing key."
+  },
+  "activityAddAddressToContacts": "Add address to contacts",
+  "@activityAddAddressToContacts": {
+    "description": "Button pinned to the bottom of a sent transaction's receipt that saves its recipient address to the address book. Shown only while that address is not a contact yet."
   },
   "activityAddressUnified": "Unified address",
   "@activityAddressUnified": {
@@ -311,6 +315,10 @@
   "activityBalanceOrchard": "Orchard balance",
   "@activityBalanceOrchard": {
     "description": "Value of the From row of a migration receipt."
+  },
+  "activityBalanceTransparent": "Transparent balance",
+  "@activityBalanceTransparent": {
+    "description": "Value of the From row of a mobile shielding receipt: the transparent balance the funds came from."
   },
   "activityDetailsLoadFailed": "Failed — try again",
   "@activityDetailsLoadFailed": {
@@ -602,6 +610,10 @@
   "@activityReceiptOutput": {
     "description": "Label of a row on a transaction receipt: one transparent output of the transaction, followed by its address and amount."
   },
+  "activityReceiptRecipient": "Recipient",
+  "@activityReceiptRecipient": {
+    "description": "Label of the first row in the mobile transaction record card for a sent transaction: the address or contact the ZEC went to. Short."
+  },
   "activityReceiptRefreshFailed": "Latest transaction status could not be refreshed.",
   "@activityReceiptRefreshFailed": {
     "description": "Message shown when the latest status of a transaction could not be refreshed."
@@ -760,9 +772,17 @@
   "@activityTitleReceiveInProgress": {
     "description": "Title of the desktop receipt of an incoming transaction that is pending."
   },
+  "activityTitleReceiveZecFailed": "Receive ZEC failed",
+  "@activityTitleReceiveZecFailed": {
+    "description": "Title of the mobile transaction record for an incoming ZEC transaction that failed. Short; shown in the top navigation."
+  },
   "activityTitleReceivedSuccessfully": "Received successfully",
   "@activityTitleReceivedSuccessfully": {
     "description": "Title of the desktop receipt of an incoming transaction that completed."
+  },
+  "activityTitleReceivedZec": "Received ZEC",
+  "@activityTitleReceivedZec": {
+    "description": "Title of the mobile transaction record for a completed incoming ZEC transaction. Short; shown in the top navigation."
   },
   "activityTitleReceiving": "Receiving...",
   "@activityTitleReceiving": {
@@ -772,13 +792,29 @@
   "@activityTitleReceivingVerb": {
     "description": "Title of a pending incoming activity row; the app appends an ellipsis."
   },
+  "activityTitleReceivingZec": "Receiving ZEC...",
+  "@activityTitleReceivingZec": {
+    "description": "Title of the mobile transaction record for an incoming ZEC transaction that is still pending. Short; shown in the top navigation."
+  },
+  "activityTitleSendZecFailed": "Send ZEC failed",
+  "@activityTitleSendZecFailed": {
+    "description": "Title of the mobile transaction record for a sent ZEC transaction that failed. Short; shown in the top navigation."
+  },
   "activityTitleSendingVerb": "Sending",
   "@activityTitleSendingVerb": {
     "description": "Title of a pending outgoing activity row; the app appends an ellipsis."
   },
+  "activityTitleSendingZec": "Sending ZEC...",
+  "@activityTitleSendingZec": {
+    "description": "Title of the mobile transaction record for a sent ZEC transaction that is still pending. Short; shown in the top navigation."
+  },
   "activityTitleSent": "Sent",
   "@activityTitleSent": {
     "description": "Title of an activity row for an outgoing transaction."
+  },
+  "activityTitleSentZec": "Sent ZEC",
+  "@activityTitleSentZec": {
+    "description": "Title of the mobile transaction record for a completed sent ZEC transaction. Short; shown in the top navigation."
   },
   "activityTitleShielded": "Shielded",
   "@activityTitleShielded": {
@@ -1547,6 +1583,14 @@
   "commonBackToWallet": "Back to wallet",
   "@commonBackToWallet": {
     "description": "Button on the shield result screens that returns to the wallet. Shared by: home, send."
+  },
+  "commonBalanceHidden": "Balance hidden",
+  "@commonBalanceHidden": {
+    "description": "Toast after turning the phone screen-down hides amounts (flip to hide, mobile). Shows on whatever screen is open."
+  },
+  "commonBalanceShown": "Balance shown",
+  "@commonBalanceShown": {
+    "description": "Toast after a quick flip down and back up shows hidden amounts again (flip to hide, mobile). Shows on whatever screen is open."
   },
   "commonCalculatingEllipsis": "Calculating…",
   "@commonCalculatingEllipsis": {
@@ -2889,11 +2933,27 @@
   },
   "homeReceive": "Receive",
   "@homeReceive": {
-    "description": "Home action button that opens the receive screen."
+    "description": "Home action button for receiving. On desktop it opens the receive screen; on mobile it opens a sheet of ways to receive, and is also that sheet's title."
   },
   "homeReceiveFirstZec": "Receive your first ZEC",
   "@homeReceiveFirstZec": {
-    "description": "Mobile Home button shown instead of Send/Receive while the wallet has no funds; opens the receive screen."
+    "description": "Mobile Home button shown instead of Send/Receive while the wallet has no funds; opens the sheet of ways to receive."
+  },
+  "homeReceiveReceiveSubtitle": "Share your address or QR code",
+  "@homeReceiveReceiveSubtitle": {
+    "description": "Description under Receive ZEC in the mobile Home Receive sheet, whose card opens the Receive screen."
+  },
+  "homeReceiveRedeemGiftCard": "Redeem gift card",
+  "@homeReceiveRedeemGiftCard": {
+    "description": "Title of the card in the mobile Home Receive sheet that opens Gift Cards on the page for redeeming a card someone sent."
+  },
+  "homeReceiveRedeemGiftCardSubtitle": "Add a card someone sent you",
+  "@homeReceiveRedeemGiftCardSubtitle": {
+    "description": "Description under Redeem gift card in the mobile Home Receive sheet."
+  },
+  "homeReceiveRequestSubtitle": "Ask for an exact amount",
+  "@homeReceiveRequestSubtitle": {
+    "description": "Description under Request ZEC in the mobile Home Receive sheet, whose card opens the payment request sheet."
   },
   "homeRecentActivity": "Recent activity",
   "@homeRecentActivity": {
@@ -8484,6 +8544,10 @@
   "@onboardingIntroTitle": {
     "description": "Heading of the Zcash intro step."
   },
+  "onboardingIntroTitleMobile": "About Zcash",
+  "@onboardingIntroTitleMobile": {
+    "description": "Heading of the mobile Zcash intro step, the first step of creating a wallet."
+  },
   "onboardingLinkVizorDesktop": "Link Vizor Desktop",
   "@onboardingLinkVizorDesktop": {
     "description": "Option on the mobile import method picker for linking accounts from the Vizor desktop app."
@@ -9048,10 +9112,6 @@
   "paySaveContactError": "Couldn't save this contact. Try again.",
   "@paySaveContactError": {
     "description": "Error in the Pay add-contact form when saving fails."
-  },
-  "payScanBarrierDismiss": "Dismiss",
-  "@payScanBarrierDismiss": {
-    "description": "Accessibility label of the tappable area that dismisses the mobile Pay modal."
   },
   "payScanCaption": "Scan the recipient address QR code",
   "@payScanCaption": {
@@ -10327,6 +10387,10 @@
   "@paymentLinkQrCouldNotBeGenerated": {
     "description": "Message shown in place of the Gift Card QR image when it could not be drawn."
   },
+  "paymentLinkQrExpandSemantic": "Show gift card QR code full screen",
+  "@paymentLinkQrExpandSemantic": {
+    "description": "Accessibility label of the QR code in the mobile Gift Card sharing sheet; tapping it opens the full-screen QR viewer."
+  },
   "paymentLinkQrSaveFailed": "Gift card QR could not be saved.",
   "@paymentLinkQrSaveFailed": {
     "description": "Toast shown when saving the Gift Card QR image failed."
@@ -10813,6 +10877,14 @@
   "@poolTransparent": {
     "description": "Badge naming a transparent pool or address."
   },
+  "privacyBalanceHiddenSaveFailed": "Balance hidden, but the setting couldn't be saved.",
+  "@privacyBalanceHiddenSaveFailed": {
+    "description": "[security] Mobile flip-to-hide error toast: amounts are hidden for this session, but persisting that choice failed."
+  },
+  "privacyBalanceShowFailed": "Couldn't show your balance. Try again.",
+  "@privacyBalanceShowFailed": {
+    "description": "[security] Mobile flip-to-show error toast: saving the visibility choice failed, so amounts remain hidden."
+  },
   "privateQueriesOptOutUnfinished": "Turning off Private queries didn't finish. Turn it off again in Settings to use transparent funds.",
   "@privateQueriesOptOutUnfinished": {
     "description": "[security] Error shown when the wallet still requires private recovery because turning off Private queries did not finish."
@@ -10946,7 +11018,7 @@
   },
   "receiveRequestButton": "Request {ticker}",
   "@receiveRequestButton": {
-    "description": "Button on the mobile Receive screen that opens the payment request sheet, and the title of the payment request dialog on both form factors. {ticker} is the currency ticker such as ZEC.",
+    "description": "Button on the mobile Receive screen, and card title in the mobile Home Receive sheet, that opens the payment request sheet, and the title of the payment request dialog on both form factors. {ticker} is the currency ticker such as ZEC.",
     "placeholders": {
       "ticker": {
         "type": "String"
@@ -11001,10 +11073,6 @@
   "@receiveRequestZecButton": {
     "description": "Button on the desktop Receive pane that opens the payment request card."
   },
-  "receiveShareAddress": "Share address",
-  "@receiveShareAddress": {
-    "description": "Visible label of the mobile Receive button that shares the selected address."
-  },
   "receiveShareFailed": "Couldn't share this address. Copy it instead.",
   "@receiveShareFailed": {
     "description": "Toast on the Receive screen when the system share sheet fails for an address."
@@ -11019,11 +11087,11 @@
   },
   "receiveShieldedAddressLoadFailed": "Couldn’t load your shielded address. Try again in a moment.",
   "@receiveShieldedAddressLoadFailed": {
-    "description": "Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows."
+    "description": "Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows. Also a toast when Request ZEC is picked in the mobile Home Receive sheet and the address could not be read."
   },
   "receiveTitle": "Receive {ticker}",
   "@receiveTitle": {
-    "description": "Title of the Receive screen. {ticker} is the currency ticker such as ZEC.",
+    "description": "Title of the Receive screen, and the card title in the mobile Home Receive sheet that opens that screen. {ticker} is the currency ticker such as ZEC.",
     "placeholders": {
       "ticker": {
         "type": "String"
@@ -11672,6 +11740,17 @@
   "@sendRecipientLabel": {
     "description": "Label above the recipient address field on the send screen."
   },
+  "sendRecipientOwnAccountName": "{name} (you)",
+  "@sendRecipientOwnAccountName": {
+    "description": "Name under the mobile recipient field when the entered address belongs to one of the user's own accounts; marks it as the user's own.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Vigilant Castellan",
+        "description": "Name of the matching account, or of the saved contact for that address."
+      }
+    }
+  },
   "sendRecipientUnreadableRequestLink": "This request link couldn't be read",
   "@sendRecipientUnreadableRequestLink": {
     "description": "[security] Error under the recipient field when a pasted zcash: payment link is not a valid address or request."
@@ -12227,6 +12306,34 @@
   "settingsExplorerUrlLabel": "Explorer URL",
   "@settingsExplorerUrlLabel": {
     "description": "Label of the text field for a custom block explorer URL."
+  },
+  "settingsFlipToHide": "Flip to hide",
+  "@settingsFlipToHide": {
+    "description": "Label of the mobile Settings switch that lets turning the phone screen-down hide amounts."
+  },
+  "settingsFlipToHideDescription": "Turn your phone screen-down to hide amounts on any screen. To show them again, flip it down and back up within 2 seconds.",
+  "@settingsFlipToHideDescription": {
+    "description": "Explanation under the mobile Settings flip to hide switch."
+  },
+  "settingsFlipToHideUpdateFailed": "Couldn't update flip to hide setting.",
+  "@settingsFlipToHideUpdateFailed": {
+    "description": "Toast when the mobile Settings flip to hide switch could not be saved."
+  },
+  "settingsHideBalanceOnUnlock": "Hide balance on unlock",
+  "@settingsHideBalanceOnUnlock": {
+    "description": "Settings > Hide balance: toggle that hides balances after every successful wallet unlock."
+  },
+  "settingsHideBalanceOnUnlockDescription": "Hide your balance every time you unlock. Tap the eye icon to show it again.",
+  "@settingsHideBalanceOnUnlockDescription": {
+    "description": "Settings > Hide balance: explanation below the hide-on-unlock toggle."
+  },
+  "settingsHideBalanceOnUnlockUpdateFailed": "Couldn't update hide balance on unlock setting.",
+  "@settingsHideBalanceOnUnlockUpdateFailed": {
+    "description": "Toast when saving the hide-on-unlock preference fails."
+  },
+  "settingsHideBalanceTitle": "Hide balance",
+  "@settingsHideBalanceTitle": {
+    "description": "Title of the mobile Settings card that holds the flip to hide switch."
   },
   "settingsIncorrectPasscode": "Incorrect passcode",
   "@settingsIncorrectPasscode": {
@@ -12923,9 +13030,17 @@
   "@settingsViewingKeyConfirmAgain": {
     "description": "Error text asking the user to re-enter their password or passcode and retry loading the viewing key."
   },
+  "settingsViewingKeyCopied": "Viewing key copied",
+  "@settingsViewingKeyCopied": {
+    "description": "[security] Mobile toast after the viewing key was copied to the clipboard."
+  },
   "settingsViewingKeyCopy": "Copy viewing key",
   "@settingsViewingKeyCopy": {
     "description": "[security] Button that copies the viewing key to the clipboard."
+  },
+  "settingsViewingKeyCopyFailed": "Couldn't copy the viewing key. Try again.",
+  "@settingsViewingKeyCopyFailed": {
+    "description": "[security] Mobile toast when copying the viewing key to the clipboard failed."
   },
   "settingsViewingKeyExplanation": "Reveals your balance and all past and future transactions. It cannot spend ZEC.",
   "@settingsViewingKeyExplanation": {
@@ -13819,10 +13934,6 @@
   "@swapDepositZecButton": {
     "description": "Button on the deposit screen that sends the ZEC deposit from the wallet."
   },
-  "swapDismissBarrierLabel": "Dismiss",
-  "@swapDismissBarrierLabel": {
-    "description": "Accessibility label of the tappable backdrop behind swap modals on mobile."
-  },
   "swapFailureAmountPrecision": "Amount has too many decimal places.\nUse fewer decimals and try again.",
   "@swapFailureAmountPrecision": {
     "description": "Swap or Pay quote error: the amount has more decimal places than the token supports."
@@ -14300,6 +14411,10 @@
   "@swapStatusRowLabel": {
     "description": "Row label next to the final swap status on the swap status screen."
   },
+  "swapSwitchDirection": "Switch swap direction",
+  "@swapSwitchDirection": {
+    "description": "Accessibility label of the round button between the pay and receive cards on the mobile Swap screen. Tapping it swaps which asset you pay and which you receive."
+  },
   "swapTimeoutBody": "Please, start another swap transaction.",
   "@swapTimeoutBody": {
     "description": "Body text on the swap timeout screen asking the user to start a new swap."
@@ -14642,15 +14757,7 @@
   "@votingConfigCustomSource": {
     "description": "Name of the active voting config source when it is a URL the user added but did not save."
   },
-  "votingConfigDeleteNamed": "Delete {name}",
-  "@votingConfigDeleteNamed": {
-    "description": "Accessibility label of the delete button of a saved voting config source; {name} is the source's title.",
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
+
   "votingConfigDeleteSaved": "Delete saved source",
   "@votingConfigDeleteSaved": {
     "description": "Accessibility label of the button that deletes a saved voting config source."
@@ -14736,10 +14843,11 @@
   "@votingConfigShowTestRoundsHint": {
     "description": "Explanation under the Show test rounds switch on desktop; [TEST] is a literal title prefix."
   },
-  "votingConfigSources": "Sources",
-  "@votingConfigSources": {
-    "description": "Heading above the list of voting config sources on mobile."
+  "votingConfigSource": "Source",
+  "@votingConfigSource": {
+    "description": "Mobile Vote config: label of the row naming where voting rounds come from, and title of the sheet that picks it."
   },
+
   "votingConfigTestVisibilityFailed": "Couldn't update the test round visibility setting.",
   "@votingConfigTestVisibilityFailed": {
     "description": "Error shown when changing the Show test rounds setting failed."

@@ -265,7 +265,7 @@ class _MobileImportAccountDiscoverySheetState
             onPressed: canConfirm ? _confirm : null,
             child: Text(context.l10n.onboardingImport),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.s),
           AppButton(
             key: const ValueKey('mobile_import_account_discovery_cancel'),
             variant: AppButtonVariant.ghost,
@@ -353,7 +353,7 @@ class _MobileDiscoveredAccountRow extends StatelessWidget {
                       _shortAddress(account.firstTransparentAddress),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.codeSmall.copyWith(
+                      style: AppTypography.codeMedium.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),
@@ -428,7 +428,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
           context.l10n.poolTransparent,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelMedium.copyWith(
+          style: AppTypography.labelLarge.copyWith(
             color: colors.text.secondary,
           ),
         ),
@@ -438,7 +438,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
             balanceText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelMedium.copyWith(color: color),
+            style: AppTypography.labelLarge.copyWith(color: color),
           ),
         ),
       ],

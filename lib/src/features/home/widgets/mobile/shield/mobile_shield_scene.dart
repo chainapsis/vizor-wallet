@@ -793,7 +793,7 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
                           child: Text(
                             widget.body!,
                             textAlign: TextAlign.center,
-                            style: AppTypography.bodySmall.copyWith(
+                            style: AppTypography.bodyMedium.copyWith(
                               color: const Color(0xCCFFFFFF),
                             ),
                           ),

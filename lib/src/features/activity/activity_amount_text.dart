@@ -3,12 +3,17 @@ import '../../core/layout/app_form_factor.dart';
 const mobileActivityAmountMaxCharacters = 14;
 
 /// Compacts [value] to [mobileActivityAmountMaxCharacters] on the mobile
-/// form factor and leaves desktop rows unchanged. Form-factor branching is a
-/// compile-time [kAppFormFactor] const so the unused branch is tree-shaken.
+/// form factor and leaves desktop rows unchanged. Mobile rows also drop an
+/// outgoing amount's minus sign: the row's title and icon already say the
+/// funds left. Form-factor branching is a compile-time [kAppFormFactor] const
+/// so the unused branch is tree-shaken.
 String activityAmountTextForFormFactor(String value) =>
     kAppFormFactor == AppFormFactor.mobile
-    ? compactMobileActivityAmountText(value)
+    ? compactMobileActivityAmountText(value).replaceFirst(_leadingMinus, '')
     : value;
+
+/// A minus sign in front of a number; the "--" placeholder keeps its dashes.
+final _leadingMinus = RegExp(r'^-(?=\d)');
 
 String compactMobileActivityAmountText(
   String value, {

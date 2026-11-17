@@ -72,8 +72,8 @@ void main() {
     expect(find.text('link'), findsOneWidget);
     expect(find.text('Download firmware'), findsNothing);
 
-    expect(tester.getSize(find.byKey(firmwareCardKey)).width, 361);
-    expect(tester.getSize(find.byKey(prepareCardKey)).width, 361);
+    expect(tester.getSize(find.byKey(firmwareCardKey)).width, 353);
+    expect(tester.getSize(find.byKey(prepareCardKey)).width, 353);
 
     final firmwareBottom = tester.getBottomLeft(find.byKey(firmwareCardKey)).dy;
     final prepareTop = tester.getTopLeft(find.byKey(prepareCardKey)).dy;

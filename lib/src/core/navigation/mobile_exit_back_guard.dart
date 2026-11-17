@@ -182,6 +182,9 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
   /// send screen's `PopScope` is then the only thing that can send the press
   /// to its own step fallback instead of exiting the app. `/payment-links`
   /// is opened with `go` by an incoming Card link too, so it gets the same.
+  /// Create credentials and the phrase restored by Back also replace their
+  /// route stack; their scopes must handle navigation and block Back during
+  /// durable account setup.
   /// Restored swap receipts can also be the only route; their scope returns
   /// to the explicit origin rather than offering to exit from a detail page.
   static const _rootBackFlowPrefixes = [
@@ -189,6 +192,9 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
     '/send',
     '/payment-links',
     '/gift',
+    '/onboarding/secret-passphrase',
+    '/onboarding/set-passcode',
+    '/add-account',
     '/activity/swap',
   ];
 

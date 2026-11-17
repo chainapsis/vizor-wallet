@@ -72,7 +72,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret phrase'), findsNothing);
+    expect(find.text('Show secret phrase'), findsNothing);
 
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
@@ -81,7 +81,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret phrase'), findsOneWidget);
+    expect(find.text('Show secret phrase'), findsOneWidget);
     expect(
       tester
           .getSize(find.byKey(const ValueKey('mobile_account_menu_card')))
@@ -90,13 +90,13 @@ void main() {
     );
     expect(
       find.ancestor(
-        of: find.text('View secret phrase'),
+        of: find.text('Show secret phrase'),
         matching: find.byType(FittedBox),
       ),
       findsNothing,
     );
     expect(
-      tester.widget<Text>(find.text('View secret phrase')).overflow,
+      tester.widget<Text>(find.text('Show secret phrase')).overflow,
       TextOverflow.ellipsis,
     );
     expect(tester.takeException(), isNull);
@@ -109,7 +109,7 @@ void main() {
       buildMobileAccountsSoftwareMenuUseCase,
     );
 
-    expect(find.text('View secret phrase'), findsOneWidget);
+    expect(find.text('Show secret phrase'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await _pumpMobileAccountsUseCase(
@@ -117,7 +117,7 @@ void main() {
       buildMobileAccountsKeystoneMenuUseCase,
     );
 
-    expect(find.text('View secret phrase'), findsNothing);
+    expect(find.text('Show secret phrase'), findsNothing);
     expect(find.text('Copy address'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

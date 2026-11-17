@@ -320,7 +320,7 @@ void main() {
                 )
                 .data,
             hidden
-                ? '****** ZEC'
+                ? '•••••• ZEC'
                 : available
                 ? '2 ZEC'
                 : '— ZEC',
@@ -332,7 +332,7 @@ void main() {
                 )
                 .data,
             hidden
-                ? '****** ZEC'
+                ? '•••••• ZEC'
                 : available
                 ? '0.5 ZEC'
                 : '— ZEC',
@@ -340,7 +340,7 @@ void main() {
           expect(
             find.text(
               hidden
-                  ? '****** ZEC'
+                  ? '•••••• ZEC'
                   : available
                   ? '2.5 ZEC'
                   : '— ZEC',

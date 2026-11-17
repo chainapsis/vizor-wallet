@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import '../../../../../core/l10n/l10n.dart';
 import '../../../../../core/theme/app_theme.dart';
+import '../../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../../core/widgets/app_button.dart';
 import '../../../../../core/widgets/app_icon.dart';
 
@@ -37,7 +38,7 @@ class KeystoneShieldFooter extends StatelessWidget {
         AppSpacing.md,
         AppSpacing.s,
         AppSpacing.md,
-        AppSpacing.md,
+        kMobileFooterGap,
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {

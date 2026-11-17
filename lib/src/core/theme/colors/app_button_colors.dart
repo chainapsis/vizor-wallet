@@ -149,14 +149,17 @@ class AppDisabledButtonColors {
   final Color bg;
   final Color label;
 
+  // Solid, so content scrolling under a floating button never shows through
+  // it, with a label of at least 4.5:1 against the fill (dark 5.2:1, light
+  // 4.8:1): still plainly off beside the accent fill, but readable.
   static const dark = AppDisabledButtonColors(
-    bg: Primitives.p300Alpha20Dark,
-    label: Primitives.p500Alpha50Dark,
+    bg: Primitives.p150Dark,
+    label: Primitives.p600Dark,
   );
 
   static const light = AppDisabledButtonColors(
-    bg: Primitives.p300Alpha20Light,
-    label: Primitives.p500Alpha50Light,
+    bg: Primitives.p100Light,
+    label: Primitives.p600Light,
   );
 }
 

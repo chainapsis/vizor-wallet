@@ -167,7 +167,7 @@ Future<bool> showPaymentLinkConfirmSheet(
               onPressed: () => navigator.pop(true),
               child: Text(confirmLabel),
             ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.s),
             AppButton(
               variant: AppButtonVariant.ghost,
               expand: true,

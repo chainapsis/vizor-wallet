@@ -5,6 +5,7 @@ import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
+import '../../../core/layout/mobile/mobile_scroll_edge_fades.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -802,7 +803,8 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
         onClose: widget.onCancel,
         bottomPadding: AppSpacing.base,
         horizontalPadding: 0,
-        child: Flexible(child: details),
+        constrainBody: true,
+        child: details,
       );
     }
     return Padding(
@@ -1805,7 +1807,8 @@ class _Actions extends StatelessWidget {
       children: [
         _primaryFill(context.l10n),
         if (hasAmount) ...[
-          const SizedBox(height: AppSpacing.xs),
+          // Mobile sheets stack their buttons 12px apart.
+          SizedBox(height: isMobileLayout ? AppSpacing.s : AppSpacing.xs),
           _editFill(context.l10n),
         ],
       ],
@@ -1999,14 +2002,17 @@ class _FadingScrollRegionState extends State<_FadingScrollRegion> {
     final scroller = NotificationListener<ScrollNotification>(
       onNotification: _onScroll,
       // Without this the ambient behavior adds a second, platform-default
-      // scrollbar of its own, pinned to the very edge of the region.
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: SingleChildScrollView(
-          key: widget.scrollViewKey,
-          controller: _controller,
-          padding: widget.contentPadding,
-          child: widget.child,
+      // scrollbar of its own, pinned to the very edge of the region. The
+      // region's mask is its fade, so the standard edge fades stay off.
+      child: MobileScrollEdgeFades.off(
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: SingleChildScrollView(
+            key: widget.scrollViewKey,
+            controller: _controller,
+            padding: widget.contentPadding,
+            child: widget.child,
+          ),
         ),
       ),
     );

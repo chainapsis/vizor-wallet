@@ -10,6 +10,9 @@ import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_impo
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_biometrics_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_flow_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/screens/gift_claim_screen.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
@@ -44,7 +47,7 @@ Future<void> _advance(WidgetTester tester) async {
   expect(tester.takeException(), isNull);
 }
 
-Future<void> _reachCustomise(WidgetTester tester) async {
+Future<void> _reachSecurity(WidgetTester tester) async {
   if (find
       .byKey(const ValueKey('mobile_welcome_redeem_card'))
       .evaluate()
@@ -62,11 +65,16 @@ Future<void> _reachCustomise(WidgetTester tester) async {
   await _advance(tester);
 }
 
-Future<void> _submitPersona(WidgetTester tester) async {
-  await tester.tap(
-    find.byKey(const ValueKey('mobile_customise_account_continue')),
-  );
-  await _advance(tester);
+Future<void> _submitSetup(WidgetTester tester) async {
+  if (find
+      .byKey(const ValueKey('mobile_customise_account_continue'))
+      .evaluate()
+      .isNotEmpty) {
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await _advance(tester);
+  }
   for (var round = 0; round < 2; round++) {
     for (final digit in '123456'.split('')) {
       await tester.tap(find.bySemanticsLabel('Digit $digit').hitTestable());
@@ -123,168 +131,173 @@ void main() {
       findsOneWidget,
     );
   });
-  testWidgets('full gift setup waits for name and carries it to Home', (
-    tester,
-  ) async {
-    await _render(tester, buildMobileGiftOnboardingWalkthrough);
-    await _reachCustomise(tester);
-    expect(find.bySemanticsLabel('Back'), findsOneWidget);
-    expect(find.text('Skip for now'), findsNothing);
-    await tester.enterText(
-      find.byKey(const ValueKey('mobile_customise_account_name_field')),
-      'My gift wallet',
-    );
-    await _submitPersona(tester);
-    await _advance(tester);
-    expect(find.byType(MobileBiometricsScreen), findsOneWidget);
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(MobileBiometricsScreen)),
-    );
-    expect(
-      container.read(accountProvider).value?.activeAccount?.name,
-      'My gift wallet',
-    );
-    final store = container.read(paymentLinkReceivedStoreProvider);
-    final submitted = (await store.load()).single;
-    expect(submitted.status, PaymentLinkReceivedStatus.receiving);
-    expect(submitted.destinationAccountUuid, 'gift-preview');
-    expect(submitted.claimTxids, isNotEmpty);
-    final pendingIndex = await container.read(
-      giftCardActivityIndexProvider('gift-preview').future,
-    );
-    final stableId = pendingIndex.withPendingClaims(const []).single;
-    expect(pendingIndex.metadataFor(stableId)!.isClaimInFlight, isTrue);
-    await tester.tap(find.byKey(const ValueKey('mobile_biometrics_enable')));
-    await _advance(tester);
-    expect(container.read(biometricUnlockProvider).value?.enabled, isTrue);
-    expect(find.text('My gift wallet'), findsWidgets);
-    expect(find.text('Redeeming a card...'), findsOneWidget);
-    expect(find.text('No activity'), findsNothing);
-    expect(find.byKey(const ValueKey('mobile_home_send')), findsNothing);
-    final receive = tester.widget<AppButton>(
-      find.byKey(const ValueKey('mobile_home_receive')),
-    );
-    expect(receive.onPressed, isNotNull);
-    expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
-    await tester.pump(const Duration(seconds: 6));
-    await _advance(tester);
-    expect(
-      (await store.load()).single.status,
-      PaymentLinkReceivedStatus.received,
-    );
-    expect(find.text('Redeemed a gift card'), findsOneWidget);
-    final receivedIndex = await container.read(
-      giftCardActivityIndexProvider('gift-preview').future,
-    );
-    final received = container
-        .read(syncProvider)
-        .requireValue
-        .recentTransactions
-        .single;
-    expect(received.txidHex, submitted.claimTxids);
-    expect(received.displayAmount, submitted.amountZatoshi);
-    expect(
-      receivedIndex.metadataFor(received)!.stableId,
-      pendingIndex.metadataFor(stableId)!.stableId,
-    );
-    expect(find.byKey(const ValueKey('mobile_home_backup')), findsOneWidget);
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_home_carousel_indicator_1')),
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(
-      find.byKey(const ValueKey('mobile_home_zcash_education')),
-      findsOneWidget,
-    );
-    await tester.tap(find.byKey(const ValueKey('mobile_home_zcash_education')));
-    await _advance(tester);
-    expect(find.text('The Shielded World'), findsOneWidget);
-    expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('mobile_intro_skip')));
-    await _advance(tester);
-    expect(find.text('My gift wallet'), findsWidgets);
-    expect(
-      find.byKey(const ValueKey('mobile_home_zcash_education')),
-      findsNothing,
-    );
-    await tester.tap(find.byKey(const ValueKey('mobile_home_backup')));
-    await _advance(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_seed_backup_intro_continue')),
-    );
-    await _advance(tester);
-    // The same enabled Face ID state is retained through the Home preview.
-    expect(find.bySemanticsLabel('Digit 1'), findsNothing);
-    expect(find.text('September 1, 2026'), findsOneWidget);
-    expect(find.text('3000000'), findsOneWidget);
-    final backedUp = find.byKey(const ValueKey('mobile_seed_backed_up'));
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
-    await _advance(tester);
-    await tester.ensureVisible(backedUp);
-    await tester.tap(backedUp);
-    await _advance(tester);
-    expect(find.text('My gift wallet'), findsWidgets);
-    expect(find.byKey(const ValueKey('mobile_home_backup')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('mobile_home_zcash_education')),
-      findsNothing,
-    );
-  });
-  testWidgets('gift setup can randomise and continue with the suggested name', (
-    tester,
-  ) async {
-    await _render(tester, buildMobileGiftOnboardingWalkthrough);
-    await _reachCustomise(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_customise_account_randomise')),
-    );
-    await tester.pump();
-    final name = tester
-        .widget<TextField>(
-          find.byKey(const ValueKey('mobile_customise_account_name_field')),
-        )
-        .controller!
-        .text;
-    await _submitPersona(tester);
-    await _advance(tester);
-    expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
-    expect(find.byType(MobileBiometricsScreen), findsOneWidget);
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(MobileBiometricsScreen)),
-    );
-    final card =
-        (await container.read(paymentLinkReceivedStoreProvider).load()).single;
-    expect(card.status, PaymentLinkReceivedStatus.receiving);
-    expect(card.setupAccountUuid, 'gift-preview');
-    expect(await container.read(giftClaimImportStoreProvider).load(), isNull);
-    await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
-    await _advance(tester);
-    expect(find.text(name), findsWidgets);
-    expect(find.byKey(const ValueKey('mobile_home_backup')), findsOneWidget);
-  });
-  testWidgets('a pre-account error retains the entered name', (tester) async {
-    await _render(tester, buildMobileGiftOnboardingSubmissionError);
-    await _reachCustomise(tester);
-    await tester.enterText(
-      find.byKey(const ValueKey('mobile_customise_account_name_field')),
-      'Keep this name',
-    );
-    await _submitPersona(tester);
-    await _advance(tester);
-    await tester.binding.handlePopRoute();
-    await _advance(tester);
-    expect(find.byType(MobileCustomiseAccountScreen), findsOneWidget);
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
-      'Keep this name',
-    );
-  });
+  testWidgets(
+    'full gift setup generates a persona without showing customisation',
+    (tester) async {
+      await _render(tester, buildMobileGiftOnboardingWalkthrough);
+      await _reachSecurity(tester);
+      expect(find.bySemanticsLabel('Back'), findsOneWidget);
+      expect(find.text('Skip for now'), findsNothing);
+      await _submitSetup(tester);
+      await _advance(tester);
+      expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileBiometricsScreen)),
+      );
+      expect(
+        container.read(accountProvider).value?.activeAccount?.name,
+        isNotEmpty,
+      );
+      final store = container.read(paymentLinkReceivedStoreProvider);
+      final submitted = (await store.load()).single;
+      expect(submitted.status, PaymentLinkReceivedStatus.receiving);
+      expect(submitted.destinationAccountUuid, 'gift-preview');
+      expect(submitted.claimTxids, isNotEmpty);
+      final pendingIndex = await container.read(
+        giftCardActivityIndexProvider('gift-preview').future,
+      );
+      final stableId = pendingIndex.withPendingClaims(const []).single;
+      expect(pendingIndex.metadataFor(stableId)!.isClaimInFlight, isTrue);
+      await tester.tap(find.byKey(const ValueKey('mobile_biometrics_enable')));
+      await _advance(tester);
+      expect(container.read(biometricUnlockProvider).value?.enabled, isTrue);
+      expect(
+        find.byKey(const ValueKey('mobile_customise_account_name_field')),
+        findsNothing,
+      );
+      expect(find.text('Redeeming a card...'), findsOneWidget);
+      expect(find.text('No activity'), findsNothing);
+      expect(find.byKey(const ValueKey('mobile_home_send')), findsNothing);
+      final receive = tester.widget<AppButton>(
+        find.byKey(const ValueKey('mobile_home_receive')),
+      );
+      expect(receive.onPressed, isNotNull);
+      expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
+      await tester.pump(const Duration(seconds: 6));
+      await _advance(tester);
+      expect(
+        (await store.load()).single.status,
+        PaymentLinkReceivedStatus.received,
+      );
+      expect(find.text('Redeemed a gift card'), findsOneWidget);
+      final receivedIndex = await container.read(
+        giftCardActivityIndexProvider('gift-preview').future,
+      );
+      final received = container
+          .read(syncProvider)
+          .requireValue
+          .recentTransactions
+          .single;
+      expect(received.txidHex, submitted.claimTxids);
+      expect(received.displayAmount, submitted.amountZatoshi);
+      expect(
+        receivedIndex.metadataFor(received)!.stableId,
+        pendingIndex.metadataFor(stableId)!.stableId,
+      );
+      expect(find.byKey(const ValueKey('mobile_home_backup')), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_home_carousel_indicator_1')),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.byKey(const ValueKey('mobile_home_zcash_education')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_home_zcash_education')),
+      );
+      await _advance(tester);
+      expect(find.text('About Zcash'), findsOneWidget);
+      expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('mobile_intro_skip')));
+      await _advance(tester);
+      expect(
+        find.byKey(const ValueKey('mobile_customise_account_name_field')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_home_zcash_education')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('mobile_home_backup')));
+      await _advance(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_seed_backup_intro_continue')),
+      );
+      await _advance(tester);
+      // The same enabled Face ID state is retained through the Home preview.
+      expect(find.bySemanticsLabel('Digit 1'), findsNothing);
+      expect(find.text('September 1, 2026'), findsOneWidget);
+      expect(find.text('3000000'), findsOneWidget);
+      final backedUp = find.byKey(const ValueKey('mobile_seed_backed_up'));
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+      await _advance(tester);
+      await tester.ensureVisible(backedUp);
+      await tester.tap(backedUp);
+      await _advance(tester);
+      expect(
+        find.byKey(const ValueKey('mobile_customise_account_name_field')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('mobile_home_backup')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_home_zcash_education')),
+        findsNothing,
+      );
+    },
+  );
+  testWidgets(
+    'gift setup keeps its generated persona through credential confirmation',
+    (tester) async {
+      await _render(tester, buildMobileGiftOnboardingWalkthrough);
+      await _reachSecurity(tester);
+      expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
+      final draftContainer = ProviderScope.containerOf(
+        tester.element(find.byType(MobilePasscodeScreen)),
+      );
+      final name = draftContainer
+          .read(giftClaimFlowProvider)!
+          .setupPersona!
+          .name;
+      await _submitSetup(tester);
+      await _advance(tester);
+      expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
+      expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileBiometricsScreen)),
+      );
+      final card =
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single;
+      expect(card.status, PaymentLinkReceivedStatus.receiving);
+      expect(card.setupAccountUuid, 'gift-preview');
+      expect(await container.read(giftClaimImportStoreProvider).load(), isNull);
+      await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
+      await _advance(tester);
+      expect(find.text(name), findsWidgets);
+      expect(find.byKey(const ValueKey('mobile_home_backup')), findsOneWidget);
+    },
+  );
+  testWidgets(
+    'a pre-account error returns to the inspected Card without customisation',
+    (tester) async {
+      await _render(tester, buildMobileGiftOnboardingSubmissionError);
+      await _reachSecurity(tester);
+      await _submitSetup(tester);
+      await _advance(tester);
+      await tester.binding.handlePopRoute();
+      await _advance(tester);
+      expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
+      expect(find.byType(GiftClaimScreen), findsOneWidget);
+      expect(find.text('Gift found'), findsOneWidget);
+    },
+  );
   testWidgets(
     'remind later hides the backup banner and keeps education pending',
     (tester) async {
       await _render(tester, buildMobileGiftOnboardingWalkthrough);
-      await _reachCustomise(tester);
-      await _submitPersona(tester);
+      await _reachSecurity(tester);
+      await _submitSetup(tester);
       await _advance(tester);
       await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
       await _advance(tester);
@@ -316,7 +329,7 @@ void main() {
   ) async {
     await _render(tester, buildMobileGiftOnboardingClaimFailure);
     await _advance(tester);
-    await _submitPersona(tester);
+    await _submitSetup(tester);
     await _advance(tester);
     expect(find.byType(MobileBiometricsScreen), findsOneWidget);
     expect(find.text('Couldn’t redeem your gift card.'), findsNothing);
@@ -335,9 +348,9 @@ void main() {
       await _render(tester, buildMobileGiftOnboardingStorageRecovery);
       await _advance(tester);
       final container = ProviderScope.containerOf(
-        tester.element(find.byType(MobileCustomiseAccountScreen)),
+        tester.element(find.byType(MobilePasscodeScreen)),
       );
-      await _submitPersona(tester);
+      await _submitSetup(tester);
       await _advance(tester);
       expect(
         find.text('Setup interrupted. Retry to recover your wallet.'),
@@ -461,7 +474,7 @@ void main() {
       find.byKey(const ValueKey('mobile_customise_account_name_field')),
       'My imported wallet',
     );
-    await _submitPersona(tester);
+    await _submitSetup(tester);
     await _advance(tester);
     expect(find.byType(MobileBiometricsScreen), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));

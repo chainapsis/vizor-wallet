@@ -368,27 +368,10 @@ Future<void> _expectRecordedWalletDb(String reason) async {
 
 // ── Mobile flow primitives ───────────────────────────────────────────
 
-/// Welcome → create flow → customisation → passcode ×2 → biometrics → home.
+/// Welcome → create flow → passcode ×2 → biometrics → home.
 Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('creating wallet');
   await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
-  await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
-  await tapAppButton(tester, const ValueKey('mobile_address_types_continue'));
-  await tapAppButton(tester, const ValueKey('mobile_things_to_know_continue'));
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_secret_passphrase_primary'),
-  );
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_secret_passphrase_primary'),
-  );
-
-  await tapAppButton(
-    tester,
-    const ValueKey('mobile_customise_account_continue'),
-    timeout: const Duration(minutes: 2),
-  );
   await enterPasscode(tester, mobileE2ePasscode);
   await enterPasscode(tester, mobileE2ePasscode);
   await tapWidget(
@@ -691,9 +674,22 @@ Future<void> switchAccountTo(WidgetTester tester, String accountUuid) async {
   await waitForHome(tester);
 }
 
+/// Home → Receive sheet → "Receive ZEC" → receive screen.
+Future<void> openReceiveScreen(WidgetTester tester) async {
+  await tapWidget(tester, const ValueKey('mobile_home_receive'));
+  // The option tap can land while the sheet is still rising.
+  await tapUntilVisible(
+    tester,
+    trigger: find.byKey(const ValueKey('receive_options_receive')),
+    outcome: find.byKey(const ValueKey('mobile_receive_copy')),
+    description: 'receive screen',
+    timeout: const Duration(minutes: 1),
+  );
+}
+
 /// Home → receive screen → copy → back. Returns the copied address.
 Future<String> copyShieldedAddress(WidgetTester tester) async {
-  await tapWidget(tester, const ValueKey('mobile_home_receive'));
+  await openReceiveScreen(tester);
   await tapWidget(
     tester,
     const ValueKey('mobile_receive_copy'),

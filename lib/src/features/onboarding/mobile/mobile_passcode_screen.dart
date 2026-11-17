@@ -284,8 +284,15 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final colors = context.colors;
     final isConfirm = _phase == _PasscodePhase.confirm;
     final isSubmitting = _phase == _PasscodePhase.submitting;
-    final canNavigateBack =
-        widget.onBack != null || Navigator.of(context).canPop();
+    final onBack =
+        widget.onBack ??
+        (widget.args?.flow == SetPasswordFlow.create
+            ? () => context.goOnboarding(
+                widget.args!.backRoutePath,
+                extra: widget.args!.backRouteExtra,
+              )
+            : null);
+    final canNavigateBack = onBack != null || Navigator.of(context).canPop();
     final subtitle = isSubmitting
         ? context.l10n.onboardingPasscodeSettingUp
         : isConfirm
@@ -297,13 +304,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     // above it, matching the other passcode screens — which the scaffold's
     // scrolling step layout can't express.
     return PopScope<void>(
-      canPop:
-          !isSubmitting &&
-          !_submission.requiresRecovery &&
-          widget.onBack == null,
+      canPop: !isSubmitting && !_submission.requiresRecovery && onBack == null,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && !isSubmitting && !_submission.requiresRecovery) {
-          widget.onBack?.call();
+          onBack?.call();
         }
       },
       child: Scaffold(
@@ -316,7 +320,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                 progress:
                     (widget.position ??
                             MobileOnboardingProgressScope.of(context).at(
-                              onboardingFlowForSetup(widget.args!.flow),
+                              widget.args!.defersSetup
+                                  ? OnboardingFlow.createDeferred
+                                  : onboardingFlowForSetup(widget.args!.flow),
                               OnboardingStage.passcode,
                             ))
                         .value,
@@ -327,7 +333,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                         !canNavigateBack ||
                         _submission.requiresRecovery
                     ? null
-                    : widget.onBack ?? () => Navigator.of(context).maybePop(),
+                    : onBack ?? () => Navigator.of(context).maybePop(),
               ),
               Expanded(
                 child: AdaptivePasscodeLayout(
@@ -348,7 +354,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                     enabled: !isSubmitting,
                   ),
                   legacyPadding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
+                    horizontal: kMobilePageMargin,
                     vertical: AppSpacing.md,
                   ),
                   subtitleMaxWidth: 320,
@@ -356,7 +362,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
 
                   legacy: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
+                      horizontal: kMobilePageMargin,
                       vertical: AppSpacing.md,
                     ),
                     child: Column(

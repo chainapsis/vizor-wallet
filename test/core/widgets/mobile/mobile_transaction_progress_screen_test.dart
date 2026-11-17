@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_scroll_edge_fades.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_transaction_progress_screen.dart';
@@ -187,7 +188,45 @@ void main() {
       findsOneWidget,
     );
   });
+  testWidgets('page fades stay off over the engraving backdrop', (
+    tester,
+  ) async {
+    // Short enough that the content scrolls.
+    tester.view.physicalSize = const Size(393, 360);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      _app(
+        // As the page route installs them.
+        MobileScrollEdgeFades(
+          color: AppThemeData.light.colors.background.window,
+          child: const MobileTransactionProgressScreen(
+            phase: MobileTransactionProgressPhase.succeeded,
+            title: 'Payment\nSubmitted',
+            body: 'It will confirm on-chain shortly. Track it in Activity.',
+            canPop: true,
+            primaryActionLabel: 'Done',
+            onPrimaryAction: _noop,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final scrollables = find
+        .byType(Scrollable)
+        .evaluate()
+        .map((e) => ((e as StatefulElement).state as ScrollableState).position);
+    expect(scrollables.any((p) => p.maxScrollExtent > 0), isTrue);
+    expect(
+      find.byKey(const ValueKey('mobile_scroll_edge_fade_bottom')),
+      findsNothing,
+    );
+  });
 }
+
+void _noop() {}
 
 Widget _app(Widget child) {
   return MaterialApp(

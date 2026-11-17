@@ -40,6 +40,7 @@ import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'wallet_balance_cache_provider.dart';
 import 'app_security_provider.dart';
+import 'hide_balance_on_unlock_provider.dart';
 import 'enhance_pir_provider.dart';
 import 'public_details_loads_provider.dart';
 import 'network_privacy_provider.dart';
@@ -353,13 +354,45 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ),
       );
 
+  /// Creates an account whose backup and education are completed from Home.
+  /// Generate only within the credential/mutation boundary, never in a route.
+  Future<void> createAccountForDeferredSetup({
+    required String name,
+    required String profilePictureId,
+  }) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+    if (state.value == null || !_storage.hasSessionPassword) {
+      throw StateError('An unlocked session is required to create an account.');
+    }
+    final pending = await _storage.readSecretStringWithOptions(
+      kPendingAccountMnemonicStorageKey,
+      requireUnlockedSession: true,
+    );
+    if (pending != null) {
+      throw const WalletAccountSetupInterruptedException(
+        null,
+        'Finish the pending account recovery before creating another account.',
+      );
+    }
+    await _createAccountFromMnemonic(
+      mnemonic: rust_wallet.generateMnemonic(),
+      name: name,
+      profilePictureId: profilePictureId,
+      deferSetup: true,
+    );
+  });
+
   Future<void> _createAccountFromMnemonic({
     required String mnemonic,
     String? name,
     String profilePictureId = kDefaultProfilePictureId,
+    bool deferSetup = false,
   }) async {
     String? firstWalletDbPath;
     String? firstWalletNetwork;
+    String? deferredSetupDbPath;
+    String? deferredSetupNetwork;
+    Set<String> previousAccountUuids = const {};
+    String? createdAccountUuid;
     try {
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
@@ -388,14 +421,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       late final String accountUuid;
       late final String unifiedAddress;
 
-      if (accounts.isEmpty) {
-        await _assertFirstWalletDbIsEmpty(dbPath, network);
+      if (accounts.isEmpty) await _assertFirstWalletDbIsEmpty(dbPath, network);
+      if (deferSetup) {
+        deferredSetupDbPath = dbPath;
+        deferredSetupNetwork = network;
+        previousAccountUuids = accounts.map((account) => account.uuid).toSet();
+      }
+      if (accounts.isEmpty || deferSetup) {
         await _recordPendingSoftwareSetup(
           mnemonic: mnemonic,
           network: network,
           name: accountName,
           profilePictureId: normalizedProfilePictureId,
+          deferSetup: deferSetup,
         );
+      }
+      if (accounts.isEmpty) {
         firstWalletDbPath = dbPath;
         firstWalletNetwork = network;
         await _deleteExistingDb(dbPath);
@@ -423,6 +464,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         unifiedAddress = result.unifiedAddress;
       }
 
+      createdAccountUuid = accountUuid;
       await _storage.writeAccountMnemonic(accountUuid, mnemonic);
 
       final newAccount = AccountInfo(
@@ -431,10 +473,24 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         order: accounts.length,
         isSeedAnchor: accounts.isEmpty,
         profilePictureId: normalizedProfilePictureId,
+        setupPending: deferSetup,
+        giftEducationPending: deferSetup,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
       await _storage.writeString(_activeAccountKey, accountUuid);
+      if (deferSetup) {
+        // A leftover completed journal must not later retarget the account the
+        // user selected or re-enable completed Home guidance.
+        await _recordPendingSoftwareSetup(
+          mnemonic: mnemonic,
+          network: network,
+          name: accountName,
+          profilePictureId: normalizedProfilePictureId,
+          deferSetup: true,
+          completed: true,
+        );
+      }
 
       _registerInitialAccounts([
         accountUuid,
@@ -447,11 +503,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ),
       );
 
-      if (accounts.isEmpty) await _clearPendingAccountSetup();
+      if (accounts.isEmpty || deferSetup) await _clearPendingAccountSetup();
 
       log('createAccountFromMnemonic: success, uuid=$accountUuid');
     } catch (e, st) {
-      if (firstWalletDbPath != null) {
+      if (deferredSetupDbPath != null) {
+        await _preservePartialDeferredSetup(
+          deferredSetupDbPath,
+          deferredSetupNetwork!,
+          previousAccountUuids,
+          createdAccountUuid,
+          e,
+          st,
+        );
+      } else if (firstWalletDbPath != null) {
         await _preservePartialFirstWalletSetup(
           firstWalletDbPath,
           firstWalletNetwork!,
@@ -1008,6 +1073,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required String network,
     required String name,
     required String profilePictureId,
+    bool deferSetup = false,
+    bool completed = false,
   }) async {
     await _storage.writeString(_networkKey, network);
     await _storage.writeSecretString(
@@ -1021,6 +1088,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         'network': network,
         'name': name,
         'profilePictureId': profilePictureId,
+        if (deferSetup) 'deferSetup': true,
+        if (completed) 'completed': true,
       }),
     );
   }
@@ -1213,6 +1282,44 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
   }
 
+  Future<void> _preservePartialDeferredSetup(
+    String dbPath,
+    String network,
+    Set<String> previousUuids,
+    String? createdUuid,
+    Object error,
+    StackTrace stack,
+  ) async {
+    if (createdUuid != null) {
+      Error.throwWithStackTrace(
+        WalletAccountSetupInterruptedException(createdUuid, error),
+        stack,
+      );
+    }
+    final listed = await _listAccountsAfterFailedCreate(dbPath, network);
+    final added = listed
+        ?.where((account) => !previousUuids.contains(account.uuid))
+        .toList();
+    if (listed == null || added!.isNotEmpty) {
+      Error.throwWithStackTrace(
+        WalletAccountSetupInterruptedException(
+          added?.length == 1 ? added!.single.uuid : null,
+          error,
+        ),
+        stack,
+      );
+    }
+    // No new account exists. Remove its draft before permitting a fresh seed.
+    try {
+      await _storage.delete(kPendingAccountMnemonicStorageKey);
+    } catch (cleanupError) {
+      Error.throwWithStackTrace(
+        WalletAccountSetupInterruptedException(null, cleanupError),
+        stack,
+      );
+    }
+  }
+
   Future<void> _clearPendingAccountSetup() async {
     try {
       await _storage.delete(kPendingAccountMnemonicStorageKey);
@@ -1270,6 +1377,25 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final secret = SoftwareWalletSecret.decode(draft['mnemonic'] as String);
     final dbPath = await _getDbPath();
     final network = draft['network'] as String;
+    String? deferredUuid;
+    if (draft['deferSetup'] == true) {
+      final uuid = await rust_wallet.findSoftwareAccountForMnemonic(
+        mnemonic: secret.encodeForStorage(),
+        network: network,
+        dbPath: dbPath,
+        zip32AccountIndex: 0,
+      );
+      requireCurrentSession();
+      deferredUuid = uuid;
+      if (uuid == null) {
+        // The interrupted attempt did not create an account. No existing
+        // account's presence can turn that unused seed into a recovery owner.
+        await _storage.delete(kPendingAccountMnemonicStorageKey);
+        await _storage.delete(kGiftWalletSetupStartedStorageKey);
+        return;
+      }
+    }
+
     final saved = await _storage.readString(_accountsKey);
     final savedUuids = {
       for (final item in saved == null ? const [] : jsonDecode(saved) as List)
@@ -1304,6 +1430,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             ? account.copyWith(
                 name: draft['name'] as String,
                 profilePictureId: draft['profilePictureId'] as String,
+                setupPending: draft['deferSetup'] == true,
+                giftEducationPending: draft['deferSetup'] == true,
               )
             : account,
       );
@@ -1312,11 +1440,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     if (!recovered) return;
     requireCurrentSession();
     await _saveAccounts(accounts);
-    if (current.activeAccountUuid case final uuid?) {
-      await _storage.writeString(_activeAccountKey, uuid);
+    final activeUuid = deferredUuid != null && draft['completed'] != true
+        ? deferredUuid
+        : current.activeAccountUuid;
+    if (activeUuid != null) {
+      await _storage.writeString(_activeAccountKey, activeUuid);
     }
     requireCurrentSession();
-    state = AsyncData(current.copyWith(accounts: accounts));
+    state = AsyncData(
+      AccountState(
+        accounts: accounts,
+        activeAccountUuid: activeUuid,
+        activeAddress: activeUuid == current.activeAccountUuid
+            ? current.activeAddress
+            : null,
+      ),
+    );
     await _storage.delete(kPendingAccountMnemonicStorageKey);
     await _storage.delete(kGiftWalletSetupStartedStorageKey);
     ref.read(accountSetupRecoveryGenerationProvider.notifier).completed();
@@ -2155,7 +2294,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
       await ref.read(appPasswordInputSourceProvider).clear();
       try {
-        await _storage.deleteAll();
+        await ref
+            .read(hideBalanceOnUnlockProvider.notifier)
+            .clearForWalletReset(_storage.deleteAll);
       } catch (e, st) {
         recordError(
           'secure storage wipe', // l10n-ignore: log label
