@@ -223,16 +223,15 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
-          SizedBox(
-            height: 16,
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: AppSpacing.sm),
             child: _error == null
                 ? null
                 : Align(
                     alignment: Alignment.centerLeft,
+                    heightFactor: 1,
                     child: Text(
                       _error!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.destructive,
                       ),

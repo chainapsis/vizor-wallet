@@ -176,6 +176,17 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     outsideScaffold: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-account-edit-scale-review',
+    description: 'Account edit sheet for localized validation and text scaling',
+    builder: buildMobileAccountsEditAccountUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+    allowPointer: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-account-removal-passcode',
     description: 'Passcode confirmation before account removal',
     builder: buildMobilePasscodeAccountRemovalCapture,
