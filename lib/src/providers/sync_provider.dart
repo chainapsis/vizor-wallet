@@ -15,6 +15,7 @@ import '../core/lifecycle/app_shutdown_signal.dart';
 import '../core/platform/device_power.dart';
 import '../core/storage/wallet_paths.dart';
 import '../core/storage/wallet_balance_cache.dart';
+import '../core/zcash/spendable_wait.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/one_time_ivk.dart' as rust_swap;
 import 'account_provider.dart';
@@ -218,6 +219,10 @@ class SyncState {
   final BigInt saplingPendingBalance;
   final BigInt orchardPendingBalance;
   final BigInt ironwoodPendingBalance;
+
+  /// The part of the shielded pending balances above that waits only on
+  /// confirmations, by transaction, as of the same balance read.
+  final PendingSpendable pendingSpendable;
   final bool canShieldTransparentBalance;
   final BigInt shieldTransparentFee;
   final BigInt shieldTransparentAmount;
@@ -479,6 +484,7 @@ class SyncState {
       saplingPendingBalance: balance?.saplingPending,
       orchardPendingBalance: balance?.orchardPending,
       ironwoodPendingBalance: balance?.ironwoodPending,
+      pendingSpendable: balance == null ? null : PendingSpendable.of(balance),
       canShieldTransparentBalance: hasAuthoritativeBalance
           ? canShieldTransparentBalance ?? this.canShieldTransparentBalance
           : this.canShieldTransparentBalance,
@@ -558,6 +564,7 @@ class SyncState {
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
     BigInt? ironwoodPendingBalance,
+    PendingSpendable? pendingSpendable,
     this.canShieldTransparentBalance = false,
     BigInt? shieldTransparentFee,
     BigInt? shieldTransparentAmount,
@@ -600,6 +607,7 @@ class SyncState {
        saplingPendingBalance = saplingPendingBalance ?? BigInt.zero,
        orchardPendingBalance = orchardPendingBalance ?? BigInt.zero,
        ironwoodPendingBalance = ironwoodPendingBalance ?? BigInt.zero,
+       pendingSpendable = pendingSpendable ?? PendingSpendable.none,
        shieldTransparentFee = shieldTransparentFee ?? BigInt.zero,
        shieldTransparentAmount = shieldTransparentAmount ?? BigInt.zero,
        spendableBalance = spendableBalance ?? BigInt.zero,
@@ -664,6 +672,7 @@ class SyncState {
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
     BigInt? ironwoodPendingBalance,
+    PendingSpendable? pendingSpendable,
     bool? canShieldTransparentBalance,
     BigInt? shieldTransparentFee,
     BigInt? shieldTransparentAmount,
@@ -745,6 +754,7 @@ class SyncState {
           orchardPendingBalance ?? this.orchardPendingBalance,
       ironwoodPendingBalance:
           ironwoodPendingBalance ?? this.ironwoodPendingBalance,
+      pendingSpendable: pendingSpendable ?? this.pendingSpendable,
       canShieldTransparentBalance:
           canShieldTransparentBalance ?? this.canShieldTransparentBalance,
       shieldTransparentFee: shieldTransparentFee ?? this.shieldTransparentFee,
@@ -2499,6 +2509,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
+        pendingSpendable: scopedPrev?.pendingSpendable,
         canShieldTransparentBalance:
             carried?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -2932,6 +2943,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
+        pendingSpendable: scopedPrev?.pendingSpendable,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -3069,6 +3081,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
+        pendingSpendable: scopedPrev?.pendingSpendable,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -4039,6 +4052,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? saplingPending;
     BigInt? orchardPending;
     BigInt? ironwoodPending;
+    PendingSpendable? pendingSpendable;
     BigInt? spendable;
     BigInt? total;
     bool? canShieldTransparentBalance;
@@ -4077,6 +4091,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           saplingPending = balance.saplingPending;
           orchardPending = balance.orchardPending;
           ironwoodPending = balance.ironwoodPending;
+          pendingSpendable = PendingSpendable.of(balance);
           spendable = balance.spendable;
           total = balance.total;
           hasAuthoritativeBalance = true;
@@ -4321,6 +4336,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ironwoodPendingBalance: useFetchedBalance
             ? ironwoodPending
             : carriedPrev?.ironwoodPendingBalance,
+        pendingSpendable: useFetchedBalance
+            ? pendingSpendable
+            : carriedPrev?.pendingSpendable,
         canShieldTransparentBalance: useFetchedBalance
             ? canShieldTransparentBalance ??
                   carriedPrev?.canShieldTransparentBalance ??

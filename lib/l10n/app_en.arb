@@ -570,6 +570,24 @@
   "@activityReceiptCardFee": {
     "description": "Label of a row on a transaction receipt: the fee for creating a gift card."
   },
+  "activityReceiptConfirmations": "Confirmations",
+  "@activityReceiptConfirmations": {
+    "description": "Label of a row on the receipt of a received transaction that cannot be spent yet: how many network confirmations it has."
+  },
+  "activityReceiptConfirmationsProgress": "{count} of {required}",
+  "@activityReceiptConfirmationsProgress": {
+    "description": "Value of the Confirmations row on a received transaction receipt: confirmations so far out of those needed before the funds can be spent.",
+    "placeholders": {
+      "count": {
+        "type": "String",
+        "example": "2"
+      },
+      "required": {
+        "type": "String",
+        "example": "6"
+      }
+    }
+  },
   "activityReceiptDetails": "Details",
   "@activityReceiptDetails": {
     "description": "Label of a row on a transaction receipt: a notice about transaction details."
@@ -617,6 +635,16 @@
   "activityReceiptRefreshFailed": "Latest transaction status could not be refreshed.",
   "@activityReceiptRefreshFailed": {
     "description": "Message shown when the latest status of a transaction could not be refreshed."
+  },
+  "activityReceiptSpendableAfter": "New funds can be spent after {count} confirmations.",
+  "@activityReceiptSpendableAfter": {
+    "description": "Caption under the detail card of a received transaction that cannot be spent yet.",
+    "placeholders": {
+      "count": {
+        "type": "String",
+        "example": "6"
+      }
+    }
   },
   "activityReceiptStatus": "Status",
   "@activityReceiptStatus": {
@@ -1566,6 +1594,24 @@
   "@commonAmount": {
     "description": "Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap. Shared by: common, migration."
   },
+  "commonAvailableInMinutes": "Available in {min}–{max} min",
+  "@commonAvailableInMinutes": {
+    "description": "Shown beside a clock icon on an activity row, as the Status of a received transaction, and as the disabled Review button on the send amount step: the funds have arrived but cannot be spent for about this many minutes. Keep it short; the row truncates. Shared by: activity, send.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "1"
+      },
+      "max": {
+        "type": "String",
+        "example": "3"
+      }
+    }
+  },
+  "commonAvailableInUnderMinute": "Available in under 1 min",
+  "@commonAvailableInUnderMinute": {
+    "description": "Same places as commonAvailableInMinutes, when the wait is under a minute. Shared by: activity, send."
+  },
   "commonBack": "Back",
   "@commonBack": {
     "description": "Screen-reader label of a back button."
@@ -2448,7 +2494,7 @@
   },
   "commonTotal": "Total",
   "@commonTotal": {
-    "description": "Label of the last row on the mobile donation summary showing amount plus fee. Shared by: donation, voting."
+    "description": "Label of the last row on the mobile donation summary showing amount plus fee, and of the total row in the Available now sheet and popover on Send. Shared by: donation, send, voting."
   },
   "commonTransactionExpired": "Transaction expired",
   "@commonTransactionExpired": {
@@ -11144,6 +11190,22 @@
   "@sendAmountCtaEnterAmount": {
     "description": "Label of the disabled primary button on the mobile amount step before an amount is entered."
   },
+  "sendAvailableChangeRow": "Finishing your last payment",
+  "@sendAvailableChangeRow": {
+    "description": "Row label in the Available now sheet (mobile) and popover (desktop) on Send: change coming back from the last payment this wallet sent, which cannot be spent yet."
+  },
+  "sendAvailableFootnote": "Funds are available after a few network confirmations.",
+  "@sendAvailableFootnote": {
+    "description": "Footnote of the Available now sheet (mobile) and popover (desktop) on Send."
+  },
+  "sendAvailableReceivedRow": "Just received",
+  "@sendAvailableReceivedRow": {
+    "description": "Row label in the Available now sheet (mobile) and popover (desktop) on Send: funds received from someone else that cannot be spent yet."
+  },
+  "sendAvailableTitle": "Available now",
+  "@sendAvailableTitle": {
+    "description": "Heading above the spendable amount in the sheet (mobile) and popover (desktop) that Send opens to show which funds cannot be spent yet."
+  },
   "sendBroadcastCancelledBeforeParams": "Sending was cancelled before proving parameters were downloaded.",
   "@sendBroadcastCancelledBeforeParams": {
     "description": "Error when the user declined the proving-parameter download during a send."
@@ -11991,6 +12053,20 @@
   "@sendStatusMobileReturnToSettings": {
     "description": "Button on the mobile status screen that returns to Settings after a donation attempt."
   },
+  "sendStatusMobileSendAgainIn": "It will confirm on-chain shortly. You can send again in {min}–{max} min.",
+  "@sendStatusMobileSendAgainIn": {
+    "description": "Body of the mobile send success screen when the payment used the whole spendable balance and the change comes back in a few minutes.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "1"
+      },
+      "max": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
   "sendStatusMobileSendingDonation": "Sending donation...",
   "@sendStatusMobileSendingDonation": {
     "description": "Title on the mobile status screen while a donation is being sent."
@@ -12063,6 +12139,34 @@
     "placeholders": {
       "count": {
         "type": "int"
+      }
+    }
+  },
+  "sendWaitingMoreInMinutes": "+{amount} in {min}–{max} min",
+  "@sendWaitingMoreInMinutes": {
+    "description": "Line under the spendable balance on the mobile send amount step: more funds become spendable in about this many minutes. Opens the Available now sheet. Keep it short; it shares a row with the Max button.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "1.30 ZEC"
+      },
+      "min": {
+        "type": "String",
+        "example": "1"
+      },
+      "max": {
+        "type": "String",
+        "example": "3"
+      }
+    }
+  },
+  "sendWaitingMoreInUnderMinute": "+{amount} in under 1 min",
+  "@sendWaitingMoreInUnderMinute": {
+    "description": "Same line as sendWaitingMoreInMinutes, when the wait is under a minute.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "1.30 ZEC"
       }
     }
   },

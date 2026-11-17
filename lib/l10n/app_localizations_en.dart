@@ -457,6 +457,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptCardFee => 'Card fee';
 
   @override
+  String get activityReceiptConfirmations => 'Confirmations';
+
+  @override
+  String activityReceiptConfirmationsProgress(String count, String required) {
+    return '$count of $required';
+  }
+
+  @override
   String get activityReceiptDetails => 'Details';
 
   @override
@@ -493,6 +501,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityReceiptRefreshFailed =>
       'Latest transaction status could not be refreshed.';
+
+  @override
+  String activityReceiptSpendableAfter(String count) {
+    return 'New funds can be spent after $count confirmations.';
+  }
 
   @override
   String get activityReceiptStatus => 'Status';
@@ -1167,6 +1180,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonAmount => 'Amount';
+
+  @override
+  String commonAvailableInMinutes(String min, String max) {
+    return 'Available in $min–$max min';
+  }
+
+  @override
+  String get commonAvailableInUnderMinute => 'Available in under 1 min';
 
   @override
   String get commonBack => 'Back';
@@ -8763,6 +8784,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendAmountCtaEnterAmount => 'Enter amount to continue';
 
   @override
+  String get sendAvailableChangeRow => 'Finishing your last payment';
+
+  @override
+  String get sendAvailableFootnote =>
+      'Funds are available after a few network confirmations.';
+
+  @override
+  String get sendAvailableReceivedRow => 'Just received';
+
+  @override
+  String get sendAvailableTitle => 'Available now';
+
+  @override
   String get sendBroadcastCancelledBeforeParams =>
       'Sending was cancelled before proving parameters were downloaded.';
 
@@ -9464,6 +9498,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendStatusMobileReturnToSettings => 'Return to settings';
 
   @override
+  String sendStatusMobileSendAgainIn(String min, String max) {
+    return 'It will confirm on-chain shortly. You can send again in $min–$max min.';
+  }
+
+  @override
   String get sendStatusMobileSendingDonation => 'Sending donation...';
 
   @override
@@ -9520,6 +9559,16 @@ class AppLocalizationsEn extends AppLocalizations {
       one: '1 previous transaction',
     );
     return '$_temp0';
+  }
+
+  @override
+  String sendWaitingMoreInMinutes(String amount, String min, String max) {
+    return '+$amount in $min–$max min';
+  }
+
+  @override
+  String sendWaitingMoreInUnderMinute(String amount) {
+    return '+$amount in under 1 min';
   }
 
   @override

@@ -423,6 +423,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityReceiptCardFee => '卡片手续费';
 
   @override
+  String get activityReceiptConfirmations => '确认数';
+
+  @override
+  String activityReceiptConfirmationsProgress(String count, String required) {
+    return '$count / $required';
+  }
+
+  @override
   String get activityReceiptDetails => '详情';
 
   @override
@@ -458,6 +466,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityReceiptRefreshFailed => '无法刷新最新的交易状态。';
+
+  @override
+  String activityReceiptSpendableAfter(String count) {
+    return '新收到的资金需经过 $count 次确认后才能使用。';
+  }
 
   @override
   String get activityReceiptStatus => '状态';
@@ -1118,6 +1131,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonAmount => '金额';
+
+  @override
+  String commonAvailableInMinutes(String min, String max) {
+    return '$min–$max 分钟后可用';
+  }
+
+  @override
+  String get commonAvailableInUnderMinute => '1 分钟内可用';
 
   @override
   String get commonBack => '返回';
@@ -8101,6 +8122,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendAmountCtaEnterAmount => '输入金额以继续';
 
   @override
+  String get sendAvailableChangeRow => '上一笔付款的找零';
+
+  @override
+  String get sendAvailableFootnote => '资金经过几次网络确认后即可使用。';
+
+  @override
+  String get sendAvailableReceivedRow => '刚刚收到';
+
+  @override
+  String get sendAvailableTitle => '现在可用';
+
+  @override
   String get sendBroadcastCancelledBeforeParams => '在下载证明参数之前，发送已取消。';
 
   @override
@@ -8721,6 +8754,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendStatusMobileReturnToSettings => '返回设置';
 
   @override
+  String sendStatusMobileSendAgainIn(String min, String max) {
+    return '交易即将在链上确认。$min–$max 分钟后可再次发送。';
+  }
+
+  @override
   String get sendStatusMobileSendingDonation => '正在发送捐赠...';
 
   @override
@@ -8774,6 +8812,16 @@ class AppLocalizationsZh extends AppLocalizations {
       other: '$count 笔历史交易',
     );
     return '$_temp0';
+  }
+
+  @override
+  String sendWaitingMoreInMinutes(String amount, String min, String max) {
+    return '+$amount，$min–$max 分钟后';
+  }
+
+  @override
+  String sendWaitingMoreInUnderMinute(String amount) {
+    return '+$amount，1 分钟内';
   }
 
   @override

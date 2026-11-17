@@ -9,6 +9,7 @@ import '../../../core/widgets/review_info_row.dart';
 import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
+import '../../../core/zcash/spendable_wait.dart';
 import '../../send/widgets/send_review_layout.dart';
 
 /// Display status of a received transaction on the redesigned receipt.
@@ -46,6 +47,7 @@ class ReceivedReceiptView extends StatelessWidget {
     this.memoText,
     this.memoExpanded = false,
     this.detailsLoading = false,
+    this.spendableWait,
     this.onShowFullAddress,
     this.onExpandMemo,
     this.onTxIdPressed,
@@ -98,6 +100,10 @@ class ReceivedReceiptView extends StatelessWidget {
   /// Awaiting detail, rather than a completed read with missing fields.
   final bool detailsLoading;
 
+  /// A completed receipt the account cannot spend yet: the Status row says
+  /// when it can, and a row counts its confirmations.
+  final ReceivedSpendableWait? spendableWait;
+
   /// "Show full address" ghost action on the From row.
   final VoidCallback? onShowFullAddress;
 
@@ -127,6 +133,11 @@ class ReceivedReceiptView extends StatelessWidget {
         l10n.commonInProgress,
         AppIcons.loader,
         colors.text.secondary,
+      ),
+      ReceivedReceiptStatus.completed when spendableWait != null => (
+        availableInLabel(l10n, spendableWait!.wait),
+        AppIcons.time,
+        colors.text.accent,
       ),
       ReceivedReceiptStatus.completed => (
         l10n.commonCompleted,
@@ -242,6 +253,16 @@ class ReceivedReceiptView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
+                if (status == ReceivedReceiptStatus.completed &&
+                    spendableWait != null)
+                  ReviewListRow(
+                    key: const ValueKey('received_receipt_confirmations'),
+                    label: l10n.activityReceiptConfirmations,
+                    value: l10n.activityReceiptConfirmationsProgress(
+                      spendableWait!.confirmations.toString(),
+                      spendableWait!.requiredConfirmations.toString(),
+                    ),
+                  ),
                 ReviewListRow(
                   label: l10n.commonTimestamp,
                   value: timestampText,
@@ -256,6 +277,24 @@ class ReceivedReceiptView extends StatelessWidget {
             ),
           ],
         ),
+        if (status == ReceivedReceiptStatus.completed && spendableWait != null)
+          Padding(
+            key: const ValueKey('received_receipt_spendable_after'),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.s,
+              AppSpacing.sm,
+              0,
+            ),
+            child: Text(
+              l10n.activityReceiptSpendableAfter(
+                spendableWait!.requiredConfirmations.toString(),
+              ),
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
       ],
     );
   }

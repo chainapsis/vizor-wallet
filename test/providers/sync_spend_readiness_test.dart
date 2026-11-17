@@ -125,6 +125,8 @@ class _Api extends RustLibApi {
       orchardPending: BigInt.zero,
       ironwoodPending: BigInt.zero,
       changePendingConfirmation: BigInt.zero,
+      pendingSpendable: const [],
+      pendingSpendableTipHeight: 0,
       valuePendingSpendability: BigInt.zero,
       uneconomicValue: BigInt.zero,
       spendable: amount,

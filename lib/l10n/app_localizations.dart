@@ -855,6 +855,18 @@ abstract class AppLocalizations {
   /// **'Card fee'**
   String get activityReceiptCardFee;
 
+  /// Label of a row on the receipt of a received transaction that cannot be spent yet: how many network confirmations it has.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmations'**
+  String get activityReceiptConfirmations;
+
+  /// Value of the Confirmations row on a received transaction receipt: confirmations so far out of those needed before the funds can be spent.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of {required}'**
+  String activityReceiptConfirmationsProgress(String count, String required);
+
   /// Label of a row on a transaction receipt: a notice about transaction details.
   ///
   /// In en, this message translates to:
@@ -926,6 +938,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Latest transaction status could not be refreshed.'**
   String get activityReceiptRefreshFailed;
+
+  /// Caption under the detail card of a received transaction that cannot be spent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'New funds can be spent after {count} confirmations.'**
+  String activityReceiptSpendableAfter(String count);
 
   /// Label of a row on a transaction receipt: the transaction status.
   ///
@@ -1948,6 +1966,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Amount'**
   String get commonAmount;
+
+  /// Shown beside a clock icon on an activity row, as the Status of a received transaction, and as the disabled Review button on the send amount step: the funds have arrived but cannot be spent for about this many minutes. Keep it short; the row truncates. Shared by: activity, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Available in {min}–{max} min'**
+  String commonAvailableInMinutes(String min, String max);
+
+  /// Same places as commonAvailableInMinutes, when the wait is under a minute. Shared by: activity, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Available in under 1 min'**
+  String get commonAvailableInUnderMinute;
 
   /// Screen-reader label of a back button.
   ///
@@ -3203,7 +3233,7 @@ abstract class AppLocalizations {
   /// **'Toggle flashlight'**
   String get commonToggleFlashlight;
 
-  /// Label of the last row on the mobile donation summary showing amount plus fee. Shared by: donation, voting.
+  /// Label of the last row on the mobile donation summary showing amount plus fee, and of the total row in the Available now sheet and popover on Send. Shared by: donation, send, voting.
   ///
   /// In en, this message translates to:
   /// **'Total'**
@@ -14342,6 +14372,30 @@ abstract class AppLocalizations {
   /// **'Enter amount to continue'**
   String get sendAmountCtaEnterAmount;
 
+  /// Row label in the Available now sheet (mobile) and popover (desktop) on Send: change coming back from the last payment this wallet sent, which cannot be spent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing your last payment'**
+  String get sendAvailableChangeRow;
+
+  /// Footnote of the Available now sheet (mobile) and popover (desktop) on Send.
+  ///
+  /// In en, this message translates to:
+  /// **'Funds are available after a few network confirmations.'**
+  String get sendAvailableFootnote;
+
+  /// Row label in the Available now sheet (mobile) and popover (desktop) on Send: funds received from someone else that cannot be spent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Just received'**
+  String get sendAvailableReceivedRow;
+
+  /// Heading above the spendable amount in the sheet (mobile) and popover (desktop) that Send opens to show which funds cannot be spent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Available now'**
+  String get sendAvailableTitle;
+
   /// Error when the user declined the proving-parameter download during a send.
   ///
   /// In en, this message translates to:
@@ -15488,6 +15542,12 @@ abstract class AppLocalizations {
   /// **'Return to settings'**
   String get sendStatusMobileReturnToSettings;
 
+  /// Body of the mobile send success screen when the payment used the whole spendable balance and the change comes back in a few minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'It will confirm on-chain shortly. You can send again in {min}–{max} min.'**
+  String sendStatusMobileSendAgainIn(String min, String max);
+
   /// Title on the mobile status screen while a donation is being sent.
   ///
   /// In en, this message translates to:
@@ -15577,6 +15637,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =1{1 previous transaction} other{{count} previous transactions}}'**
   String sendVerifyAddressPreviousTransactions(int count);
+
+  /// Line under the spendable balance on the mobile send amount step: more funds become spendable in about this many minutes. Opens the Available now sheet. Keep it short; it shares a row with the Max button.
+  ///
+  /// In en, this message translates to:
+  /// **'+{amount} in {min}–{max} min'**
+  String sendWaitingMoreInMinutes(String amount, String min, String max);
+
+  /// Same line as sendWaitingMoreInMinutes, when the wait is under a minute.
+  ///
+  /// In en, this message translates to:
+  /// **'+{amount} in under 1 min'**
+  String sendWaitingMoreInUnderMinute(String amount);
 
   /// [security] Error shown when the selected account changed while a passcode-protected secret screen was open.
   ///

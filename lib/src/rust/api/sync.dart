@@ -3033,6 +3033,51 @@ class PaymentLinkSpendEvidence {
           verifiedHeight == other.verifiedHeight;
 }
 
+/// Shielded funds one transaction gave the account that are short of
+/// confirmations: its change, or what it received.
+class PendingSpendableEntry {
+  /// As [`TransactionInfo::txid_hex`].
+  final String txidHex;
+
+  /// Change from the account's own transaction, not funds received.
+  final bool isChange;
+  final BigInt value;
+
+  /// Blocks after [`WalletBalance::pending_spendable_tip_height`] before
+  /// the funds can be spent.
+  final int blocksUntilSpendable;
+
+  /// Confirmations the transaction has at that tip; zero while unmined.
+  final int confirmations;
+
+  const PendingSpendableEntry({
+    required this.txidHex,
+    required this.isChange,
+    required this.value,
+    required this.blocksUntilSpendable,
+    required this.confirmations,
+  });
+
+  @override
+  int get hashCode =>
+      txidHex.hashCode ^
+      isChange.hashCode ^
+      value.hashCode ^
+      blocksUntilSpendable.hashCode ^
+      confirmations.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PendingSpendableEntry &&
+          runtimeType == other.runtimeType &&
+          txidHex == other.txidHex &&
+          isChange == other.isChange &&
+          value == other.value &&
+          blocksUntilSpendable == other.blocksUntilSpendable &&
+          confirmations == other.confirmations;
+}
+
 class ProposalResult {
   final BigInt proposalId;
   final bool needsSaplingParams;
@@ -3872,6 +3917,16 @@ class WalletBalance {
   /// Sum of spendable + locked + pending balances across all pools.
   final BigInt total;
 
+  /// The shielded pending value that waits only on confirmations, by
+  /// transaction, read in the same snapshot as the amounts above. Empty
+  /// while the wallet still has older blocks to scan; pending value it does
+  /// not list has no known wait.
+  final List<PendingSpendableEntry> pendingSpendable;
+
+  /// The wallet's chain tip when the entries were read: their block counts
+  /// and confirmations are measured from it.
+  final int pendingSpendableTipHeight;
+
   const WalletBalance({
     required this.availability,
     required this.transparentAuthority,
@@ -3896,6 +3951,8 @@ class WalletBalance {
     required this.spendable,
     required this.locked,
     required this.total,
+    required this.pendingSpendable,
+    required this.pendingSpendableTipHeight,
   });
 
   @override
@@ -3922,7 +3979,9 @@ class WalletBalance {
       uneconomicValue.hashCode ^
       spendable.hashCode ^
       locked.hashCode ^
-      total.hashCode;
+      total.hashCode ^
+      pendingSpendable.hashCode ^
+      pendingSpendableTipHeight.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3951,7 +4010,9 @@ class WalletBalance {
           uneconomicValue == other.uneconomicValue &&
           spendable == other.spendable &&
           locked == other.locked &&
-          total == other.total;
+          total == other.total &&
+          pendingSpendable == other.pendingSpendable &&
+          pendingSpendableTipHeight == other.pendingSpendableTipHeight;
 }
 
 enum WalletBalanceAvailability {

@@ -11,9 +11,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
+import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
@@ -53,9 +55,20 @@ Widget _app({
   SendReviewArgs? args,
   double textScale = 1,
   KeystoneBroadcastArgs? keystone,
+  SpendableWait? spendableWait,
 }) {
   return ProviderScope(
-    overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
+    overrides: [
+      syncProvider.overrideWith(FakeSyncNotifier.new),
+      if (spendableWait != null)
+        // Only the paying account has the wait, whichever account is active.
+        spendableWaitProvider.overrideWith(
+          (ref, accountUuid) =>
+              accountUuid == (args ?? _args).proposalAccountUuid
+              ? spendableWait
+              : null,
+        ),
+    ],
     child: MaterialApp(
       localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => MediaQuery(
@@ -346,6 +359,87 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
     expect(rustApi.discardCalls, [(BigInt.one, 'flow-1')]);
+  });
+
+  testWidgets('a payment that used the whole balance says when the account '
+      'can send again', (tester) async {
+    final changeWaiting = SpendableWait(
+      availableNow: BigInt.zero,
+      changeWaiting: BigInt.from(120000000),
+      receivedWaiting: BigInt.zero,
+      changeWait: const AvailableIn.minutes(1, 2),
+    );
+    await tester.pumpWidget(
+      _app(
+        spendableWait: changeWaiting,
+        broadcastRunner: _runner(
+          Future.value(
+            const SendBroadcastOutcome(
+              phase: SendBroadcastPhase.succeeded,
+              proposalConsumed: true,
+              txid: 'txid-1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Sent!'), findsOneWidget);
+    expect(
+      find.text(
+        'It will confirm on-chain shortly. You can send again in 1–2 min.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  // Change arriving in two parts: [firstValue] in 1–2 min, the rest later.
+  Future<void> pumpSentWithStaggeredChange(
+    WidgetTester tester,
+    BigInt firstValue,
+  ) async {
+    final rest = BigInt.from(120000000);
+    await tester.pumpWidget(
+      _app(
+        spendableWait: SpendableWait(
+          availableNow: BigInt.zero,
+          changeWaiting: firstValue + rest,
+          receivedWaiting: BigInt.zero,
+          changeWait: const AvailableIn.minutes(2, 4),
+          arrivals: [
+            (wait: const AvailableIn.minutes(2, 4), value: rest),
+            (wait: const AvailableIn.minutes(1, 2), value: firstValue),
+          ],
+        ),
+        broadcastRunner: _runner(
+          Future.value(
+            const SendBroadcastOutcome(
+              phase: SendBroadcastPhase.succeeded,
+              proposalConsumed: true,
+              txid: 'txid-1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+  }
+
+  testWidgets('send-again timing is the first waiting funds to arrive', (
+    tester,
+  ) async {
+    await pumpSentWithStaggeredChange(tester, BigInt.from(50000000));
+    expect(find.textContaining('send again in 1–2 min'), findsOneWidget);
+  });
+
+  testWidgets('earlier funds too small to pay a fee do not count', (
+    tester,
+  ) async {
+    await pumpSentWithStaggeredChange(tester, BigInt.from(8000));
+    expect(find.textContaining('send again in 2–4 min'), findsOneWidget);
   });
 
   testWidgets('sending phase shows the spinner state with no exit button', (

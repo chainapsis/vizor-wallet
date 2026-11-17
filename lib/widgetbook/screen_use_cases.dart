@@ -34,6 +34,8 @@ import '../src/app_bootstrap.dart';
 import '../src/features/activity/screens/activity_transaction_status_screen.dart';
 import '../src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
+import '../src/features/send/models/send_prefill_args.dart';
+import '../src/features/send/screens/send_screen.dart';
 import '../src/features/send/widgets/send_recipient_resolver.dart';
 import '../src/features/payment_links/services/payment_link_received_store.dart';
 import '../src/features/payment_links/services/payment_link_recovery_reconciler.dart';
@@ -54,6 +56,7 @@ import '../src/core/profile_pictures.dart';
 import '../src/core/l10n/app_language.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/zcash/spendable_wait.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
 import '../src/features/about/screens/about_screen.dart';
@@ -114,6 +117,7 @@ import '../src/providers/network_privacy_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
 import '../src/providers/receive_address_provider.dart';
 import '../src/providers/sync_failure.dart';
+import '../src/providers/spendable_wait_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
@@ -1249,6 +1253,101 @@ Widget buildMobileHomeActivitySkeletonUseCase(BuildContext context) =>
 
 Widget buildMobileHomeFiveActivitiesUseCase(BuildContext context) =>
     _buildHomeActivityComparison(mobile: true, loading: false);
+
+// Funds still confirming: the newest receipt has the first of its six
+// confirmations, with NU7's 25-second blocks.
+final _homeWaitingReceipt = _homeTx(5, minedHeight: 3_428_143);
+final _homeReceivedWaits = <String, ReceivedSpendableWait>{
+  _homeWaitingReceipt.txidHex: (
+    wait: const AvailableIn.minutes(1, 3),
+    confirmations: 1,
+    requiredConfirmations: 6,
+  ),
+};
+
+SyncState _homeReceivedWaitingState() => _homeSyncedState(
+  orchardBalance: BigInt.from(120000000),
+  recentTransactions: [
+    _homeWaitingReceipt,
+    for (var i = 4; i >= 1; i--) _homeTx(i),
+  ],
+).copyWith(hasRecentTransactionsData: true);
+
+/// Home while the newest receipt cannot be spent yet: its row says when.
+Widget buildMobileHomeReceivedWaitingUseCase(BuildContext context) =>
+    _buildMobileHomeUseCase(
+      accountState: _accountsDesignState,
+      syncState: _homeReceivedWaitingState(),
+      votingVisible: false,
+      constrainToPreviewFrame: false,
+      receivedSpendableWaits: _homeReceivedWaits,
+    );
+
+Widget buildDesktopHomeReceivedWaitingUseCase(BuildContext context) =>
+    _buildDesktopHomeUseCase(
+      accountState: _accountsDesignState,
+      syncState: _homeReceivedWaitingState(),
+      migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+      zecUsdPrice: 70,
+      receivedSpendableWaits: _homeReceivedWaits,
+    );
+
+/// Desktop Send with an amount that funds still confirming will cover.
+Widget buildDesktopSendAmountWaitingUseCase(BuildContext context) =>
+    _buildDesktopHomeUseCase(
+      accountState: _accountsDesignState,
+      syncState: _homeReceivedWaitingState(),
+      migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+      zecUsdPrice: 70,
+      initialLocation: '/send',
+      spendableWait: SpendableWait(
+        availableNow: BigInt.from(120000000),
+        changeWaiting: BigInt.zero,
+        receivedWaiting: BigInt.from(130000000),
+        receivedWait: const AvailableIn.minutes(1, 3),
+      ),
+      sendScreen: const SendScreen(
+        prefill: SendPrefillArgs(
+          id: 'preview-spendable-wait',
+          source: 'preview',
+          address: '',
+          amountText: '2',
+        ),
+      ),
+    );
+
+/// Mobile receipt of a shielded receive with two of its six confirmations.
+Widget buildMobileReceiptSpendableWaitUseCase(BuildContext context) {
+  final tx = _ironwoodLabelAuditTx('received');
+  final detail = rust_sync.TransactionDetail(
+    transparentOmissions: const [],
+    txidHex: tx.txidHex,
+    txKind: tx.txKind,
+    outputs: const [],
+    detailsComplete: true,
+    provisional: false,
+    transparentRecipients: const [],
+  );
+  return _buildMobileZeroValueUseCase(
+    MobileTransactionStatusScreen(
+      args: MobileTransactionStatusArgs(
+        txidHex: tx.txidHex,
+        txKind: tx.txKind,
+        initialTransaction: tx,
+        initialDetail: detail,
+      ),
+      historyLoader: (_, _) async => [tx],
+      detailLoader: (_, _) async => detail,
+    ),
+    receivedSpendableWaits: {
+      tx.txidHex: (
+        wait: const AvailableIn.minutes(1, 2),
+        confirmations: 2,
+        requiredConfirmations: 6,
+      ),
+    },
+  );
+}
 
 /// Identical account, balance, banners and viewport; only Activity changes.
 Widget _buildHomeActivityComparison({
@@ -2463,9 +2562,16 @@ Widget _mobileZeroValueReceipt(String kind) {
   );
 }
 
-Widget _buildMobileZeroValueUseCase(Widget screen) {
+Widget _buildMobileZeroValueUseCase(
+  Widget screen, {
+  Map<String, ReceivedSpendableWait>? receivedSpendableWaits,
+}) {
   return ProviderScope(
     overrides: [
+      if (receivedSpendableWaits != null)
+        activeReceivedSpendableWaitsProvider.overrideWithValue(
+          receivedSpendableWaits,
+        ),
       appBootstrapProvider.overrideWithValue(
         _homeBootstrap(_accountsDesignState),
       ),
@@ -3818,6 +3924,7 @@ Widget _buildMobileHomeUseCase({
   bool constrainToPreviewFrame = true,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
+  Map<String, ReceivedSpendableWait>? receivedSpendableWaits,
 }) {
   final harness = _MobileHomeHarness(
     adaptive: adaptive,
@@ -3830,6 +3937,10 @@ Widget _buildMobileHomeUseCase({
   );
   return ProviderScope(
     overrides: [
+      if (receivedSpendableWaits != null)
+        activeReceivedSpendableWaitsProvider.overrideWithValue(
+          receivedSpendableWaits,
+        ),
       if (sidebarLocked)
         externalActionGuardProvider.overrideWith(
           _PreviewLockedNavigationGuard.new,
@@ -3969,9 +4080,20 @@ Widget _buildDesktopHomeUseCase({
   bool? privateQueries,
   String initialLocation = '/home',
   bool setupPreview = false,
+  Map<String, ReceivedSpendableWait>? receivedSpendableWaits,
+  SpendableWait? spendableWait,
+  Widget? sendScreen,
 }) {
   return ProviderScope(
     overrides: [
+      if (receivedSpendableWaits != null)
+        activeReceivedSpendableWaitsProvider.overrideWithValue(
+          receivedSpendableWaits,
+        ),
+      if (spendableWait != null)
+        spendableWaitProvider.overrideWith((ref, accountUuid) => spendableWait),
+      if (sendScreen != null)
+        zecLiveUsdUnitPriceProvider.overrideWithValue(zecUsdPrice),
       if (privateQueries != null)
         enhancePirProvider.overrideWith(
           () => _PreviewPrivateQueries(privateQueries),
@@ -4047,6 +4169,7 @@ Widget _buildDesktopHomeUseCase({
         _DesktopHomeHarness(
           receiptArgs: receiptArgs,
           initialLocation: initialLocation,
+          sendScreen: sendScreen,
         ),
   );
 }
@@ -4853,11 +4976,18 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
 }
 
 class _DesktopHomeHarness extends StatefulWidget {
-  const _DesktopHomeHarness({this.receiptArgs, this.initialLocation = '/home'});
+  const _DesktopHomeHarness({
+    this.receiptArgs,
+    this.initialLocation = '/home',
+    this.sendScreen,
+  });
 
   /// Opens the production receipt for these args instead of the home screen.
   final ActivityTransactionStatusArgs? receiptArgs;
   final String initialLocation;
+
+  /// The production Send screen for `/send`, in place of its placeholder.
+  final Widget? sendScreen;
 
   @override
   State<_DesktopHomeHarness> createState() => _DesktopHomeHarnessState();
@@ -4899,7 +5029,9 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
           ),
         GoRoute(
           path: '/send',
-          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
+          builder: (_, _) =>
+              widget.sendScreen ??
+              const _PreviewRoutePlaceholder(label: '/send'),
         ),
         GoRoute(
           path: '/receive',
@@ -5944,11 +6076,11 @@ SyncState _homeSyncedState({
   );
 }
 
-rust_sync.TransactionInfo _homeTx(int index) {
+rust_sync.TransactionInfo _homeTx(int index, {int? minedHeight}) {
   final seconds = BigInt.from(1800000000 + index);
   return rust_sync.TransactionInfo(
     txidHex: 'preview-home-tx-$index',
-    minedHeight: BigInt.from(1000 + index),
+    minedHeight: BigInt.from(minedHeight ?? 1000 + index),
     expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
