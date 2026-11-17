@@ -21,9 +21,9 @@ use super::{PendingSpendable, WalletBalance};
 /// that can still be short of confirmations at `target`: the first one
 /// after note `:after`, so each call resumes where the last one stopped.
 ///
-/// The transaction is mined above `floor`, or unmined and still able to be
-/// mined. A note at or below the marginal fee is uneconomic, which the summary
-/// counts apart from pending value. The key scope is the note's own: change
+/// The transaction is mined above `floor`, or unmined, unexpired and new
+/// ([`UNMINED_GRACE_BLOCKS`]). A note at or below the marginal fee is
+/// uneconomic, which the summary counts apart from pending value. The key scope is the note's own: change
 /// has no address row to read one from.
 fn waiting_note_sql(pool: &str) -> String {
     format!(
@@ -51,7 +51,9 @@ fn waiting_note_sql(pool: &str) -> String {
            AND rn.value > :uneconomic
            AND (t.mined_height > :floor
                 OR (t.mined_height IS NULL
-                    AND (t.expiry_height = 0 OR t.expiry_height >= :target)))
+                    AND (t.expiry_height = 0 OR t.expiry_height >= :target)
+                    AND COALESCE(t.target_height, t.min_observed_height)
+                        + :unmined_grace >= :target))
            AND rn.id NOT IN (
                SELECT {pool}_received_note_id FROM {pool}_received_note_spends)
          GROUP BY rn.id
@@ -73,6 +75,14 @@ const UNSCANNED_BELOW_SQL: &str = "
 /// The scan queue's code for a scanned range; every range still to be scanned
 /// has a higher one.
 const SCANNED_PRIORITY: i64 = 10;
+
+/// Blocks past the height an unmined transaction was built for, or first seen
+/// at, during which it is still expected in the next block.
+///
+/// A new transaction normally mines within a block or two, which is what an
+/// unmined note's wait assumes. One still unmined after that may sit in the
+/// mempool until it expires, so no wait is stated for it.
+const UNMINED_GRACE_BLOCKS: u32 = 2;
 
 const POOLS: [(&str, ShieldedPool); 3] = [
     ("sapling", ShieldedPool::Sapling),
@@ -137,6 +147,7 @@ pub(super) fn read(
                     ":uneconomic": u64::from(zip317::MARGINAL_FEE),
                     ":floor": floor,
                     ":target": target_height,
+                    ":unmined_grace": UNMINED_GRACE_BLOCKS,
                     ":after": after,
                 },
                 |row| {
@@ -462,21 +473,23 @@ mod tests {
     }
 
     #[test]
-    fn an_unmined_receipt_waits_until_it_expires() {
+    fn an_unmined_receipt_is_timed_only_while_new_and_unexpired() {
         let mut st = wallet_with_a_new_receipt();
         let target = u32::from(st.wallet().chain_height().unwrap().unwrap()) + 1;
-        let unmine = |st: &State, expiry: u32| {
+        // Unmined, first seen `seen_blocks_ago` blocks before the next one.
+        let unmine = |st: &State, expiry: u32, seen_blocks_ago: u32| {
             st.wallet()
                 .conn()
                 .execute(
                     "UPDATE transactions
-                     SET mined_height = NULL, block = NULL, expiry_height = ?1",
-                    [expiry],
+                     SET mined_height = NULL, block = NULL, expiry_height = ?1,
+                         min_observed_height = ?2",
+                    [expiry, target - seen_blocks_ago],
                 )
                 .unwrap();
         };
 
-        unmine(&st, target);
+        unmine(&st, target, UNMINED_GRACE_BLOCKS);
         let (entries, _, pending) = snapshot(&mut st);
         assert_eq!(pending, VALUE);
         assert_eq!(entries.len(), 1);
@@ -484,7 +497,13 @@ mod tests {
         assert_eq!(entries[0].blocks_until_spendable, 6);
         assert_eq!(entries[0].confirmations, 0);
 
-        unmine(&st, target - 1);
+        // Still pending, but too long unmined to promise the next block.
+        unmine(&st, target, UNMINED_GRACE_BLOCKS + 1);
+        let (entries, _, pending) = snapshot(&mut st);
+        assert_eq!(pending, VALUE);
+        assert!(entries.is_empty());
+
+        unmine(&st, target - 1, 1);
         let (entries, _, pending) = snapshot(&mut st);
         assert_eq!(pending, 0);
         assert!(entries.is_empty());
