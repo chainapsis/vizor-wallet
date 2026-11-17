@@ -2,22 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/hide_balance_on_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import '../fakes/controlled_privacy_store.dart';
 
-class _Store extends AppSecureStore {
-  _Store() : super.testing(storage: const FlutterSecureStorage());
-
-  final values = <String, String>{};
-  final writes = <String>[];
-  Completer<void>? blocked;
-  bool failWrites = false;
-
+class _Store extends ControlledPrivacyStore {
   @override
   Future<bool> verifyPassword(String password) {
     final valid = password == 'Password1!';
@@ -28,14 +21,6 @@ class _Store extends AppSecureStore {
   @override
   Future<bool> verifyPasswordOnly(String password) =>
       Future.value(password == 'Password1!');
-
-  @override
-  Future<void> writePlain(String key, String value) async {
-    writes.add('$key=$value');
-    await blocked?.future;
-    if (failWrites) throw StateError('storage unavailable');
-    values[key] = value;
-  }
 }
 
 AppBootstrapState _bootstrap({

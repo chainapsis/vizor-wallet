@@ -11,6 +11,8 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/l10n/l10n.dart';
 import 'package:zcash_wallet/src/core/privacy/flip_to_hide_balance_host.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/storage/privacy_mode_persistence.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/flip_to_hide_balance_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
@@ -327,6 +329,150 @@ void main() {
     expect(store.values.values, everyElement('true'));
     expect(tester.takeException(), isNull);
   });
+  for (final endSession in [false, true]) {
+    testWidgets(
+      'accepted reveal cleanup failure endSession=$endSession has consistent feedback',
+      (tester) async {
+        await pumpHost(tester, hidden: true);
+        final haptics = <MethodCall>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'HapticFeedback.vibrate') haptics.add(call);
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+        store.beforeOperation = (operation) async {
+          if (operation == 'delete:$kPrivacyModeRevealPendingKey') {
+            expect(container.read(privacyModeProvider), isFalse);
+            if (endSession) {
+              tester.binding.handleAppLifecycleStateChanged(
+                AppLifecycleState.inactive,
+              );
+              tester.binding.handleAppLifecycleStateChanged(
+                AppLifecycleState.hidden,
+              );
+              tester.binding.handleAppLifecycleStateChanged(
+                AppLifecycleState.inactive,
+              );
+              tester.binding.handleAppLifecycleStateChanged(
+                AppLifecycleState.resumed,
+              );
+            }
+            throw StateError('cleanup failed');
+          }
+        };
+        await flip(tester, back: true);
+        expect(container.read(privacyModeProvider), isFalse);
+        expect(find.text('123.45 ZEC'), findsOneWidget);
+        expect(
+          find.text('Balance shown'),
+          endSession ? findsNothing : findsOneWidget,
+        );
+        expect(haptics, hasLength(endSession ? 0 : 1));
+        expect(store.values[kPrivacyModeRevealPendingKey], 'true');
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
+  for (final cancellation in ['lock', 'background', 'disable', 'dispose']) {
+    for (final afterCommit in [false, true]) {
+      testWidgets(
+        '$cancellation plus failed rollback (afterCommit=$afterCommit) stays hidden after restart',
+        (tester) async {
+          await pumpHost(tester, hidden: true);
+          store.values[kPrivacyModeEnabledKey] = 'true';
+          final entered = Completer<void>();
+          final release = Completer<void>();
+          final haptics = <MethodCall>[];
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            (call) async {
+              if (call.method == 'HapticFeedback.vibrate') haptics.add(call);
+              return null;
+            },
+          );
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(SystemChannels.platform, null),
+          );
+          store.beforeOperation = (operation) async {
+            if (operation == 'write:$kPrivacyModeEnabledKey=false') {
+              entered.complete();
+              await release.future;
+            }
+            if (!afterCommit &&
+                operation == 'write:$kPrivacyModeEnabledKey=true') {
+              throw StateError('rollback failed');
+            }
+          };
+          store.afterOperation = (operation) {
+            if (afterCommit &&
+                operation == 'write:$kPrivacyModeEnabledKey=true') {
+              throw StateError('rollback acknowledgement failed');
+            }
+          };
+          await flip(tester, back: true);
+          await entered.future;
+          switch (cancellation) {
+            case 'lock':
+              (container.read(appSecurityProvider.notifier)
+                      as _FakeSecurityNotifier)
+                  .lockForTest();
+            case 'background':
+              tester.binding.handleAppLifecycleStateChanged(
+                AppLifecycleState.inactive,
+              );
+              tester.binding.handleAppLifecycleStateChanged(
+                AppLifecycleState.hidden,
+              );
+            case 'disable':
+              await container
+                  .read(flipToHideBalanceProvider.notifier)
+                  .set(false);
+            case 'dispose':
+              await tester.pumpWidget(const SizedBox.shrink());
+          }
+          release.complete();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(container.read(privacyModeProvider), isTrue);
+          expect(store.values[kPrivacyModeRevealPendingKey], 'true');
+          expect(find.text('123.45 ZEC'), findsNothing);
+          expect(find.text('Balance shown'), findsNothing);
+          expect(haptics, isEmpty);
+          expect(tester.takeException(), isNull);
+
+          final restarted = ControlledPrivacyStore()
+            ..values.addAll(store.values);
+          final hidden = await PrivacyModePersistence(
+            restarted,
+          ).readAndRecover();
+          await tester.pumpWidget(const SizedBox.shrink());
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.inactive,
+          );
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.resumed,
+          );
+          store = restarted;
+          await pumpHost(tester, hidden: hidden);
+          expect(find.text('masked'), findsOneWidget);
+          expect(find.text('123.45 ZEC'), findsNothing);
+          expect(find.text('Balance shown'), findsNothing);
+        },
+      );
+    }
+  }
+
   for (final language in ['en', 'ko', 'zh']) {
     for (final initiallyHidden in [false, true]) {
       testWidgets(

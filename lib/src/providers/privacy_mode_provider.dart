@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_bootstrap.dart';
 import '../core/storage/app_secure_store.dart';
+import '../core/storage/privacy_mode_persistence.dart';
 
 /// Completion and ownership of one privacy request, including reentrant inputs.
 class PrivacyModeChange {
@@ -14,11 +15,13 @@ class PrivacyModeChange {
 }
 
 class PrivacyModeNotifier extends Notifier<bool> {
-  PrivacyModeNotifier() : _store = AppSecureStore.instance;
+  PrivacyModeNotifier()
+    : _persistence = PrivacyModePersistence(AppSecureStore.instance);
 
-  PrivacyModeNotifier.testing({required AppSecureStore store}) : _store = store;
+  PrivacyModeNotifier.testing({required AppSecureStore store})
+    : _persistence = PrivacyModePersistence(store);
 
-  final AppSecureStore _store;
+  final PrivacyModePersistence _persistence;
   Future<void> _writes = Future<void>.value();
   int _revision = 0;
   bool _resetting = false;
@@ -92,30 +95,42 @@ class PrivacyModeNotifier extends Notifier<bool> {
       if (ref.mounted && revision == _revision) _requestedHidden = null;
     }
 
+    bool ownsRequest() => ref.mounted && revision == _revision;
+    bool revealActive() => canReveal == null || canReveal();
+
+    Future<bool> cancelReveal() async {
+      // A superseding request/reset owns the next write. Keep its protection
+      // intact instead of letting this request clear the durable marker.
+      if (!ownsRequest()) return false;
+      finishRequest();
+      await _persistence.writeMode(true);
+      if (ownsRequest()) await _persistence.clearPendingBestEffort();
+      return false;
+    }
+
     final write = _writes.then((_) async {
       try {
-        if (!enabled && canReveal != null && !canReveal()) {
+        if (!ownsRequest()) return false;
+        if (!enabled && !revealActive()) {
           finishRequest();
           return false;
         }
-        await _store.writePlain(
-          kPrivacyModeEnabledKey,
-          enabled ? 'true' : 'false',
-        );
-        if (!ref.mounted || revision != _revision) return false;
-        if (!enabled && canReveal != null && !canReveal()) {
-          // The write may have completed after locking/backgrounding. Restore
-          // the current mask on disk before the next queued change or reset.
-          finishRequest();
-          await _store.writePlain(
-            kPrivacyModeEnabledKey,
-            state ? 'true' : 'false',
-          );
-          return false;
+        if (!enabled) {
+          // Never persist `false` without a restart-safe hiding override.
+          await _persistence.prepareReveal();
+          if (!ownsRequest()) return false;
+          if (!revealActive()) return await cancelReveal();
         }
+        await _persistence.writeMode(enabled);
+        if (!ownsRequest()) return false;
+        if (!enabled && !revealActive()) return await cancelReveal();
+        // Commit synchronously with the final ownership/session check. Session
+        // changes during subsequent cleanup cannot cancel an accepted reveal.
         state = enabled;
         finishRequest();
-        return true;
+        // A state listener may synchronously issue a newer hide or reset.
+        if (ownsRequest()) await _persistence.clearPendingBestEffort();
+        return ownsRequest();
       } catch (_) {
         finishRequest();
         rethrow;

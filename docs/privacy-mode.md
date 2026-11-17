@@ -10,7 +10,9 @@ any wallet page (below).
 It changes presentation only. Validation, Max, proposals, and signing keep
 using real values, and network requests, storage, and native surfaces are
 unaffected. The setting is one flag shared by every account
-(`privacyModeProvider`, stored as `zcash_privacy_mode_enabled`).
+(`privacyModeProvider`, stored as `zcash_privacy_mode_enabled`). An incomplete
+reveal is tracked separately by `zcash_privacy_mode_reveal_pending_v1` in the
+same secure-store bucket and is cleared by a full wallet reset.
 
 ## Hide balance on unlock
 
@@ -48,8 +50,25 @@ the detector reads the latest requested visibility, even while a save waits.
 Success feedback follows a completed, still-current change. A failed save uses
 an error toast; hiding failures explicitly say the balance remains hidden.
 Locking, backgrounding, disabling the setting, or removing the host cancels a
-pending reveal and suppresses its feedback. If its write has already started,
-the saved mask is restored before queued changes or a wallet reset can finish.
+pending reveal and suppresses its feedback. Before writing the visible flag,
+the provider durably records a pending reveal. A failed preparation never writes
+the visible flag. If a session ends during the visible write, the provider
+attempts to restore the saved mask; failure leaves the pending marker intact.
+Superseding requests retain that marker until their own save succeeds.
+
+The final ownership/session check and in-memory reveal commit are synchronous.
+Marker cleanup follows this commit in the same ordered queue; a session ending
+during cleanup suppresses feedback but does not cancel an already-applied reveal.
+Cleanup failure is nonfatal: if the marker remains, the next launch hides amounts
+conservatively. Only a successful accepted change or saved hide may clear it.
+
+Bootstrap reads the marker before the Boolean preference. Any existing marker,
+including an unknown value, forces the first amount frame and semantics to be
+hidden even when the saved flag says visible. Startup attempts to save hiding
+before deleting the marker. A failed repair leaves it for a later startup or
+privacy change; no unbounded retry or detached cleanup runs. Unknown reads hide
+amounts, while unavailable secure storage retains the existing blocking startup
+flow. Legacy installs with no marker keep their saved Boolean preference.
 
 - `FlipToHideDetector` (`lib/src/core/privacy/flip_to_hide_detector.dart`)
   holds the thresholds: screen-down within about 40° of straight down, a turn

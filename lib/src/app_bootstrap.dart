@@ -14,6 +14,7 @@ import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
 import 'core/l10n/app_language.dart';
 import 'core/storage/app_secure_store.dart';
+import 'core/storage/privacy_mode_persistence.dart';
 import 'core/storage/enhance_pir_preference_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'core/storage/wallet_balance_cache.dart';
@@ -299,7 +300,9 @@ Future<AppBootstrapState> loadAppBootstrap({
     final explorerUrlTemplate = await _readExplorerUrlTemplate(storage);
     final themeMode = await _readThemeMode(storage);
     final appLanguage = await _readAppLanguage(storage);
-    final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
+    final privacyModeEnabled = await PrivacyModePersistence(
+      storage,
+    ).readAndRecover();
     final hideBalanceOnUnlockEnabled = await _readPlainBool(
       storage,
       key: kHideBalanceOnUnlockKey,
@@ -702,17 +705,6 @@ ThemeMode _decodeThemeMode(String? raw) {
     'dark' => ThemeMode.dark,
     _ => ThemeMode.system,
   };
-}
-
-Future<bool> _readPrivacyModeEnabled(AppSecureStore storage) async {
-  try {
-    return (await storage.readString(kPrivacyModeEnabledKey)) == 'true';
-  } on SecureStorageUnavailableException {
-    rethrow;
-  } catch (e) {
-    log('bootstrap: failed to read privacy mode: $e');
-    return false;
-  }
 }
 
 Future<bool> _readBiometricUnlockEnabled(AppSecureStore storage) async {

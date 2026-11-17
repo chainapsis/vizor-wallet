@@ -162,14 +162,18 @@ void main() {
 
   test('session ending during a reveal restores the saved mask', () async {
     setup(hidden: true);
-    store.blocked = Completer<void>();
+    final gate = Completer<void>();
+    store.beforeOperation = (operation) async {
+      if (operation == 'write:$kPrivacyModeEnabledKey=false') await gate.future;
+    };
     var active = true;
     final reveal = privacy.setFromFlip(false, isActive: () => active).completed;
     await Future<void>.delayed(Duration.zero);
     active = false;
-    store.blocked!.complete();
+    gate.complete();
     expect(await reveal, isFalse);
     expect(store.writes, [
+      '$kPrivacyModeRevealPendingKey=true',
       '$kPrivacyModeEnabledKey=false',
       '$kPrivacyModeEnabledKey=true',
     ]);
