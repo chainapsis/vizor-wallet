@@ -90,11 +90,8 @@ class AppMobileTabBar extends StatefulWidget {
 /// wherever the finger let go.
 class _AppMobileTabBarState extends State<AppMobileTabBar>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _horizontalPill =
-      AnimationController.unbounded(
-        vsync: this,
-        value: widget.currentIndex.toDouble(),
-      )..addListener(_animatePill);
+  late final AnimationController _horizontalPill;
+  late double _pillTarget;
   _TabBarTouch? _touch;
 
   /// Pill position in tab units while a drag is in progress.
@@ -132,12 +129,31 @@ class _AppMobileTabBarState extends State<AppMobileTabBar>
   void _animatePill() => setState(() {});
 
   void _movePill(double target, Duration duration, Curve curve) {
+    _pillTarget = target;
     if (_motion) {
       unawaited(
         _horizontalPill.animateTo(target, duration: duration, curve: curve),
       );
     } else {
       _horizontalPill.value = target;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _pillTarget = widget.currentIndex.toDouble();
+    _horizontalPill = AnimationController.unbounded(
+      vsync: this,
+      value: _pillTarget,
+    )..addListener(_animatePill);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_motion && _horizontalPill.isAnimating) {
+      _horizontalPill.value = _pillTarget;
     }
   }
 

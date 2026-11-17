@@ -416,6 +416,18 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Reduce Motion enabled during arrival snaps immediately', (
+    tester,
+  ) async {
+    await pumpBar(tester);
+    final gesture = await tester.startGesture(tab(tester, 2));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+    await pumpBar(tester, reducedMotion: true);
+    expect(pill(tester).center.dx, closeTo(tab(tester, 2).dx, 0.01));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
   testWidgets('vertical bar keeps its original selected-tab drag origin', (
     tester,
   ) async {
