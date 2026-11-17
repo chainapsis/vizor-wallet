@@ -60,6 +60,10 @@ class _MobileSwapSlippageStepperModalState
     final initial = widget.slippageBps.clamp(_minBps, _maxBps);
     _bps = initial;
     _controller = TextEditingController(text: _formatBps(initial));
+    // Raise the keyboard after the sheet has opened, not during its entrance.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) focusWhenMobileSheetOpens(context, _focusNode);
+    });
   }
 
   @override
@@ -145,7 +149,7 @@ class _MobileSwapSlippageStepperModalState
                         ? context.l10n.swapSlippageDescriptionPay
                         : context.l10n.swapSlippageDescriptionSwap,
                     textAlign: TextAlign.center,
-                    style: AppTypography.bodySmall.copyWith(
+                    style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
                   ),
@@ -192,7 +196,7 @@ class _MobileSwapSlippageStepperModalState
                                       'mobile_swap_slippage_error',
                                     ),
                                     textAlign: TextAlign.center,
-                                    style: AppTypography.labelMedium.copyWith(
+                                    style: AppTypography.labelLarge.copyWith(
                                       fontWeight: FontWeight.w500,
                                       color: colors.text.destructive,
                                     ),
@@ -285,7 +289,6 @@ class _MobileSwapSlippageStepperModalState
                 key: const ValueKey('mobile_swap_slippage_value'),
                 controller: _controller,
                 focusNode: _focusNode,
-                autofocus: true,
                 onChanged: _onChanged,
                 textAlign: TextAlign.center,
                 keyboardType: const TextInputType.numberWithOptions(

@@ -11,11 +11,11 @@ validated in the desktop test lane. Mobile builds, tests, and captures use
 
 | Entry | Account preparation | Completion |
 | --- | --- | --- |
-| Create a wallet | Introduction, address types, things to know, secret passphrase, account customisation, passcode | Optional Face ID, then Home |
+| Create a wallet | Passcode when needed, automatic account creation | Optional Face ID, then Home with backup and Learn Zcash cards |
 | Import a secret passphrase | Phrase entry and review, wallet birthday, account customisation, passcode when needed | Optional Face ID for initial setup, then Home |
 | Import a hardware wallet | Existing Keystone or Ledger connection, account/birthday steps, account customisation, passcode when needed | Existing capability and device gates apply |
 | Link Vizor Desktop | Introduction, scan, account selection, contacts, passcode when needed | Optional Face ID for initial setup, then Home |
-| Redeem a gift card into a new wallet | Card inspection, account customisation, passcode | Claim handoff, optional Face ID, then Home |
+| Redeem a gift card into a new wallet | Card inspection, passcode when needed | Claim handoff, optional Face ID, then Home |
 | Redeem a gift card into an imported wallet | Card inspection, existing import flow, receiving-account selection when needed | Claim handoff, optional Face ID, then Home |
 
 - Both Welcome and Add account offer the gift card entry, with new-account
@@ -30,8 +30,20 @@ validated in the desktop test lane. Mobile builds, tests, and captures use
   The poster is also used for deterministic previews, reduced motion, or decoder
   failure. The mobile video includes a brief loop crossfade. Playback follows
   both route visibility and app lifecycle.
-- Account customisation reuses the shared name/profile controls and random
-  suggestions. Gift creation requires this step and has no Back or Skip action.
+- Ordinary and Gift Card account creation generate a name and profile picture
+  without showing account customisation. The generated persona remains fixed
+  through credential confirmation and retries; Settings can edit it afterward.
+  Ordinary creation skips education and phrase display before Home. First accounts
+  generate their seed only after credential confirmation; additional accounts
+  create directly from Welcome using the unlocked credential. Submission, error
+  and recovery remain on Welcome (or the inspected Card for Gift creation).
+  Both creation paths set account-specific backup and education reminders on Home;
+  completing education never marks backup complete.
+- Passphrase, Keystone and Ledger import retain account customisation, including
+  imports entered from a Gift Card. Wallet Link retains imported account names.
+- Back from Gift credential setup returns to the inspected Card and clears the
+  attempted credential. Leaving setup releases only its owned inspection; durable
+  partial-account journals continue to protect recovery.
 - The passcode is six digits, using the existing wallet credential model. The
   keypad's reset/help action appears only on the app-start unlock screen.
 - Placeholder Terms/Privacy links are excluded until their documents exist.
@@ -56,12 +68,12 @@ Account ready: 1
 
 | Flow | Preparation steps after the entry position |
 | --- | --- |
-| Create | Address types → Things to know → Secret passphrase → Customise account → Passcode |
+| Create | Passcode |
 | Passphrase import | Phrase entry → Phrase review → Birthday → Customise account → Passcode |
 | Keystone | Device intro → Device scan → Account selection → Birthday → Customise account → Passcode |
 | Ledger | Device connect → Birthday → Customise account → Passcode |
 | Wallet Link | Link intro → Link scan → Account selection → Contact selection → Passcode |
-| Gift creation | Customise account → Passcode |
+| Gift creation | Passcode |
 
 - Welcome does not show a progress bar. Introduction and method/device selection
   use the common entry position.
@@ -69,9 +81,9 @@ Account ready: 1
   Account-ready/Face ID is 100%; the final preparation step stays below 100%.
 - Back returns to that screen's position. Choosing another method starts that
   method's plan rather than carrying forward a previous maximum.
-- Education Skip advances to Secret passphrase without removing the skipped
-  steps. Paste/manual entry, passcode confirmation, retries, and modal sheets
-  retain their current position.
+- Legacy education/phrase fixtures retain their original progress plan. Production
+  creation uses a separate passcode-only plan. Paste/manual entry, passcode
+  confirmation, retries, and modal sheets retain their current position.
 - Progress is not persisted. The route context carries no duplicate credential
   or mnemonic data, and invalid flow/step combinations fail explicitly.
 
@@ -100,8 +112,10 @@ to wallet setup.
 
 ### New-wallet commit boundary
 
-1. Customise Continue retains the name and profile picture as an in-memory draft.
-   It does not create the account or prepare the credential.
+1. Create on the inspected Card retains an automatically generated name and
+   profile picture in memory. For a first wallet it opens credential setup without
+   creating the account or preparing the credential. An additional account reuses
+   the configured credential and completes directly on the inspected Card.
 2. Passcode confirmation prepares the credential, creates the account, and durably
    saves its metadata and the incoming card with the receiving account UUID.
 3. Commit the credential and finish the setup journal before handing the checked
@@ -205,7 +219,7 @@ hardware/Wallet Link setup clears its start marker without deleting a pending
 mnemonic journal. Forgot passcode explicitly warns that resetting an unbacked
 account makes its funds unrecoverable.
 
-Abandoned Customise inspections are released only when no account handoff owns
+Abandoned account-setup inspections are released only when no account handoff owns
 them. The cleanup service preserves a cache while account-setup recovery material
 is pending. The existing lock-time cleanup guard still defers deletion; scheduling
 that deferred cleanup across unlock/restart remains a separate follow-up.
@@ -217,8 +231,8 @@ restores icon contrast after leaving Welcome in the same light/dark theme.
 
 Home's setup carousel is **manual**, using swipe and page indicators. It contains
 account-scoped backup guidance and Zcash education, with no chevron or automatic
-rotation. Account customisation is completed before Home; neither carousel item
-asks the user to name the account again.
+rotation. Creation assigns the account persona automatically; neither carousel item
+asks the user to name the account. Imports complete customisation before Home.
 
 The backup entry opens an introduction before revealing the phrase. **Remind me
 later** hides that account's Home reminder without marking backup complete. Its
@@ -243,14 +257,14 @@ requiring typed `remove`.
 ## Preview and verification
 
 Widgetbook: **Screens > Gift Cards > Mobile > Onboarding - Full walkthrough**.
-Focused cases cover entry, checking, inspected card, passcode, customisation,
+Focused cases cover entry, checking, inspected card, passcode,
 Face ID, long-scan warning, storage recovery, failure toast, and imported
 receiving-account selection. Preview broadcast/confirmation adapters are
 simulated; they are not evidence of a real transfer.
 
 Deterministic capture scenarios include `mobile-gift-onboarding-entry`,
 `mobile-gift-onboarding-checking`, `mobile-gift-onboarding-inspected`, and
-`mobile-gift-onboarding-customise`. Use the widget renderer for content comparison:
+`mobile-gift-onboarding-passcode`. Use the widget renderer for content comparison:
 
 ```bash
 scripts/figma-compare.sh widget --form-factor mobile --scenario <scenario> --theme <light|dark>
@@ -410,7 +424,9 @@ Windows/Linux use animated WebP without another player dependency. Both animatio
 assets contain the loop crossfade. Reduced motion and deterministic captures use
 the poster; playback follows route visibility and app lifecycle.
 
-Get started opens ordinary creation. Import wallet opens the selectors above,
+Get started opens password setup for a first wallet, or creates an additional
+account directly using the existing unlocked credential. Education and phrase
+display are deferred to Home, using the same reminders as Gift creation. Import wallet opens the selectors above,
 including the additional-account return context. Initial Welcome retains network
 settings; additional-account Welcome retains Back. The initial Welcome Gift
 button now opens desktop Gift setup. Additional-account Welcome offers the same
@@ -425,11 +441,19 @@ difference in review. Gift setup is integrated by the later new-account slice.
 
 ### Desktop interrupted setup recovery
 
-Customise forwards its persona draft to password setup without creating an account;
+Ordinary creation journals the generated seed in encrypted storage before the
+Rust mutation for both first and additional accounts. Recovery attaches the same
+seed and restores the persona, backup and education flags before Home. A completed
+journal left by cleanup failure preserves later backup/education completion and
+account selection; an incomplete journal selects the account it just recovered.
+
+
+Creation forwards its generated persona to password setup; imports forward their
+Customise draft. Neither creates an account before credential confirmation;
 additional accounts retain their existing credential and skip password setup.
 
 If account persistence is interrupted or its DB state cannot be confirmed,
-The final password step disables Back and offers **Retry setup**.
+The final password step (or additional-account Welcome) disables Back and offers **Retry setup**.
 Retry locks the session and reloads the existing startup snapshot without
 creating another account or preparing another password. Startup inspects the
 DB: an existing account goes to Unlock, confirmed empty setup goes to Welcome,
@@ -479,8 +503,8 @@ DB, production secrets, network, or Rust state.
 ### Desktop Gift into a new account
 
 Welcome and Add account now open `/gift` for paste or QR inspection. A fresh
-wallet continues to `/gift/customise`, then `/gift/set-password`. An unlocked
-existing wallet goes directly to Customise to add the receiving account. Both
+wallet continues directly to `/gift/set-password` with a generated persona. An unlocked
+existing wallet creates the receiving account directly on the inspected Card. Both
 use the shared Gift setup coordinator, account journal, and claim runner.
 
 The Gift is inspected before account creation. During a long scan, the user
@@ -501,8 +525,7 @@ branch is connected; mobile retains its existing import action.
 
 Widgetbook: Screens -> Onboarding -> Gift onboarding - Desktop. Deterministic desktop captures
 cover `desktop-gift-entry`, `desktop-gift-checking`, `desktop-gift-inspected`,
-`desktop-gift-password`, `desktop-gift-customise`,
-`desktop-gift-additional-customise`, `desktop-gift-check-error`, and
+`desktop-gift-password`, `desktop-gift-check-error`, and
 `desktop-gift-long-scan` in both themes. These fixtures use no production wallet
 state, storage, network, camera, or Rust operations.
 

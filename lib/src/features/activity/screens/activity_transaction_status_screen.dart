@@ -669,7 +669,7 @@ class _ActivityTransactionStatusScreenState
                 ReviewListRow(
                   label: context.l10n.commonTo,
                   value: context.l10n.activityBalanceIronwood,
-                  leadingIconName: AppIcons.shieldKeyholeOutline,
+                  leadingIconName: AppIcons.shieldKeyhole,
                 ),
                 const ReviewWrapDivider(),
               ],

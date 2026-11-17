@@ -352,7 +352,7 @@ void main() {
       tester
           .widget<Text>(find.byKey(const ValueKey('send_max_spendable')))
           .data,
-      '****** ZEC',
+      '•••••• ZEC',
     );
     await tester.tap(find.byKey(const ValueKey('send_spendable_wait_button')));
     await tester.pumpAndSettle();

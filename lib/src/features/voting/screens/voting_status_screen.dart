@@ -1352,7 +1352,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
         child: Column(
           children: [
             AppIcon(
-              AppIcons.ledgerBrand,
+              AppIcons.ledger,
               size: 40,
               color: colors.icon.regular,
               semanticLabel: 'Ledger', // l10n-ignore: product name

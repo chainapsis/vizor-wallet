@@ -189,10 +189,14 @@ class ZecAmount {
 
   ZecAmountPretty get activity => activityPretty();
 
-  ZecAmountPretty activityDetailPretty({String? denomination}) => pretty(
+  ZecAmountPretty activityDetailPretty({
+    String? denomination,
+    bool signed = false,
+  }) => pretty(
     minFractionDigits: 2,
     denomStyle: ZecDenomStyle.upper,
     denomination: denomination,
+    signed: signed,
   );
 
   ZecAmountPretty get activityDetail => activityDetailPretty();

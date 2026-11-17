@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../../voting_error_messages.dart';
@@ -131,12 +133,13 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
         : memoText.substring(lastBreak + 1);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(horizontal: kMobilePageMargin),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colors.background.ground,
           border: Border.all(color: colors.border.subtle),
           borderRadius: BorderRadius.circular(AppRadii.small),
+          boxShadow: mobileSurfaceShadows(colors),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(
@@ -161,7 +164,7 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
                         memo.bundleIndex + 1,
                         memo.bundleCount,
                       ),
-                      style: AppTypography.bodySmall.copyWith(
+                      style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                         fontWeight: FontWeight.w600,
                       ),
@@ -181,7 +184,7 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
                         maxLines: _memoLeadMaxLines,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: AppTypography.bodySmall.copyWith(
+                        style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.accent,
                         ),
                       ),
@@ -190,7 +193,7 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
                       maxLines: _memoFinalLineMaxLines,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
-                      style: AppTypography.bodySmall.copyWith(
+                      style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.accent,
                       ),
                     ),

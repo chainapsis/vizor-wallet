@@ -18,7 +18,9 @@ handling, and accessibility.
   name in Swift as cached 25-point template images. Flutter sends only the icon
   name, not PNG data. This is icon preparation, not capture of the background.
 - The native height includes its bottom safe-area clearance. The floating
-  Flutter bar's 64-pixel height and surrounding margins do not wrap this lane.
+  Flutter fallback bar's 60-pixel height and surrounding margins do not wrap
+  this lane. Flutter's tab icon flourishes and surrounding touch blocker also
+  stay in the fallback lane; UIKit owns native motion and hit testing.
 - The resolved app theme and text direction are passed to UIKit. Item titles
   come from the existing Flutter localizations.
 - Other platforms, older iOS versions and the expanded wallet sidebar retain
@@ -127,7 +129,9 @@ Flutter engine are retained; they are not replaced when a tab changes.
 `IosNativeTabBarRootHost` wraps the router and ordinary app overlays, including
 the payment-request card. Its native bar is the last child of a fixed root
 Stack, above normal pages, sheets and cards, and below the existing security
-and privacy hosts. A page's Cupertino transition does not move this host.
+and privacy hosts. A mobile page's fade/zoom or back swipe does not move this
+host. Accounts is a detail page that covers the tab bar; callbacks queued before
+the route change cannot select a tab behind it.
 The tab shell publishes its item configuration, guarded branch callback,
 navigation mode and viewport through an owned registration. It keeps a
 transparent native-height slot rather than hosting another native view.
@@ -247,7 +251,7 @@ Callbacks are invalidated immediately when the source owner is released.
 
 Page return visibility and input readiness are separate decisions. A committed
 page pop can request the tab bar's entrance before the outgoing page finishes
-its reverse animation. A Cupertino back gesture can also preview the bar while
+its reverse animation. A mobile edge-back gesture can also preview the bar while
 the finger is still down, but only when its exact previous route is the owning
 tab shell. Returning between two detail pages does not reveal the tab bar.
 

@@ -237,6 +237,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountsViewViewingKey => '뷰‍잉 키 보‍기';
 
   @override
+  String get activityAddAddressToContacts => '주‍소‍를 연‍락‍처‍에 추‍가';
+
+  @override
   String get activityAddressUnified => '통‍합 주‍소';
 
   @override
@@ -250,6 +253,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get activityBalanceOrchard => 'Orchard 잔‍액';
+
+  @override
+  String get activityBalanceTransparent => '공‍개 잔‍액';
 
   @override
   String get activityDetailsLoadFailed => '실‍패, 다‍시 시‍도';
@@ -471,6 +477,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityReceiptOutput => '출‍력';
 
   @override
+  String get activityReceiptRecipient => '받‍는 사‍람';
+
+  @override
   String get activityReceiptRefreshFailed => '최‍신 거‍래 상‍태‍를 불‍러‍오‍지 못‍했‍어‍요.';
 
   @override
@@ -572,7 +581,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityTitleReceiveInProgress => '받‍는 중...';
 
   @override
+  String get activityTitleReceiveZecFailed => 'ZEC 받‍기 실‍패';
+
+  @override
   String get activityTitleReceivedSuccessfully => '받‍았‍어‍요';
+
+  @override
+  String get activityTitleReceivedZec => 'ZEC 받‍음';
 
   @override
   String get activityTitleReceiving => '받‍는 중...';
@@ -581,10 +596,22 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityTitleReceivingVerb => '받‍는 중';
 
   @override
+  String get activityTitleReceivingZec => 'ZEC 받‍는 중...';
+
+  @override
+  String get activityTitleSendZecFailed => 'ZEC 보‍내‍기 실‍패';
+
+  @override
   String get activityTitleSendingVerb => '보‍내‍는 중';
 
   @override
+  String get activityTitleSendingZec => 'ZEC 보‍내‍는 중...';
+
+  @override
   String get activityTitleSent => '보‍냄';
+
+  @override
+  String get activityTitleSentZec => 'ZEC 보‍냄';
 
   @override
   String get activityTitleShielded => '비‍공‍개 전‍환';
@@ -1155,6 +1182,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonBackToWallet => '지‍갑‍으‍로 돌‍아‍가‍기';
+
+  @override
+  String get commonBalanceHidden => '잔‍액‍을 숨‍겼‍어‍요';
+
+  @override
+  String get commonBalanceShown => '잔‍액‍을 표‍시‍했‍어‍요';
 
   @override
   String get commonCalculatingEllipsis => '계‍산‍하‍는 중…';
@@ -2186,6 +2219,18 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeReceiveFirstZec => '첫 ZEC 받‍기';
+
+  @override
+  String get homeReceiveReceiveSubtitle => '주‍소‍나 QR 코‍드 공‍유';
+
+  @override
+  String get homeReceiveRedeemGiftCard => '기‍프‍트 카‍드 받‍기';
+
+  @override
+  String get homeReceiveRedeemGiftCardSubtitle => '받‍은 기‍프‍트 카‍드 추‍가';
+
+  @override
+  String get homeReceiveRequestSubtitle => '정‍확‍한 금‍액 요‍청';
 
   @override
   String get homeRecentActivity => '최‍근 활‍동';
@@ -6553,6 +6598,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingIntroTitle => '프‍라‍이‍버‍시‍가 지‍켜‍지‍는 세‍상';
 
   @override
+  String get onboardingIntroTitleMobile => 'Zcash 소‍개';
+
+  @override
   String get onboardingLinkVizorDesktop => 'Vizor 데‍스‍크‍톱 연‍결';
 
   @override
@@ -6985,9 +7033,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paySaveContactError => '연‍락‍처‍를 저‍장‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
-
-  @override
-  String get payScanBarrierDismiss => '닫‍기';
 
   @override
   String get payScanCaption => '받‍는 주‍소 QR 코‍드‍를 스‍캔‍하‍세‍요';
@@ -8380,6 +8425,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get poolTransparent => '공‍개';
 
   @override
+  String get privacyBalanceHiddenSaveFailed =>
+      '잔‍액‍을 숨‍겼‍지‍만 설‍정‍을 저‍장‍하‍지 못‍했‍어‍요.';
+
+  @override
+  String get privacyBalanceShowFailed =>
+      '잔‍액‍을 표‍시‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
   String get privateQueriesOptOutUnfinished =>
       '비‍공‍개 조‍회 끄‍기‍가 완‍료‍되‍지 않‍았‍어‍요. 공‍개 자‍금‍을 사‍용‍하‍려‍면 설‍정‍에‍서 다‍시 끄‍세‍요.';
 
@@ -8550,9 +8603,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveRequestZecButton => 'ZEC 요‍청‍하‍기';
-
-  @override
-  String get receiveShareAddress => '주‍소 공‍유';
 
   @override
   String get receiveShareFailed => '이 주‍소‍를 공‍유‍하‍지 못‍했‍어‍요. 대‍신 복‍사‍해 주‍세‍요.';
@@ -9104,6 +9154,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendRecipientLabel => '받‍는 사‍람';
 
   @override
+  String sendRecipientOwnAccountName(String name) {
+    return '$name (나)';
+  }
+
+  @override
   String get sendRecipientUnreadableRequestLink => '이 요‍청 링‍크‍를 읽‍을 수 없‍어‍요';
 
   @override
@@ -9520,11 +9575,18 @@ class AppLocalizationsKo extends AppLocalizations {
       '거‍래 링‍크‍는 이 탐‍색‍기‍에‍서 열‍려‍요. ZecBlock‍이‍나 원‍하‍는 다‍른 사‍이‍트‍를 사‍용‍하‍세‍요. 보‍낸 뒤‍에 공‍개 탐‍색‍기‍를 열‍면 내 IP 주‍소‍가 해‍당 거‍래‍와 연‍결‍될 수 있‍어‍요.';
 
   @override
+  String get settingsExplorerPrivateCopy =>
+      'ZecBlock‍은 어‍떤 거‍래‍를 여‍는‍지 전‍달‍받‍지 않‍지‍만, IP 주‍소‍는 여‍전‍히 볼 수 있‍어‍요. 페‍이‍지‍가 뜨‍는 데 시‍간‍이 더 걸‍리‍고, 새 거‍래‍는 블‍록‍에 포‍함‍된 뒤‍에 표‍시‍돼‍요.';
+
+  @override
+  String get settingsExplorerPrivateSubtitle => '비‍공‍개‍로 탐‍색‍해‍요';
+
+  @override
   String get settingsExplorerSaveFailed => '탐‍색‍기 URL‍을 저‍장‍하‍지 못‍했‍어‍요.';
 
   @override
   String settingsExplorerTemplateHint(String txid, String txHash) {
-    return '경‍로‍에 $txid 또‍는 $txHash‍를 넣‍거‍나 도‍메‍인‍만 입‍력‍하‍세‍요.';
+    return '거‍래 ID‍가 들‍어‍갈 자‍리‍에 $txid 또‍는 $txHash‍를 넣‍거‍나 도‍메‍인‍만 입‍력‍하‍세‍요.';
   }
 
   @override
@@ -9535,6 +9597,31 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsExplorerUrlLabel => '탐‍색‍기 URL';
+
+  @override
+  String get settingsFlipToHide => '뒤‍집‍어‍서 숨‍기‍기';
+
+  @override
+  String get settingsFlipToHideDescription =>
+      '휴‍대‍폰 화‍면‍을 아‍래‍로 뒤‍집‍으‍면 어‍느 화‍면‍에‍서‍든 금‍액‍이 숨‍겨‍져‍요. 다‍시 보‍려‍면 2‍초 안‍에 뒤‍집‍었‍다‍가 다‍시 돌‍려 주‍세‍요.';
+
+  @override
+  String get settingsFlipToHideUpdateFailed =>
+      '뒤‍집‍어‍서 숨‍기‍기 설‍정‍을 변‍경‍하‍지 못‍했‍어‍요.';
+
+  @override
+  String get settingsHideBalanceOnUnlock => '잠‍금 해‍제 시 잔‍액 숨‍기‍기';
+
+  @override
+  String get settingsHideBalanceOnUnlockDescription =>
+      '잠‍금‍을 해‍제‍할 때‍마‍다 잔‍액‍을 숨‍겨‍요. 눈 아‍이‍콘‍을 눌‍러 다‍시 볼 수 있‍어‍요.';
+
+  @override
+  String get settingsHideBalanceOnUnlockUpdateFailed =>
+      '잠‍금 해‍제 시 잔‍액 숨‍기‍기 설‍정‍을 변‍경‍하‍지 못‍했‍어‍요.';
+
+  @override
+  String get settingsHideBalanceTitle => '잔‍액 숨‍기‍기';
 
   @override
   String get settingsIncorrectPasscode => '암‍호‍가 맞‍지 않‍아‍요';
@@ -10103,7 +10190,14 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 키‍를 불‍러‍오‍려‍면 본‍인 확‍인‍을 다‍시 해 주‍세‍요.';
 
   @override
+  String get settingsViewingKeyCopied => '뷰‍잉 키‍를 복‍사‍했‍어‍요';
+
+  @override
   String get settingsViewingKeyCopy => '뷰‍잉 키 복‍사';
+
+  @override
+  String get settingsViewingKeyCopyFailed =>
+      '뷰‍잉 키‍를 복‍사‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get settingsViewingKeyExplanation =>
@@ -10710,9 +10804,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapDepositZecButton => 'ZEC 입‍금';
 
   @override
-  String get swapDismissBarrierLabel => '닫‍기';
-
-  @override
   String get swapFailureAmountPrecision =>
       '금‍액‍의 소‍수‍점 자‍릿‍수‍가 너‍무 많‍아‍요.\n소‍수‍점 자‍릿‍수‍를 줄‍여 다‍시 시‍도‍해 주‍세‍요.';
 
@@ -11102,6 +11193,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapStatusRowLabel => '상‍태';
 
   @override
+  String get swapSwitchDirection => '스‍왑 방‍향 전‍환';
+
+  @override
   String get swapTimeoutBody => '새 스‍왑‍을 시‍작‍해 주‍세‍요.';
 
   @override
@@ -11349,11 +11443,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingConfigCustomSource => '사‍용‍자 지‍정 소‍스';
 
   @override
-  String votingConfigDeleteNamed(String name) {
-    return '$name 삭‍제';
-  }
-
-  @override
   String get votingConfigDeleteSaved => '저‍장‍된 소‍스 삭‍제';
 
   @override
@@ -11420,7 +11509,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '제‍목‍이 [TEST]로 시‍작‍하‍는 인‍증‍된 라‍운‍드‍를 표‍시‍해‍요.';
 
   @override
-  String get votingConfigSources => '소‍스';
+  String get votingConfigSource => '소‍스';
 
   @override
   String get votingConfigTestVisibilityFailed =>

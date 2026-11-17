@@ -5,47 +5,59 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/config/network_config.dart';
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/address_display.dart';
 import '../../../../core/formatting/zec_amount.dart';
+import '../../../../core/layout/mobile/app_mobile_sheet.dart'
+    show showAppMobileSheet;
+import '../../../../core/layout/mobile/mobile_scroll_edge_fades.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/formatting/sync_status_label.dart'
+    show withTabularFigures;
 import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart'
+    show mobileTransactionProgressBackgroundImage;
+import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
-import '../../../../core/widgets/mobile/mobile_review_row.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
-import '../../../../core/widgets/review_info_row.dart';
 import '../../../../core/zcash/spendable_wait.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
+import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
+import '../../../pay/widgets/mobile/mobile_pay_add_contact_card.dart';
 import '../../../payment_links/widgets/mobile/payment_link_mobile_views.dart'
     show kPaymentLinkMobileCardHeight, kPaymentLinkMobileCardWidth;
 import '../../../payment_links/widgets/payment_link_gift_card.dart';
 import '../../../send/widgets/send_recipient_resolver.dart';
 import '../../../send/widgets/send_review_layout.dart'
-    show SendReviewContactRecipient;
+    show SendReviewAddressRecipient, SendReviewContactRecipient;
 import '../../../swap/models/swap_fiat_value_formatting.dart';
 import '../../activity_row_mapper.dart'
     show
+        activityKindIconName,
         formatActivityTimestamp,
         giftCardActivityTitle,
         transactionActivityPool,
         transactionShowsZeroAmount;
 import '../../gift_card_activity_index.dart';
 import '../../transaction_completeness.dart';
+import '../../widgets/mobile/transaction_type_hero.dart';
 import '../../widgets/transparent_details_section.dart';
 import '../transaction_receipt_loading.dart';
 
@@ -79,10 +91,11 @@ class MobileTransactionStatusArgs implements TransactionReceiptArgs {
 }
 
 /// Mobile transaction status/detail — Figma `ACTIVITY & STATUS` frames
-/// `Status Sending` (4752:70731), `Status Scucess` (4752:71303),
-/// `Status Fail` (4752:71663), and `Received` (4752:75264): the serif
-/// review header (amount / counterparty with the flow arrow) above the
-/// rounded detail card (status chip, message, timestamp, tx id, fee).
+/// `Status Sending` (9293:34799, sent), `Status Sent` (9292:34716,
+/// received), and `Status Sending` (9296:35482, failed): the type icon in
+/// liquid metal (or a Gift Card's art), the status chip and serif amount below
+/// it, then the rounded detail card (counterparty, message, tx id; timestamp,
+/// fee).
 class MobileTransactionStatusScreen extends TransactionReceiptScreen {
   const MobileTransactionStatusScreen({
     required this.args,
@@ -178,9 +191,9 @@ class _MobileTransactionStatusScreenState
     }
     if (_isIncoming) {
       return switch (_phase) {
-        _TxPhase.pending => context.l10n.activityTitleReceiving,
-        _TxPhase.succeeded => context.l10n.commonReceived,
-        _TxPhase.failed => context.l10n.activityTitleReceiveFailed,
+        _TxPhase.pending => context.l10n.activityTitleReceivingZec,
+        _TxPhase.succeeded => context.l10n.activityTitleReceivedZec,
+        _TxPhase.failed => context.l10n.activityTitleReceiveZecFailed,
       };
     }
     // Unclassified transactions and balance movements stay neutral, like
@@ -191,10 +204,31 @@ class _MobileTransactionStatusScreenState
       return context.l10n.activityTitleTransaction;
     }
     return switch (_phase) {
-      _TxPhase.pending => context.l10n.commonSending,
-      _TxPhase.succeeded => context.l10n.commonSentSuccessfully,
-      _TxPhase.failed => context.l10n.commonSendFailed,
+      _TxPhase.pending => context.l10n.activityTitleSendingZec,
+      _TxPhase.succeeded => context.l10n.activityTitleSentZec,
+      _TxPhase.failed => context.l10n.activityTitleSendZecFailed,
     };
+  }
+
+  /// Pins "Add address to contacts" over the receipt while [address] is an
+  /// unsaved recipient; otherwise the receipt scrolls on its own.
+  Widget _withSaveContactAction({
+    required String? address,
+    required Widget child,
+  }) {
+    if (address == null) return child;
+    return MobileStickyBottomAction(
+      action: AppButton(
+        key: const ValueKey('mobile_tx_status_add_contact'),
+        expand: true,
+        // A long translation or large text shortens instead of overflowing.
+        constrainContent: true,
+        onPressed: () => unawaited(_addRecipientToContacts(address)),
+        leading: const AppIcon(AppIcons.addNew),
+        child: Text(context.l10n.activityAddAddressToContacts),
+      ),
+      child: child,
+    );
   }
 
   Future<void> _openExplorer() async {
@@ -216,6 +250,30 @@ class _MobileTransactionStatusScreenState
     );
     if (!mounted) return;
     showAppToast(context, context.l10n.activityToastHashCopiedMobile);
+  }
+
+  /// Saves a sent payment's recipient as a Zcash contact, on the same card
+  /// the Pay flow offers after a payment.
+  Future<void> _addRecipientToContacts(String address) {
+    return showAppMobileSheet<void>(
+      context: context,
+      builder: (sheetContext) => MobilePayAddContactCard(
+        network: AddressBookNetwork.zcash,
+        address: address,
+        onCancel: () => Navigator.of(sheetContext).pop(),
+        onSave: (label, profilePictureId) async {
+          await ref
+              .read(addressBookProvider.notifier)
+              .addContact(
+                label: label,
+                network: AddressBookNetwork.zcash,
+                address: address,
+                profilePictureId: profilePictureId,
+              );
+          if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+        },
+      ),
+    );
   }
 
   Future<void> _showFullAddressSheet(String address) {
@@ -267,6 +325,7 @@ class _MobileTransactionStatusScreenState
             children: [
               MobileTopNav.back(
                 title: l10n.activityTitleTransaction,
+                titleStyle: AppTypography.headlineSmall,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
               Expanded(
@@ -292,6 +351,25 @@ class _MobileTransactionStatusScreenState
     final feePresentation = _feePresentationFor(tx, giftCard);
     final feeOnly = feePresentation == TransactionFeePresentation.feeOnly;
 
+    // The amount's dollar value at today's price, like Home's balance. A
+    // receipt is a stored record, so privacy mode masks it with the amount.
+    // A Gift Card shows the dollar value saved when it was made.
+    final fiatValue = feeOnly
+        ? null
+        : giftCard != null
+        ? (ref.watch(swapFeatureEnabledProvider) &&
+                  giftCard.fiatSnapshot != null
+              ? swapFormatCompactFiatValue(giftCard.fiatSnapshot!.amount)
+              : null)
+        : fiatTextForZatoshi(
+            tx.displayAmount.abs(),
+            zecUsdUnitPrice: ref.watch(zecHomeUsdUnitPriceProvider),
+          );
+    final fiatText = fiatValue == null
+        ? null
+        : privacyModeEnabled
+        ? fixedPrivacyMask()
+        : fiatValue;
     final amountText = feeOnly
         ? _feeText(tx, privacyModeEnabled: privacyModeEnabled) ?? '--'
         : _amountText(
@@ -308,10 +386,6 @@ class _MobileTransactionStatusScreenState
         ? null
         : detail?.sourceAddress?.trim();
     final sourcePool = detail?.sourcePool?.trim().toLowerCase();
-    final receivingOutput = giftCard == null && _isIncoming
-        ? _receivingOutputFor(detail)
-        : null;
-    final receivingAddress = receivingOutput?.address?.trim();
     final address = _isIncoming ? sourceAddress : primaryAddress;
     final poolLabel = giftCard != null
         ? _addressPoolLabel(giftCard.displayPool, null)
@@ -322,10 +396,6 @@ class _MobileTransactionStatusScreenState
             primaryAddress,
             ordinary: _isSent,
           );
-    final receivingPoolLabel = _addressPoolLabel(
-      receivingOutput?.pool,
-      receivingAddress,
-    );
     // The card's note lives in the Gift Card record, not the funding memo.
     final memo = giftCard != null
         ? giftCard.message?.trim()
@@ -334,108 +404,69 @@ class _MobileTransactionStatusScreenState
     // Resolve the counterparty to a saved contact / own account so the
     // From/To row shows a name + avatar instead of a raw address — parity
     // with the desktop receipt (sendReviewRecipientFor).
+    final addressBook = ref.watch(addressBookProvider);
     final contacts =
-        ref.watch(addressBookProvider).value?.contacts ??
-        const <AddressBookContact>[];
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
-    final namedRecipient = address == null || address.isEmpty
+        addressBook.value?.contacts ?? const <AddressBookContact>[];
+    final ownAccountsState = ref.watch(ownAccountAddressesProvider);
+    final ownAccounts = ownAccountsState.value ?? const <String, AccountInfo>{};
+    final resolvedRecipient = address == null || address.isEmpty
         ? null
-        : switch (sendReviewRecipientFor(
+        : sendReviewRecipientFor(
             contacts: contacts,
             address: address,
             ownAccounts: ownAccounts,
-          )) {
-            SendReviewContactRecipient r => r,
-            _ => null,
-          };
-
-    final hasAddress = address != null && address.isNotEmpty;
-    final amountBottom = _isMigration
-        ? _BottomInfo(
-            iconName: AppIcons.migrationSplit,
-            iconColor: colors.icon.regular,
-            text: l10n.activityBalanceFromOrchard,
-          )
-        : _isIncoming && receivingAddress != null && receivingAddress.isNotEmpty
-        ? _BottomInfo(
-            iconName: _poolIconNameFor(
-              receivingPoolLabel,
-              address: receivingAddress,
-            ),
-            iconColor: _poolIconColorFor(
-              context,
-              receivingPoolLabel,
-              address: receivingAddress,
-            ),
-            text: _truncateAddress(receivingAddress),
-          )
-        : !hasAddress && !(_isSent && detailsLoading) && poolLabel != null
-        ? _BottomInfo(
-            iconName: _poolIconNameFor(poolLabel),
-            iconColor: _poolIconColorFor(context, poolLabel),
-            text: poolLabel,
-          )
+          );
+    final namedRecipient = switch (resolvedRecipient) {
+      SendReviewContactRecipient r => r,
+      _ => null,
+    };
+    // A sent payment to an address that is neither a contact nor one of the
+    // wallet's own accounts offers to save it. Waits for both lists, so the
+    // button never flashes for a recipient that is already saved.
+    final unsavedRecipient =
+        _isSent &&
+            giftCard == null &&
+            !failed &&
+            !detailsLoading &&
+            addressBook.hasValue &&
+            ownAccountsState.hasValue &&
+            resolvedRecipient is SendReviewAddressRecipient
+        ? address
         : null;
-    final amountRow = _reviewRow(
-      label: switch (feePresentation) {
-        TransactionFeePresentation.separate => l10n.commonAmount,
-        TransactionFeePresentation.includedInAmount =>
-          l10n.activityReceiptNetChange,
-        TransactionFeePresentation.feeOnly => l10n.activityReceiptNetChange,
-      },
-      value: amountText,
-      leading: const MobileReviewZecBadge(),
-      // With no counterparty row (shielded senders are unknown), the
-      // pool tag moves under the amount — Figma `Received` keeps the
-      // pool on the bottom strip.
-      bottom: detailsLoading && _isIncoming ? null : amountBottom,
-      bottomPlaceholder: detailsLoading && _isIncoming
-          ? const Align(
-              alignment: Alignment.centerLeft,
-              child: ReceiptValueSkeleton(),
-            )
-          : null,
-    );
+
+    // The amount sits in the hero without a row label; only a net change says
+    // what it is. A shielding always showed its plain amount.
+    final amountCaption = _isShielding
+        ? null
+        : switch (feePresentation) {
+            TransactionFeePresentation.separate => null,
+            TransactionFeePresentation.includedInAmount =>
+              l10n.activityReceiptNetChange,
+            TransactionFeePresentation.feeOnly => l10n.activityReceiptNetChange,
+          };
     final addressRow = (address == null || address.isEmpty)
         ? null
-        : _reviewRow(
-            label: _isIncoming ? l10n.activityReceiptFrom : l10n.commonTo,
-            value: namedRecipient != null
-                ? namedRecipient.name
-                : _truncateAddress(address),
-            strikethrough: failed,
-            leading: namedRecipient != null
-                ? AppProfilePicture(
-                    profilePictureId: namedRecipient.profilePictureId,
-                    size: AppProfilePictureSize.navLarge,
-                  )
-                : MobileReviewIconBadge(
-                    child: AppIcon(
-                      AppIcons.wallet,
-                      size: 18,
-                      color: colors.icon.regular,
-                    ),
-                  ),
-            bottom: _BottomInfo(
-              iconName: poolLabel == null
+        : _ListRow(
+            label: _isIncoming
+                ? l10n.activityReceiptFrom
+                : l10n.activityReceiptRecipient,
+            value: _ValueWithIcon(
+              key: const ValueKey('mobile_tx_status_show_full_address'),
+              leadingIconName: poolLabel == null
                   ? null
                   : _poolIconNameFor(poolLabel, address: address),
-              iconColor: poolLabel == null
+              leadingIconColor: poolLabel == null
                   ? null
                   : _poolIconColorFor(context, poolLabel, address: address),
-              // For a named counterparty the headline holds the name, so the
-              // bottom strip surfaces the (still pool-tagged) address instead.
+              leadingIconLabel: poolLabel,
               text: namedRecipient != null
-                  ? _truncateAddress(address)
-                  : poolLabel,
+                  ? namedRecipient.name
+                  : _truncateAddress(address),
+              struckThrough: failed,
+              iconName: AppIcons.chevronForward,
+              onTap: () => unawaited(_showFullAddressSheet(address)),
+              semanticsLabel: l10n.commonShowFullAddress,
             ),
-            trailingActionLabel: l10n.commonShowFullAddress,
-            trailingActionKey: const ValueKey(
-              'mobile_tx_status_show_full_address',
-            ),
-            onTrailingAction: () => unawaited(_showFullAddressSheet(address)),
           );
     // Without an exact source address, the account the wallet recorded as
     // sending the received outputs still names where the funds came from.
@@ -452,21 +483,19 @@ class _MobileTransactionStatusScreenState
     };
     final sourceAccountRow = sourceAccount == null
         ? null
-        : _reviewRow(
+        : _ListRow(
             key: const ValueKey('received_from_account'),
             label: l10n.activityReceiptFrom,
-            value: sourceAccount.name,
-            leading: AppProfilePicture(
-              profilePictureId: sourceAccount.profilePictureId,
-              size: AppProfilePictureSize.navLarge,
+            value: _ValueWithIcon(
+              leadingIconName: sourceAccountPool == null
+                  ? null
+                  : _poolIconNameFor(sourceAccountPool),
+              leadingIconColor: sourceAccountPool == null
+                  ? null
+                  : _poolIconColorFor(context, sourceAccountPool),
+              leadingIconLabel: sourceAccountPool,
+              text: sourceAccount.name,
             ),
-            bottom: sourceAccountPool == null
-                ? null
-                : _BottomInfo(
-                    iconName: _poolIconNameFor(sourceAccountPool),
-                    iconColor: _poolIconColorFor(context, sourceAccountPool),
-                    text: sourceAccountPool,
-                  ),
           );
     final unknownFromLabel =
         _isIncoming &&
@@ -477,278 +506,334 @@ class _MobileTransactionStatusScreenState
         : null;
     final unknownFromRow = unknownFromLabel == null
         ? null
-        : _reviewRow(
+        : _ListRow(
             label: l10n.activityReceiptFrom,
-            value: unknownFromLabel,
-            leading: MobileReviewIconBadge(
-              child: AppIcon(
-                AppIcons.wallet,
-                size: 18,
-                color: colors.icon.regular,
-              ),
+            value: _ValueWithIcon(
+              leadingIconName: sourcePool == 'shielded'
+                  ? _poolIconNameFor(l10n.poolShielded)
+                  : null,
+              leadingIconColor: sourcePool == 'shielded'
+                  ? _poolIconColorFor(context, l10n.poolShielded)
+                  : null,
+              leadingIconLabel: sourcePool == 'shielded'
+                  ? l10n.poolShielded
+                  : null,
+              text: unknownFromLabel,
             ),
-            bottom: sourcePool == 'shielded'
-                ? _BottomInfo(
-                    iconName: _poolIconNameFor(l10n.poolShielded),
-                    iconColor: _poolIconColorFor(context, l10n.poolShielded),
-                    text: l10n.poolShielded,
-                  )
-                : null,
           );
 
-    // Sent flows read top-down as amount -> recipient; received flows as
-    // sender source -> amount, with the receiving output attached under
-    // Amount (Figma `Received` 4752:75264).
+    // Received flows name the sender; sent flows the recipient. Either one
+    // opens the detail card (Figma `Status Sending` 9293:34799).
     final fromRow = _isIncoming
         ? detailsLoading
-              ? ReceiptCounterpartySkeleton(label: l10n.activityReceiptFrom)
+              ? _ListRow(
+                  key: const ValueKey('mobile_tx_status_counterparty_skeleton'),
+                  label: l10n.activityReceiptFrom,
+                  value: const ReceiptValueSkeleton(),
+                )
               : addressRow ?? sourceAccountRow ?? unknownFromRow
         : null;
     // A send whose recipient the account did not record keeps the To row,
     // naming no one and offering nothing to verify.
     final toRow = _isSent && detailsLoading
-        ? ReceiptCounterpartySkeleton(label: l10n.commonTo)
+        ? _ListRow(
+            key: const ValueKey('mobile_tx_status_counterparty_skeleton'),
+            label: l10n.activityReceiptRecipient,
+            value: const ReceiptValueSkeleton(),
+          )
         : addressRow ??
               (giftCard == null && receiptHasUnknownRecipient(tx, detail)
-                  ? _reviewRow(
+                  ? _ListRow(
                       key: const ValueKey('receipt_unknown_recipient'),
-                      label: l10n.commonTo,
-                      value: l10n.activityDetailsUnknownRecipient,
-                      strikethrough: failed,
-                      leading: MobileReviewIconBadge(
-                        child: AppIcon(
-                          AppIcons.wallet,
-                          size: 18,
-                          color: colors.icon.regular,
-                        ),
+                      label: l10n.activityReceiptRecipient,
+                      value: _ValueWithIcon(
+                        text: l10n.activityDetailsUnknownRecipient,
+                        struckThrough: failed,
                       ),
                     )
                   : null);
-    // Self-shield (own transparent -> own shielded) has no external
-    // counterparty: mirror the desktop ShieldedReceiptView two-row flow,
-    // "From transparent balance" -> "Shielded balance". No Figma frame for
-    // this state yet; mobile is aligned to the (more informative) desktop
-    // shape pending one.
+    // Self-shield (own transparent -> own shielded) and migration have no
+    // external counterparty: the hero line says where the funds came from and
+    // the first card row names the balance they went to, like the desktop
+    // ShieldedReceiptView. No Figma frame for these states yet.
+    final counterpartyRow = giftCard != null
+        ? null
+        : _isMigration
+        ? _ListRow(
+            label: l10n.commonTo,
+            value: _ValueWithIcon(
+              leadingIconName: AppIcons.shieldKeyhole,
+              leadingIconColor: colors.icon.success,
+              leadingIconLabel: 'Ironwood', // l10n-ignore: product name
+              text: l10n.activityBalanceIronwood,
+            ),
+          )
+        : _isShielding
+        ? _ListRow(
+            label: l10n.commonTo,
+            value: _ValueWithIcon(
+              leadingIconName: AppIcons.shieldKeyhole,
+              leadingIconColor: colors.icon.brandCrimson,
+              leadingIconLabel: l10n.poolShielded,
+              text: l10n.commonShieldedBalance,
+            ),
+          )
+        : _isIncoming
+        ? fromRow
+        : toRow;
+    // What the hero line used to say, as card rows: a net change names what
+    // the amount is, and a shielding or migration says where it came from.
+    final sourceRow = _isShielding
+        ? _ListRow(
+            label: l10n.activityReceiptFrom,
+            value: _ValueWithIcon(
+              leadingIconName: AppIcons.transparentBalance,
+              leadingIconColor: colors.icon.muted,
+              leadingIconLabel: l10n.poolTransparent,
+              text: l10n.activityBalanceTransparent,
+            ),
+          )
+        : _isMigration
+        ? _ListRow(
+            label: l10n.activityReceiptFrom,
+            value: _ValueWithIcon(
+              leadingIconName: AppIcons.migrationSplit,
+              leadingIconColor: colors.icon.regular,
+              text: l10n.activityBalanceOrchard,
+            ),
+          )
+        : null;
+    final phase = _phaseFor(giftCard);
+    // A receipt whose funds cannot be spent yet says when they can.
     final spendableWait = giftCard != null
         ? null
         : receivedSpendableWaitFor(
             tx,
             ref.watch(activeReceivedSpendableWaitsProvider),
           );
-    final reviewChildren = giftCard != null
-        ? <Widget>[]
-        : _isMigration
-        ? <Widget>[
-            amountRow,
-            _reviewRow(
-              label: l10n.commonTo,
-              value: l10n.activityBalanceIronwood,
-              leading: MobileReviewIconBadge(
-                child: AppIcon(
-                  AppIcons.shieldKeyholeOutline,
-                  size: 18,
-                  color: colors.icon.regular,
-                ),
-              ),
-              bottom: _BottomInfo(
-                iconName: AppIcons.shieldKeyhole,
-                iconColor: colors.icon.success,
-                text: 'Ironwood', // l10n-ignore: product name
-              ),
+    final leadingRows = <Widget>[
+      // The status heads the card, in the same two columns as its rows.
+      _ListRow(
+        key: const ValueKey('mobile_tx_status_status'),
+        label: l10n.activityReceiptStatus,
+        value: _StatusChip(
+          phase: phase,
+          waiting: spendableWait != null,
+          statusText: giftCard == null
+              ? (spendableWait == null
+                    ? null
+                    : availableInLabel(l10n, spendableWait.wait))
+              : switch (phase) {
+                  _TxPhase.pending =>
+                    giftCard.kind == GiftCardActivityKind.created
+                        ? l10n.commonCreating
+                        : l10n.activityGiftStatusRedeeming,
+                  _TxPhase.succeeded =>
+                    giftCard.kind == GiftCardActivityKind.created
+                        ? l10n.commonCreated
+                        : l10n.activityGiftStatusRedeemed,
+                  _TxPhase.failed => l10n.commonFailed,
+                },
+        ),
+      ),
+      if (spendableWait != null)
+        _ListRow(
+          key: const ValueKey('mobile_tx_status_confirmations'),
+          label: l10n.activityReceiptConfirmations,
+          value: _ValueWithIcon(
+            text: l10n.activityReceiptConfirmationsProgress(
+              spendableWait.confirmations.toString(),
+              spendableWait.requiredConfirmations.toString(),
             ),
-          ]
-        : _isShielding
-        ? <Widget>[
-            _reviewRow(
-              label: l10n.commonAmount,
-              value: amountText,
-              leading: const MobileReviewZecBadge(),
-              bottom: _BottomInfo(
-                iconName: AppIcons.transparentBalance,
-                iconColor: colors.icon.muted,
-                text: l10n.activityBalanceFromTransparent,
-              ),
-            ),
-            _reviewRow(
-              label: l10n.commonTo,
-              value: l10n.commonShieldedBalance,
-              leading: MobileReviewIconBadge(
-                child: AppIcon(
-                  AppIcons.shieldKeyholeOutline,
-                  size: 18,
-                  color: colors.icon.regular,
-                ),
-              ),
-              bottom: _BottomInfo(
-                iconName: AppIcons.shieldKeyhole,
-                iconColor: colors.icon.brandCrimson,
-                text: l10n.poolShielded,
-              ),
-            ),
-          ]
-        : _isIncoming
-        ? <Widget>[?fromRow, amountRow]
-        : toRow == null
-        ? <Widget>[amountRow]
-        : <Widget>[amountRow, toRow];
+          ),
+        ),
+      if (amountCaption != null)
+        _ListRow(
+          key: const ValueKey('mobile_tx_status_net_change'),
+          label: amountCaption,
+          value: _ValueWithIcon(text: amountText),
+        ),
+      ?sourceRow,
+      ?counterpartyRow,
+    ];
 
     return Scaffold(
       backgroundColor: colors.background.window,
-      body: AppToastHost(
-        child: SafeArea(
-          child: Column(
-            children: [
-              MobileTopNav.back(
-                title: _titleFor(giftCard),
-                titleMaxLines: giftCard == null ? 1 : 2,
-                onBack: () => Navigator.of(context).maybePop(),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  key: const ValueKey('mobile_tx_status_scroll'),
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    AppSpacing.s,
-                    AppSpacing.sm,
-                    AppSpacing.md,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (giftCard != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.s),
-                          child: Center(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: PaymentLinkGiftCard(
-                                artwork: PaymentLinkCardArtwork.fromProtocolId(
-                                  giftCard.artworkId,
-                                ),
-                                cardWidth: kPaymentLinkMobileCardWidth,
-                                cardHeight: kPaymentLinkMobileCardHeight,
-                                amountText: hideAmountIfPrivacyMode(
-                                  formatZecAmount(giftCard.amountZatoshi),
-                                  privacyModeEnabled: privacyModeEnabled,
-                                  denomination: '',
-                                ),
-                                supportingText:
-                                    ref.watch(swapFeatureEnabledProvider) &&
-                                        !privacyModeEnabled &&
-                                        giftCard.fiatSnapshot != null
-                                    ? swapFormatCompactFiatValue(
-                                        giftCard.fiatSnapshot!.amount,
-                                      )
-                                    : null,
-                                showCaret: false,
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (reviewChildren.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppSpacing.md,
-                          ),
-                          child: ReviewInfoFlow(rows: reviewChildren),
-                        ),
-                      const SizedBox(height: AppSpacing.md),
-                      _DetailCard(
-                        phase: _phaseFor(giftCard),
-                        spendableWait: spendableWait,
-                        statusText: giftCard == null
-                            ? null
-                            : switch (_phaseFor(giftCard)) {
-                                _TxPhase.pending =>
-                                  giftCard.kind == GiftCardActivityKind.created
-                                      ? l10n.commonCreating
-                                      : l10n.activityGiftStatusRedeeming,
-                                _TxPhase.succeeded =>
-                                  giftCard.kind == GiftCardActivityKind.created
-                                      ? l10n.commonCreated
-                                      : l10n.activityGiftStatusRedeemed,
-                                _TxPhase.failed => l10n.commonFailed,
-                              },
-                        failed: failed,
-                        memo: memo,
-                        memoLoading:
-                            detailsLoading &&
-                            (_isSent || _isIncoming || _isShielding),
-                        messageExpanded: _messageExpanded,
-                        onToggleMessage: () => setState(
-                          () => _messageExpanded = !_messageExpanded,
-                        ),
-                        timestampText: _dateText(
-                          tx,
-                          override: giftCard?.activityTimestamp,
-                        ),
-                        txidText: truncatedTxid(
-                          zcashDisplayTxidHex(
-                            widget.args.txidHex,
-                            ZcashExplorerTxidOrder.protocol,
-                          ),
-                        ),
-                        onOpenExplorer: () => unawaited(_openExplorer()),
-                        isCardCreation:
-                            giftCard?.kind == GiftCardActivityKind.created,
-                        showsNetworkFee:
-                            giftCard == null &&
-                            unattributedReceiptNetworkFee(tx, receiptDetail) !=
-                                null,
-                        feeText: feeOnly
-                            ? null
-                            : _feeText(
-                                tx,
-                                giftCard: giftCard,
-                                privacyModeEnabled: privacyModeEnabled,
-                              ),
-                        detailsIncomplete: _showIncompleteDetails(tx),
+      body: _RecordBackdrop(
+        child: AppToastHost(
+          child: SafeArea(
+            // The scroll runs to the bottom edge, where the save action
+            // floats like the tab bar; its padding clears the home indicator.
+            bottom: false,
+            child: Column(
+              children: [
+                MobileTopNav.back(
+                  title: _titleFor(giftCard),
+                  titleStyle: AppTypography.headlineSmall,
+                  titleMaxLines: giftCard == null ? 1 : 2,
+                  onBack: () => Navigator.of(context).maybePop(),
+                ),
+                Expanded(
+                  child: _withSaveContactAction(
+                    address: unsavedRecipient,
+                    child: SingleChildScrollView(
+                      key: const ValueKey('mobile_tx_status_scroll'),
+                      padding: EdgeInsets.fromLTRB(
+                        kMobilePageMargin,
+                        AppSpacing.s,
+                        kMobilePageMargin,
+                        unsavedRecipient == null
+                            ? AppSpacing.md +
+                                  MediaQuery.paddingOf(context).bottom
+                            : MobileStickyBottomAction.contentInset(context),
                       ),
-                      if (spendableWait != null)
-                        Padding(
-                          key: const ValueKey(
-                            'mobile_tx_status_spendable_after',
-                          ),
-                          padding: const EdgeInsets.fromLTRB(
-                            AppSpacing.xs,
-                            AppSpacing.s,
-                            AppSpacing.xs,
-                            0,
-                          ),
-                          child: Text(
-                            l10n.activityReceiptSpendableAfter(
-                              spendableWait.requiredConfirmations.toString(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Figma `Review Info`: the hero, then the status chip
+                          // and the amount.
+                          if (giftCard != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: AppSpacing.s),
+                              child: Center(
+                                // About 30% under the full-width card, so the
+                                // record does not open on a page-wide card.
+                                // The whole card scales, its text included.
+                                child: SizedBox(
+                                  width: kPaymentLinkMobileCardWidth * 0.7,
+                                  height: kPaymentLinkMobileCardHeight * 0.7,
+                                  child: FittedBox(
+                                    child: PaymentLinkGiftCard(
+                                      artwork:
+                                          PaymentLinkCardArtwork.fromProtocolId(
+                                            giftCard.artworkId,
+                                          ),
+                                      cardWidth: kPaymentLinkMobileCardWidth,
+                                      cardHeight: kPaymentLinkMobileCardHeight,
+                                      // The amount sits under the card, as on
+                                      // every record.
+                                      showAmount: false,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          else
+                            // The type's icon in liquid metal, with room above
+                            // and below so it floats between the nav and the
+                            // status.
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: AppSpacing.s,
+                              ),
+                              child: Center(
+                                child: TransactionTypeHero(
+                                  iconName: activityKindIconName(tx.txKind),
+                                ),
+                              ),
                             ),
-                            style: AppTypography.bodySmall.copyWith(
-                              color: colors.text.secondary,
+                          const SizedBox(height: AppSpacing.xs),
+                          // The top holds only the type icon (or the Gift
+                          // Card), the amount and its dollar value;
+                          // everything else, the status included, is in the
+                          // card.
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: AppSpacing.s,
+                            ),
+                            child: _HeroAmount(
+                              amountText: amountText,
+                              fiatText: fiatText,
                             ),
                           ),
-                        ),
-                      if (giftCard == null &&
-                          detail?.transparentDetailsState != null)
-                        TransparentDetailsSection(
-                          detail: detail,
-                          privacyModeEnabled: privacyModeEnabled,
-                          publicLookupText: publicLookupText,
-                          onLoadPublicly: offersPublicDetailsLookup(detail)
-                              ? () => unawaited(runPublicLookup(tx))
-                              : null,
-                        ),
-                      if (receiptError != null) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        Text(
-                          receiptError!,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.bodySmall.copyWith(
-                            color: colors.text.destructive,
+                          const SizedBox(height: AppSpacing.md),
+                          _DetailCard(
+                            leadingRows: leadingRows,
+                            memo: memo,
+                            memoLoading:
+                                detailsLoading &&
+                                (_isSent || _isIncoming || _isShielding),
+                            messageExpanded: _messageExpanded,
+                            onToggleMessage: () => setState(
+                              () => _messageExpanded = !_messageExpanded,
+                            ),
+                            timestampText: _dateText(
+                              tx,
+                              override: giftCard?.activityTimestamp,
+                            ),
+                            txidText: truncatedTxid(
+                              zcashDisplayTxidHex(
+                                widget.args.txidHex,
+                                ZcashExplorerTxidOrder.protocol,
+                              ),
+                            ),
+                            onOpenExplorer: () => unawaited(_openExplorer()),
+                            isCardCreation:
+                                giftCard?.kind == GiftCardActivityKind.created,
+                            showsNetworkFee:
+                                giftCard == null &&
+                                unattributedReceiptNetworkFee(
+                                      tx,
+                                      receiptDetail,
+                                    ) !=
+                                    null,
+                            feeText: feeOnly
+                                ? null
+                                : _feeText(
+                                    tx,
+                                    giftCard: giftCard,
+                                    privacyModeEnabled: privacyModeEnabled,
+                                  ),
+                            detailsIncomplete: _showIncompleteDetails(tx),
                           ),
-                        ),
-                      ],
-                    ],
+                          if (spendableWait != null)
+                            Padding(
+                              key: const ValueKey(
+                                'mobile_tx_status_spendable_after',
+                              ),
+                              padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.xs,
+                                AppSpacing.s,
+                                AppSpacing.xs,
+                                0,
+                              ),
+                              child: Text(
+                                l10n.activityReceiptSpendableAfter(
+                                  spendableWait.requiredConfirmations
+                                      .toString(),
+                                ),
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.secondary,
+                                ),
+                              ),
+                            ),
+                          if (giftCard == null &&
+                              detail?.transparentDetailsState != null)
+                            TransparentDetailsSection(
+                              detail: detail,
+                              privacyModeEnabled: privacyModeEnabled,
+                              publicLookupText: publicLookupText,
+                              onLoadPublicly: offersPublicDetailsLookup(detail)
+                                  ? () => unawaited(runPublicLookup(tx))
+                                  : null,
+                            ),
+                          if (receiptError != null) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              receiptError!,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.destructive,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -769,7 +854,10 @@ class _MobileTransactionStatusScreenState
         !transactionShowsZeroAmount(tx.txKind)) {
       return '--';
     }
-    return ZecAmount.fromZatoshi(amountZatoshi).activityDetail.toString();
+    // A receive reads as money in, as its activity row does.
+    return ZecAmount.fromZatoshi(amountZatoshi)
+        .activityDetailPretty(signed: _isIncoming)
+        .toString();
   }
 
   String _dateText(rust_sync.TransactionInfo? tx, {DateTime? override}) {
@@ -872,22 +960,6 @@ class _MobileTransactionStatusScreenState
         : context.colors.icon.brandCrimson;
   }
 
-  rust_sync.TransactionDetailOutput? _receivingOutputFor(
-    rust_sync.TransactionDetail? detail,
-  ) {
-    rust_sync.TransactionDetailOutput? best;
-    final outputs =
-        detail?.outputs ?? const <rust_sync.TransactionDetailOutput>[];
-    for (final output in outputs) {
-      final address = output.address?.trim();
-      if (address == null || address.isEmpty) continue;
-      if (best == null || output.amountZatoshi > best.amountZatoshi) {
-        best = output;
-      }
-    }
-    return best;
-  }
-
   String? _unknownFromLabelForSourcePool(String? pool) {
     if (pool == null || pool.isEmpty) return null;
     return pool == 'shielded'
@@ -929,9 +1001,7 @@ class _AddressVerifyZecIcon extends StatelessWidget {
       ),
       child: Center(
         child: AppIcon(
-          isTransparent
-              ? AppIcons.transparentBalance
-              : AppIcons.shieldKeyholeOutline,
+          isTransparent ? AppIcons.transparentBalance : AppIcons.shieldKeyhole,
           size: AppIconSize.medium,
           color: isTransparent ? colors.icon.muted : colors.icon.brandCrimson,
         ),
@@ -942,51 +1012,125 @@ class _AddressVerifyZecIcon extends StatelessWidget {
 
 enum _TxPhase { pending, succeeded, failed }
 
-/// Bottom strip of a review row: an optional pool glyph and its text.
-class _BottomInfo {
-  const _BottomInfo({required this.text, this.iconName, this.iconColor});
+/// The faded castle engraving behind a record, the artwork of the send
+/// status screen (Figma `Status Sending` background). The asset fades into
+/// the page halfway down. It is a translucent grey, so it reads on both
+/// themes, as the send status screen shows it.
+class _RecordBackdrop extends StatelessWidget {
+  const _RecordBackdrop({required this.child});
 
-  final String? text;
-  final String? iconName;
-  final Color? iconColor;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const Positioned.fill(
+          child: Image(
+            key: ValueKey('mobile_tx_status_backdrop'),
+            image: mobileTransactionProgressBackgroundImage,
+            fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
+            // Faded further, so the coin stays the focus.
+            opacity: AlwaysStoppedAnimation(0.6),
+            excludeFromSemantics: true,
+          ),
+        ),
+        // The page fades paint the window color, which would band across
+        // the engraving; the record scrolls without them here.
+        MobileScrollEdgeFades.off(child: child),
+      ],
+    );
+  }
 }
 
-ReviewInfoRow _reviewRow({
-  required String label,
-  required String value,
-  required Widget leading,
-  _BottomInfo? bottom,
-  Widget? bottomPlaceholder,
-  bool strikethrough = false,
-  String? trailingActionLabel,
-  Key? trailingActionKey,
-  VoidCallback? onTrailingAction,
-  Key? key,
-}) {
-  return ReviewInfoRow(
-    key: key,
-    label: label,
-    value: value,
-    leading: leading,
-    struckThrough: strikethrough,
-    bottomLeftIconName: bottom?.iconName,
-    bottomLeftIconColor: bottom?.iconColor,
-    bottomLeftText: bottom?.text,
-    bottomLeftPlaceholder: bottomPlaceholder,
-    trailingActionLabel: trailingActionLabel,
-    trailingActionKey: trailingActionKey,
-    onTrailingAction: onTrailingAction,
-  );
+/// Figma `Asset Details`: the serif amount, centered, with its dollar value
+/// on a reserved 24px line below.
+// The Send amount input's size (48, with a 38 ticker), the app's largest
+// amount style.
+const _heroAmountFontSize = 48.0;
+const _heroUnitFontSize = 38.0;
+
+class _HeroAmount extends StatelessWidget {
+  const _HeroAmount({required this.amountText, this.fiatText});
+
+  final String amountText;
+
+  /// The amount's dollar value (Figma `$250.12`), when a price is known.
+  final String? fiatText;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final amountStyle = AppTypography.displayLarge.copyWith(
+      color: colors.text.accent,
+      fontSize: _heroAmountFontSize,
+    );
+    // Figma sets the ticker a step smaller (Young Serif 32) than the number.
+    final unit = ' $kZcashDefaultCurrencyTicker';
+    final hasUnit =
+        amountText.length > unit.length && amountText.endsWith(unit);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      spacing: AppSpacing.xxs,
+      children: [
+        // Long amounts scale down to fit between the page margins rather
+        // than truncate or wrap.
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text.rich(
+            key: const ValueKey('mobile_tx_status_amount'),
+            hasUnit
+                ? TextSpan(
+                    children: [
+                      serifPrivacyMaskSpan(
+                        amountText.substring(
+                          0,
+                          amountText.length - unit.length + 1,
+                        ),
+                        amountStyle,
+                      ),
+                      TextSpan(
+                        text: kZcashDefaultCurrencyTicker,
+                        style: AppTypography.displaySmall.copyWith(
+                          fontSize: _heroUnitFontSize,
+                        ),
+                      ),
+                    ],
+                  )
+                : serifPrivacyMaskSpan(amountText, amountStyle),
+            maxLines: 1,
+            textAlign: TextAlign.center,
+            style: amountStyle,
+          ),
+        ),
+        // A reserved line, so the card does not move when the price arrives.
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: AppSpacing.md),
+          child: fiatText == null
+              ? null
+              : Text(
+                  fiatText!,
+                  key: const ValueKey('mobile_tx_status_fiat'),
+                  textAlign: TextAlign.center,
+                  style: withTabularFigures(
+                    AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
 }
 
-/// The rounded detail card — Figma `Review Wrap`: status chip, message
-/// / timestamp / tx id list, divider, tx fee.
+/// The rounded detail card — Figma `Review Wrap`: the counterparty /
+/// message / tx id list, then the timestamp / tx fee list.
 class _DetailCard extends StatelessWidget {
   const _DetailCard({
-    required this.phase,
-    this.statusText,
-    this.spendableWait,
-    required this.failed,
+    this.leadingRows = const [],
     required this.memo,
     this.memoLoading = false,
     required this.messageExpanded,
@@ -1000,13 +1144,10 @@ class _DetailCard extends StatelessWidget {
     this.detailsIncomplete = false,
   });
 
-  final _TxPhase phase;
-  final String? statusText;
-
-  /// A completed receipt the account cannot spend yet: the Status says when
-  /// it can, and a row counts its confirmations.
-  final ReceivedSpendableWait? spendableWait;
-  final bool failed;
+  /// The From / To row, when the transaction has a counterparty to name.
+  /// Rows heading the first group: what the amount is, then where the
+  /// funds came from and went.
+  final List<Widget> leadingRows;
   final String? memo;
   final bool memoLoading;
   final bool messageExpanded;
@@ -1026,138 +1167,128 @@ class _DetailCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
-        vertical: AppSpacing.base,
+        vertical: AppSpacing.md,
       ),
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: mobileSurfaceShadows(colors),
       ),
+      // Two lists, 12px apart with no divider: 8px between the rows of the
+      // first, none in the second.
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: AppSpacing.s,
         children: [
-          _ListRow(
-            label: context.l10n.activityReceiptStatus,
-            labelColor: failed ? colors.text.destructive : null,
-            value: _StatusChip(
-              phase: phase,
-              statusText: spendableWait == null
-                  ? statusText
-                  : availableInLabel(context.l10n, spendableWait!.wait),
-              waiting: spendableWait != null,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (spendableWait != null) ...[
-            _ListRow(
-              key: const ValueKey('mobile_tx_status_confirmations'),
-              label: context.l10n.activityReceiptConfirmations,
-              value: _ValueWithIcon(
-                text: context.l10n.activityReceiptConfirmationsProgress(
-                  spendableWait!.confirmations.toString(),
-                  spendableWait!.requiredConfirmations.toString(),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: AppSpacing.xs,
+            children: [
+              ...leadingRows,
+              if (memoLoading)
+                const ReceiptMemoSkeleton()
+              else if (memoText != null && memoText.isNotEmpty)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _ListRow(
+                      label: context.l10n.commonMessage,
+                      value: _ValueWithIcon(
+                        key: const ValueKey('mobile_tx_status_message_toggle'),
+                        text: messageExpanded ? null : _previewMemo(memoText),
+                        iconName: AppIcons.expand,
+                        onTap: onToggleMessage,
+                        // Expanded, the toggle shows only its icon; keep it
+                        // named.
+                        semanticsLabel: context.l10n.commonMessage,
+                        expanded: messageExpanded,
+                      ),
+                    ),
+                    if (messageExpanded)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: AppSpacing.xxs,
+                          right: AppSpacing.xxs,
+                          bottom: AppSpacing.xs,
+                        ),
+                        child: Text(
+                          memoText,
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              _ListRow(
+                key: const ValueKey('mobile_tx_status_txid'),
+                label: context.l10n.commonTxId,
+                value: _ValueWithIcon(
+                  text: txidText,
+                  iconName: AppIcons.arrowTopRight,
+                  onTap: onOpenExplorer,
                 ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          if (memoLoading) ...[
-            const ReceiptMemoSkeleton(),
-            const SizedBox(height: AppSpacing.xs),
-          ] else if (memoText != null && memoText.isNotEmpty) ...[
-            _ListRow(
-              label: context.l10n.commonMessage,
-              value: _ValueWithIcon(
-                key: const ValueKey('mobile_tx_status_message_toggle'),
-                text: messageExpanded ? null : _previewMemo(memoText),
-                iconName: AppIcons.expand,
-                onTap: onToggleMessage,
-              ),
-            ),
-            if (messageExpanded)
-              Padding(
-                padding: const EdgeInsets.only(
-                  left: AppSpacing.xxs,
-                  right: AppSpacing.xxs,
-                  bottom: AppSpacing.xs,
-                ),
-                child: Text(
-                  memoText,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
+              if (detailsIncomplete)
+                _ListRow(
+                  key: const ValueKey('mobile_tx_status_details_incomplete'),
+                  label: context.l10n.activityReceiptDetails,
+                  value: _ValueWithIcon(
+                    text: context.l10n.activityReceiptIncomplete,
+                    iconName: AppIcons.help,
+                    iconColor: context.colors.icon.muted,
+                    onTap: () => unawaited(
+                      showMobileTxFeeInfoSheet(
+                        context,
+                        title: context.l10n.activityReceiptDetailsIncomplete,
+                        description:
+                            context.l10n.activityReceiptDetailsIncompleteHelp,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          _ListRow(
-            label: context.l10n.commonTimestamp,
-            value: _ValueWithIcon(text: timestampText),
+            ],
           ),
-          const SizedBox(height: AppSpacing.xs),
-          _ListRow(
-            key: const ValueKey('mobile_tx_status_txid'),
-            label: context.l10n.commonTxId,
-            value: _ValueWithIcon(
-              text: txidText,
-              iconName: AppIcons.arrowTopRight,
-              onTap: onOpenExplorer,
-            ),
-          ),
-          if (detailsIncomplete) ...[
-            const SizedBox(height: AppSpacing.xs),
-            _ListRow(
-              key: const ValueKey('mobile_tx_status_details_incomplete'),
-              label: context.l10n.activityReceiptDetails,
-              value: _ValueWithIcon(
-                text: context.l10n.activityReceiptIncomplete,
-                iconName: AppIcons.help,
-                iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
-                onTap: () => unawaited(
-                  showMobileTxFeeInfoSheet(
-                    context,
-                    title: context.l10n.activityReceiptDetailsIncomplete,
-                    description:
-                        context.l10n.activityReceiptDetailsIncompleteHelp,
-                  ),
-                ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ListRow(
+                label: context.l10n.commonTimestamp,
+                value: _ValueWithIcon(text: timestampText),
               ),
-            ),
-          ],
-          if (feeText != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            // Figma `border/neutral/default` (#d4d4d4 light).
-            Container(height: 1, color: colors.border.regular),
-            const SizedBox(height: AppSpacing.sm),
-            _ListRow(
-              label: isCardCreation
-                  ? context.l10n.activityReceiptCardFee
-                  : showsNetworkFee
-                  ? context.l10n.commonNetworkFee
-                  : context.l10n.txFeeInfoTitle,
-              labelStyle: AppTypography.labelLarge,
-              value: _ValueWithIcon(
-                text: feeText,
-                iconName: AppIcons.help,
-                iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
-                onTap: () => unawaited(
-                  isCardCreation
-                      ? showMobileTxFeeInfoSheet(
-                          context,
-                          title: context.l10n.activityReceiptCardFee,
-                          description: context.l10n.paymentLinkCardFeeHelpText,
-                        )
+              if (feeText != null)
+                _ListRow(
+                  label: isCardCreation
+                      ? context.l10n.activityReceiptCardFee
                       : showsNetworkFee
-                      ? showMobileTxFeeInfoSheet(
-                          context,
-                          title: context.l10n.commonNetworkFee,
-                          description:
-                              context.l10n.activityReceiptUnattributedFeeHelp,
-                        )
-                      : showMobileTxFeeInfoSheet(context),
+                      ? context.l10n.commonNetworkFee
+                      : context.l10n.txFeeInfoTitle,
+                  value: _ValueWithIcon(
+                    text: feeText,
+                    iconName: AppIcons.help,
+                    iconColor: context.colors.icon.muted,
+                    onTap: () => unawaited(
+                      isCardCreation
+                          ? showMobileTxFeeInfoSheet(
+                              context,
+                              title: context.l10n.activityReceiptCardFee,
+                              description:
+                                  context.l10n.paymentLinkCardFeeHelpText,
+                            )
+                          : showsNetworkFee
+                          ? showMobileTxFeeInfoSheet(
+                              context,
+                              title: context.l10n.commonNetworkFee,
+                              description: context
+                                  .l10n
+                                  .activityReceiptUnattributedFeeHelp,
+                            )
+                          : showMobileTxFeeInfoSheet(context),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ],
       ),
     );
@@ -1172,32 +1303,26 @@ class _DetailCard extends StatelessWidget {
 
 /// One 32px-tall label/value line of the detail card.
 class _ListRow extends StatelessWidget {
-  const _ListRow({
-    required this.label,
-    required this.value,
-    this.labelColor,
-    this.labelStyle,
-    super.key,
-  });
+  const _ListRow({required this.label, required this.value, super.key});
 
   final String label;
   final Widget value;
-  final Color? labelColor;
-  final TextStyle? labelStyle;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      height: 32,
+    // At least the Figma 32px row; grows with large text instead of
+    // clipping it.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 32),
       child: Row(
         children: [
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
               label,
-              style: (labelStyle ?? AppTypography.labelMedium).copyWith(
-                color: labelColor ?? colors.text.secondary,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.secondary,
               ),
             ),
           ),
@@ -1211,14 +1336,20 @@ class _ListRow extends StatelessWidget {
   }
 }
 
-/// Right-side value: text plus an optional trailing 20px icon, padded
-/// like the Figma `Item Right` (8 left, 4 right/vertical).
+/// Right-side value: text plus optional leading and trailing 20px icons,
+/// padded like the Figma `Item Right` (8 left, 4 right/vertical).
 class _ValueWithIcon extends StatelessWidget {
   const _ValueWithIcon({
     this.text,
     this.iconName,
     this.onTap,
     this.iconColor,
+    this.leadingIconName,
+    this.leadingIconColor,
+    this.leadingIconLabel,
+    this.struckThrough = false,
+    this.semanticsLabel,
+    this.expanded,
     super.key,
   });
 
@@ -1226,6 +1357,22 @@ class _ValueWithIcon extends StatelessWidget {
   final String? iconName;
   final VoidCallback? onTap;
   final Color? iconColor;
+
+  /// Pool glyph before the text (Figma `Shield Fill` on the Recipient row).
+  final String? leadingIconName;
+  final Color? leadingIconColor;
+
+  /// What the leading glyph stands for, for screen readers (the pool).
+  final String? leadingIconLabel;
+
+  /// Line-through on the text — a failed send's counterparty.
+  final bool struckThrough;
+
+  /// Names a tappable value whose visible content may be only an icon.
+  final String? semanticsLabel;
+
+  /// Expanded state for a disclosure toggle; null for other values.
+  final bool? expanded;
 
   @override
   Widget build(BuildContext context) {
@@ -1240,6 +1387,15 @@ class _ValueWithIcon extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          if (leadingIconName != null) ...[
+            AppIcon(
+              leadingIconName!,
+              size: 20,
+              color: leadingIconColor ?? colors.icon.accent,
+              semanticLabel: leadingIconLabel,
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+          ],
           if (text != null)
             Flexible(
               child: Text(
@@ -1250,16 +1406,15 @@ class _ValueWithIcon extends StatelessWidget {
                 textAlign: TextAlign.right,
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.text.accent,
+                  decoration: struckThrough ? TextDecoration.lineThrough : null,
+                  decorationColor: struckThrough ? colors.text.accent : null,
                 ),
               ),
             ),
           if (iconName != null) ...[
             const SizedBox(width: AppSpacing.xxs),
-            AppIcon(
-              iconName!,
-              size: 20,
-              color: iconColor ?? colors.icon.accent,
-            ),
+            // Figma `Review Wrap` draws its trailing glyphs in icon/muted.
+            AppIcon(iconName!, size: 20, color: iconColor ?? colors.icon.muted),
           ],
         ],
       ),
@@ -1267,6 +1422,8 @@ class _ValueWithIcon extends StatelessWidget {
     if (onTap == null) return content;
     return Semantics(
       button: true,
+      label: semanticsLabel,
+      expanded: expanded,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
@@ -1276,8 +1433,9 @@ class _ValueWithIcon extends StatelessWidget {
   }
 }
 
-/// Status chip: spinner + "In progress", green check + "Completed", or
-/// destructive cross + "Failed, funds returned".
+/// Status chip centered above the hero amount: spinner + "In progress",
+/// green check + "Completed", or destructive cancel + "Failed, funds
+/// returned".
 class _StatusChip extends StatelessWidget {
   const _StatusChip({
     required this.phase,
@@ -1314,7 +1472,7 @@ class _StatusChip extends StatelessWidget {
       // only failure the wallet records is expiry before mining, where
       // no fee is spent at all.
       _TxPhase.failed => (
-        AppIcons.cross,
+        AppIcons.cancel,
         context.l10n.activityStatusFailedFundsReturned,
         colors.text.destructive,
       ),
@@ -1327,7 +1485,7 @@ class _StatusChip extends StatelessWidget {
         AppSpacing.xxs,
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
         children: [
           AppIcon(iconName, size: 20, color: color),
           const SizedBox(width: AppSpacing.xxs),
@@ -1337,10 +1495,8 @@ class _StatusChip extends StatelessWidget {
               maxLines: 1,
               softWrap: false,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+              // The card's value style; color and icon carry the state.
+              style: AppTypography.labelLarge.copyWith(color: color),
             ),
           ),
         ],

@@ -20,7 +20,7 @@ import '../swap_modal_controls.dart';
 /// Mobile address editor — built on [MobileModalScaffold] (the shared
 /// `_Modal Type` chrome: title top-left, pinned close top-right, outer
 /// pt32/pb24/px16 padding). The body is the input box (with the
-/// contacts-then-QR inline icons), a reserved one-line error slot, the
+/// contacts-then-QR inline icons), a minimum-height feedback row, the
 /// description, the remember toggle, and a separate Buttons Stack (full-width
 /// `Update` + `Cancel`).
 ///
@@ -166,7 +166,7 @@ class _MobileSwapAddressEditModalState
     // MobileModalScaffold supplies the title, the pinned close button and the
     // outer pt32/pb24/px16 padding, so this body owns only its vertical
     // rhythm. _Modal Type body spec: an 8px top inset, the field, 12, a
-    // reserved one-line error slot, 12, the description, 16, the remember
+    // minimum-height feedback row, 12, the description, 16, the remember
     // toggle; then the Buttons Stack 24 below (the field+description+remember
     // group has an 8px bottom inset, then a 16px gap to the buttons), so the
     // only gap beneath Cancel is the scaffold's pb24.
@@ -216,20 +216,18 @@ class _MobileSwapAddressEditModalState
             ),
           ),
           const SizedBox(height: 12),
-          // Reserve one label-m line for the format error so the description
-          // keeps a stable offset whether or not an error shows — matching the
-          // opacity-0 error line the Figma _Modal Type holds.
-          SizedBox(
-            height: 16,
+          // Preserve the empty feedback gap; populated feedback grows with
+          // its text instead of clipping at larger accessibility sizes.
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: AppSpacing.sm),
             child: formatError != null
                 ? Align(
                     alignment: Alignment.centerLeft,
+                    heightFactor: 1,
                     child: Text(
                       formatError,
                       key: const ValueKey('swap_destination_format_error'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelMedium.copyWith(
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.destructive,
                       ),
                     ),
@@ -238,6 +236,7 @@ class _MobileSwapAddressEditModalState
                 ? null
                 : Align(
                     alignment: Alignment.centerLeft,
+                    heightFactor: 1,
                     child: ContactNameInline(
                       key: const ValueKey('swap_destination_contact_match'),
                       name: matchedContact.label,

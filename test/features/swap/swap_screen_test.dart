@@ -3964,7 +3964,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Privacy mode masks the available balance amount, not the "Max:" label.
-    expect(find.text('Max: ****** ZEC'), findsOneWidget);
+    expect(find.text('Max: •••••• ZEC'), findsOneWidget);
     expect(find.text('Max: 1.2345 ZEC'), findsNothing);
 
     // The mask is display-only: tapping still applies the real max amount.
@@ -3999,7 +3999,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Max: ****** ZEC'), findsOneWidget);
+      expect(find.text('Max: •••••• ZEC'), findsOneWidget);
       expect(find.textContaining('1.2345'), findsNothing);
     },
   );

@@ -23,7 +23,7 @@ class _MobileReviewCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(borderRadius),
-        boxShadow: showShadow ? appSurfaceShadow(colors) : null,
+        boxShadow: showShadow ? mobileSurfaceShadows(colors) : null,
       ),
       child: Padding(padding: padding, child: child),
     );

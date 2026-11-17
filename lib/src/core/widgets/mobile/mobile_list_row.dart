@@ -20,6 +20,7 @@ class MobileListRow extends StatelessWidget {
     this.labelColor,
     this.valueColor,
     this.chevronColor,
+    this.chevronSize = AppIconSize.medium,
     this.minRowHeight = minHeight,
     this.textStyle,
     this.valueTextStyle,
@@ -42,6 +43,9 @@ class MobileListRow extends StatelessWidget {
 
   /// Overrides the default chevron color for screen-specific Figma variants.
   final Color? chevronColor;
+
+  /// Chevron glyph size; the 16px medium icon unless a screen asks for more.
+  final double chevronSize;
 
   /// Minimum row height. The default is the generic touch row; dense Figma
   /// lists can opt into their own pitch without changing every consumer.
@@ -139,7 +143,7 @@ class MobileListRow extends StatelessWidget {
             const SizedBox(width: AppSpacing.xs),
             AppIcon(
               AppIcons.chevronForward,
-              size: AppIconSize.medium,
+              size: chevronSize,
               color: enabled
                   ? chevronColor ?? colors.icon.muted
                   : colors.icon.disabled,

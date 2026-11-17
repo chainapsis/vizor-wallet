@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, ValueListenable;
 import 'package:flutter/material.dart'
-    show Material, MaterialLocalizations, showModalBottomSheet;
+    show AnimationStyle, Material, MaterialLocalizations, showModalBottomSheet;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,6 +13,7 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_icon.dart';
 import '../../widgets/app_modal_shape.dart';
 import 'mobile_modal_corners.dart';
+import 'mobile_scroll_edge_fades.dart';
 import 'mobile_window_policy.dart';
 import 'prepared_modal_sheet_route.dart';
 import 'controlled_modal_sheet_route.dart';
@@ -61,6 +62,12 @@ Future<T?> showAppMobileSheet<T>({
     providerContainer = null;
   }
 
+  // Reduce Motion (or Remove Animations) shows and hides the sheet in place.
+  // The route's own controller does not read MediaQuery, so pass it here.
+  final sheetAnimationStyle = MediaQuery.disableAnimationsOf(context)
+      ? AnimationStyle.noAnimation
+      : null;
+
   Widget wrapSheet(Widget child) {
     final themed = AppTheme(data: appTheme, child: child);
     final container = providerContainer;
@@ -84,6 +91,7 @@ Future<T?> showAppMobileSheet<T>({
       canDismiss: canDismiss,
       isDismissible: isDismissible,
       enableDrag: enableDrag,
+      sheetAnimationStyle: sheetAnimationStyle,
       builder: (_) => wrapSheet(
         Builder(builder: (context) => MobileModalCard(child: builder(context))),
       ),
@@ -109,6 +117,7 @@ Future<T?> showAppMobileSheet<T>({
       elevation: 0,
       modalBarrierColor: colors.background.neutralScrim,
       barrierLabel: MaterialLocalizations.of(context).scrimLabel,
+      sheetAnimationStyle: sheetAnimationStyle,
       builder: (_) => wrapSheet(
         MobileModalCard(
           transparentBackground: transparentBackground,
@@ -135,6 +144,7 @@ Future<T?> showAppMobileSheet<T>({
     backgroundColor: const Color(0x00000000),
     elevation: 0,
     barrierColor: colors.background.neutralScrim,
+    sheetAnimationStyle: sheetAnimationStyle,
     builder: (sheetContext) => wrapSheet(
       Builder(
         builder: (themedContext) => MobileModalCard(
@@ -144,6 +154,40 @@ Future<T?> showAppMobileSheet<T>({
       ),
     ),
   );
+}
+
+/// Focuses [focusNode] once the mobile sheet around [context] has finished
+/// opening.
+///
+/// A field that autofocuses raises the keyboard while the sheet is still
+/// sliding in (or, on iOS, still offstage while its corners resolve), so the
+/// card rides the keyboard inset and its own entrance at once. Sheets that
+/// open straight into a text field call this from a post-frame callback in
+/// `initState` instead of setting `autofocus`. Outside a route, or once the
+/// route has opened, it focuses at once.
+void focusWhenMobileSheetOpens(BuildContext context, FocusNode focusNode) {
+  final route = ModalRoute.of(context);
+  final animation = route?.animation;
+  if (route == null || animation == null) {
+    focusNode.requestFocus();
+    return;
+  }
+  bool opened() => !route.offstage && animation.isCompleted;
+  if (opened()) {
+    focusNode.requestFocus();
+    return;
+  }
+  void listener(AnimationStatus status) {
+    if (!context.mounted) {
+      animation.removeStatusListener(listener);
+      return;
+    }
+    if (!opened()) return;
+    animation.removeStatusListener(listener);
+    focusNode.requestFocus();
+  }
+
+  animation.addStatusListener(listener);
 }
 
 /// The floating-card frame for mobile modals: side margins, the
@@ -192,8 +236,9 @@ class MobileModalCard extends StatelessWidget {
   /// Default bottom clearance shared by the card and content that sizes
   /// itself to the space above it. Explicit [margin] overrides this gap.
   static double bottomGapFor(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final keyboardInset = mediaQuery.viewInsets.bottom;
+    // Narrow lookups: the card follows the keyboard, nothing else in
+    // MediaQuery.
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     final double bottomGap;
     if (keyboardInset > 0) {
@@ -207,7 +252,7 @@ class MobileModalCard extends StatelessWidget {
     } else {
       // Android nav bars vary per device and occupy real space — keep the
       // 16px visual gap above whatever inset the device reports.
-      bottomGap = AppSpacing.sm + mediaQuery.viewPadding.bottom;
+      bottomGap = AppSpacing.sm + MediaQuery.viewPaddingOf(context).bottom;
     }
     return bottomGap;
   }
@@ -229,7 +274,12 @@ class MobileModalCard extends StatelessWidget {
           shape: shape,
           child: CustomPaint(
             foregroundPainter: _ModalInnerHighlightPainter(shape),
-            child: child,
+            // Scroll areas in the sheet dissolve into its surface where they
+            // cut content, never clip flat.
+            child: MobileScrollEdgeFades(
+              color: colors.background.base,
+              child: child,
+            ),
           ),
         ),
       );
@@ -408,7 +458,10 @@ class MobileModalScaffold extends StatelessWidget {
   final VoidCallback? onClose;
   final Widget child;
 
-  /// Keeps a scrollable body within the height left below the fixed header.
+  /// For a body that brings its own scroll view: it gets the height left
+  /// below the header, inside the standard padding. Otherwise the scaffold
+  /// scrolls the body itself whenever it is taller than the room left, so a
+  /// sheet never overflows (a tall keyboard, large text, a long list).
   final bool constrainBody;
   final Widget? leading;
   final TextStyle? titleStyle;
@@ -422,8 +475,8 @@ class MobileModalScaffold extends StatelessWidget {
   /// false.
   final double bodyGap;
 
-  /// Bottom inset below the body. Defaults to 24; the asset picker passes 0 so
-  /// its list fills to the card edge.
+  /// Bottom inset below the body. Defaults to 24; the asset picker passes 12 so
+  /// its list runs close to the card edge.
   final double bottomPadding;
 
   /// Full-width scrolling bodies may own their content insets separately.
@@ -432,55 +485,87 @@ class MobileModalScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final title = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 26),
+      child: Padding(
+        // Clear the absolute 32px close (+ an 8px gap) so long titles
+        // wrap/ellipsize instead of sliding under it.
+        padding: const EdgeInsets.only(right: 40),
+        child: Row(
+          children: [
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: AppSpacing.s),
+            ],
+            Expanded(
+              child: Text(
+                this.title,
+                maxLines: titleMaxLines,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    titleStyle ??
+                    AppTypography.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.text.accent,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
     return Stack(
       children: [
-        Padding(
-          padding: EdgeInsets.only(
-            top: AppSpacing.base,
-            bottom: bottomPadding,
-            left: horizontalPadding,
-            right: horizontalPadding,
-          ),
-          child: Column(
+        if (constrainBody)
+          Padding(
+            padding: EdgeInsets.only(
+              top: AppSpacing.base,
+              bottom: bottomPadding,
+              left: horizontalPadding,
+              right: horizontalPadding,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showTitle) ...[title, SizedBox(height: bodyGap)],
+                Flexible(child: child),
+              ],
+            ),
+          )
+        else
+          Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (showTitle) ...[
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 26),
-                  child: Padding(
-                    // Clear the absolute 32px close (+ an 8px gap) so long
-                    // titles wrap/ellipsize instead of sliding under it.
-                    padding: const EdgeInsets.only(right: 40),
-                    child: Row(
-                      children: [
-                        if (leading != null) ...[
-                          leading!,
-                          const SizedBox(width: AppSpacing.s),
-                        ],
-                        Expanded(
-                          child: Text(
-                            title,
-                            maxLines: titleMaxLines,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                titleStyle ??
-                                AppTypography.bodyLarge.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: colors.text.accent,
-                                ),
-                          ),
-                        ),
-                      ],
-                    ),
+              if (showTitle)
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: AppSpacing.base,
+                    left: horizontalPadding,
+                    right: horizontalPadding,
                   ),
+                  child: title,
                 ),
-                SizedBox(height: bodyGap),
-              ],
-              if (constrainBody) Flexible(child: child) else child,
+              // A body taller than the room left scrolls instead of
+              // overflowing. The viewport spans the card's full width and
+              // runs to its bottom edge (or, without a title, from its top
+              // edge), so field and button shadows are never clipped and
+              // cut content dissolves into the card at the edges.
+              Flexible(
+                child: SingleChildScrollView(
+                  key: const ValueKey('mobile_modal_body_scroll'),
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    showTitle ? bodyGap : AppSpacing.base,
+                    horizontalPadding,
+                    bottomPadding,
+                  ),
+                  child: child,
+                ),
+              ),
             ],
           ),
-        ),
         if (showClose)
           Positioned(
             top: 15.5,

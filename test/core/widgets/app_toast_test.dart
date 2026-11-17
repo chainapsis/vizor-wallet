@@ -139,6 +139,7 @@ void main() {
 
     await tester.tap(find.text('Show toast'));
     await tester.pump();
+    await tester.pump(AppToast.enterDuration);
 
     expect(find.text('Address copied'), findsOneWidget);
     final hostTopLeft = tester.getTopLeft(find.byType(AppToastHost));
@@ -152,9 +153,71 @@ void main() {
     );
 
     await tester.pump(AppToast.defaultDuration);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Address copied'), findsNothing);
+  });
+
+  testWidgets('toast drops in from above and leaves the same way', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: SizedBox(
+          width: 400,
+          height: 300,
+          child: AppToastHost(child: _ToastTrigger(message: 'Address copied')),
+        ),
+      ),
+    );
+    final restingTop =
+        tester.getTopLeft(find.byType(AppToastHost)).dy + AppSpacing.base;
+
+    await tester.tap(find.text('Show toast'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.getTopLeft(find.byType(AppToast)).dy, lessThan(restingTop));
+
+    await tester.pump(AppToast.enterDuration);
+    expect(tester.getTopLeft(find.byType(AppToast)).dy, restingTop);
+
+    await tester.pump(AppToast.defaultDuration);
+    await tester.pump(const Duration(milliseconds: 16));
+    // Still on screen while it leaves, moving back up, and not tappable.
+    expect(find.byType(AppToast), findsOneWidget);
+    expect(tester.getTopLeft(find.byType(AppToast)).dy, lessThan(restingTop));
+
+    await tester.pump(AppToast.exitDuration);
+    expect(find.byType(AppToast), findsNothing);
+  });
+
+  testWidgets('reduced motion fades the toast without moving it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: SizedBox(
+            width: 400,
+            height: 300,
+            child: AppToastHost(
+              child: _ToastTrigger(message: 'Address copied'),
+            ),
+          ),
+        ),
+      ),
+    );
+    final restingTop =
+        tester.getTopLeft(find.byType(AppToastHost)).dy + AppSpacing.base;
+
+    await tester.tap(find.text('Show toast'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(tester.getTopLeft(find.byType(AppToast)).dy, restingTop);
   });
 
   testWidgets('toast clears the status bar when the host ignores SafeArea', (
@@ -181,6 +244,7 @@ void main() {
 
     await tester.tap(find.text('Show toast'));
     await tester.pump();
+    await tester.pump(AppToast.enterDuration);
 
     final hostTop = tester.getTopLeft(find.byType(AppToastHost)).dy;
     final toastTop = tester.getTopLeft(find.byType(AppToast)).dy;
@@ -280,6 +344,7 @@ void main() {
           ),
         );
         showNotice();
+        await tester.pump();
         await tester.pump(const Duration(seconds: 30));
         expect(tester.takeException(), isNull);
         expect(find.text('Couldn’t redeem your gift card.'), findsOneWidget);
@@ -298,14 +363,16 @@ void main() {
           matchesSemantics(isLiveRegion: true),
         );
         await tester.tap(find.bySemanticsLabel('Dismiss notification'));
-        await tester.pump();
+        await tester.pumpAndSettle();
         expect(find.byType(AppToast), findsNothing);
         expect(openedCard, isFalse);
         showNotice();
         await tester.pump();
+        await tester.pump(AppToast.enterDuration);
         await tester.tap(action);
         await tester.pump();
         expect(openedCard, isTrue);
+        await tester.pumpAndSettle();
         expect(find.byType(AppToast), findsNothing);
       } finally {
         semantics.dispose();

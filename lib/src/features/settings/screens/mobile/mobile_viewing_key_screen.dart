@@ -1,7 +1,10 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
+
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +21,7 @@ import '../../../../core/widgets/biometric_icon.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/mobile/mobile_account_header.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
@@ -70,6 +74,7 @@ class MobileViewingKeyRevealPreview extends StatefulWidget {
     required this.account,
     this.initialType = ViewingKeyType.full,
     this.initialFormat = ViewingKeyFormat.qr,
+    this.balanceText,
     super.key,
   });
 
@@ -77,6 +82,9 @@ class MobileViewingKeyRevealPreview extends StatefulWidget {
   final AccountInfo account;
   final ViewingKeyType? initialType;
   final ViewingKeyFormat initialFormat;
+
+  /// The account balance under its name on the choice step.
+  final String? balanceText;
 
   @override
   State<MobileViewingKeyRevealPreview> createState() =>
@@ -103,6 +111,7 @@ class _MobileViewingKeyRevealPreviewState
             ),
             Expanded(
               child: _MobileViewingKeyRevealView(
+                balanceText: widget.balanceText,
                 viewingKeys: widget.viewingKeys,
                 initialType: _selectedType,
                 onSelectType: (type) => setState(() => _selectedType = type),
@@ -144,7 +153,7 @@ class _MobileViewingKeyScreenState
         widget.privacyOverlayController ??
         SensitivePrivacyEnvironmentController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_tryBiometricGate());
+      unawaited(_tryBiometricGate(automatic: true));
     });
   }
 
@@ -157,20 +166,38 @@ class _MobileViewingKeyScreenState
 
   // ── Confirm access gate ────────────────────────────────────────────
 
-  Future<void> _tryBiometricGate() async {
+  Future<void> _tryBiometricGate({required bool automatic}) async {
     if (_checking || _stage != _ViewingKeyStage.confirmAccess) return;
     final expectedAccountUuid = _targetAccount(
       ref.read(accountProvider).value,
     )?.uuid;
-    final accessCheckGeneration = ++_accessCheckGeneration;
+    // A skipped automatic probe must not invalidate a manual access check.
+    final deferGeneration =
+        automatic && defaultTargetPlatform == TargetPlatform.iOS;
+    var accessCheckGeneration = deferGeneration
+        ? _accessCheckGeneration
+        : ++_accessCheckGeneration;
+    final entryAtStart = _entry;
     final biometric = await ref.read(biometricUnlockProvider.future);
     if (!mounted) return;
+    if (automatic &&
+        !shouldAutoPromptSensitiveBiometric(biometric.availability.kind)) {
+      return;
+    }
+    if (deferGeneration &&
+        (_checking ||
+            _stage != _ViewingKeyStage.confirmAccess ||
+            _entry != entryAtStart ||
+            accessCheckGeneration != _accessCheckGeneration)) {
+      return;
+    }
     if (accessCheckGeneration != _accessCheckGeneration ||
         _targetAccountChanged(expectedAccountUuid)) {
       _showTargetAccountChangedError();
       return;
     }
     if (!biometric.usable) return;
+    if (deferGeneration) accessCheckGeneration = ++_accessCheckGeneration;
     final wasEnabled = biometric.enabled;
     setState(() => _checking = true);
     _privacyController.beginAuthPrompt();
@@ -379,6 +406,15 @@ class _MobileViewingKeyScreenState
     final colors = context.colors;
     final accounts = ref.watch(accountProvider).value;
     final targetAccount = _targetAccount(accounts);
+    // The account's balance under its name, read only once the keys show:
+    // the passcode gate needs no wallet state.
+    final balanceText = _stage == _ViewingKeyStage.reveal
+        ? mobileAccountHeaderBalance(
+            ref,
+            targetAccount,
+            activeAccountUuid: accounts?.activeAccountUuid,
+          )
+        : null;
     return MobileSidebarExitScope(
       canNavigate: !_checking,
       child: PopScope(
@@ -420,6 +456,7 @@ class _MobileViewingKeyScreenState
                           onSelectType: (type) =>
                               setState(() => _selectedType = type),
                           account: targetAccount,
+                          balanceText: balanceText,
                           showAccountName:
                               targetAccount != null &&
                               targetAccount.uuid != accounts?.activeAccountUuid,
@@ -475,7 +512,8 @@ class _MobileViewingKeyScreenState
                       fingerprintSize: 16,
                     ),
                   ),
-                  onPressed: () => unawaited(_tryBiometricGate()),
+                  onPressed: () =>
+                      unawaited(_tryBiometricGate(automatic: false)),
                 ),
               ),
             )
@@ -538,7 +576,8 @@ class _MobileViewingKeyScreenState
                       fingerprintSize: 16,
                     ),
                   ),
-                  onPressed: () => unawaited(_tryBiometricGate()),
+                  onPressed: () =>
+                      unawaited(_tryBiometricGate(automatic: false)),
                 ),
               ),
             ),
@@ -553,6 +592,7 @@ class _MobileViewingKeyScreenState
 class _MobileViewingKeyRevealView extends StatelessWidget {
   const _MobileViewingKeyRevealView({
     required this.account,
+    this.balanceText,
     required this.viewingKeys,
     required this.onCopy,
     required this.onRetry,
@@ -564,6 +604,9 @@ class _MobileViewingKeyRevealView extends StatelessWidget {
   });
 
   final AccountInfo? account;
+
+  /// The account's balance, already masked in privacy mode.
+  final String? balanceText;
   final rust_wallet.AccountViewingKeys? viewingKeys;
   final String? errorText;
   final Future<void> Function(String) onCopy;
@@ -577,6 +620,7 @@ class _MobileViewingKeyRevealView extends StatelessWidget {
   Widget build(BuildContext context) {
     return ViewingKeyContent(
       account: account,
+      accountBalanceText: balanceText,
       showAccountName: showAccountName,
       viewingKeys: viewingKeys,
       type: initialType,
@@ -591,9 +635,9 @@ class _MobileViewingKeyRevealView extends StatelessWidget {
         if (footer == null) {
           return ListView(
             padding: const EdgeInsets.fromLTRB(
+              kMobilePageMargin,
               AppSpacing.sm,
-              AppSpacing.sm,
-              AppSpacing.sm,
+              kMobilePageMargin,
               AppSpacing.lg,
             ),
             children: [content],
@@ -604,9 +648,9 @@ class _MobileViewingKeyRevealView extends StatelessWidget {
           slivers: [
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
+                kMobilePageMargin,
                 AppSpacing.sm,
-                AppSpacing.sm,
-                AppSpacing.sm,
+                kMobilePageMargin,
                 0,
               ),
               sliver: SliverToBoxAdapter(child: content),
@@ -617,9 +661,9 @@ class _MobileViewingKeyRevealView extends StatelessWidget {
               hasScrollBody: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.md,
-                  AppSpacing.sm,
+                  kMobilePageMargin,
                   AppSpacing.s,
                 ),
                 child: Column(
@@ -689,7 +733,8 @@ class _ViewingKeyMobileHeader extends StatelessWidget {
                     title,
                     key: const ValueKey('viewing_key_mobile_title'),
                     textAlign: TextAlign.center,
-                    style: AppTypography.headlineLarge.copyWith(
+                    // The inner pages' title style, as MobileTopNav.back.
+                    style: AppTypography.headlineSmall.copyWith(
                       color: context.colors.text.accent,
                     ),
                   ),

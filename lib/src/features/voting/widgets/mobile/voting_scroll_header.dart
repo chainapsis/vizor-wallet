@@ -69,7 +69,7 @@ class VotingScrollHeader extends StatelessWidget {
                       style:
                           (largeText
                                   ? AppTypography.bodyLarge
-                                  : AppTypography.headlineLarge)
+                                  : AppTypography.headlineSmall)
                               .copyWith(color: context.colors.text.accent),
                     ),
                   ),

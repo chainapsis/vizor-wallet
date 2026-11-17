@@ -17,9 +17,26 @@ abstract final class AppHaptics {
       : Future<void>.value();
 
   /// Entering a primary mobile action.
-  static Future<void> action() => kAppFormFactor == AppFormFactor.mobile
-      ? HapticFeedback.lightImpact()
-      : Future<void>.value();
+  static Future<void> action() {
+    if (kAppFormFactor != AppFormFactor.mobile) return Future<void>.value();
+    _lastAction = Stopwatch()..start();
+    return HapticFeedback.lightImpact();
+  }
+
+  static Stopwatch? _lastAction;
+
+  /// A mobile page opening or closing: the light tap of [action]. Skipped
+  /// when an action tap just played, because the button that opened the
+  /// page already tapped.
+  static Future<void> pageTransition() {
+    final last = _lastAction;
+    if (last != null && last.elapsed < const Duration(milliseconds: 150)) {
+      return Future<void>.value();
+    }
+    return kAppFormFactor == AppFormFactor.mobile
+        ? HapticFeedback.lightImpact()
+        : Future<void>.value();
+  }
 
   /// Wallet or secret access has actually opened, after authentication succeeds.
   static Future<void> accessGranted() async {
@@ -38,10 +55,14 @@ abstract final class AppHaptics {
   /// UIImpactFeedbackGenerator(.light)).
   static Future<void> digit() => HapticFeedback.lightImpact();
 
-  /// Auxiliary keys (delete, biometric retry) and tab switches — the
-  /// subtle selection tick (iOS UISelectionFeedbackGenerator), one step
-  /// softer than the digits.
+  /// Auxiliary keys (delete, biometric retry) — the subtle selection tick
+  /// (iOS UISelectionFeedbackGenerator), one step softer than the digits.
   static Future<void> auxiliaryKey() => HapticFeedback.selectionClick();
+
+  /// Selecting a mobile tab, and the dragged tab pill crossing into another
+  /// tab — a definite but not heavy tap (iOS
+  /// UIImpactFeedbackGenerator(.medium)).
+  static Future<void> tabSwitch() => HapticFeedback.mediumImpact();
 
   /// Privacy visibility toggles — a more deliberate medium tap (iOS
   /// UIImpactFeedbackGenerator(.medium)).

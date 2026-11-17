@@ -12,6 +12,7 @@ import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/hide_balance_on_unlock_provider.dart';
 import '../../onboarding/shared/onboarding_auth_shell.dart';
 import '../../onboarding/unlock_screen.dart';
 import '../providers/ironwood_migration_privacy_lock_provider.dart';
@@ -329,6 +330,14 @@ class _IronwoodMigrationVirtualUnlockScreenState
     if (!mounted) return;
 
     if (confirmed) {
+      final authenticatedSession = ref.read(appSecurityProvider);
+      await ref.read(hideBalanceOnUnlockActionProvider)();
+      if (!mounted) return;
+      if (!authenticatedSession.isUnlocked ||
+          !identical(authenticatedSession, ref.read(appSecurityProvider))) {
+        setState(() => _isSubmitting = false);
+        return;
+      }
       ref.read(ironwoodMigrationPrivacyLockProvider.notifier).unlock();
       return;
     }

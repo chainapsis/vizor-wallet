@@ -1,6 +1,5 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
-import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -13,7 +12,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -23,7 +22,7 @@ import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
-import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../core/widgets/mobile/mobile_section.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
@@ -148,15 +147,15 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     // row, a UFVK never grants spend authority, so hardware accounts get
     // it too); each extra row costs the same fixed 34 (26 item + 8 gap).
     final menuHeight = baseMenuHeight + 34 + (account.isHardware ? 0 : 34);
-    final bottomNavClearance = MobileNavigationScope.bottomClearanceOf(
-      context,
-      kMobileTabBarHeight + AppSpacing.lg,
-    );
+    // The screen covers the tab bar, so the menu only clears the home
+    // indicator.
+    final bottomClearance =
+        MediaQuery.paddingOf(context).bottom + AppSpacing.lg;
     final colors = context.colors;
     final appTheme = AppTheme.of(context);
     final menuMaxTop = math.max(
       AppSpacing.sm,
-      overlaySize.height - bottomNavClearance - menuHeight,
+      overlaySize.height - bottomClearance - menuHeight,
     );
     final menuTop = (anchorRect.top + 34).clamp(AppSpacing.sm, menuMaxTop);
     final menuRight =
@@ -579,50 +578,63 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
               children: [
                 MobileTopNav.back(
                   title: context.l10n.accountsTitle,
-                  titleStyle: AppTypography.headlineLarge,
-                  onBack: _busy ? null : () => context.pop(),
+                  // Reached with go() when a viewing-key target account is
+                  // gone; then there is no page underneath to return to.
+                  onBack: _busy
+                      ? null
+                      : () {
+                          if (context.canPop()) {
+                            context.pop();
+                          } else {
+                            context.go('/home');
+                          }
+                        },
                 ),
                 Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(
-                      AppSpacing.sm,
-                      AppSpacing.s,
-                      AppSpacing.sm,
-                      MobileNavigationScope.bottomClearanceOf(
-                        context,
-                        kMobileTabBarHeight + AppSpacing.lg,
-                      ),
+                  // Add account stays in reach however long the list grows,
+                  // floating over it like the tab bar.
+                  child: MobileStickyBottomAction(
+                    action: AppButton(
+                      key: const ValueKey('mobile_accounts_add_account'),
+                      expand: true,
+                      constrainContent: true,
+                      onPressed: _busy
+                          ? null
+                          : () => context.push('/add-account'),
+                      leading: const AppIcon(AppIcons.addNew),
+                      child: Text(context.l10n.commonAddAccount),
                     ),
-                    children: [
-                      if (active != null)
-                        _AccountsGroupCard(
-                          title: context.l10n.accountsCurrent,
-                          titleGap: AppSpacing.s,
-                          children: [_accountRow(active, enabled: !_busy)],
-                        ),
-                      if (others.isNotEmpty) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        _AccountsGroupCard(
-                          title: context.l10n.accountsOther,
-                          titleGap: AppSpacing.xs,
-                          children: [
-                            for (final account in others)
-                              _accountRow(account, enabled: !_busy),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: AppSpacing.sm),
-                      AppButton(
-                        key: const ValueKey('mobile_accounts_add_account'),
-                        variant: AppButtonVariant.secondary,
-                        expand: true,
-                        onPressed: _busy
-                            ? null
-                            : () => context.push('/add-account'),
-                        leading: const AppIcon(AppIcons.addNew),
-                        child: Text(context.l10n.commonAddAccount),
+                    child: ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        kMobilePageMargin,
+                        AppSpacing.s,
+                        kMobilePageMargin,
+                        MobileStickyBottomAction.contentInset(context),
                       ),
-                    ],
+                      children: [
+                        // Titled lists in the Settings style: the label above
+                        // its card, rows split by hairlines.
+                        if (active != null)
+                          MobileSection(
+                            title: context.l10n.accountsCurrent,
+                            child: MobileSectionRows(
+                              rows: [_accountRow(active, enabled: !_busy)],
+                            ),
+                          ),
+                        if (others.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          MobileSection(
+                            title: context.l10n.accountsOther,
+                            child: MobileSectionRows(
+                              rows: [
+                                for (final account in others)
+                                  _accountRow(account, enabled: !_busy),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -648,7 +660,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         badgeBottom: 0,
       ),
       label: account.name,
-      minRowHeight: 44,
+      minRowHeight: _accountRowHeight,
       textStyle: AppTypography.labelLarge,
       trailing: Builder(
         builder: (anchorContext) {
@@ -711,47 +723,8 @@ enum _AccountAction {
   remove,
 }
 
-class _AccountsGroupCard extends StatelessWidget {
-  const _AccountsGroupCard({
-    required this.title,
-    required this.titleGap,
-    required this.children,
-  });
-
-  final String title;
-  final double titleGap;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return MobileSurfaceCard(
-      cornerRadius: AppRadii.large,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.base,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Text(
-              title,
-              style: AppTypography.labelLarge.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-          ),
-          SizedBox(height: titleGap),
-          for (var i = 0; i < children.length; i++) ...[
-            if (i > 0) const SizedBox(height: AppSpacing.s),
-            children[i],
-          ],
-        ],
-      ),
-    );
-  }
-}
+/// Account rows match the Settings list rows.
+const _accountRowHeight = 60.0;
 
 /// Figma `Remove` (4514:85954): compact destructive confirmation sheet.
 class MobileAccountRemovalSheet extends StatelessWidget {
@@ -770,20 +743,11 @@ class MobileAccountRemovalSheet extends StatelessWidget {
   /// Null when the unshared gift card check failed.
   final int? unsharedGiftCardCount;
 
-  static const _titleStyle = TextStyle(
-    fontFamily: 'Geist',
+  // The shared mobile sheet title and body, as on every other sheet.
+  static final _titleStyle = AppTypography.bodyLarge.copyWith(
     fontWeight: FontWeight.w600,
-    fontSize: 16,
-    height: 24 / 16,
-    letterSpacing: -0.24,
   );
-  static const _bodyStyle = TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w400,
-    fontSize: 14,
-    height: 21 / 14,
-    letterSpacing: -0.21,
-  );
+  static const _bodyStyle = AppTypography.bodyMedium;
 
   String _description(BuildContext context) {
     final l10n = context.l10n;

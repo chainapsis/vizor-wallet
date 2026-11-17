@@ -5,10 +5,12 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show CircularProgressIndicator, Colors;
+import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -491,7 +493,7 @@ class _ReceiveQrEmbeddedImageClipper implements PrettyQrClipper {
   }
 }
 
-class ReceiveRenewButton extends StatelessWidget {
+class ReceiveRenewButton extends StatefulWidget {
   const ReceiveRenewButton({
     required this.renewing,
     required this.size,
@@ -504,50 +506,144 @@ class ReceiveRenewButton extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
+  State<ReceiveRenewButton> createState() => _ReceiveRenewButtonState();
+}
+
+/// The renew icon itself spins while a renewal runs, starting on the tap,
+/// and slows into its upright rest when the renewal ends.
+class _ReceiveRenewButtonState extends State<ReceiveRenewButton>
+    with SingleTickerProviderStateMixin {
+  /// One turn per period while renewing.
+  static const _spinPeriod = Duration(milliseconds: 700);
+
+  /// At least this much of a turn is left to slow down in.
+  static const _minimumSettleTurn = 0.15;
+
+  // Critically damped, so the icon slows into place without overshoot.
+  static const _settleResponse = 0.5;
+  static final SpringDescription _settleSpring =
+      SpringDescription.withDampingRatio(
+        mass: 1,
+        stiffness:
+            (2 * math.pi / _settleResponse) * (2 * math.pi / _settleResponse),
+        ratio: 1,
+      );
+
+  late final AnimationController _turns = AnimationController.unbounded(
+    vsync: this,
+  );
+  bool _spinning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.renewing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.renewing) _spin();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(ReceiveRenewButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.renewing) {
+      _spin();
+    } else {
+      _settle();
+    }
+  }
+
+  @override
+  void dispose() {
+    _turns.dispose();
+    super.dispose();
+  }
+
+  bool get _motionDisabled =>
+      MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
+  void _handleTap() {
+    _spin();
+    widget.onTap?.call();
+    // A tap that starts no renewal still finishes its turn.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !widget.renewing) _settle();
+    });
+  }
+
+  void _spin() {
+    if (_spinning || _motionDisabled) return;
+    _spinning = true;
+    // Pick up from wherever a settling turn left the icon.
+    _turns.value = _turns.value % 1;
+    _turns.repeat(min: 0, max: 1, period: _spinPeriod);
+  }
+
+  void _settle() {
+    if (!_spinning) return;
+    _spinning = false;
+    final from = _turns.value;
+    // Rest upright, carrying the spin's speed into the stop.
+    _turns.animateWith(
+      SpringSimulation(
+        _settleSpring,
+        from,
+        (from + _minimumSettleTurn).ceilToDouble(),
+        Duration.millisecondsPerSecond / _spinPeriod.inMilliseconds,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final renewing = widget.renewing;
+    final onTap = widget.onTap;
+    final size = widget.size;
 
-    return MouseRegion(
-      cursor: onTap == null || renewing
-          ? SystemMouseCursors.basic
-          : SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: renewing ? null : onTap,
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: DecoratedBox(
-            decoration: ShapeDecoration(
-              color: colors.background.homeCard,
-              shadows: [
-                BoxShadow(
-                  color: colors.macosUtility.window,
-                  blurRadius: 0,
-                  spreadRadius: 4,
+    return Semantics(
+      button: true,
+      enabled: onTap != null && !renewing,
+      child: MouseRegion(
+        cursor: onTap == null || renewing
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: renewing || onTap == null ? null : _handleTap,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: DecoratedBox(
+              decoration: ShapeDecoration(
+                color: colors.background.homeCard,
+                shadows: [
+                  BoxShadow(
+                    color: colors.macosUtility.window,
+                    blurRadius: 0,
+                    spreadRadius: 4,
+                  ),
+                ],
+                shape: CircleBorder(
+                  side: BorderSide(
+                    color: colors.border.inverseOpacity,
+                    width: 2,
+                  ),
                 ),
-              ],
-              shape: CircleBorder(
-                side: BorderSide(color: colors.border.inverseOpacity, width: 2),
               ),
-            ),
-            child: Center(
-              child: renewing
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: colors.text.homeCard,
-                      ),
-                    )
-                  : AppIcon(
-                      AppIcons.renew,
-                      size: AppIconSize.large,
-                      color: colors.text.homeCard,
-                      semanticLabel:
-                          context.l10n.receiveGenerateNewShieldedAddress,
-                    ),
+              child: Center(
+                child: RotationTransition(
+                  turns: _turns,
+                  child: AppIcon(
+                    AppIcons.renew,
+                    size: AppIconSize.large,
+                    color: colors.text.homeCard,
+                    semanticLabel:
+                        context.l10n.receiveGenerateNewShieldedAddress,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -671,20 +767,23 @@ class _IconOnlyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Center(
-            child: AppIcon(
-              iconName,
-              size: iconSize ?? AppIconSize.medium,
-              color: iconColor ?? context.colors.button.ghost.label,
-              semanticLabel: semanticLabel,
+    return Semantics(
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Center(
+              child: AppIcon(
+                iconName,
+                size: iconSize ?? AppIconSize.medium,
+                color: iconColor ?? context.colors.button.ghost.label,
+                semanticLabel: semanticLabel,
+              ),
             ),
           ),
         ),
@@ -876,7 +975,7 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
       text: l10n.receiveInfoTransparentRotates,
     ),
     ReceiveAddressInfoItem(
-      iconName: touchUi ? AppIcons.shieldKeyholeOutline : AppIcons.shieldAsset,
+      iconName: touchUi ? AppIcons.shieldKeyhole : AppIcons.shieldAsset,
       text: l10n.receiveInfoTransparentShieldFirst(kZcashDefaultCurrencyTicker),
     ),
   ];

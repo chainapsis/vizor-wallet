@@ -15,7 +15,9 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/account_persona_draft.dart';
+import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -97,13 +99,30 @@ Widget _personaRouterApp({
   ValueChanged<GoRouter>? onRouter,
 }) {
   final router = GoRouter(
+    initialLocation: args.flow == SetPasswordFlow.create
+        ? '/onboarding/secret-passphrase'
+        : '/',
     routes: [
       GoRoute(
-        path: '/',
-        builder: (_, _) => MobileCustomiseAccountScreen(
-          args: CustomiseAccountArgs(setupArgs: args),
-          initialPersona: _persona,
-        ),
+        path: args.flow == SetPasswordFlow.create
+            ? '/onboarding/secret-passphrase'
+            : '/',
+        builder: (_, state) => args.flow == SetPasswordFlow.create
+            ? MobileSecretPassphraseScreen(
+                args:
+                    mobileOnboardingPayload(state.extra)
+                        is CreateSecretPassphraseArgs
+                    ? mobileOnboardingPayload(state.extra)
+                          as CreateSecretPassphraseArgs
+                    : CreateSecretPassphraseArgs(
+                        mnemonic: args.requiredMnemonic,
+                        persona: _persona,
+                      ),
+              )
+            : MobileCustomiseAccountScreen(
+                args: CustomiseAccountArgs(setupArgs: args),
+                initialPersona: _persona,
+              ),
       ),
       ...mobileOnboardingRoutes().whereType<GoRoute>().where(
         (route) => route.path == '/onboarding/set-passcode',
@@ -113,6 +132,10 @@ Widget _personaRouterApp({
         builder: (_, _) => const Text('biometrics route'),
       ),
       GoRoute(path: '/unlock', builder: (_, _) => const Text('unlock route')),
+      GoRoute(
+        path: '/onboarding/things-to-know',
+        builder: (_, _) => const Text('education route'),
+      ),
     ],
   );
   addTearDown(router.dispose);
@@ -155,6 +178,16 @@ Widget _routerHarness(
 
 Future<void> _continuePersona(WidgetTester tester) async {
   await tester.pumpAndSettle();
+  if (find
+      .byKey(const ValueKey('mobile_secret_passphrase_primary'))
+      .evaluate()
+      .isNotEmpty) {
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_secret_passphrase_primary')),
+    );
+    await tester.pumpAndSettle();
+    return;
+  }
   await tester.enterText(
     find.byKey(const ValueKey('mobile_customise_account_name_field')),
     '  My savings  ',
@@ -206,38 +239,74 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
-  testWidgets('repeated persona Continue opens only one credential screen', (
-    tester,
-  ) async {
-    GoRouter? router;
-    final accounts = _RecordingAccountNotifier();
-    await tester.pumpWidget(
-      _createRouterApp(
-        accountNotifier: accounts,
-        onRouter: (value) => router = value,
-      ),
+  for (final systemBack in [false, true]) {
+    testWidgets(
+      'phrase Back after credential Back returns to education, system=$systemBack',
+      (tester) async {
+        late GoRouter router;
+        await tester.pumpWidget(
+          _createRouterApp(
+            accountNotifier: _RecordingAccountNotifier(),
+            onRouter: (value) => router = value,
+          ),
+        );
+        await _continuePersona(tester);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.byType(MobileSecretPassphraseScreen), findsOneWidget);
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(MobileSecretPassphraseScreen)),
+        );
+        if (systemBack) {
+          await tester.binding.handlePopRoute();
+        } else {
+          await tester.tap(find.bySemanticsLabel('Back').hitTestable());
+        }
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '/onboarding/things-to-know');
+        expect(find.text('education route'), findsOneWidget);
+        expect(
+          container.read(createOnboardingMnemonicProvider),
+          _createArgs.requiredMnemonic,
+        );
+      },
     );
-    await tester.pumpAndSettle();
-    final button = tester.widget<AppButton>(
-      find.byKey(const ValueKey('mobile_customise_account_continue')),
-    );
-    button.onPressed!();
-    button.onPressed!();
-    await tester.pumpAndSettle();
-    expect(find.text('Create Passcode').hitTestable(), findsOneWidget);
-    router!.pop();
-    await tester.pumpAndSettle();
-    expect(find.text('Customise Account').hitTestable(), findsOneWidget);
-    expect(find.text('Create Passcode').hitTestable(), findsNothing);
-    expect(
-      tester
-          .widget<AppButton>(
-            find.byKey(const ValueKey('mobile_customise_account_continue')),
-          )
-          .onPressed,
-      isNotNull,
-    );
-  });
+  }
+
+  testWidgets(
+    'repeated import persona Continue opens only one credential screen',
+    (tester) async {
+      GoRouter? router;
+      final accounts = _RecordingAccountNotifier();
+      await tester.pumpWidget(
+        _personaRouterApp(
+          args: _importArgs,
+          accountNotifier: accounts,
+          onRouter: (value) => router = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final button = tester.widget<AppButton>(
+        find.byKey(const ValueKey('mobile_customise_account_continue')),
+      );
+      button.onPressed!();
+      button.onPressed!();
+      await tester.pumpAndSettle();
+      expect(find.text('Create Passcode').hitTestable(), findsOneWidget);
+      router!.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Customise Account').hitTestable(), findsOneWidget);
+      expect(find.text('Create Passcode').hitTestable(), findsNothing);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_customise_account_continue')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
 
   testWidgets(
     'dismissed birthday keyboard does not compress the passcode title',
@@ -281,7 +350,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_app());
     await tester.pump();
-    expect(_stepsProgress(tester), closeTo(0.88435374150, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.86122448980, 0.0001));
   });
 
   testWidgets('import passcode progress follows the review import flow', (
@@ -308,20 +377,55 @@ void main() {
     expect(find.text("Passcodes didn't match. Try again."), findsOneWidget);
   });
 
+  testWidgets(
+    'deferred creation generates only after passcode confirmation and opens biometrics',
+    (tester) async {
+      final accounts = _RecordingAccountNotifier();
+      final security = _RecordingAppSecurityNotifier();
+      final router = GoRouter(
+        initialLocation: '/onboarding/set-passcode',
+        initialExtra: const SetPasswordScreenArgs.createDeferred().withPersona(
+          _persona,
+        ),
+        routes: [
+          ...mobileOnboardingRoutes().whereType<GoRoute>().where(
+            (route) => route.path == '/onboarding/set-passcode',
+          ),
+          GoRoute(
+            path: '/onboarding/biometrics',
+            builder: (_, _) => const Text('biometrics route'),
+          ),
+          GoRoute(
+            path: '/welcome',
+            builder: (_, _) => const Text('welcome route'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        _routerHarness(router, accounts, security: security),
+      );
+      await tester.pumpAndSettle();
+      expect(accounts.mutationCalls, 0);
+      await _enter(tester, '123456');
+      expect(accounts.mutationCalls, 0);
+      await _enter(tester, '123456');
+      await tester.pumpAndSettle();
+      expect(accounts.mutationCalls, 1);
+      expect(accounts.deferred, isTrue);
+      expect(accounts.accountName, _persona.name);
+      expect(security.preparedPassword, '123456');
+      expect(security.commitCalls, 1);
+      expect(find.text('biometrics route'), findsOneWidget);
+    },
+  );
+
   testWidgets('create saves the persona only after matching confirmation', (
     tester,
   ) async {
     final accounts = _RecordingAccountNotifier();
     await tester.pumpWidget(_createRouterApp(accountNotifier: accounts));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('mobile_customise_account_name_field')),
-      'My savings',
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_customise_account_continue')),
-    );
-    await tester.pumpAndSettle();
+    await _continuePersona(tester);
     expect(accounts.createdMnemonic, isNull);
     await _enter(tester, '123456');
     expect(accounts.createdMnemonic, isNull);
@@ -333,7 +437,7 @@ void main() {
   });
 
   testWidgets(
-    'back from passcode preserves the edited persona and resets passcode',
+    'back from passcode restores the phrase and keeps the generated persona',
     (tester) async {
       late GoRouter router;
       final accounts = _RecordingAccountNotifier();
@@ -343,26 +447,27 @@ void main() {
           onRouter: (value) => router = value,
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('mobile_customise_account_name_field')),
-        'My savings',
-      );
-      await tester.tap(
-        find.byKey(const ValueKey('mobile_customise_account_continue')),
-      );
-      await tester.pumpAndSettle();
+      await _continuePersona(tester);
       await _enter(tester, '123456');
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      expect(find.text('My savings'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile_secret_passphrase_primary')),
+        findsOneWidget,
+      );
+      expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
       expect(accounts.createdMnemonic, isNull);
       expect(router.canPop(), isFalse);
       await tester.tap(
-        find.byKey(const ValueKey('mobile_customise_account_continue')),
+        find.byKey(const ValueKey('mobile_secret_passphrase_primary')),
       );
       await tester.pumpAndSettle();
       expect(find.text('Create Passcode'), findsOneWidget);
+      await _enter(tester, '654321');
+      await _enter(tester, '654321');
+      await tester.pumpAndSettle();
+      expect(accounts.accountName, _persona.name);
+      expect(accounts.pictureId, _persona.profilePictureId);
     },
   );
 
@@ -619,6 +724,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
   _RecordingAccountNotifier({this.beforeMutation});
   final Future<void> Function(int attempt)? beforeMutation;
   int mutationCalls = 0;
+  bool deferred = false;
   String? createdMnemonic;
   String? accountName;
   String? pictureId;
@@ -647,6 +753,18 @@ class _RecordingAccountNotifier extends AccountNotifier {
     importedBip39Passphrase = bip39Passphrase;
     importedBirthdayHeight = birthdayHeight;
     importedAdditionalAccountIndices = additionalAccountIndices;
+  }
+
+  @override
+  Future<void> createAccountForDeferredSetup({
+    required String name,
+    required String profilePictureId,
+  }) async {
+    mutationCalls++;
+    await beforeMutation?.call(mutationCalls);
+    deferred = true;
+    accountName = name;
+    pictureId = profilePictureId;
   }
 
   @override

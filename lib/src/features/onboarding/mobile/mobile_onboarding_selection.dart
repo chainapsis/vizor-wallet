@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../core/layout/mobile/mobile_scroll_edge_fades.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -31,47 +32,48 @@ class MobileOnboardingSelectionPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // The shared steps geometry, as on every onboarding step, so
+            // the progress bar holds still from page to page.
             MobileTopNav.steps(
-              height: 74,
               progress: OnboardingProgressPosition.start.value,
-              progressOffset: const Offset(-4.5, 0),
-              progressTrackColor: colors.background.inverse.withValues(
-                alpha: 0.35,
-              ),
               onBack: () => context.pop(),
             ),
             Expanded(
-              child: SingleChildScrollView(
-                key: scrollKey,
-                padding: const EdgeInsets.all(
-                  AppSpacing.sm,
-                ).copyWith(top: AppSpacing.md, bottom: AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.displayLarge.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: colors.text.accent,
+              child: MobileScrollEdgeFades(
+                color: colors.background.window,
+                bottomHeight: AppSpacing.xl,
+                child: SingleChildScrollView(
+                  key: scrollKey,
+                  padding: const EdgeInsets.all(
+                    kMobilePageMargin,
+                  ).copyWith(top: AppSpacing.md, bottom: AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.displayLarge.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: colors.text.accent,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      subtitle,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.primary,
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        subtitle,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.primary,
+                        ),
                       ),
-                    ),
-                    // 32 px section gap plus the cards' 16 px top padding.
-                    const SizedBox(height: AppSpacing.lg),
-                    for (var index = 0; index < cards.length; index++) ...[
-                      if (index > 0) const SizedBox(height: AppSpacing.s),
-                      cards[index],
+                      // 32 px section gap plus the cards' 16 px top padding.
+                      const SizedBox(height: AppSpacing.lg),
+                      for (var index = 0; index < cards.length; index++) ...[
+                        if (index > 0) const SizedBox(height: AppSpacing.s),
+                        cards[index],
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),

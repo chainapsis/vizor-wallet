@@ -14,7 +14,8 @@ import 'mobile_navigation_scope.dart';
 /// floating tab bar overlaid at the bottom.
 ///
 /// Layout from the Figma mobile frames (e.g. `Home Default`, node
-/// 4394:88353): the tab bar floats 16px from the horizontal edges and
+/// 4394:88353): the tab bar floats centred at its own width (never closer
+/// than 16px to the horizontal edges) and
 /// page content scrolls underneath it (`extendBody`). Below the bar,
 /// Android keeps the Figma 12px gap above the navigation-bar inset; on
 /// iOS the home indicator floats inside the gap instead, which is
@@ -87,16 +88,21 @@ class AppMobileShell extends StatelessWidget {
       bottomNavigationBar: mode != MobileNavigationMode.bottomTabs
           ? null
           : nativeBar ??
-                MobileBottomSafeArea(
-                  bottomPadding: bottomGap,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      AppSpacing.sm,
-                      0,
-                      AppSpacing.sm,
-                      bottomGap,
+                // Only the Flutter fallback owns this strip. UIKit controls
+                // the native bar's hit surface and safe-area geometry.
+                Listener(
+                  behavior: HitTestBehavior.opaque,
+                  child: MobileBottomSafeArea(
+                    bottomPadding: bottomGap,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        AppSpacing.sm,
+                        0,
+                        AppSpacing.sm,
+                        bottomGap,
+                      ),
+                      child: tabBar,
                     ),
-                    child: tabBar,
                   ),
                 ),
     );

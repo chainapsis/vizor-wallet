@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../voting_flow_models.dart';
 import 'voting_pane_scroll_area.dart';
@@ -343,9 +344,9 @@ class _VotingProposalListState extends State<VotingProposalList>
                         constraints: const BoxConstraints(maxWidth: 560),
                         child: Padding(
                           padding: EdgeInsets.fromLTRB(
-                            mobile ? AppSpacing.sm : AppSpacing.md,
+                            mobile ? kMobilePageMargin : AppSpacing.md,
                             mobile ? AppSpacing.s : AppSpacing.sm,
-                            mobile ? AppSpacing.sm : AppSpacing.md,
+                            mobile ? kMobilePageMargin : AppSpacing.md,
                             AppSpacing.md,
                           ),
                           child: Column(
