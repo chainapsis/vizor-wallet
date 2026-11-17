@@ -836,6 +836,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressScanTitle => 'Scan the address QR code';
 
   @override
+  String get addressScanWrongNetwork =>
+      'This QR code is for a different network.';
+
+  @override
+  String addressScanWrongNetworkNamed(String network) {
+    return 'This QR code is for $network.';
+  }
+
+  @override
   String get addressScanZcashPrompt => 'Scan a Zcash QR code to continue';
 
   @override

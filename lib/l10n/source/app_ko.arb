@@ -238,6 +238,8 @@
   "addressScanDeniedTitle": "카메라 사용 권한이 필요해요",
   "addressScanGrantAccess": "카메라 접근을 허용해 주세요",
   "addressScanTitle": "주소 QR 코드를 스캔하세요",
+  "addressScanWrongNetwork": "이 QR 코드는 다른 네트워크용이에요.",
+  "addressScanWrongNetworkNamed": "이 QR 코드는 {network}용이에요.",
   "addressScanZcashPrompt": "계속하려면 Zcash QR 코드를 스캔하세요",
   "appBackDonation": "후원",
   "appBackHardwareWallets": "하드웨어 지갑",

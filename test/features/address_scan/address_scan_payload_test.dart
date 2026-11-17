@@ -9,33 +9,15 @@ void main() {
       expect(normalizeAddressScanPayload('  rowan.near  '), 'rowan.near');
     });
 
-    test('extracts recipient from ethereum receive URI', () {
-      expect(
-        normalizeAddressScanPayload(
-          'ethereum:0x157D19957d4047Fb8601783805a54EF6ae80eaD7',
-        ),
-        '0x157D19957d4047Fb8601783805a54EF6ae80eaD7',
-      );
-    });
-
-    test('drops ethereum chain id suffix', () {
-      expect(
-        normalizeAddressScanPayload(
-          'ethereum:0x157D19957d4047Fb8601783805a54EF6ae80eaD7@8453',
-        ),
-        '0x157D19957d4047Fb8601783805a54EF6ae80eaD7',
-      );
-    });
-
-    test('extracts ERC-681 transfer recipient instead of token contract', () {
-      expect(
-        normalizeAddressScanPayload(
-          'ethereum:0x1111111111111111111111111111111111111111@1'
-          '/transfer?address=0x157D19957d4047Fb8601783805a54EF6ae80eaD7'
-          '&uint256=1000000',
-        ),
-        '0x157D19957d4047Fb8601783805a54EF6ae80eaD7',
-      );
+    test('leaves another chain\'s URI for resolveAddressScan', () {
+      for (final raw in [
+        'ethereum:0x157D19957d4047Fb8601783805a54EF6ae80eaD7@8453',
+        'bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4?amount=1',
+        // Unreadable escapes used to throw out of the scan callback.
+        'ethereum:%FF',
+      ]) {
+        expect(normalizeAddressScanPayload(raw), raw);
+      }
     });
 
     test('extracts address from zcash ZIP-321 URI', () {

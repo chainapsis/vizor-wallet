@@ -789,6 +789,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanTitle => '扫描地址二维码';
 
   @override
+  String get addressScanWrongNetwork => '此二维码属于其他网络。';
+
+  @override
+  String addressScanWrongNetworkNamed(String network) {
+    return '此二维码属于 $network 网络。';
+  }
+
+  @override
   String get addressScanZcashPrompt => '请扫描 Zcash 二维码以继续';
 
   @override

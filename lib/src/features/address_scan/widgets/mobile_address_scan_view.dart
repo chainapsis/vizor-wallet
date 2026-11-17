@@ -27,7 +27,8 @@ class MobileScanOutcome {
 
 /// Resolves a raw scanned payload into a [MobileScanOutcome]. Callers
 /// own the validation semantics — the send flow checks the string is a
-/// Zcash address, the swap flow accepts any destination address.
+/// Zcash address, and an address field uses `addressScanResolver` to check
+/// it against its own chain.
 typedef MobileScanResolver = Future<MobileScanOutcome> Function(String raw);
 
 /// Full-bleed mobile QR scanner — Figma `Mobile Scanner` (4484:58700 /

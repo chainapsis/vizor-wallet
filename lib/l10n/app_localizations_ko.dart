@@ -818,6 +818,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get addressScanTitle => '주‍소 QR 코‍드‍를 스‍캔‍하‍세‍요';
 
   @override
+  String get addressScanWrongNetwork => '이 QR 코‍드‍는 다‍른 네‍트‍워‍크‍용‍이‍에‍요.';
+
+  @override
+  String addressScanWrongNetworkNamed(String network) {
+    return '이 QR 코‍드‍는 $network‍용‍이‍에‍요.';
+  }
+
+  @override
   String get addressScanZcashPrompt => '계‍속‍하‍려‍면 Zcash QR 코‍드‍를 스‍캔‍하‍세‍요';
 
   @override

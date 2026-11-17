@@ -24,6 +24,7 @@ import '../../../core/widgets/app_tappable.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../send/models/send_prefill_args.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
+import '../../address_scan/widgets/address_scan_resolver.dart';
 import '../models/address_book_contact.dart';
 import '../models/address_format_validator.dart';
 import '../providers/address_book_provider.dart';
@@ -322,6 +323,10 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
         );
       case _AddressBookModalKind.addressScanner:
         return AddressQrScanModal(
+          resolve: addressScanResolver(
+            context.l10n,
+            network: draft?.network ?? AddressBookNetwork.zcash,
+          ),
           onAddressScanned: _selectScannedAddress,
           onCancel: _returnToDraftForm,
         );

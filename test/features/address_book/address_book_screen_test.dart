@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/screens/address_book_screen.dart';
@@ -20,6 +21,7 @@ import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   testWidgets('does not show a loading spinner while contacts load', (
@@ -512,6 +514,38 @@ void main() {
     );
     expect(cancelButton.variant, AppButtonVariant.ghost);
     expect(cancelButton.minWidth, 196);
+  });
+
+  testWidgets('the scanner takes a request\'s address', (tester) async {
+    const address = 't1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCi';
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_addressBookHarness(_FakeAddressBookRepository()));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_add_contact_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Scan address QR'));
+    await tester.pumpAndSettle();
+
+    // The draft is a Zcash contact, so another chain's code is refused.
+    final scanner = tester.widget<AddressQrScanModal>(
+      find.byType(AddressQrScanModal),
+    );
+    final refused = await scanner.resolve(
+      'bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
+    );
+    expect(refused.error, testL10n.addressScanWrongNetworkNamed('Bitcoin'));
+
+    final accepted = await scanner.resolve('zcash:$address?amount=1.5');
+    expect(accepted.address, address);
+    scanner.onAddressScanned(accepted.address!);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const ValueKey('address_scan_modal')), findsNothing);
+    expect(find.text(address), findsOneWidget);
   });
 
   testWidgets('opens address scanner as an in-pane modal', (tester) async {

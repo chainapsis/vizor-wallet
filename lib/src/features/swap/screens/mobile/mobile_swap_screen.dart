@@ -28,10 +28,8 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
-import '../../../address_scan/domain/address_scan_payload.dart';
+import '../../../address_scan/widgets/address_scan_resolver.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
-import '../../../address_scan/widgets/mobile_address_scan_view.dart'
-    show MobileScanOutcome;
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_state_provider.dart';
@@ -176,6 +174,9 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
           builder: (context, ref, _) {
             final swapState = ref.watch(swapStateProvider);
             final swapNotifier = ref.read(swapStateProvider.notifier);
+            final scanNetwork = AddressBookNetwork.tryFromChainTicker(
+              swapState.externalAsset.chainTicker,
+            );
             final surfaceContent = switch (surface) {
               _SwapModalSurface.assetSelector => MobileSwapAssetSelectorModal(
                 assets: swapState.supportedExternalAssets,
@@ -213,15 +214,13 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
               // `Address QR` 4697:106096); it shares the same MobileModalCard
               // surface as the other swap modals.
               _SwapModalSurface.addressScanner => MobileAddressScanCard(
-                resolve: (raw) async {
-                  final address = normalizeAddressScanPayload(raw);
-                  if (address == null || address.isEmpty) {
-                    return MobileScanOutcome.rejected(
-                      context.l10n.commonQrNoAddress,
-                    );
-                  }
-                  return MobileScanOutcome.accepted(address);
-                },
+                caption: scanNetwork == null
+                    ? context.l10n.addressScanTitle
+                    : addressBookQrScanTitle(context.l10n, scanNetwork),
+                resolve: addressScanResolver(
+                  context.l10n,
+                  network: scanNetwork,
+                ),
                 onScanned: (value) {
                   _openAddressEditor(draftText: value);
                 },
