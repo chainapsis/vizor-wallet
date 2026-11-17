@@ -14,6 +14,7 @@ import '../models/swap_models.dart';
 import 'one_time_address_label.dart';
 import 'swap_asset_icon.dart';
 import 'swap_quote_error_text.dart';
+import 'swap_confidential_ui.dart';
 
 class SwapComposerPanel extends StatefulWidget {
   const SwapComposerPanel({
@@ -31,6 +32,12 @@ class SwapComposerPanel extends StatefulWidget {
     required this.onUseMaxZecAmount,
     required this.assetSelectorOpen,
     required this.slippageSettingsOpen,
+    this.rateText,
+    this.confidentialReveal = 0,
+    this.receiveAmountPlaceholder,
+    this.receiveAmountMetaText,
+    this.amountFocusNode,
+    this.settingsControl,
     required this.zecAvailableText,
     required this.zecAvailableZatoshi,
     this.destinationContactName,
@@ -77,6 +84,18 @@ class SwapComposerPanel extends StatefulWidget {
   final VoidCallback onUseMaxZecAmount;
   final bool assetSelectorOpen;
   final bool slippageSettingsOpen;
+
+  /// Optional presentation slots used by the confidential-swap prototype.
+  /// [rateText] replaces the rate estimate while no quote exists.
+  final String? rateText;
+
+  /// From the screen's [SwapConfidentialRevealCounter]: each rise plays the
+  /// seam flip and lands the mark once.
+  final int confidentialReveal;
+  final String? receiveAmountPlaceholder;
+  final String? receiveAmountMetaText;
+  final FocusNode? amountFocusNode;
+  final Widget? settingsControl;
   final String zecAvailableText;
   final BigInt zecAvailableZatoshi;
 
@@ -99,7 +118,8 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     _receiveAmountController = TextEditingController(
       text: _receiveInputText(widget.state),
     );
-    _amountFocusNode = FocusNode(debugLabel: 'SwapPayAmount');
+    _amountFocusNode =
+        widget.amountFocusNode ?? FocusNode(debugLabel: 'SwapPayAmount');
     _receiveAmountFocusNode = FocusNode(debugLabel: 'SwapReceiveAmount');
     _amountFocusNode.addListener(_handleAmountFocusChanged);
     _receiveAmountFocusNode.addListener(_handleAmountFocusChanged);
@@ -118,7 +138,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     _receiveAmountController.dispose();
     _amountFocusNode.removeListener(_handleAmountFocusChanged);
     _receiveAmountFocusNode.removeListener(_handleAmountFocusChanged);
-    _amountFocusNode.dispose();
+    if (widget.amountFocusNode == null) _amountFocusNode.dispose();
     _receiveAmountFocusNode.dispose();
     super.dispose();
   }
@@ -153,7 +173,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final receiveInputIsFiat =
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final targetDirection = state.direction.toggled;
-    final rateText = _rateTextForState(context.l10n, state);
+    final rateText = widget.rateText ?? _rateTextForState(context.l10n, state);
     final quoteError =
         state.quoteAmountPrecisionError(context.l10n) ??
         state.externalAssetSupportError(context.l10n) ??
@@ -173,6 +193,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
             state.quoteMode == SwapQuoteMode.exactOutput);
     final ticket = _SwapTicketShell(
       key: const ValueKey('swap_compact_ticket'),
+      confidentialReveal: widget.confidentialReveal,
       payCard: _SwapAmountCard(
         label: context.l10n.commonYouPay,
         active: payActive,
@@ -263,7 +284,9 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
           onChanged: receiveInputIsFiat
               ? widget.onReceiveAmountFiatChanged
               : widget.onReceiveAmountChanged,
-          hintText: receiveInputIsFiat ? '0.00' : '0',
+          hintText:
+              widget.receiveAmountPlaceholder ??
+              (receiveInputIsFiat ? '0.00' : '0'),
           prefixText: receiveInputIsFiat ? r'$' : null,
           maxFractionDigits: receiveInputIsFiat
               ? 2
@@ -282,12 +305,14 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
         footer: sendsZec
             ? _SwapCardFooter(
                 leading: _SwapFiatValueText(
-                  text: _amountMetaText(
-                    state,
-                    asset: state.externalAsset,
-                    tokenAmountText: state.receiveAmountText,
-                    inputMode: state.receiveAmountInputMode,
-                  ),
+                  text:
+                      widget.receiveAmountMetaText ??
+                      _amountMetaText(
+                        state,
+                        asset: state.externalAsset,
+                        tokenAmountText: state.receiveAmountText,
+                        inputMode: state.receiveAmountInputMode,
+                      ),
                   showModeIcon: receiveActive,
                   active: receiveInputIsFiat,
                   onTap: () =>
@@ -303,12 +328,14 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               )
             : _SwapCardFooter(
                 leading: _SwapFiatValueText(
-                  text: _amountMetaText(
-                    state,
-                    asset: SwapAsset.zec,
-                    tokenAmountText: state.receiveAmountText,
-                    inputMode: state.receiveAmountInputMode,
-                  ),
+                  text:
+                      widget.receiveAmountMetaText ??
+                      _amountMetaText(
+                        state,
+                        asset: SwapAsset.zec,
+                        tokenAmountText: state.receiveAmountText,
+                        inputMode: state.receiveAmountInputMode,
+                      ),
                   showModeIcon: receiveActive,
                   active: receiveInputIsFiat,
                   onTap: () =>
@@ -340,9 +367,12 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
             _SwapTicketFooter(
               rateText: rateText,
               slippageBps: state.slippageBps,
+              confidential: state.confidential,
+              confidentialReveal: widget.confidentialReveal,
               settingsOpen: widget.slippageSettingsOpen,
               settingsEnabled: !state.quoteLoading,
               onSettingsTap: widget.onOpenSlippageSettings,
+              settingsControl: widget.settingsControl,
             ),
             if (quoteError != null) ...[
               const SizedBox(height: AppSpacing.xs),
@@ -372,16 +402,22 @@ class _SwapTicketFooter extends StatelessWidget {
   const _SwapTicketFooter({
     required this.rateText,
     required this.slippageBps,
+    required this.confidential,
+    required this.confidentialReveal,
     required this.settingsOpen,
     required this.settingsEnabled,
     required this.onSettingsTap,
+    this.settingsControl,
   });
 
   final String rateText;
   final int slippageBps;
+  final bool confidential;
+  final int confidentialReveal;
   final bool settingsOpen;
   final bool settingsEnabled;
   final VoidCallback onSettingsTap;
+  final Widget? settingsControl;
 
   @override
   Widget build(BuildContext context) {
@@ -393,12 +429,15 @@ class _SwapTicketFooter extends StatelessWidget {
         children: [
           Expanded(child: _SwapRateInline(rateText: rateText)),
           const SizedBox(width: 8),
-          _SlippageControl(
-            label: formatSwapSlippage(slippageBps),
-            selected: settingsOpen,
-            enabled: settingsEnabled,
-            onTap: onSettingsTap,
-          ),
+          settingsControl ??
+              _SlippageControl(
+                label: formatSwapSlippage(slippageBps),
+                confidential: confidential,
+                confidentialReveal: confidentialReveal,
+                selected: settingsOpen,
+                enabled: settingsEnabled,
+                onTap: onSettingsTap,
+              ),
         ],
       ),
     );
@@ -444,9 +483,11 @@ class _SwapTicketShell extends StatelessWidget {
     required this.receiveCard,
     required this.targetDirection,
     required this.onToggleDirection,
+    required this.confidentialReveal,
     super.key,
   });
 
+  final int confidentialReveal;
   final Widget payCard;
   final Widget receiveCard;
   final SwapDirection targetDirection;
@@ -472,9 +513,14 @@ class _SwapTicketShell extends StatelessWidget {
             left: 0,
             right: 0,
             child: Center(
-              child: _SwapDirectionButton(
-                key: ValueKey('swap_direction_${targetDirection.name}'),
-                onTap: onToggleDirection,
+              child: SwapConfidentialSeamReveal(
+                reveal: confidentialReveal,
+                size: 40,
+                radius: 12,
+                child: _SwapDirectionButton(
+                  key: ValueKey('swap_direction_${targetDirection.name}'),
+                  onTap: onToggleDirection,
+                ),
               ),
             ),
           ),
@@ -1007,12 +1053,18 @@ String _amountMetaText(
 class _SlippageControl extends StatelessWidget {
   const _SlippageControl({
     required this.label,
+    required this.confidential,
+    required this.confidentialReveal,
     required this.selected,
     required this.enabled,
     required this.onTap,
   });
 
   final String label;
+
+  /// Marks the button while the confidential route is set inside it.
+  final bool confidential;
+  final int confidentialReveal;
   final bool selected;
   final bool enabled;
   final VoidCallback onTap;
@@ -1039,6 +1091,14 @@ class _SlippageControl extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (confidential) ...[
+                SwapConfidentialIcon(
+                  alpha: enabled ? 1 : 0.45,
+                  reveal: confidentialReveal,
+                  labeled: true,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+              ],
               Text(
                 label,
                 style: AppTypography.labelLarge.copyWith(

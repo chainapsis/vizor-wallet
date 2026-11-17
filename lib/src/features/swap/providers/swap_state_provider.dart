@@ -92,6 +92,7 @@ class SwapNotifier extends Notifier<SwapState> {
   Set<String> _deprecatedAssetIdentityKeys = const {};
   Set<(String, String, int)> _deprecatedAssetMarkets = const {};
   var _statusRefreshInFlight = false;
+  var _quoteSettings = const SwapQuoteSettingsSessions();
   SwapAsset? _payRetryAsset;
   String? _restoredPayAssetAccountUuid;
   String? _payAssetRestoreAccountUuid;
@@ -212,6 +213,8 @@ class SwapNotifier extends Notifier<SwapState> {
           receiveAmountInputMode: SwapAmountInputMode.token,
           amountFiatText: '',
           receiveFiatText: '',
+          slippageBps: _quoteSettings.slippageFor(payMode: false),
+          confidential: _quoteSettings.confidentialFor(payMode: false),
           reviewVisible: false,
           payMode: false,
         ),
@@ -239,6 +242,8 @@ class SwapNotifier extends Notifier<SwapState> {
           receiveAmountInputMode: SwapAmountInputMode.token,
           amountFiatText: '',
           receiveFiatText: '',
+          slippageBps: _quoteSettings.slippageFor(payMode: false),
+          confidential: _quoteSettings.confidentialFor(payMode: false),
           reviewVisible: false,
           payMode: false,
         ),
@@ -350,6 +355,8 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: '',
           receiveFiatText: '',
           externalAsset: payAsset,
+          slippageBps: _quoteSettings.slippageFor(payMode: true),
+          confidential: _quoteSettings.confidentialFor(payMode: true),
           destinationText: '',
           clearUserExternalContactId: true,
           reviewVisible: false,
@@ -396,6 +403,8 @@ class SwapNotifier extends Notifier<SwapState> {
         state.copyWith(
           direction: SwapDirection.zecToExternal,
           externalAsset: defaultSwapAsset,
+          slippageBps: _quoteSettings.slippageFor(payMode: false),
+          confidential: _quoteSettings.confidentialFor(payMode: false),
           quoteMode: SwapQuoteMode.exactInput,
           amountText: '',
           receiveAmountText: '',
@@ -471,6 +480,8 @@ class SwapNotifier extends Notifier<SwapState> {
         swapStateWithTokenAmountsForFiatModes(
           state.copyWith(
             externalAsset: supportedAsset,
+            slippageBps: _quoteSettings.slippageFor(payMode: false),
+            confidential: _quoteSettings.confidentialFor(payMode: false),
             reviewVisible: false,
             destinationText: chainChanged ? '' : null,
             payMode: false,
@@ -512,6 +523,8 @@ class SwapNotifier extends Notifier<SwapState> {
         swapStateWithTokenAmountsForFiatModes(
           state.copyWith(
             externalAsset: supportedAsset,
+            slippageBps: _quoteSettings.slippageFor(payMode: true),
+            confidential: _quoteSettings.confidentialFor(payMode: true),
             reviewVisible: false,
             destinationText: clearDestinationOnChainChange && chainChanged
                 ? ''
@@ -529,11 +542,22 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
-  void updateSlippageBps(int value) {
-    final normalized = value.clamp(10, 500).toInt();
+  /// Applies the settings modal's slippage and confidential route together,
+  /// for this composer session only.
+  void updateQuoteSettings({
+    required int slippageBps,
+    required bool confidential,
+  }) {
+    final normalized = slippageBps.clamp(10, 500).toInt();
+    _quoteSettings = _quoteSettings.update(
+      payMode: state.payMode,
+      slippageBps: normalized,
+      confidential: confidential,
+    );
     _clearReviewState();
     state = state.copyWith(
       slippageBps: normalized,
+      confidential: confidential,
       reviewVisible: false,
       clearQuoteError: true,
       clearStatusError: true,
@@ -545,10 +569,26 @@ class SwapNotifier extends Notifier<SwapState> {
       preserveReceiveFiatInput:
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
-    unawaited(
-      state.payMode
-          ? _persistSlippageOnlyPreference(normalized)
-          : _persistComposerPreferences(_currentComposerPreferences),
+  }
+
+  /// Ends both composer sessions when navigation leaves the Swap/Pay surface.
+  void resetComposerQuoteSettings() {
+    _quoteSettings = const SwapQuoteSettingsSessions();
+    _clearReviewState();
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        state.copyWith(
+          slippageBps: defaultSwapSlippageBps,
+          confidential: false,
+          reviewVisible: false,
+          clearQuoteError: true,
+          clearStatusError: true,
+        ),
+      ),
+      preserveAmountFiatInput:
+          state.amountInputMode == SwapAmountInputMode.fiat,
+      preserveReceiveFiatInput:
+          state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
   }
 
@@ -845,6 +885,18 @@ class SwapNotifier extends Notifier<SwapState> {
     _reviewStagingAddresses.remove((accountUuid, direction));
   }
 
+  /// Sets the quote mode for the next review. A failed quote belongs to the
+  /// previous mode, so its error clears.
+  void selectConfidential(bool confidential) {
+    if (state.confidential == confidential) return;
+    _quoteSettings = _quoteSettings.update(
+      payMode: state.payMode,
+      confidential: confidential,
+    );
+    _clearReviewState();
+    state = state.copyWith(confidential: confidential);
+  }
+
   Future<void> showReview({bool preserveCurrentReview = false}) =>
       _showReview(preserveCurrentReview: preserveCurrentReview, retry: true);
 
@@ -868,7 +920,10 @@ class SwapNotifier extends Notifier<SwapState> {
     final externalAsset = state.externalAsset;
     final userExternalAddress = state.destinationText;
     final quoteMode = state.quoteMode;
+    final payMode = state.payMode;
+    final slippageBps = state.slippageBps;
     final amountText = state.quoteAmountText;
+    final confidential = state.confidential;
     final generation = ++_quoteGeneration;
     final preferences = _currentComposerPreferences;
     final keepCurrentReview =
@@ -890,7 +945,7 @@ class SwapNotifier extends Notifier<SwapState> {
     SwapZecStagingAddress? takenRefund;
     var mayHaveSent = false;
     try {
-      if (!state.payMode) {
+      if (!payMode) {
         await _persistComposerPreferences(preferences);
       }
       final stagingAddress = await _prepareReviewAddress(
@@ -927,7 +982,8 @@ class SwapNotifier extends Notifier<SwapState> {
                     mode: quoteMode,
                     amount: amount,
                     amountText: amountText,
-                    slippageBps: state.slippageBps,
+                    slippageBps: slippageBps,
+                    confidential: confidential,
                     beforeSend: (deadline) async {
                       // A hook that throws stops the request before it leaves.
                       await beforeSend?.call(deadline);
@@ -1032,6 +1088,13 @@ class SwapNotifier extends Notifier<SwapState> {
         );
         return;
       }
+      final noLiquidity =
+          swapFailureCategory(
+            SwapFailureOperation.quote,
+            e,
+            torEnabled: ref.read(networkPrivacyProvider).torEnabled,
+          ) ==
+          SwapFailureCategory.noQuoteOrLiquidity;
       state = state.copyWith(
         reviewVisible: false,
         quoteLoading: false,
@@ -1040,7 +1103,15 @@ class SwapNotifier extends Notifier<SwapState> {
                 kind == ReceiveErrorKind.limit
             ? _addressRecoveryFailureMessage(recoveryFailure) ??
                   _friendlyQuoteError(e)
+            // Liquidity is separate per mode. Only Confidential is a named mode.
+            : noLiquidity
+            ? SwapNotice(
+                confidential
+                    ? SwapNoticeKind.noConfidentialQuoteForAmount
+                    : SwapNoticeKind.noQuoteForAmount,
+              )
             : _friendlyQuoteError(e),
+        quoteNoLiquidity: noLiquidity,
         clearReview: true,
       );
     }
@@ -1205,6 +1276,13 @@ class SwapNotifier extends Notifier<SwapState> {
       payMode: startingPayMode,
       now: DateTime.now().toUtc(),
     );
+    // Slippage resets per swap. The route stays for the session, so a start
+    // that fails and quotes again is not public.
+    _quoteSettings = _quoteSettings.update(
+      payMode: startingPayMode,
+      slippageBps: defaultSwapSlippageBps,
+    );
+    state = state.copyWith(slippageBps: defaultSwapSlippageBps);
     if (activeAccountIsHardware && quote.direction.sendsZec) {
       final nextAction = hardwareSignerKind == HardwareSignerKind.ledger
           ? SwapNextAction.signLedgerDeposit
@@ -1455,6 +1533,9 @@ class SwapNotifier extends Notifier<SwapState> {
     if (inputAmountText.isEmpty || destinationText.isEmpty) return;
     final selectedExternalAsset = externalAsset;
     _payRetryAsset = retryingPay ? externalAsset : null;
+    _quoteSettings = _quoteSettings
+        .reset(payMode: retryingPay)
+        .update(payMode: retryingPay, confidential: intent.confidential);
     if (retryingPay) {
       ref.read(paySelectedAssetProvider.notifier).select(selectedExternalAsset);
       unawaited(_persistPaySelectedAsset(selectedExternalAsset));
@@ -1479,7 +1560,10 @@ class SwapNotifier extends Notifier<SwapState> {
       reviewVisible: false,
       quoteLoading: false,
       depositTxHashText: '',
+      slippageBps: defaultSwapSlippageBps,
       payMode: retryingPay,
+      // A retry must not silently fall back to the public route.
+      confidential: intent.confidential,
       clearReview: true,
       clearQuoteError: true,
       clearStatusError: true,
@@ -2096,6 +2180,7 @@ class SwapNotifier extends Notifier<SwapState> {
     _restoredPayAssetAccountUuid = null;
     _payAssetRestoreAccountUuid = null;
     _payAssetRestoreFuture = null;
+    _quoteSettings = const SwapQuoteSettingsSessions();
     state = state.copyWith(
       amountText: '',
       receiveAmountText: '',
@@ -2113,12 +2198,14 @@ class SwapNotifier extends Notifier<SwapState> {
       depositSubmitting: false,
       depositTxHashText: '',
       statusRefreshing: false,
+      slippageBps: defaultSwapSlippageBps,
       clearReview: true,
       clearQuoteError: true,
       clearStatusError: true,
       clearMaxAmountError: true,
       clearSelectedIntent: true,
       clearPendingHardwareSigningIntent: true,
+      confidential: false,
     );
   }
 
@@ -2215,7 +2302,8 @@ class SwapNotifier extends Notifier<SwapState> {
       state = state.copyWith(
         direction: preferences.direction,
         externalAsset: externalAsset,
-        slippageBps: preferences.slippageBps,
+        slippageBps: _quoteSettings.slippageFor(payMode: false),
+        confidential: _quoteSettings.confidentialFor(payMode: false),
         reviewVisible: false,
         quoteLoading: false,
         payMode: false,
@@ -2638,32 +2726,10 @@ class SwapNotifier extends Notifier<SwapState> {
       (asset.assetId == null &&
           _deprecatedAssetMarkets.contains(_deprecatedAssetMarketKey(asset)));
 
-  /// Slippage is shared with Pay, but Pay's direction/payout asset must not
-  /// overwrite the saved swap composer selection — only the stored slippage
-  /// field is updated, and nothing is written when no swap preferences exist.
-  Future<void> _persistSlippageOnlyPreference(int slippageBps) async {
-    final accountUuid = _activeAccountUuidOrNull?.trim();
-    if (accountUuid == null || accountUuid.isEmpty) return;
-    try {
-      final store = ref.read(swapComposerPreferencesStoreProvider);
-      final saved = await store.loadPreferences(accountUuid: accountUuid);
-      if (saved == null) return;
-      await store.savePreferences(
-        accountUuid: accountUuid,
-        preferences: SwapComposerPreferences(
-          direction: saved.direction,
-          externalAsset: saved.externalAsset,
-          slippageBps: slippageBps,
-        ),
-      );
-    } catch (_) {}
-  }
-
   SwapComposerPreferences get _currentComposerPreferences {
     return SwapComposerPreferences(
       direction: state.direction,
       externalAsset: state.externalAsset,
-      slippageBps: state.slippageBps,
     );
   }
 

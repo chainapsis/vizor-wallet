@@ -26,6 +26,7 @@ import '../../models/swap_activity_navigation.dart';
 import '../../models/swap_state.dart';
 import '../../providers/swap_state_provider.dart';
 import '../../widgets/mobile/mobile_swap_review_content.dart';
+import '../../widgets/swap_confidential_ui.dart';
 import '../swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import 'mobile_swap_keystone_sign_screen.dart';
@@ -414,6 +415,11 @@ class _MobileSwapReviewScreenState
                             convertedFiatText: convertedFiatText,
                             expiresInText: _expiresInText,
                             expired: paymentQuoteExpired,
+                            flowConnector: quote.confidential
+                                ? const SwapConfidentialRouteConnector.pay(
+                                    review: true,
+                                  )
+                                : null,
                           ),
                           for (final message in [
                             swapState.reviewAmountDifferenceWarning(
@@ -438,6 +444,9 @@ class _MobileSwapReviewScreenState
                       )
                     : MobileSwapReviewContent(
                         quote: quote,
+                        flowConnector: quote.confidential
+                            ? const SwapConfidentialRouteConnector.swap()
+                            : null,
                         addressPlan: addressPlan,
                         addressBookContacts: addressBookContacts,
                         userExternalContactId: swapState.userExternalContactId,

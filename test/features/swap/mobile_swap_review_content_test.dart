@@ -105,6 +105,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, navigator) => AppTheme(
           data: AppThemeData.light,
           child: MediaQuery(

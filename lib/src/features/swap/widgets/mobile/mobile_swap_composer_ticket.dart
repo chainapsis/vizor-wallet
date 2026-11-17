@@ -17,6 +17,7 @@ import '../../models/swap_fiat_amount.dart';
 import '../../models/swap_models.dart';
 import '../one_time_address_label.dart';
 import '../swap_asset_icon.dart';
+import '../swap_confidential_ui.dart';
 
 /// Mobile swap composer ticket — Figma `Swap` (4686:101421): the white
 /// rounded wrapper holding the pay card (base fill), the inverse switch
@@ -50,6 +51,10 @@ class MobileSwapComposerTicket extends StatefulWidget {
     this.destinationContactName,
     this.oneTimeZecAddress = false,
     this.preparingOneTimeAddress = false,
+    this.confidentialReveal = 0,
+    this.amountFocusNode,
+    this.receiveAmountPlaceholder,
+    this.receiveAmountMetaText,
     super.key,
   });
 
@@ -64,6 +69,14 @@ class MobileSwapComposerTicket extends StatefulWidget {
   /// Address-book label for the current destination address, shown in the
   /// address chip instead of the truncated address when set.
   final String? destinationContactName;
+
+  /// From the screen's [SwapConfidentialRevealCounter]: each rise plays the
+  /// seam flip once.
+  final int confidentialReveal;
+  final FocusNode? amountFocusNode;
+
+  final String? receiveAmountPlaceholder;
+  final String? receiveAmountMetaText;
   final ValueChanged<String> onAmountChanged;
   final ValueChanged<String> onAmountFiatChanged;
   final ValueChanged<String> onReceiveAmountChanged;
@@ -105,7 +118,8 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
     _receiveAmountController = TextEditingController(
       text: _receiveInputText(widget.state),
     );
-    _amountFocusNode = FocusNode(debugLabel: 'MobileSwapPayAmount');
+    _amountFocusNode =
+        widget.amountFocusNode ?? FocusNode(debugLabel: 'MobileSwapPayAmount');
     _receiveAmountFocusNode = FocusNode(debugLabel: 'MobileSwapReceiveAmount');
     _amountFocusNode.addListener(_handleAmountFocusChanged);
     _receiveAmountFocusNode.addListener(_handleAmountFocusChanged);
@@ -124,7 +138,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
     _receiveAmountController.dispose();
     _amountFocusNode.removeListener(_handleAmountFocusChanged);
     _receiveAmountFocusNode.removeListener(_handleAmountFocusChanged);
-    _amountFocusNode.dispose();
+    if (widget.amountFocusNode == null) _amountFocusNode.dispose();
     _receiveAmountFocusNode.dispose();
     super.dispose();
   }
@@ -254,6 +268,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
         key: const ValueKey('swap_receive_amount_field'),
         controller: _receiveAmountController,
         focusNode: _receiveAmountFocusNode,
+        hintText: widget.receiveAmountPlaceholder ?? '0',
         onChanged: receiveInputIsFiat
             ? widget.onReceiveAmountFiatChanged
             : widget.onReceiveAmountChanged,
@@ -275,12 +290,14 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
               label: 'Zcash', // l10n-ignore: product name
             ),
       fiat: _FiatModeToggle(
-        text: _amountMetaText(
-          state,
-          asset: state.direction.toAsset(state.externalAsset),
-          tokenAmountText: state.receiveAmountText,
-          inputMode: state.receiveAmountInputMode,
-        ),
+        text:
+            widget.receiveAmountMetaText ??
+            _amountMetaText(
+              state,
+              asset: state.direction.toAsset(state.externalAsset),
+              tokenAmountText: state.receiveAmountText,
+              inputMode: state.receiveAmountInputMode,
+            ),
         showModeIcon: receiveActive,
         active: receiveInputIsFiat,
         strong: receiveActive,
@@ -329,10 +346,19 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             left: 0,
             right: 0,
             child: Center(
-              child: _SwapDirectionButton(
-                tapKey: ValueKey('swap_direction_${targetDirection.name}'),
-                flipped: sendsZec,
-                onTap: widget.onToggleDirection,
+              child: SwapConfidentialSeamReveal(
+                reveal: widget.confidentialReveal,
+                size: _switchButtonSize,
+                radius: 18,
+                faceBorder: Border.all(
+                  color: context.colors.background.ground,
+                  width: 6,
+                ),
+                child: _SwapDirectionButton(
+                  tapKey: ValueKey('swap_direction_${targetDirection.name}'),
+                  flipped: sendsZec,
+                  onTap: widget.onToggleDirection,
+                ),
               ),
             ),
           ),
@@ -475,6 +501,7 @@ class _SwapAmountInput extends StatelessWidget {
     required this.onChanged,
     required this.maxFractionDigits,
     this.prefixText,
+    this.hintText = '0',
     super.key,
   });
 
@@ -485,6 +512,7 @@ class _SwapAmountInput extends StatelessWidget {
   final FocusNode focusNode;
   final ValueChanged<String> onChanged;
   final String? prefixText;
+  final String hintText;
   final int maxFractionDigits;
 
   @override
@@ -522,7 +550,7 @@ class _SwapAmountInput extends StatelessWidget {
                 // Muted "0" so an empty field reads as a placeholder rather
                 // than an entered zero — matches the desktop composer, which
                 // recolours the hint to text.disabled over the same serif.
-                hintText: '0',
+                hintText: hintText,
                 hintStyle: valueStyle.copyWith(color: colors.text.disabled),
               ),
             ),

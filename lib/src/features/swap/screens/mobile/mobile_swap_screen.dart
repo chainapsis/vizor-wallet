@@ -43,6 +43,7 @@ import '../../widgets/swap_near_intents_attribution.dart';
 import '../../widgets/mobile/mobile_swap_composer_ticket.dart';
 import '../../widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import '../../widgets/swap_quote_error_text.dart';
+import '../../widgets/swap_confidential_ui.dart';
 
 enum _SwapModalSurface {
   assetSelector,
@@ -74,6 +75,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   final ValueNotifier<_SwapModalSurface?> _swapModal =
       ValueNotifier<_SwapModalSurface?>(null);
   bool _modalRouteOpen = false;
+
+  final _confidentialReveal = SwapConfidentialRevealCounter();
 
   /// The last surface the modal drew. The route's future completes when it
   /// pops, before the sheet has slid out, so the sheet keeps drawing this
@@ -116,6 +119,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         if (mounted) {
           setState(() {
             _clearAddressEditorDraft();
+            _settingsClosed();
             _swapModal.value = null;
           });
         }
@@ -149,9 +153,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     if (_swapModal.value != null) {
       setState(() {
         _clearAddressEditorDraft();
+        _settingsClosed();
         _swapModal.value = null;
       });
     }
+  }
+
+  /// Plays a reveal held back while the settings covered the composer.
+  void _settingsClosed() {
+    if (_swapModal.value != _SwapModalSurface.slippageSettings) return;
+    _confidentialReveal.settingsClosed(
+      confidential: ref.read(swapStateProvider).confidential,
+    );
   }
 
   void _selectAddressBookContact(AddressBookContact contact) {
@@ -243,8 +256,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
               _SwapModalSurface.slippageSettings =>
                 MobileSwapSlippageStepperModal(
                   slippageBps: swapState.slippageBps,
-                  onSubmitted: (value) {
-                    swapNotifier.updateSlippageBps(value);
+                  confidential: swapState.confidential,
+                  onSubmitted: (slippageBps, confidential) {
+                    swapNotifier.updateQuoteSettings(
+                      slippageBps: slippageBps,
+                      confidential: confidential,
+                    );
                     _closeSwapModal();
                   },
                   onCancel: _closeSwapModal,
@@ -323,6 +340,17 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         _closeSwapModal();
       },
     );
+    ref.listen(swapStateProvider.select((state) => state.confidential), (
+      previous,
+      next,
+    ) {
+      if (previous != false || !next) return;
+      unawaited(AppHaptics.privacyToggle());
+      final changed = _confidentialReveal.turnedOn(
+        settingsOpen: _swapModal.value == _SwapModalSurface.slippageSettings,
+      );
+      if (changed) setState(() {});
+    });
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final oneTimeZecAddress = ref.watch(swapUsesOneTimeAddressProvider);
@@ -358,6 +386,11 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
           await context.push('/swap/review');
         }
       }());
+    }
+
+    void getConfidentialQuote() {
+      swapNotifier.selectConfidential(true);
+      openReview();
     }
 
     final shortfall = swapIronwoodOnlyShortfallMessage(
@@ -410,6 +443,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                         children: [
                           MobileSwapComposerTicket(
                             state: swapState,
+                            confidentialReveal: _confidentialReveal.value,
                             onAmountChanged: swapNotifier.updateAmount,
                             onAmountFiatChanged: swapNotifier.updateAmountFiat,
                             onReceiveAmountChanged:
@@ -447,6 +481,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                                     : () => _openModal(
                                         _SwapModalSurface.slippageSettings,
                                       ),
+                                leading: swapState.confidential
+                                    ? SwapConfidentialIcon(
+                                        reveal: _confidentialReveal.value,
+                                        labeled: true,
+                                      )
+                                    : null,
                                 trailing: const AppIcon(AppIcons.cog),
                                 child: Text(
                                   formatSwapSlippage(swapState.slippageBps),
@@ -460,6 +500,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                                   zecAvailableZatoshi: zecSpendable,
                                   onOpenDestinationAddress: _openAddressEditor,
                                   onReviewQuote: openReview,
+                                  onGetConfidentialQuote: getConfidentialQuote,
                                 ),
                               ),
                             ],
@@ -512,6 +553,7 @@ class _MobileSwapReviewButton extends StatelessWidget {
     required this.zecAvailableZatoshi,
     required this.onOpenDestinationAddress,
     required this.onReviewQuote,
+    required this.onGetConfidentialQuote,
   });
 
   final SwapState state;
@@ -519,6 +561,7 @@ class _MobileSwapReviewButton extends StatelessWidget {
   final BigInt zecAvailableZatoshi;
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
+  final VoidCallback onGetConfidentialQuote;
 
   /// Whether the ZEC amount [state] sends is not below [available].
   static bool amountExceeds(SwapState state, BigInt available) {
@@ -541,8 +584,11 @@ class _MobileSwapReviewButton extends StatelessWidget {
         addressWait == SwapAddressWait.server &&
         destinationFormatError == null &&
         !balanceExceeded;
+    final offersConfidential = canReview && state.offersConfidentialQuote;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
+        : offersConfidential
+        ? onGetConfidentialQuote
         : canReview
         ? onReviewQuote
         : chooseServer
@@ -559,6 +605,8 @@ class _MobileSwapReviewButton extends StatelessWidget {
                   ? context.l10n.swapActionGettingQuote
                   : waiting
                   ? swapAddressWaitLabel(context.l10n, addressWait!)
+                  : offersConfidential
+                  ? context.l10n.swapActionGetConfidentialQuote
                   : context.l10n.commonContinueToReview);
 
     return AppButton(

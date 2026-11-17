@@ -38,6 +38,7 @@ class SwapReviewPageContent extends StatelessWidget {
     this.addressBookContacts = const [],
     this.userExternalContactId,
     this.payMode = false,
+    this.flowConnector,
     super.key,
   });
 
@@ -65,6 +66,9 @@ class SwapReviewPageContent extends StatelessWidget {
   /// inline one so "Review swap" doesn't appear twice.
   final bool showTitle;
   final bool payMode;
+
+  /// Optional replacement for the paying/receiving flow arrow row.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +104,7 @@ class SwapReviewPageContent extends StatelessWidget {
               pay: _paySideData(context.l10n),
               receive: _receiveSideData(context.l10n),
               onCopy: onCopy,
+              flowConnector: flowConnector,
             ),
             const SizedBox(height: AppSpacing.base),
             _SwapReviewDetailCard(

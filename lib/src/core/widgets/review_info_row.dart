@@ -409,12 +409,16 @@ class ReviewInfoFlow extends StatelessWidget {
     required this.rows,
     this.connectorIconName = AppIcons.arrowDown,
     this.connectorColor,
+    this.connector,
     super.key,
   });
 
   final List<Widget> rows;
   final String connectorIconName;
   final Color? connectorColor;
+
+  /// Replaces the connector icon between rows when set.
+  final Widget? connector;
 
   static const _gap = kAppFormFactor == AppFormFactor.mobile
       ? AppSpacing.xs
@@ -429,10 +433,11 @@ class ReviewInfoFlow extends StatelessWidget {
       children: [
         for (var i = 0; i < rows.length; i++) ...[
           if (i > 0)
-            ReviewConnectorIcon(
-              iconName: connectorIconName,
-              color: connectorColor,
-            ),
+            connector ??
+                ReviewConnectorIcon(
+                  iconName: connectorIconName,
+                  color: connectorColor,
+                ),
           rows[i],
         ],
       ],

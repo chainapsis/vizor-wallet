@@ -53,17 +53,24 @@ class MobileSwapReviewHeader extends StatelessWidget {
   const MobileSwapReviewHeader({
     required this.pay,
     required this.receive,
+    this.flowConnector,
     super.key,
   });
 
   final MobileSwapReviewHeaderRow pay;
   final MobileSwapReviewHeaderRow receive;
 
+  /// Optional replacement for the whole flow arrow row.
+  final Widget? flowConnector;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      child: ReviewInfoFlow(rows: [_row(context, pay), _row(context, receive)]),
+      child: ReviewInfoFlow(
+        connector: flowConnector,
+        rows: [_row(context, pay), _row(context, receive)],
+      ),
     );
   }
 

@@ -41,12 +41,57 @@ class SwapComposerPreferences {
   const SwapComposerPreferences({
     required this.direction,
     required this.externalAsset,
-    this.slippageBps = defaultSwapSlippageBps,
   });
 
   final SwapDirection direction;
   final SwapAsset externalAsset;
-  final int slippageBps;
+}
+
+/// The quote settings a Swap or Pay composer session keeps: slippage and the
+/// confidential route, each chosen per swap and never saved.
+class SwapQuoteSettingsSessions {
+  const SwapQuoteSettingsSessions({
+    this.swapBps = defaultSwapSlippageBps,
+    this.payBps = defaultSwapSlippageBps,
+    this.swapConfidential = false,
+    this.payConfidential = false,
+  });
+
+  final int swapBps;
+  final int payBps;
+  final bool swapConfidential;
+  final bool payConfidential;
+
+  int slippageFor({required bool payMode}) => payMode ? payBps : swapBps;
+
+  bool confidentialFor({required bool payMode}) =>
+      payMode ? payConfidential : swapConfidential;
+
+  SwapQuoteSettingsSessions update({
+    required bool payMode,
+    int? slippageBps,
+    bool? confidential,
+  }) {
+    return payMode
+        ? SwapQuoteSettingsSessions(
+            swapBps: swapBps,
+            payBps: slippageBps ?? payBps,
+            swapConfidential: swapConfidential,
+            payConfidential: confidential ?? payConfidential,
+          )
+        : SwapQuoteSettingsSessions(
+            swapBps: slippageBps ?? swapBps,
+            payBps: payBps,
+            swapConfidential: confidential ?? swapConfidential,
+            payConfidential: payConfidential,
+          );
+  }
+
+  SwapQuoteSettingsSessions reset({required bool payMode}) => update(
+    payMode: payMode,
+    slippageBps: defaultSwapSlippageBps,
+    confidential: false,
+  );
 }
 
 class SwapState {
@@ -86,6 +131,8 @@ class SwapState {
     this.selectedIntentId,
     this.payMode = false,
     this.userExternalContactId,
+    this.confidential = false,
+    this.quoteNoLiquidity = false,
   });
 
   final SwapDirection direction;
@@ -126,6 +173,19 @@ class SwapState {
   final String? selectedIntentId;
   final bool payMode;
   final String? userExternalContactId;
+
+  /// Quote mode for the next review. Session-only: it is not saved with the
+  /// composer preferences.
+  final bool confidential;
+
+  /// The last quote failed because the selected mode had no liquidity.
+  /// Cleared with [quoteError].
+  final bool quoteNoLiquidity;
+
+  /// Standard had no quote, so the primary action offers the confidential
+  /// route instead.
+  bool get offersConfidentialQuote =>
+      quoteError != null && quoteNoLiquidity && !confidential;
 
   SwapIntent? get selectedIntentOrNull {
     final selectedId = selectedIntentId;
@@ -350,6 +410,8 @@ class SwapState {
     String? selectedIntentId,
     bool? payMode,
     String? userExternalContactId,
+    bool? confidential,
+    bool? quoteNoLiquidity,
     bool clearReview = false,
     bool clearQuoteError = false,
     bool clearSupportedAssetsError = false,
@@ -412,6 +474,10 @@ class SwapState {
       userExternalContactId: clearUserExternalContactId
           ? null
           : userExternalContactId ?? this.userExternalContactId,
+      confidential: confidential ?? this.confidential,
+      quoteNoLiquidity: clearQuoteError
+          ? false
+          : quoteNoLiquidity ?? this.quoteNoLiquidity,
     );
   }
 }

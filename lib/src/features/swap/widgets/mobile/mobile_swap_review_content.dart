@@ -40,6 +40,7 @@ class MobileSwapReviewContent extends StatelessWidget {
     this.inactiveMessage,
     this.payFiatTextOverride,
     this.receiveFiatTextOverride,
+    this.flowConnector,
     super.key,
   });
 
@@ -56,6 +57,9 @@ class MobileSwapReviewContent extends StatelessWidget {
   final String? inactiveMessage;
   final String? payFiatTextOverride;
   final String? receiveFiatTextOverride;
+
+  /// Optional replacement for the paying/receiving flow arrow row.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +116,11 @@ class MobileSwapReviewContent extends StatelessWidget {
       key: const ValueKey('mobile_swap_review_content'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MobileSwapReviewHeader(pay: payRow, receive: receiveRow),
+        MobileSwapReviewHeader(
+          pay: payRow,
+          receive: receiveRow,
+          flowConnector: flowConnector,
+        ),
         const SizedBox(height: AppSpacing.sm),
         _ReviewCard(quote: quote),
         if (amountWarning != null) ...[
