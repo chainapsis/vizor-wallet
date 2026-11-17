@@ -2,6 +2,8 @@
 import '../../../core/l10n/l10n.dart';
 import '../../../core/profile_pictures.dart';
 
+/// Chains a contact can be saved on. Swap also takes each chain's label and
+/// icon from here.
 enum AddressBookNetwork {
   zcash('zec', 'Zcash', 'assets/swap/chains/zec.webp'),
   ethereum('eth', 'Ethereum', 'assets/swap/chains/eth.webp'),
