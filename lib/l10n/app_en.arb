@@ -14328,9 +14328,21 @@
   "@swapNoticePaymentsMayFail": {
     "description": "Service notice line shown in pay mode explaining that payments may fail."
   },
+  "swapNoticePrivateReceiveAddressLimit": "Too many swaps are waiting. Try again after one finishes or expires.",
+  "@swapNoticePrivateReceiveAddressLimit": {
+    "description": "Swap quote or start error when open quotes hold every one-time receive address."
+  },
   "swapNoticePrivateReceiveAddressPreparationFailed": "Could not prepare a fresh wallet receive address. Try again after wallet sync.",
   "@swapNoticePrivateReceiveAddressPreparationFailed": {
     "description": "Swap quote error with Enhance swap privacy on: the wallet could not reserve a one-time receive address for the swap."
+  },
+  "swapNoticePrivateReceiveAddressPreparing": "Preparing a private swap address. Try again in a moment.",
+  "@swapNoticePrivateReceiveAddressPreparing": {
+    "description": "Swap quote or start error with Enhance swap privacy on while the wallet is still checking the next one-time address's history or waiting for sync."
+  },
+  "swapNoticePrivateReceiveAddressStale": "This swap address is no longer available. Request a new quote.",
+  "@swapNoticePrivateReceiveAddressStale": {
+    "description": "Swap quote or start error when the one-time address reserved for the quote expired or was retired."
   },
   "swapNoticePrivateReceiveAddressUnavailable": "Private swap addresses are unavailable right now. Try again later, or turn off Enhance swap privacy to swap now.",
   "@swapNoticePrivateReceiveAddressUnavailable": {

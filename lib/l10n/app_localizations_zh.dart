@@ -10392,8 +10392,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapNoticePaymentsMayFail => '支付目前可能无法使用。';
 
   @override
+  String get swapNoticePrivateReceiveAddressLimit => '等待中的兑换过多。请在其中一笔完成或过期后重试。';
+
+  @override
   String get swapNoticePrivateReceiveAddressPreparationFailed =>
       '无法准备新的钱包接收地址。请在钱包同步后重试。';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparing => '正在准备隐私兑换地址。请稍后重试。';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale => '此兑换地址已不可用。请获取新报价。';
 
   @override
   String get swapNoticePrivateReceiveAddressUnavailable =>

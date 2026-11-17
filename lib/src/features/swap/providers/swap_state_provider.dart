@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/untranslated_text_log.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../models/swap_amount_input_mapper.dart';
 import '../models/swap_deposit_broadcast_result.dart';
@@ -2445,7 +2446,7 @@ class SwapNotifier extends Notifier<SwapState> {
 
   /// Shows why the start of `quote` failed with `error`, and lets a wallet
   /// reservation that cannot start again go. A refusal that needs a wait or
-  /// a new quote shows the wallet's wording, which says so.
+  /// a new quote says so (see [_receiveErrorMessage]).
   void _showStartFailure(String accountUuid, SwapQuote quote, Object error) {
     log(
       'Swap: start failed quote=${_shortSwapValue(quote.providerQuoteId)} '
@@ -2469,7 +2470,7 @@ class SwapNotifier extends Notifier<SwapState> {
       startSubmitting: false,
       quoteLoading: false,
       statusError: historyPending || stale
-          ? SwapLiteralMessage(receiveError!.message)
+          ? _receiveErrorMessage(receiveError!)
           : _providerFailureMessage(SwapFailureOperation.start, error),
     );
   }
@@ -2662,10 +2663,11 @@ class SwapNotifier extends Notifier<SwapState> {
 
   /// What a quote still refused a receive address, because its history check
   /// is unfinished or every address is held, shows after the recovery round
-  /// before its retry ended with `failure`, or null to keep the wallet's
-  /// wording. Without a failure, or while the round only waits for wallet
-  /// sync or for the receiver service to reach a new wallet's birthday, the
-  /// wallet's wording still holds. A round that needs a newer app says so.
+  /// before its retry ended with `failure`, or null to keep the refusal's own
+  /// message (see [_receiveErrorMessage]). Without a failure, or while the
+  /// round only waits for wallet sync or for the receiver service to reach a
+  /// new wallet's birthday, that message still holds. A round that needs a
+  /// newer app says so.
   SwapMessage? _addressRecoveryFailureMessage(Object? failure) =>
       switch (failure) {
         null ||
@@ -2676,9 +2678,25 @@ class SwapNotifier extends Notifier<SwapState> {
         _ => const SwapNotice(SwapNoticeKind.privateReceiveAddressUnavailable),
       };
 
+  /// Localized copy for a private swap address refusal, chosen by its kind.
+  /// The wallet's English goes to the untranslated text log.
+  SwapMessage _receiveErrorMessage(ReceiveError error) {
+    logUntranslatedText(error.message);
+    return SwapNotice(switch (error.kind) {
+      ReceiveErrorKind.limit => SwapNoticeKind.privateReceiveAddressLimit,
+      ReceiveErrorKind.receiveHistory ||
+      ReceiveErrorKind.waitingForSync ||
+      ReceiveErrorKind.waitingForService =>
+        SwapNoticeKind.privateReceiveAddressPreparing,
+      ReceiveErrorKind.stale => SwapNoticeKind.privateReceiveAddressStale,
+      ReceiveErrorKind.upgradeRequired => SwapNoticeKind.recoveryUpdateRequired,
+      ReceiveErrorKind.other => SwapNoticeKind.privateReceiveAddressUnavailable,
+    });
+  }
+
   SwapMessage _friendlyQuoteError(Object error) {
     if (_receiveError(error) case final receiveError?) {
-      return SwapLiteralMessage(receiveError.message);
+      return _receiveErrorMessage(receiveError);
     }
     if (error is SwapZecStagingAddressUnavailableException) {
       return SwapNotice(

@@ -11271,8 +11271,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapNoticePaymentsMayFail => 'Payments may not work right now.';
 
   @override
+  String get swapNoticePrivateReceiveAddressLimit =>
+      'Too many swaps are waiting. Try again after one finishes or expires.';
+
+  @override
   String get swapNoticePrivateReceiveAddressPreparationFailed =>
       'Could not prepare a fresh wallet receive address. Try again after wallet sync.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparing =>
+      'Preparing a private swap address. Try again in a moment.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale =>
+      'This swap address is no longer available. Request a new quote.';
 
   @override
   String get swapNoticePrivateReceiveAddressUnavailable =>

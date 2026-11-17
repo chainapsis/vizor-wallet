@@ -11100,8 +11100,20 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapNoticePaymentsMayFail => '지‍금‍은 결‍제‍가 되‍지 않‍을 수 있‍어‍요.';
 
   @override
+  String get swapNoticePrivateReceiveAddressLimit =>
+      '대‍기 중‍인 스‍왑‍이 너‍무 많‍아‍요. 스‍왑 하‍나‍가 끝‍나‍거‍나 만‍료‍된 뒤 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
   String get swapNoticePrivateReceiveAddressPreparationFailed =>
       '지‍갑‍의 새 받‍는 주‍소‍를 준‍비‍하‍지 못‍했‍어‍요. 지‍갑 동‍기‍화 후 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparing =>
+      '비‍공‍개 스‍왑 주‍소‍를 준‍비‍하‍고 있‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale =>
+      '이 스‍왑 주‍소‍는 더 이‍상 사‍용‍할 수 없‍어‍요. 새 견‍적‍을 요‍청‍해 주‍세‍요.';
 
   @override
   String get swapNoticePrivateReceiveAddressUnavailable =>
