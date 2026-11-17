@@ -36,8 +36,15 @@ enum AddressBookNetwork {
   cardano('cardano', 'Cardano', 'assets/swap/tokens/ada.webp'),
   dash('dash', 'Dash', 'assets/swap/chains/dash.webp'),
   dogecoin('doge', 'Dogecoin', 'assets/swap/chains/doge.webp'),
+  fogo('fogo', 'Fogo', 'assets/swap/tokens/fogo.webp'),
+  hyperCore('hypercore', 'HyperCore', 'assets/swap/chains/hypercore.webp'),
   litecoin('ltc', 'Litecoin', 'assets/swap/chains/ltc.webp'),
+  miden('miden', 'Miden', 'assets/swap/chains/miden.webp'),
   monad('monad', 'Monad', 'assets/swap/chains/monad.webp'),
+  movement('movement', 'Movement', 'assets/swap/chains/movement.webp'),
+  pearl('prl', 'Pearl', 'assets/swap/chains/prl.webp'),
+  quantus('qtc', 'Quantus', 'assets/swap/tokens/qtc.webp'),
+  robinhoodChain('hood', 'Robinhood Chain', 'assets/swap/chains/hood.webp'),
   scroll('scroll', 'Scroll', 'assets/swap/chains/scroll.webp'),
   starknet('starknet', 'Starknet', 'assets/swap/chains/starknet.webp'),
   xrp('xrp', 'XRP', 'assets/swap/chains/xrp.webp');
@@ -68,6 +75,10 @@ enum AddressBookNetwork {
     AddressBookNetwork.plasma ||
     AddressBookNetwork.abstractChain ||
     AddressBookNetwork.monad ||
+    AddressBookNetwork.robinhoodChain ||
+    // Hyperliquid's core ledger: separate balances from HyperEVM, but the
+    // same 0x accounts.
+    AddressBookNetwork.hyperCore ||
     AddressBookNetwork.bera => true,
     _ => false,
   };

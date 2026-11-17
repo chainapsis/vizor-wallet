@@ -602,11 +602,7 @@ String _tokenIconAssetPath(String iconKey) {
 /// cannot drift. The rest are chains contacts do not cover yet.
 String _chainIconAssetPath(String iconKey) {
   return AddressBookNetwork.tryFromChainTicker(iconKey)?.assetPath ??
-      switch (iconKey) {
-        'fogo' => 'assets/swap/tokens/fogo.webp',
-        'qtc' => 'assets/swap/tokens/qtc.webp',
-        _ => 'assets/swap/chains/$iconKey.webp',
-      };
+      'assets/swap/chains/$iconKey.webp';
 }
 
 String _tokenDisplayName(String symbol) {
@@ -629,14 +625,9 @@ String _tokenDisplayName(String symbol) {
 String swapChainDisplayName(String ticker) {
   final network = AddressBookNetwork.tryFromChainTicker(ticker);
   if (network != null) return network.label;
-  return switch (ticker.toLowerCase()) {
-    'hood' => 'Robinhood Chain',
-    'qtc' => 'Quantus',
-    _ =>
-      ticker.isEmpty
-          ? ticker
-          : '${ticker[0].toUpperCase()}${ticker.substring(1)}',
-  };
+  return ticker.isEmpty
+      ? ticker
+      : '${ticker[0].toUpperCase()}${ticker.substring(1)}';
 }
 
 double _fallbackRateFor(String symbol) {

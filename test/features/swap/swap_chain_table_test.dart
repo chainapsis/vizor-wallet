@@ -28,4 +28,21 @@ void main() {
       );
     }
   });
+
+  test('swap chains map to contacts networks, EVM where the address is', () {
+    final expected = {
+      'hood': (AddressBookNetwork.robinhoodChain, true),
+      'hypercore': (AddressBookNetwork.hyperCore, true),
+      'movement': (AddressBookNetwork.movement, false),
+      'qtc': (AddressBookNetwork.quantus, false),
+      'fogo': (AddressBookNetwork.fogo, false),
+      'miden': (AddressBookNetwork.miden, false),
+      'prl': (AddressBookNetwork.pearl, false),
+    };
+    expected.forEach((ticker, value) {
+      final (network, isEvm) = value;
+      expect(AddressBookNetwork.tryFromChainTicker(ticker), network);
+      expect(network.isEvm, isEvm, reason: ticker);
+    });
+  });
 }
