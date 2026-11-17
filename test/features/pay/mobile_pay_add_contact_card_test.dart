@@ -42,14 +42,16 @@ void main() {
             body: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Spacer(),
-                MobileModalCard(
-                  child: MobilePayAddContactCard(
-                    network: AddressBookNetwork.ethereum,
-                    address: _address,
-                    onCancel: () {},
-                    onSave: onSave,
-                    profilePictureIdGenerator: profilePictureIdGenerator,
+                // Bounded like the sheet route that presents the card.
+                Expanded(
+                  child: MobileModalCard(
+                    child: MobilePayAddContactCard(
+                      network: AddressBookNetwork.ethereum,
+                      address: _address,
+                      onCancel: () {},
+                      onSave: onSave,
+                      profilePictureIdGenerator: profilePictureIdGenerator,
+                    ),
                   ),
                 ),
               ],
@@ -125,8 +127,8 @@ void main() {
     for (final label in ['Address label', 'Chain & address']) {
       final text = tester.widget<Text>(find.text(label));
       expect(text.style?.fontWeight, FontWeight.w500);
-      expect(text.style?.fontSize, AppTypography.labelMedium.fontSize);
-      expect(text.style?.height, AppTypography.labelMedium.height);
+      expect(text.style?.fontSize, AppTypography.labelLarge.fontSize);
+      expect(text.style?.height, AppTypography.labelLarge.height);
     }
 
     expect(tester.getSize(find.byType(MobileTextField)).height, 60);

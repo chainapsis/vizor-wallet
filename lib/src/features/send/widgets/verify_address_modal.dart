@@ -122,7 +122,7 @@ class VerifyAddressModal extends StatelessWidget {
       case VerifyAddressModalVariant.unknown:
         final (iconName, title) = switch (unknownAddressKind) {
           VerifyAddressModalAddressKind.shielded => (
-            AppIcons.shieldKeyholeOutline,
+            AppIcons.shieldKeyhole,
             'Unknown shielded address',
           ),
           VerifyAddressModalAddressKind.transparent => (

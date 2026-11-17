@@ -4,11 +4,14 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../payment_link_action.dart';
 import '../payment_link_card_motion.dart';
 import '../payment_link_list_diff.dart';
@@ -28,7 +31,7 @@ const _referenceContentHeight = 773.0;
 // frame values shifted up by the 14px that difference used to add.
 const _topInset = 0.0;
 const _navHeight = kMobileTopNavHeight;
-const _sideInset = 16.0;
+const _sideInset = kMobilePageMargin;
 const _subtitleTop = 88.0;
 const _cardTop = 193.0;
 const _redeemSurfaceTop = 218.0;
@@ -41,12 +44,22 @@ const _cardWidth = kPaymentLinkMobileCardWidth;
 const _cardHeight = kPaymentLinkMobileCardHeight;
 const _selectorTop = _cardTop + _cardHeight + AppSpacing.md;
 const _selectorHeight = 80.0;
-const _bottomInset = 12.0;
 const _buttonHeight = 50.0;
-const _cardsFloatingActionsClearance =
-    (_buttonHeight * 2) + AppSpacing.s + _bottomInset + AppSpacing.lg;
-const _cardsFloatingActionsFadeHeight =
-    _cardsFloatingActionsClearance + AppSpacing.lg;
+
+/// Floating actions sit where every page's do: the tab bar's distance above
+/// the bottom edge (MobileStickyBottomAction).
+double _bottomInset(BuildContext context) =>
+    MobileStickyBottomAction.bottomOffset(context);
+
+/// The Gift Card list's Redeem and Create stack.
+const _cardsActionsHeight = (_buttonHeight * 2) + AppSpacing.s;
+
+/// Room under the Gift Card list for its floating actions.
+double _cardsActionsClearance(BuildContext context) =>
+    MobileStickyBottomAction.contentInset(
+      context,
+      actionHeight: _cardsActionsHeight,
+    );
 const _readyStatusTop = 474.0;
 // Tallest measured status block: two lines of body text plus the wait pill.
 const _readyStatusAllowance = 160.0;
@@ -74,25 +87,16 @@ class PaymentLinkHowItWorksMobileSheet extends StatelessWidget {
     final title = this.title ?? context.l10n.paymentLinkHowItWorksTitle;
     final subtitle =
         this.subtitle ?? context.l10n.paymentLinkHowItWorksSubtitle;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.base,
-        AppSpacing.sm,
-        AppSpacing.base,
-      ),
+    // The shared sheet template; the subtitle reads as part of the title.
+    return MobileModalScaffold(
+      title: title,
+      titleMaxLines: 2,
+      onClose: onClose,
+      bodyGap: AppSpacing.xxs,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            title,
-            style: AppTypography.bodyLarge.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xxs),
           Text(
             subtitle,
             style: AppTypography.bodyMedium.copyWith(
@@ -291,7 +295,7 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
                                     child: AppIcon(
                                       AppIcons.help,
                                       size: 16,
-                                      color: context.colors.icon.regular,
+                                      color: context.colors.icon.muted,
                                     ),
                                   ),
                                 ),
@@ -305,33 +309,38 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
                 ),
               ),
             ),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AppButton(
-                  key: const ValueKey('payment_links_mobile_redeem_button'),
-                  onPressed: onRedeem,
-                  variant: AppButtonVariant.ghost,
-                  size: AppButtonSize.large,
-                  height: _buttonHeight,
-                  expand: true,
-                  child: Text(redeemLabel),
-                ),
-                const SizedBox(height: AppSpacing.s),
-                AppButton(
-                  key: const ValueKey('payment_links_mobile_create_button'),
-                  onPressed: onCreate,
-                  size: AppButtonSize.large,
-                  height: _buttonHeight,
-                  expand: true,
-                  leading: const AppIcon(
-                    AppIcons.giftCardOutline,
-                    size: AppIconSize.medium,
+            Padding(
+              // Where every page's floating action sits, and where the list
+              // below keeps these two, so they never move between the pages.
+              padding: EdgeInsets.only(bottom: _bottomInset(context)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppButton(
+                    key: const ValueKey('payment_links_mobile_redeem_button'),
+                    onPressed: onRedeem,
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.large,
+                    height: _buttonHeight,
+                    expand: true,
+                    child: Text(redeemLabel),
                   ),
-                  child: Text(createLabel),
-                ),
-              ],
+                  const SizedBox(height: AppSpacing.s),
+                  AppButton(
+                    key: const ValueKey('payment_links_mobile_create_button'),
+                    onPressed: onCreate,
+                    size: AppButtonSize.large,
+                    height: _buttonHeight,
+                    expand: true,
+                    leading: const AppIcon(
+                      AppIcons.giftCardOutline,
+                      size: AppIconSize.medium,
+                    ),
+                    child: Text(createLabel),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -437,94 +446,61 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.base),
             Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: hasCards
-                        ? activeTab == PaymentLinkCardsTab.created
-                              ? _AnimatedPaymentLinkCardsList(
-                                  sections: sections,
-                                )
-                              : _staticPaymentLinkCardsList(sections)
-                        : Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: _cardsFloatingActionsClearance,
+              // Rows scroll under the floating Redeem and Create, which sit
+              // and fade like every page's floating action.
+              child: MobileStickyBottomAction(
+                horizontalMargin: 0,
+                actionHeight: _cardsActionsHeight,
+                action: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AppButton(
+                      key: const ValueKey('payment_links_mobile_redeem_button'),
+                      onPressed: onRedeem,
+                      variant: AppButtonVariant.ghost,
+                      size: AppButtonSize.large,
+                      height: _buttonHeight,
+                      expand: true,
+                      child: Text(redeemLabel),
+                    ),
+                    const SizedBox(height: AppSpacing.s),
+                    AppButton(
+                      key: const ValueKey('payment_links_mobile_create_button'),
+                      onPressed: onCreate,
+                      size: AppButtonSize.large,
+                      height: _buttonHeight,
+                      expand: true,
+                      leading: const AppIcon(
+                        AppIcons.giftCardOutline,
+                        size: AppIconSize.medium,
+                      ),
+                      child: Text(createLabel),
+                    ),
+                  ],
+                ),
+                child: hasCards
+                    ? activeTab == PaymentLinkCardsTab.created
+                          ? _AnimatedPaymentLinkCardsList(sections: sections)
+                          : _staticPaymentLinkCardsList(context, sections)
+                    : Padding(
+                        padding: EdgeInsets.only(
+                          bottom: _cardsActionsClearance(context),
+                        ),
+                        child: Center(
+                          child: Text(
+                            emptyLabel ??
+                                context.l10n.paymentLinkNoReceivedCardsText,
+                            key: const ValueKey(
+                              'payment_links_mobile_cards_empty_label',
                             ),
-                            child: Center(
-                              child: Text(
-                                emptyLabel ??
-                                    context.l10n.paymentLinkNoReceivedCardsText,
-                                key: const ValueKey(
-                                  'payment_links_mobile_cards_empty_label',
-                                ),
-                                textAlign: TextAlign.center,
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: context.colors.text.secondary,
-                                ),
-                              ),
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: context.colors.text.secondary,
                             ),
-                          ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: _cardsFloatingActionsFadeHeight,
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              context.colors.background.window.withValues(
-                                alpha: 0,
-                              ),
-                              context.colors.background.window,
-                            ],
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: _bottomInset,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        AppButton(
-                          key: const ValueKey(
-                            'payment_links_mobile_redeem_button',
-                          ),
-                          onPressed: onRedeem,
-                          variant: AppButtonVariant.ghost,
-                          size: AppButtonSize.large,
-                          height: _buttonHeight,
-                          expand: true,
-                          child: Text(redeemLabel),
-                        ),
-                        const SizedBox(height: AppSpacing.s),
-                        AppButton(
-                          key: const ValueKey(
-                            'payment_links_mobile_create_button',
-                          ),
-                          onPressed: onCreate,
-                          size: AppButtonSize.large,
-                          height: _buttonHeight,
-                          expand: true,
-                          leading: const AppIcon(
-                            AppIcons.giftCardOutline,
-                            size: AppIconSize.medium,
-                          ),
-                          child: Text(createLabel),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
           ],
@@ -533,23 +509,25 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
     );
   }
 
-  Widget _staticPaymentLinkCardsList(List<PaymentLinkCardsSection> sections) =>
-      ListView(
-        key: const ValueKey('payment_links_mobile_cards_list'),
-        padding: const EdgeInsets.only(bottom: _cardsFloatingActionsClearance),
-        children: [
-          for (final (index, section) in sections.indexed)
-            if (section.cards.isNotEmpty || section.header != null) ...[
-              if (index > 0) const SizedBox(height: AppSpacing.sm),
-              section.header ??
-                  _PaymentLinkCardsSectionHeader(label: section.label),
-              const SizedBox(height: AppSpacing.xxs),
-              // Rows sit on the page like the desktop list — no surface card
-              // around a section.
-              ...section.cards,
-            ],
+  Widget _staticPaymentLinkCardsList(
+    BuildContext context,
+    List<PaymentLinkCardsSection> sections,
+  ) => ListView(
+    key: const ValueKey('payment_links_mobile_cards_list'),
+    padding: EdgeInsets.only(bottom: _cardsActionsClearance(context)),
+    children: [
+      for (final (index, section) in sections.indexed)
+        if (section.cards.isNotEmpty || section.header != null) ...[
+          if (index > 0) const SizedBox(height: AppSpacing.sm),
+          section.header ??
+              _PaymentLinkCardsSectionHeader(label: section.label),
+          const SizedBox(height: AppSpacing.xxs),
+          // Rows sit on the page like the desktop list — no surface card
+          // around a section.
+          ...section.cards,
         ],
-      );
+    ],
+  );
 }
 
 /// Smoothly collapses a created Card out of its previous usage section and
@@ -728,9 +706,7 @@ class _AnimatedPaymentLinkCardsListState
     child: CustomScrollView(
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.only(
-            bottom: _cardsFloatingActionsClearance,
-          ),
+          padding: EdgeInsets.only(bottom: _cardsActionsClearance(context)),
           sliver: SliverAnimatedList(
             key: _listKey,
             initialItemCount: _entries.length,
@@ -1175,6 +1151,7 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: context.colors.background.ground,
                     borderRadius: BorderRadius.circular(AppRadii.large),
+                    boxShadow: mobileSurfaceShadows(context.colors),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1214,11 +1191,11 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
         SliverFillRemaining(
           hasScrollBody: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
+            padding: EdgeInsets.fromLTRB(
               _sideInset,
               AppSpacing.md,
               _sideInset,
-              _bottomInset,
+              _bottomInset(context),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -1353,7 +1330,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
             _readyStatusAllowance +
             AppSpacing.md +
             _buttonHeight +
-            _bottomInset,
+            _bottomInset(context),
         stageKey: const ValueKey('payment_link_mobile_ready_view'),
         child: Stack(
           fit: StackFit.expand,
@@ -1425,7 +1402,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
             Positioned(
               left: _sideInset,
               right: _sideInset,
-              bottom: _bottomInset,
+              bottom: _bottomInset(context),
               child: AppButton(
                 key: const ValueKey('payment_link_mobile_ready_home_button'),
                 onPressed: onHome,
@@ -1784,7 +1761,7 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
           Positioned(
             left: _sideInset,
             right: _sideInset,
-            bottom: _bottomInset,
+            bottom: _bottomInset(context),
             child: AppButton(
               key: const ValueKey('payment_link_mobile_claim_button'),
               onPressed: onClaim,
@@ -1963,7 +1940,7 @@ class _MobilePaymentLinkWizardFrame extends StatelessWidget {
   /// The stage is laid out at fixed Figma offsets while the CTA hangs off the
   /// bottom, so below this height the two would collide. The software keyboard
   /// shrinks the body well past it, so the frame scrolls instead.
-  double get _minStageHeight {
+  double _minStageHeight(BuildContext context) {
     final contentBottom = selector == null
         ? _cardTop + _cardHeight
         : _selectorTop + _selectorHeight;
@@ -1971,7 +1948,7 @@ class _MobilePaymentLinkWizardFrame extends StatelessWidget {
         AppSpacing.md +
         (supportingText == null ? 0.0 : _supportingTextAllowance) +
         _buttonHeight +
-        _bottomInset;
+        _bottomInset(context);
   }
 
   @override
@@ -1979,7 +1956,7 @@ class _MobilePaymentLinkWizardFrame extends StatelessWidget {
     return _MobilePaymentLinkFrame(
       title: title,
       onBack: onBack,
-      minStageHeight: _minStageHeight,
+      minStageHeight: _minStageHeight(context),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -2015,7 +1992,7 @@ class _MobilePaymentLinkWizardFrame extends StatelessWidget {
           Positioned(
             left: _sideInset,
             right: _sideInset,
-            bottom: _bottomInset,
+            bottom: _bottomInset(context),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2024,7 +2001,7 @@ class _MobilePaymentLinkWizardFrame extends StatelessWidget {
                     message,
                     key: const ValueKey('payment_link_mobile_supporting_text'),
                     textAlign: TextAlign.center,
-                    style: AppTypography.bodySmall.copyWith(
+                    style: AppTypography.bodyMedium.copyWith(
                       color: supportingTextIsError
                           ? context.colors.text.destructive
                           : context.colors.text.secondary,

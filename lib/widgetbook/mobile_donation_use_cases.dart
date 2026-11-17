@@ -9,6 +9,7 @@ import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/formatting/zec_amount.dart';
 import '../src/core/layout/mobile/mobile_bottom_safe_area.dart';
+import '../src/core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../src/core/layout/mobile/mobile_top_nav.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
@@ -143,7 +144,7 @@ class _ComposeState extends State<_Compose> {
           MobileTopNav.back(title: 'Support Vizor', onBack: () {}),
           Expanded(
             child: MobileBottomSafeArea(
-              bottomPadding: AppSpacing.md,
+              bottomPadding: kMobileFooterGap,
               child: MobileDonationComposeView(
                 controller: controller,
                 mode: widget.usd

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
 import 'mobile_navigation_scope.dart';
+import 'mobile_scroll_edge_fades.dart';
 import 'mobile_window_layout.dart';
 
 /// Keeps the page background and its margins inside the route transition,
@@ -66,7 +67,13 @@ class MobilePageViewport extends StatelessWidget {
               ),
               child: MediaQuery(
                 data: mobilePaneMedia(media, content),
-                child: child,
+                // Every page's scroll areas dissolve into the window at the
+                // edges where they cut content.
+                child: MobileScrollEdgeFades(
+                  color: context.colors.background.window,
+                  bottomHeight: AppSpacing.xl,
+                  child: child,
+                ),
               ),
             ),
           ],

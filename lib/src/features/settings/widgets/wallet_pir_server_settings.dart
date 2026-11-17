@@ -6,10 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/mobile/mobile_radio_card.dart';
 import '../../../providers/wallet_pir_server_provider.dart';
 import '../../../providers/wallet_pir_latency_provider.dart';
 import '../../../services/wallet_pir/wallet_pir_config.dart';
@@ -39,6 +41,10 @@ class _WalletPirServerSettingsState
     extends ConsumerState<WalletPirServerSettings> {
   bool _selecting = false;
   String? _selectionError;
+
+  /// Mobile marks a server first and applies it with Update, like the theme
+  /// picker. Null until a card is tapped.
+  String? _pendingBaseUrl;
   bool _editingCustom = false;
   final _customController = TextEditingController();
   late WalletPirLatencyMonitor _ping;
@@ -111,6 +117,19 @@ class _WalletPirServerSettingsState
     super.dispose();
   }
 
+  static const _mobile = kAppFormFactor == AppFormFactor.mobile;
+
+  /// Applies the marked server, or just closes when nothing changed.
+  Future<void> _update(WalletPirServerState state) async {
+    final pending = _pendingBaseUrl;
+    if (pending == null ||
+        (state.customServer == null && pending == state.selectedBaseUrl)) {
+      widget.onSelected?.call();
+      return;
+    }
+    await _select(pending);
+  }
+
   Future<void> _select(String baseUrl) => _runSelection(
     () => ref.read(walletPirServerProvider.notifier).selectServer(baseUrl),
   );
@@ -139,6 +158,15 @@ class _WalletPirServerSettingsState
       if (mounted) setState(() => _selecting = false);
     }
   }
+
+  VoidCallback? _openCustom(WalletPirServerState state) =>
+      _selecting || state.source == null
+      ? null
+      : () => setState(() {
+          _customController.text = state.customServer?.baseUrl ?? '';
+          _editingCustom = true;
+          _selectionError = null;
+        });
 
   String? _customMessage() {
     if (_customController.text.trim().isEmpty) return null;
@@ -233,21 +261,29 @@ class _WalletPirServerSettingsState
               ),
             ],
           ),
-        ] else
+        ] else ...[
           WalletPirServerSettingsView(
             state: state,
             onSelect: _selecting
                 ? null
-                : (baseUrl) => unawaited(_select(baseUrl)),
-            pingSamples: _ping.samples,
-            onCustom: _selecting || state.source == null
-                ? null
-                : () => setState(() {
-                    _customController.text = state.customServer?.baseUrl ?? '';
-                    _editingCustom = true;
+                : _mobile
+                ? (baseUrl) => setState(() {
+                    _pendingBaseUrl = baseUrl;
                     _selectionError = null;
-                  }),
+                  })
+                : (baseUrl) => unawaited(_select(baseUrl)),
+            pendingBaseUrl: _pendingBaseUrl,
+            pingSamples: _ping.samples,
+            onCustom: _openCustom(state),
+            actionButtons: _mobile,
+            updating: _selecting,
+            onUpdate:
+                _selecting ||
+                    (_pendingBaseUrl == null && state.selectedBaseUrl == null)
+                ? null
+                : () => unawaited(_update(state)),
           ),
+        ],
         const SizedBox(height: AppSpacing.xs),
         Align(
           alignment: Alignment.centerLeft,
@@ -278,6 +314,10 @@ class WalletPirServerSettingsView extends StatelessWidget {
     required this.state,
     required this.onSelect,
     this.onCustom,
+    this.pendingBaseUrl,
+    this.actionButtons = false,
+    this.onUpdate,
+    this.updating = false,
     this.pingSamples = const {},
     super.key,
   }) : _message = null;
@@ -286,6 +326,10 @@ class WalletPirServerSettingsView extends StatelessWidget {
     : state = null,
       onSelect = null,
       onCustom = null,
+      pendingBaseUrl = null,
+      actionButtons = false,
+      onUpdate = null,
+      updating = false,
       pingSamples = const {},
       _message = message;
 
@@ -293,7 +337,27 @@ class WalletPirServerSettingsView extends StatelessWidget {
   final ValueChanged<String>? onSelect;
   final Map<String, WalletPirPingSample> pingSamples;
   final VoidCallback? onCustom;
+
+  /// A server marked but not applied yet (mobile). It shows as the choice
+  /// in place of the applied one.
+  final String? pendingBaseUrl;
+
+  /// Mobile's actions under the list, like the theme picker's: Update applies
+  /// the marked server, and a Custom server button takes the place of the
+  /// quiet "Custom server…" link desktop keeps.
+  final bool actionButtons;
+
+  /// Applies [pendingBaseUrl]; null disables Update.
+  final VoidCallback? onUpdate;
+
+  /// Shows Update as "Updating..." while a change is applied.
+  final bool updating;
   final String? _message;
+
+  // Mobile radio cards stack 12px apart (Figma `Radi Group`).
+  static const _rowGap = kAppFormFactor == AppFormFactor.mobile
+      ? AppSpacing.s
+      : AppSpacing.xxs;
 
   @override
   Widget build(BuildContext context) {
@@ -331,13 +395,14 @@ class WalletPirServerSettingsView extends StatelessWidget {
           for (final server in state.servers) ...[
             _ServerRow(
               server: server,
-              selected:
-                  state.customServer == null &&
-                  server.baseUrl == state.selectedBaseUrl,
+              selected: pendingBaseUrl != null
+                  ? server.baseUrl == pendingBaseUrl
+                  : state.customServer == null &&
+                        server.baseUrl == state.selectedBaseUrl,
               onTap: onSelect == null ? null : () => onSelect!(server.baseUrl),
               ping: pingSamples[server.baseUrl],
             ),
-            const SizedBox(height: AppSpacing.xxs),
+            const SizedBox(height: _rowGap),
           ],
         ],
         if (state.customServer case final custom?) ...[
@@ -346,13 +411,13 @@ class WalletPirServerSettingsView extends StatelessWidget {
               label: context.l10n.settingsPirCustomServer,
               baseUrl: custom.baseUrl,
             ),
-            selected: custom.isValid,
+            selected: pendingBaseUrl == null && custom.isValid,
             onTap: onCustom,
             ping: pingSamples[custom.baseUrl],
           ),
-          const SizedBox(height: AppSpacing.xxs),
+          const SizedBox(height: _rowGap),
         ],
-        if (state.source != null) ...[
+        if (state.source != null && !actionButtons) ...[
           AppButton(
             key: const ValueKey('wallet_pir_custom_server_option'),
             onPressed: onCustom,
@@ -365,6 +430,35 @@ class WalletPirServerSettingsView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
+        ],
+        if (actionButtons) ...[
+          const SizedBox(height: AppSpacing.xs),
+          AppButton(
+            key: const ValueKey('wallet_pir_server_update'),
+            expand: true,
+            onPressed: onUpdate,
+            child: Text(
+              updating
+                  ? context.l10n.commonUpdating
+                  : context.l10n.commonUpdate,
+            ),
+          ),
+          if (state.source != null) ...[
+            const SizedBox(height: AppSpacing.s),
+            AppButton(
+              key: const ValueKey('wallet_pir_custom_server_option'),
+              expand: true,
+              variant: AppButtonVariant.secondary,
+              onPressed: onCustom,
+              leading: const AppIcon(AppIcons.edit),
+              child: Text(
+                state.customServer == null
+                    ? context.l10n.settingsPirCustomServer
+                    : context.l10n.settingsPirEditCustomServer,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.s),
         ],
       ],
     );
@@ -429,6 +523,17 @@ class _ServerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final address = server.baseUrl.replaceFirst('https://', '');
+    final pingText = ping?.label(context.l10n) ?? context.l10n.commonChecking;
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return MobileRadioCard(
+        key: ValueKey('wallet_pir_server_option_${server.baseUrl}'),
+        title: server.label,
+        details: [address, pingText],
+        selected: selected,
+        onTap: onTap,
+        semanticsLabel: '${server.label}, $address, $pingText',
+      );
+    }
     return Semantics(
       button: true,
       selected: selected,
@@ -477,8 +582,7 @@ class _ServerRow extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          ping?.label(context.l10n) ??
-                              context.l10n.commonChecking,
+                          pingText,
                           key: ValueKey(
                             'wallet_pir_server_ping_${server.baseUrl}',
                           ),

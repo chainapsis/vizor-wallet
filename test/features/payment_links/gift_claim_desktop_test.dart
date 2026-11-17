@@ -280,20 +280,25 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> submitPersona(WidgetTester tester) async {
-    await tester.tap(keyed('customise_account_finish_button'));
-    await tester.pumpAndSettle();
+  Future<void> submitSetup(WidgetTester tester) async {
+    if (keyed('customise_account_finish_button').evaluate().isNotEmpty) {
+      await tester.tap(keyed('customise_account_finish_button'));
+      await tester.pumpAndSettle();
+    }
     if (keyed('set_password_password_field').evaluate().isNotEmpty) {
       await submitSecurity(tester);
     }
   }
 
-  Future<void> openFirstAccountCustomise(WidgetTester tester) async {
+  Future<void> openFirstAccountSecurity(WidgetTester tester) async {
     await paste(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Create a wallet to claim'));
     await tester.pumpAndSettle();
-    expect(container.read(_routerProvider).state.uri.path, '/gift/customise');
+    expect(
+      container.read(_routerProvider).state.uri.path,
+      '/gift/set-password',
+    );
   }
 
   Future<void> openGiftImport(
@@ -363,7 +368,7 @@ void main() {
       );
     }
     await tester.pumpAndSettle();
-    await submitPersona(tester);
+    await submitSetup(tester);
     await tester.pumpAndSettle();
   }
 
@@ -483,6 +488,37 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'failed additional Gift creation transfers inspection ownership to import',
+    (tester) async {
+      await pump(
+        tester,
+        existing: true,
+        clipboard: incomingLink.toUri().toString(),
+      );
+      await paste(tester);
+      await tester.pumpAndSettle();
+      accounts.preCreationError = StateError('creation unavailable');
+      await tester.tap(keyed('gift_claim_create_an_account_to_claim'));
+      await tester.pumpAndSettle();
+      expect(accounts.creationCalls, 1);
+      expect(accounts.state.requireValue.accounts, hasLength(1));
+      expect(
+        find.text('Couldn’t finish this step. Try again.'),
+        findsOneWidget,
+      );
+      await tester.tap(keyed('gift_claim_claim_with_an_existing_wallet'));
+      await tester.pumpAndSettle();
+      await finishImport(tester, first: false);
+      expect(find.text('Gift Home'), findsOneWidget);
+      expect(operations.discarded, isEmpty);
+      expect(operations.allowLongSyncChecks, [false]);
+      expect(operations.claimedDestinations, ['imported-0']);
+      expect(accounts.creationCalls, 1);
+      container.read(paymentLinkClaimCoordinatorProvider).pause();
+    },
+  );
 
   testWidgets(
     'import failure preserves the Gift journal and a retry uses the original inspection',
@@ -722,7 +758,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Create an account to claim'));
       await tester.pumpAndSettle();
-      await submitPersona(tester);
+      await submitSetup(tester);
       await tester.pumpAndSettle();
       expect(find.text('Retry setup'), findsOneWidget);
       expect(accounts.creationCalls, 1);
@@ -758,19 +794,15 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.byType(CustomiseAccountScreen), findsOneWidget);
+        expect(find.byType(CustomiseAccountScreen), findsNothing);
         expect(
           container.read(_routerProvider).state.uri.path,
-          '/gift/customise',
+          existing ? '/home' : '/gift/set-password',
         );
-        expect(accounts.creationCalls, 0);
+        expect(accounts.creationCalls, existing ? 1 : 0);
         expect(inputStore.writes, 0);
         inputPlatform.current = source;
-        await tester.enterText(
-          keyed('customise_account_name_field'),
-          'My desktop gift',
-        );
-        await submitPersona(tester);
+        await submitSetup(tester);
         await tester.pumpAndSettle();
         expect(find.text('Gift Home'), findsOneWidget);
         expect(accounts.creationCalls, 1);
@@ -785,10 +817,7 @@ void main() {
           accounts.state.requireValue.accounts.map((a) => a.uuid),
           existing ? ['original', 'new-account'] : ['new-account'],
         );
-        expect(
-          accounts.state.requireValue.activeAccount!.name,
-          'My desktop gift',
-        );
+        expect(accounts.state.requireValue.activeAccount!.name, isNotEmpty);
         expect((await received.load()).single.setupAccountUuid, 'new-account');
         expect(operations.bindDestinations, ['new-account']);
         broadcast.complete();
@@ -799,26 +828,20 @@ void main() {
   }
 
   testWidgets(
-    'back after failed Gift security keeps persona and clears credential',
+    'back after failed Gift security returns to the Card and clears credential',
     (tester) async {
       await pump(tester, clipboard: incomingLink.toUri().toString());
-      await openFirstAccountCustomise(tester);
-      await tester.enterText(
-        keyed('customise_account_name_field'),
-        'Draft gift',
-      );
-      await tester.tap(keyed('customise_account_finish_button'));
-      await tester.pumpAndSettle();
+      await openFirstAccountSecurity(tester);
       security.prepareError = StateError('Password preparation unavailable');
       await submitSecurity(tester);
       expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNotNull);
       await tester.tap(find.byType(AppBackLink));
       await tester.pumpAndSettle();
-      expect(container.read(_routerProvider).state.uri.path, '/gift/customise');
+      expect(container.read(_routerProvider).state.uri.path, '/gift');
       expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNull);
-      expect(find.text('Draft gift'), findsOneWidget);
+      expect(find.text('Gift found'), findsOneWidget);
       security.prepareError = null;
-      await tester.tap(keyed('customise_account_finish_button'));
+      await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
       await tester.pumpAndSettle();
       expect(
         container.read(_routerProvider).state.uri.path,
@@ -852,8 +875,6 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Create a wallet to claim'));
       await tester.pumpAndSettle();
-      await tester.tap(keyed('customise_account_finish_button'));
-      await tester.pumpAndSettle();
       const submittedSource = {'platform': 'windows', 'hkl': 'test.layout'};
       inputPlatform.current = submittedSource;
       security.prepareError = StateError('Password preparation unavailable');
@@ -883,7 +904,7 @@ void main() {
       'Linux Gift rejects setup before password work while busy, recovering=$recovering',
       (tester) async {
         await pump(tester, clipboard: incomingLink.toUri().toString());
-        await openFirstAccountCustomise(tester);
+        await openFirstAccountSecurity(tester);
         final otherWork = Completer<void>();
         Future<void>? pending;
         if (recovering) {
@@ -894,7 +915,7 @@ void main() {
           pending = keyring.runMutation(() => otherWork.future);
         }
 
-        await submitPersona(tester);
+        await submitSetup(tester);
         await tester.pumpAndSettle();
         expect(security.prepareCalls, 0);
         expect(accounts.creationCalls, 0);
@@ -931,10 +952,10 @@ void main() {
     'Linux Gift owns preparation through commit and releases after Home',
     (tester) async {
       await pump(tester, clipboard: incomingLink.toUri().toString());
-      await openFirstAccountCustomise(tester);
+      await openFirstAccountSecurity(tester);
       final preparation = Completer<void>();
       security.prepareGate = preparation;
-      await submitPersona(tester);
+      await submitSetup(tester);
       await tester.pump();
       expect(security.prepareCalls, 1);
       expect(accounts.creationCalls, 0);
@@ -1149,6 +1170,7 @@ class _NoAccounts extends AccountNotifier {
   }) => importAccounts(name, profilePictureId);
 
   GiftClaimAccountCreatedException? creationError;
+  Object? preCreationError;
   Object? recoveryError;
   bool skipRecoverySave = false;
   int creationCalls = 0;
@@ -1182,6 +1204,7 @@ class _NoAccounts extends AccountNotifier {
     required VizorPaymentLink link,
   }) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
     creationCalls++;
+    if (preCreationError case final error?) throw error;
     if (creationError?.accountUuid == null && creationError != null) {
       throw creationError!;
     }

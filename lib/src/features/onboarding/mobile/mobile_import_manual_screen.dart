@@ -507,7 +507,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
               Text(
                 _error!.resolve(context.l10n),
                 textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
+                style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.destructive,
                 ),
               ),
@@ -517,7 +517,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
               Text(
                 _accepted.join(' · '),
                 textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
+                style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
               ),
@@ -532,7 +532,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
                     child: Center(
                       child: Text(
                         context.l10n.onboardingManualUndoLastWord,
-                        style: AppTypography.labelMedium.copyWith(
+                        style: AppTypography.labelLarge.copyWith(
                           color: colors.text.secondary,
                         ),
                       ),

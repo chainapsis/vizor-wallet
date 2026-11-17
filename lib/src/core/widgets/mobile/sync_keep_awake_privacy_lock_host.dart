@@ -10,6 +10,7 @@ import '../../../features/onboarding/mobile/passcode_widgets.dart';
 import '../../../features/onboarding/mobile/adaptive_passcode_layout.dart';
 import '../../../features/onboarding/shared/onboarding_welcome_art.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/hide_balance_on_unlock_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_keep_awake_provider.dart';
@@ -354,6 +355,18 @@ class _SyncKeepAwakePrivacyLockScreenState
     if (!mounted) return;
 
     if (confirmed) {
+      final authenticatedSession = ref.read(appSecurityProvider);
+      await ref.read(hideBalanceOnUnlockActionProvider)();
+      if (!mounted) return;
+      if (!authenticatedSession.isUnlocked ||
+          !identical(authenticatedSession, ref.read(appSecurityProvider))) {
+        setState(() {
+          _submittingPasscode = false;
+          _unlockAttemptInFlight = false;
+          _passcodeEntry = '';
+        });
+        return;
+      }
       ref.read(syncKeepAwakePrivacyLockProvider.notifier).unlock();
       unawaited(AppHaptics.accessGranted());
       return;
@@ -696,7 +709,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                         enabled: !submitting,
                       ),
                       legacyPadding: EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
+                        horizontal: kMobilePageMargin,
                         vertical: verticalPadding,
                       ),
                       legacySpacing: topGap + AppSpacing.s + sectionGap * 2,
@@ -704,7 +717,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                       legacyKeypadGap: sectionGap,
                       legacy: Padding(
                         padding: EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
+                          horizontal: kMobilePageMargin,
                           vertical: verticalPadding,
                         ),
                         child: Column(

@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/mobile/mobile_surface_card.dart';
+import '../../../../core/widgets/mobile/mobile_section.dart';
 import 'mobile_tor_control.dart';
 import 'mobile_private_queries_control.dart';
 export 'mobile_tor_control.dart' show MobilePrivacyToggle;
@@ -18,30 +18,20 @@ class MobileNetworkPrivacyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MobileSurfaceCard(
-      cornerRadius: AppRadii.large,
+    // Titled above its card like the Settings list groups.
+    return MobileSection(
+      title: context.l10n.settingsPrivacyTitle,
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        AppSpacing.base,
         AppSpacing.sm,
-        AppSpacing.base,
+        AppSpacing.sm,
+        AppSpacing.md,
       ),
-      child: Column(
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Text(
-              context.l10n.settingsPrivacyTitle,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          const MobileTorControl(),
-          const MobilePrivateQueriesControl(),
+          MobileTorControl(),
+          MobilePrivateQueriesControl(divided: true),
         ],
       ),
     );

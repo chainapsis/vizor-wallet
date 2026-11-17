@@ -8,14 +8,16 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart' show Colors, Material, MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_amount_card.dart';
 import 'package:zcash_wallet/src/core/widgets/pool_badge.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_card.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
-import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_sheet.dart';
+import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_steps.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../support/leading_decimal_input.dart';
@@ -512,13 +514,96 @@ void main() {
     });
   });
 
-  group('mobile request sheet', () {
+  group('mobile request page', () {
+    testWidgets('step one types the amount in Pay\'s card, without a picker', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const RequestAmountComposeStep(request: _empty),
+        size: _mobileSize,
+      );
+
+      final card = find.byKey(const ValueKey('request_amount_card'));
+      expect(tester.widget(card), isA<MobileAmountCard>());
+      // Pay's card height, the amount centred in it.
+      expect(tester.getSize(card).height, MobileAmountCard.height);
+      final cardRect = tester.getRect(card);
+      final amount = tester.getRect(
+        find.byKey(const ValueKey('request_amount_display')),
+      );
+      final toggle = tester.getRect(
+        find.byKey(const ValueKey('request_amount_mode_toggle')),
+      );
+      const block =
+          AppSpacing.md * 2 +
+          MobileAmountCard.amountRowHeight +
+          AppSpacing.s +
+          MobileAmountCard.conversionRowHeight;
+      final blockTop = cardRect.top + (MobileAmountCard.height - block) / 2;
+      expect(
+        amount.center.dy,
+        moreOrLessEquals(
+          blockTop + AppSpacing.md + MobileAmountCard.amountRowHeight / 2,
+          epsilon: 0.5,
+        ),
+      );
+      expect(
+        toggle.center.dy,
+        moreOrLessEquals(
+          blockTop +
+              AppSpacing.md +
+              MobileAmountCard.amountRowHeight +
+              AppSpacing.s +
+              MobileAmountCard.conversionRowHeight / 2,
+          epsilon: 0.5,
+        ),
+      );
+      // The message is a line under the card that opens the message sheet.
+      expect(find.text('Add a message'), findsOneWidget);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('request_message_row'))).top -
+            tester.getRect(card).bottom,
+        AppSpacing.md,
+      );
+    });
+
+    testWidgets('step two centres the QR and its amount on the page', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const RequestAmountResultStep(request: _withMessage),
+        size: _mobileSize,
+      );
+
+      final body = tester.getRect(
+        find.byKey(const ValueKey('request_result_body')),
+      );
+      final qr = tester.getRect(
+        find.byKey(const ValueKey('request_qr_surface')),
+      );
+      final badge = tester.getRect(find.byType(PoolBadge));
+      expect(
+        (qr.top - body.top) - (body.bottom - badge.bottom),
+        moreOrLessEquals(0, epsilon: 1),
+      );
+      // The amount sits under the QR in the Home card's serif, the pool
+      // badge under it.
+      final amount = find.byKey(const ValueKey('request_summary_amount'));
+      final amountText = tester.widget<Text>(amount);
+      expect(amountText.textSpan!.toPlainText(), '0.5 ZEC');
+      final amountRect = tester.getRect(amount);
+      expect(amountRect.top, greaterThan(qr.bottom));
+      expect(badge.top, greaterThan(amountRect.bottom));
+    });
+
     testWidgets('no live price shows the loading pill, not a number', (
       tester,
     ) async {
       await _pump(
         tester,
-        const RequestAmountSheetCompose(
+        const RequestAmountComposeStep(
           request: _priceUnavailable,
           onToggleAmountUnit: null,
         ),
@@ -539,7 +624,7 @@ void main() {
     testWidgets('step one gates the CTA on a usable amount', (tester) async {
       await _pump(
         tester,
-        const RequestAmountSheetCompose(request: _empty),
+        const RequestAmountComposeStep(request: _empty),
         size: _mobileSize,
       );
 
@@ -554,7 +639,7 @@ void main() {
     testWidgets('step one shows the message it will attach', (tester) async {
       await _pump(
         tester,
-        const RequestAmountSheetCompose(request: _withMessage),
+        const RequestAmountComposeStep(request: _withMessage),
         size: _mobileSize,
       );
 
@@ -568,7 +653,7 @@ void main() {
     ) async {
       await _pump(
         tester,
-        const RequestAmountSheetCompose(request: _transparentRequest),
+        const RequestAmountComposeStep(request: _transparentRequest),
         size: _mobileSize,
       );
 
@@ -581,7 +666,7 @@ void main() {
     ) async {
       await _pump(
         tester,
-        const RequestAmountSheetCompose(request: _withError),
+        const RequestAmountComposeStep(request: _withError),
         size: _mobileSize,
       );
 
@@ -598,7 +683,7 @@ void main() {
     testWidgets('a valid amount shows no error row', (tester) async {
       await _pump(
         tester,
-        const RequestAmountSheetCompose(request: _withAmount),
+        const RequestAmountComposeStep(request: _withAmount),
         size: _mobileSize,
       );
 
@@ -616,7 +701,7 @@ void main() {
       addTearDown(controller.dispose);
       await _pump(
         tester,
-        RequestAmountSheetCompose(
+        RequestAmountComposeStep(
           request: _withAmount,
           amountController: controller,
           onAmountChanged: typed.add,
@@ -659,10 +744,7 @@ void main() {
       addTearDown(controller.dispose);
       await _pump(
         tester,
-        RequestAmountSheetCompose(
-          request: _empty,
-          amountController: controller,
-        ),
+        RequestAmountComposeStep(request: _empty, amountController: controller),
         size: _mobileSize,
       );
 
@@ -687,7 +769,7 @@ void main() {
       addTearDown(controller.dispose);
       await _pump(
         tester,
-        RequestAmountSheetCompose(
+        RequestAmountComposeStep(
           request: _usdMode,
           amountController: controller,
         ),
@@ -713,7 +795,7 @@ void main() {
     ) async {
       await _pump(
         tester,
-        const RequestAmountSheetCompose(
+        const RequestAmountComposeStep(
           request: _priceUnavailable,
           onToggleAmountUnit: null,
         ),
@@ -747,7 +829,7 @@ void main() {
     ) async {
       await _pump(
         tester,
-        RequestAmountSheetCompose(
+        RequestAmountComposeStep(
           request: _withAmount,
           onToggleAmountUnit: () {},
         ),
@@ -761,7 +843,8 @@ void main() {
           matching: find.byType(AppIcon),
         ),
       );
-      expect(icon.color, colors.text.secondary);
+      // Pay's card colours.
+      expect(icon.color, colors.icon.regular);
       expect(
         _textStyle(tester, 'request_amount_conversion_text').color,
         colors.text.secondary,
@@ -771,7 +854,7 @@ void main() {
     testWidgets('step two offers share, copy and a way back', (tester) async {
       await _pump(
         tester,
-        const RequestAmountSheetResult(request: _withMessage),
+        const RequestAmountResultStep(request: _withMessage),
         size: _mobileSize,
       );
 
@@ -782,14 +865,14 @@ void main() {
       expect(find.text('Share request'), findsOneWidget);
       expect(find.text('Copy link'), findsOneWidget);
       expect(find.byKey(const ValueKey('request_uri_line')), findsNothing);
-      expect(find.byKey(const ValueKey('request_sheet_back')), findsOneWidget);
+      expect(find.byType(MobileTopNav), findsOneWidget);
     });
 
     testWidgets('sharing hands over the QR PNG', (tester) async {
       Uint8List? sharedPng;
       await _pump(
         tester,
-        RequestAmountSheetResult(
+        RequestAmountResultStep(
           request: _withMessage,
           onShareRequest: (png) {
             sharedPng = png;
@@ -806,12 +889,12 @@ void main() {
       expect(sharedPng!.sublist(0, 8), _pngSignature);
     }, timeout: _encodeTimeout);
 
-    testWidgets('the sheet draws the densest request without squeezing it', (
+    testWidgets('the page draws the densest request without squeezing it', (
       tester,
     ) async {
       await _pump(
         tester,
-        RequestAmountSheetResult(request: _denseRequest),
+        RequestAmountResultStep(request: _denseRequest),
         size: _mobileSize,
       );
 
@@ -831,7 +914,7 @@ void main() {
       var reported = 0;
       await _pump(
         tester,
-        RequestAmountSheetResult(
+        RequestAmountResultStep(
           request: _withMessage,
           onShareRequest: (_) {},
           onShareError: () => reported++,
@@ -852,7 +935,7 @@ void main() {
     ) async {
       await _pump(
         tester,
-        const RequestAmountSheetResult(request: _transparentRequest),
+        const RequestAmountResultStep(request: _transparentRequest),
         size: _mobileSize,
       );
 

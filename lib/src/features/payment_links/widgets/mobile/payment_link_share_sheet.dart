@@ -111,7 +111,6 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
       key: const ValueKey('payment_link_share_sheet'),
       title: context.l10n.paymentLinkShareSheetTitle,
       onClose: widget.onClose,
-      bottomPadding: AppSpacing.base,
       constrainBody: true,
       child: SingleChildScrollView(
         child: Column(

@@ -72,7 +72,6 @@ abstract final class AppIcons {
   // Shared by Welcome and Settings; `globe` is Explorer's.
   static const language = 'language';
   static const ledger = 'ledger';
-  static const ledgerBrand = 'ledger_brand';
   static const link = 'link';
   static const loader = 'loader';
   static const lock = 'lock';
@@ -97,12 +96,13 @@ abstract final class AppIcons {
   static const qr = 'qr';
   static const qrCodeFill = 'qr_code_fill';
   static const renew = 'renew';
+  // Request ZEC: a speech bubble holding the Zcash Z.
+  static const request = 'request';
   static const scroll = 'scroll';
   static const search = 'search';
   static const share = 'share';
   static const shieldAsset = 'shield_asset';
   static const shieldKeyhole = 'shield_keyhole';
-  static const shieldKeyholeOutline = 'shield_keyhole_outline';
   static const skip = 'skip';
   static const skull = 'skull';
   static const swapArrows = 'swap_arrows';

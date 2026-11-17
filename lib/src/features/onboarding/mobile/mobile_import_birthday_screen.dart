@@ -576,7 +576,7 @@ class _MobileImportBirthdayScreenState
             Text(
               _error!.resolve(context.l10n),
               textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
+              style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.destructive,
               ),
             )
@@ -614,7 +614,9 @@ class _MobileImportBirthdayScreenState
                       _metadata!.tipHeight.toString(),
                     ),
               textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(color: colors.text.muted),
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.muted,
+              ),
             ),
         ],
       ),

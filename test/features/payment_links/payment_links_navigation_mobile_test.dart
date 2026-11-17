@@ -259,6 +259,24 @@ void main() {
     variant: platforms,
   );
 
+  testWidgets('opened to redeem, back leads to the Gift Card home', (
+    tester,
+  ) async {
+    // The mobile Home Receive sheet's "Redeem gift card".
+    final router = await openFromSettings(tester);
+    router.pop();
+    await tester.pumpAndSettle();
+    unawaited(router.push('/payment-links?redeem=1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Paste card link'), findsOneWidget);
+    expect(keyed('payment_links_mobile_create_button'), findsNothing);
+
+    await back(tester);
+    await tester.pumpAndSettle();
+    expect(keyed('payment_links_mobile_create_button'), findsOneWidget);
+    expect(router.state.uri.path, '/payment-links');
+  }, variant: platforms);
+
   testWidgets('received swipe reveals the cards destination', (tester) async {
     await openFromSettings(tester);
     await tap(tester, 'payment_links_mobile_redeem_button');

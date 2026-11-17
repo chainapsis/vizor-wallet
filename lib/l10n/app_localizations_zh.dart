@@ -219,10 +219,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsUpdatePicture => '更新头像';
 
   @override
-  String get accountsViewSecretPhrase => '查看助记词';
+  String get accountsViewSecretPhrase => '显示助记词';
 
   @override
   String get accountsViewViewingKey => '显示查看密钥';
+
+  @override
+  String get activityAddAddressToContacts => '将地址添加到联系人';
 
   @override
   String get activityAddressUnified => '统一地址';
@@ -238,6 +241,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityBalanceOrchard => 'Orchard 余额';
+
+  @override
+  String get activityBalanceTransparent => '公开余额';
 
   @override
   String get activityDetailsLoadFailed => '失败，请重试';
@@ -448,6 +454,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityReceiptOutput => '输出';
 
   @override
+  String get activityReceiptRecipient => '收款方';
+
+  @override
   String get activityReceiptRefreshFailed => '无法刷新最新的交易状态。';
 
   @override
@@ -543,7 +552,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityTitleReceiveInProgress => '接收中...';
 
   @override
+  String get activityTitleReceiveZecFailed => 'ZEC 接收失败';
+
+  @override
   String get activityTitleReceivedSuccessfully => '接收成功';
+
+  @override
+  String get activityTitleReceivedZec => '已接收 ZEC';
 
   @override
   String get activityTitleReceiving => '接收中...';
@@ -552,10 +567,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityTitleReceivingVerb => '接收中';
 
   @override
+  String get activityTitleReceivingZec => 'ZEC 接收中...';
+
+  @override
+  String get activityTitleSendZecFailed => 'ZEC 发送失败';
+
+  @override
   String get activityTitleSendingVerb => '发送中';
 
   @override
+  String get activityTitleSendingZec => 'ZEC 发送中...';
+
+  @override
   String get activityTitleSent => '已发送';
+
+  @override
+  String get activityTitleSentZec => '已发送 ZEC';
 
   @override
   String get activityTitleShielded => '隐私转换';
@@ -1102,6 +1129,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonBackToWallet => '返回钱包';
+
+  @override
+  String get commonBalanceHidden => '余额已隐藏';
+
+  @override
+  String get commonBalanceShown => '余额已显示';
 
   @override
   String get commonCalculatingEllipsis => '正在计算…';
@@ -2093,6 +2126,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeReceiveFirstZec => '接收你的第一笔 ZEC';
+
+  @override
+  String get homeReceiveReceiveSubtitle => '分享地址或二维码';
+
+  @override
+  String get homeReceiveRedeemGiftCard => '领取礼品卡';
+
+  @override
+  String get homeReceiveRedeemGiftCardSubtitle => '添加收到的礼品卡';
+
+  @override
+  String get homeReceiveRequestSubtitle => '按指定金额收款';
 
   @override
   String get homeRecentActivity => '最近活动记录';
@@ -6146,6 +6191,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingIntroTitle => '走进隐私世界';
 
   @override
+  String get onboardingIntroTitleMobile => '关于 Zcash';
+
+  @override
   String get onboardingLinkVizorDesktop => '关联 Vizor 桌面版';
 
   @override
@@ -6557,9 +6605,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paySaveContactError => '无法保存此联系人。请重试。';
-
-  @override
-  String get payScanBarrierDismiss => '关闭';
 
   @override
   String get payScanCaption => '扫描收款地址二维码';
@@ -7842,6 +7887,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get poolTransparent => '公开';
 
   @override
+  String get privacyBalanceHiddenSaveFailed => '余额已隐藏，但无法保存设置。';
+
+  @override
+  String get privacyBalanceShowFailed => '无法显示余额。请重试。';
+
+  @override
   String get privateQueriesOptOutUnfinished => '关闭隐私查询未完成。请在设置中再次关闭，以使用公开资金。';
 
   @override
@@ -7999,9 +8050,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get receiveRequestZecButton => 'ZEC 收款';
-
-  @override
-  String get receiveShareAddress => '分享地址';
 
   @override
   String get receiveShareFailed => '无法分享此地址。请改为复制。';
@@ -8493,6 +8541,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendRecipientLabel => '发送至';
 
   @override
+  String sendRecipientOwnAccountName(String name) {
+    return '$name（我）';
+  }
+
+  @override
   String get sendRecipientUnreadableRequestLink => '无法读取此收款链接';
 
   @override
@@ -8884,6 +8937,28 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsExplorerUrlLabel => '区块浏览器网址';
+
+  @override
+  String get settingsFlipToHide => '翻转隐藏';
+
+  @override
+  String get settingsFlipToHideDescription =>
+      '将手机屏幕朝下翻转，即可在任意页面隐藏金额。如需再次显示，请在 2 秒内翻转后再翻回。';
+
+  @override
+  String get settingsFlipToHideUpdateFailed => '无法更新翻转隐藏设置。';
+
+  @override
+  String get settingsHideBalanceOnUnlock => '解锁时隐藏余额';
+
+  @override
+  String get settingsHideBalanceOnUnlockDescription => '每次解锁时隐藏余额。点击眼睛图标可再次显示。';
+
+  @override
+  String get settingsHideBalanceOnUnlockUpdateFailed => '无法更新解锁时隐藏余额设置。';
+
+  @override
+  String get settingsHideBalanceTitle => '隐藏余额';
 
   @override
   String get settingsIncorrectPasscode => '数字密码错误';
@@ -9413,7 +9488,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsViewingKeyConfirmAgain => '请再次验证身份，然后重试加载此密钥。';
 
   @override
+  String get settingsViewingKeyCopied => '查看密钥已复制';
+
+  @override
   String get settingsViewingKeyCopy => '复制查看密钥';
+
+  @override
+  String get settingsViewingKeyCopyFailed => '无法复制查看密钥，请重试。';
 
   @override
   String get settingsViewingKeyExplanation =>
@@ -10004,9 +10085,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapDepositZecButton => '存入 ZEC';
 
   @override
-  String get swapDismissBarrierLabel => '关闭';
-
-  @override
   String get swapFailureAmountPrecision => '金额的小数位数过多。\n请减少小数位数后重试。';
 
   @override
@@ -10358,6 +10436,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapStatusRowLabel => '状态';
 
   @override
+  String get swapSwitchDirection => '切换兑换方向';
+
+  @override
   String get swapTimeoutBody => '请重新发起一笔兑换。';
 
   @override
@@ -10590,11 +10671,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingConfigCustomSource => '自定义来源';
 
   @override
-  String votingConfigDeleteNamed(String name) {
-    return '删除 $name';
-  }
-
-  @override
   String get votingConfigDeleteSaved => '删除已保存的来源';
 
   @override
@@ -10657,7 +10733,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingConfigShowTestRoundsHint => '显示标题以 [TEST] 开头的已认证轮次。';
 
   @override
-  String get votingConfigSources => '来源';
+  String get votingConfigSource => '来源';
 
   @override
   String get votingConfigTestVisibilityFailed => '无法更新测试轮次显示设置。';

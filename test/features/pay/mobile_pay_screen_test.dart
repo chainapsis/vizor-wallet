@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/app_test_fonts.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -352,6 +353,7 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  setUpAll(loadAppTestFonts);
   testWidgets(
     'service notice keeps mobile Pay usable with multiple windows and keyboard',
     (tester) async {
@@ -515,7 +517,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_pay_amount_card'))),
-      const Size(361, 240),
+      const Size(353, 240),
     );
     expect(
       tester.getRect(find.byKey(const ValueKey('mobile_pay_amount_card'))).top,
@@ -583,7 +585,8 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('mobile_pay_add_to_contacts_button')),
     );
-    await tester.pump();
+    // The sheet slides in; let it finish before typing.
+    await tester.pumpAndSettle();
 
     expect(
       find.byKey(const ValueKey('mobile_pay_add_contact_card')),
@@ -940,7 +943,8 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('mobile_pay_asset_selector')));
-    await tester.pump();
+    // The sheet slides in; let it finish before tapping a row.
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(ValueKey('swap_asset_row_${SwapAsset.sol.identityKey}')),
     );

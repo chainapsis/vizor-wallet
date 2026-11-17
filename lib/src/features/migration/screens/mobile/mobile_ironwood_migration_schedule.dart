@@ -265,9 +265,9 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
       ),
       child: Column(
@@ -371,6 +371,7 @@ class _MobileMigrationPartScheduleRow extends StatelessWidget {
         decoration: BoxDecoration(
           color: context.colors.background.ground,
           borderRadius: BorderRadius.circular(AppRadii.large),
+          boxShadow: mobileSurfaceShadows(context.colors),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
@@ -470,9 +471,9 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
-        AppSpacing.sm,
+        kMobilePageMargin,
         AppSpacing.s,
       ),
       child: Column(
@@ -620,6 +621,7 @@ class _MobilePreparationTransactionCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: context.colors.background.ground,
               borderRadius: BorderRadius.circular(AppRadii.medium),
+              boxShadow: mobileSurfaceShadows(context.colors),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
@@ -762,7 +764,7 @@ class _MobilePreparationOutputRow extends StatelessWidget {
           ),
           Text(
             destination,
-            style: AppTypography.labelMedium.copyWith(
+            style: AppTypography.labelLarge.copyWith(
               color: context.colors.text.secondary,
               fontWeight: FontWeight.w500,
             ),

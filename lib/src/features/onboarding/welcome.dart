@@ -6,6 +6,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/navigation/external_action_guard_provider.dart';
+import 'shared/create_account_submission.dart';
+import 'shared/onboarding_error_messages.dart';
+
 import '../../core/l10n/l10n.dart';
 import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
@@ -53,6 +57,34 @@ class WelcomeScreen extends ConsumerStatefulWidget {
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   late bool _showEndpointSettings;
+  final _creation = CreateAccountSubmission();
+  bool _creating = false;
+  OnboardingSubmitError? _createError;
+  bool get _creationBlocksNavigation => _creating || _creation.requiresRecovery;
+
+  Future<void> _createWallet() async {
+    if (_creating) return;
+    final lease = ref.read(externalActionGuardProvider.notifier).tryProtect();
+    if (lease == null) return;
+    setState(() {
+      _creating = true;
+      _createError = null;
+    });
+    try {
+      await _creation.continueSetup(ref);
+    } catch (error) {
+      if (mounted) {
+        _createError = OnboardingSubmitError.fromError(
+          error,
+          requiresRecovery: _creation.requiresRecovery,
+        );
+      }
+    } finally {
+      lease.release();
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
   bool _showLanguagePicker = false;
   late final WelcomeNetworkSettingsNotifier _networkSettings;
 
@@ -83,12 +115,14 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   }
 
   void _openEndpointSettings() {
+    if (_creationBlocksNavigation) return;
     setState(() => _showEndpointSettings = true);
     _networkSettings.setPresented(true);
   }
 
   // Holds incoming Gift links like the network editor does.
   void _openLanguagePicker() {
+    if (_creationBlocksNavigation) return;
     setState(() => _showLanguagePicker = true);
     _networkSettings.setPresented(true);
   }
@@ -117,138 +151,166 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     final languages = ref.watch(availableAppLanguagesProvider);
     // First run only, and only when there is a language to choose.
     final showLanguage = !widget.showBackButton && languages.length > 1;
-    return Scaffold(
-      backgroundColor: const Color(0xff000000),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final scale = constraints.maxHeight / 720;
-          return Stack(
-            fit: StackFit.expand,
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned(
-                left: 75 * scale + (constraints.maxWidth - 1080 * scale) / 2,
-                top: 0,
-                width: 1280 * scale,
-                height: constraints.maxHeight,
-                child: WelcomeVideoBackdrop(
-                  videoAsset: kDesktopWelcomeVideoAsset,
-                  posterAsset: kDesktopWelcomePosterAsset,
-                  animatedImageAsset: kDesktopWelcomeAnimatedImageAsset,
-                  animate: widget.animateBackground,
-                ),
-              ),
-              const Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [
-                          Color(0xff000000),
-                          Color(0x80000000),
-                          Color(0x4d000000),
-                          Color(0x00000000),
-                        ],
-                        stops: [0.13333, 0.43813, 0.56875, 0.65583],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                top: 0,
-                width: math.min(_welcomePaneWidth, constraints.maxWidth),
-                height: constraints.maxHeight,
-                child: ExcludeFocus(
-                  excluding: _showEndpointSettings || _showLanguagePicker,
-                  child: Center(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 48,
-                      ),
-                      child: _WelcomeContent(
-                        showBackButton: widget.showBackButton,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              if (!widget.showBackButton)
+    return PopScope<void>(
+      canPop: !_creationBlocksNavigation,
+      child: Scaffold(
+        backgroundColor: const Color(0xff000000),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final scale = constraints.maxHeight / 720;
+            return Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.hardEdge,
+              children: [
                 Positioned(
-                  right: AppSpacing.md,
-                  top: AppSpacing.md,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (showLanguage) ...[
-                        WelcomeLanguageButton(
-                          key: const ValueKey('welcome_language_button'),
-                          height: 32,
-                          background: context.colors.background.neutralScrim,
-                          hoverBackground: context
-                              .colors
-                              .background
-                              .neutralScrim
-                              .withValues(alpha: 0.7),
-                          onTap: _openLanguagePicker,
+                  left: 75 * scale + (constraints.maxWidth - 1080 * scale) / 2,
+                  top: 0,
+                  width: 1280 * scale,
+                  height: constraints.maxHeight,
+                  child: WelcomeVideoBackdrop(
+                    videoAsset: kDesktopWelcomeVideoAsset,
+                    posterAsset: kDesktopWelcomePosterAsset,
+                    animatedImageAsset: kDesktopWelcomeAnimatedImageAsset,
+                    animate: widget.animateBackground,
+                  ),
+                ),
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Color(0xff000000),
+                            Color(0x80000000),
+                            Color(0x4d000000),
+                            Color(0x00000000),
+                          ],
+                          stops: [0.13333, 0.43813, 0.56875, 0.65583],
                         ),
-                        const SizedBox(width: AppSpacing.xs),
-                      ],
-                      _WelcomeIconButton(
-                        key: const ValueKey('welcome_endpoint_settings_button'),
-                        icon: AppIcons.cog,
-                        tooltip: context.l10n.networkSettingsTitle,
-                        semanticLabel: context.l10n.networkSettingsTitle,
-                        onTap: _openEndpointSettings,
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              if (widget.showBackButton)
-                const Positioned(
-                  left: AppSpacing.md,
-                  top: _welcomeBackButtonTop,
-                  child: _BackRow(),
-                ),
-              if (!widget.showBackButton && _showEndpointSettings)
-                AppPaneModalOverlay(
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                  onDismiss: _dismissEndpointSettings,
-                  child: CustomEndpointSettingsPanel(
-                    key: const ValueKey('welcome_endpoint_settings_modal'),
-                    restartSyncAfterUpdate: false,
-                    onClose: _dismissEndpointSettings,
-                    onUpdated: _dismissEndpointSettings,
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  width: math.min(_welcomePaneWidth, constraints.maxWidth),
+                  height: constraints.maxHeight,
+                  child: ExcludeFocus(
+                    excluding: _showEndpointSettings || _showLanguagePicker,
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 48,
+                        ),
+                        child: _WelcomeContent(
+                          showBackButton: widget.showBackButton,
+                          onCreate: _creating
+                              ? null
+                              : () => unawaited(_createWallet()),
+                          navigationEnabled: !_creationBlocksNavigation,
+                          createLabel: _creation.requiresRecovery
+                              ? context.l10n.onboardingRetrySetup
+                              : _creating
+                              ? context.l10n.commonCreating
+                              : null,
+                          createError: _createError?.resolve(context.l10n),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              if (showLanguage && _showLanguagePicker)
-                AppPaneModalOverlay(
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                  onDismiss: _dismissLanguagePicker,
-                  child: DesktopLanguageModal(
-                    key: const ValueKey('welcome_language_modal'),
-                    current: ref.watch(appLanguageProvider),
-                    available: languages,
-                    onCancel: _dismissLanguagePicker,
-                    onUpdate: _updateLanguage,
+                if (!widget.showBackButton)
+                  Positioned(
+                    right: AppSpacing.md,
+                    top: AppSpacing.md,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showLanguage) ...[
+                          WelcomeLanguageButton(
+                            key: const ValueKey('welcome_language_button'),
+                            height: 32,
+                            background: context.colors.background.neutralScrim,
+                            hoverBackground: context
+                                .colors
+                                .background
+                                .neutralScrim
+                                .withValues(alpha: 0.7),
+                            onTap: _openLanguagePicker,
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                        ],
+                        _WelcomeIconButton(
+                          key: const ValueKey(
+                            'welcome_endpoint_settings_button',
+                          ),
+                          icon: AppIcons.cog,
+                          tooltip: context.l10n.networkSettingsTitle,
+                          semanticLabel: context.l10n.networkSettingsTitle,
+                          onTap: _openEndpointSettings,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-            ],
-          );
-        },
+                if (widget.showBackButton)
+                  Positioned(
+                    left: AppSpacing.md,
+                    top: _welcomeBackButtonTop,
+                    child: IgnorePointer(
+                      ignoring: _creationBlocksNavigation,
+                      child: _BackRow(enabled: !_creationBlocksNavigation),
+                    ),
+                  ),
+                if (!widget.showBackButton && _showEndpointSettings)
+                  AppPaneModalOverlay(
+                    borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                    onDismiss: _dismissEndpointSettings,
+                    child: CustomEndpointSettingsPanel(
+                      key: const ValueKey('welcome_endpoint_settings_modal'),
+                      restartSyncAfterUpdate: false,
+                      onClose: _dismissEndpointSettings,
+                      onUpdated: _dismissEndpointSettings,
+                    ),
+                  ),
+                if (showLanguage && _showLanguagePicker)
+                  AppPaneModalOverlay(
+                    borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                    onDismiss: _dismissLanguagePicker,
+                    child: DesktopLanguageModal(
+                      key: const ValueKey('welcome_language_modal'),
+                      current: ref.watch(appLanguageProvider),
+                      available: languages,
+                      onCancel: _dismissLanguagePicker,
+                      onUpdate: _updateLanguage,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 }
 
 class _WelcomeContent extends StatelessWidget {
-  const _WelcomeContent({required this.showBackButton});
+  const _WelcomeContent({
+    required this.showBackButton,
+    required this.onCreate,
+    required this.navigationEnabled,
+    this.createLabel,
+    this.createError,
+  });
 
   final bool showBackButton;
+  final VoidCallback? onCreate;
+  final bool navigationEnabled;
+  final String? createLabel;
+  final String? createError;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -274,11 +336,22 @@ class _WelcomeContent extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (createError != null) ...[
+                Text(
+                  createError!,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: const Color(0xffffffff),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+              ],
               WelcomeAccentButton(
                 semanticKey: const ValueKey('welcome_create_wallet_button'),
                 height: 44,
                 glow: WelcomeButtonTokens.desktopAccentGlow,
-                onPressed: () => context.go('/onboarding/intro'),
+                onPressed: onCreate,
+                label: createLabel,
               ),
               const SizedBox(height: 16),
               AppButton(
@@ -293,23 +366,27 @@ class _WelcomeContent extends StatelessWidget {
                 enabledLabelColor: WelcomeButtonTokens.secondaryLabel,
                 pressedLabelColor: WelcomeButtonTokens.secondaryLabel,
                 leading: const AppIcon(AppIcons.importWallet, size: 20),
-                onPressed: () => context.go(
-                  showBackButton
-                      ? '/import/method?from=add-account'
-                      : '/import/method',
-                ),
+                onPressed: !navigationEnabled
+                    ? null
+                    : () => context.go(
+                        showBackButton
+                            ? '/import/method?from=add-account'
+                            : '/import/method',
+                      ),
                 child: Text(context.l10n.onboardingWelcomeImportWallet),
               ),
               const SizedBox(height: 16),
               Semantics(
                 key: const ValueKey('welcome_redeem_card_button'),
                 button: true,
-                enabled: true,
+                enabled: navigationEnabled,
                 child: WelcomeGiftCardButton(
                   height: 44,
-                  onPressed: () => context.go(
-                    showBackButton ? '/gift?addAccount=true' : '/gift',
-                  ),
+                  onPressed: !navigationEnabled
+                      ? null
+                      : () => context.go(
+                          showBackButton ? '/gift?addAccount=true' : '/gift',
+                        ),
                 ),
               ),
             ],
@@ -392,7 +469,8 @@ class _WelcomeIconButtonState extends State<_WelcomeIconButton> {
 }
 
 class _BackRow extends StatelessWidget {
-  const _BackRow();
+  const _BackRow({required this.enabled});
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -400,7 +478,9 @@ class _BackRow extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => context.canPop() ? context.pop() : context.go('/home'),
+        onTap: enabled
+            ? () => context.canPop() ? context.pop() : context.go('/home')
+            : null,
         child: SizedBox(
           height: 32,
           child: Row(

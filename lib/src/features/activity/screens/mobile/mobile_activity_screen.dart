@@ -12,6 +12,7 @@ import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
+import '../../../../core/layout/mobile/mobile_tab_root_scroll_fades.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/account_provider.dart';
@@ -419,44 +420,54 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         bottom: false,
         child: Column(
           children: [
-            MobileTopNav.back(title: context.l10n.navActivity),
+            MobileTopNav.back(
+              title: context.l10n.navActivity,
+              // Tab roots keep the large serif title.
+              titleStyle: AppTypography.headlineLarge,
+            ),
             Expanded(
-              child: CustomScrollView(
-                controller: _scrollAnchor.controller,
-                slivers: [
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(
-                      AppSpacing.xxs,
-                      AppSpacing.s,
-                      AppSpacing.xxs,
-                      MobileNavigationScope.bottomClearanceOf(
-                        context,
-                        kMobileTabBarHeight + AppSpacing.lg,
+              // Soft edges under the top nav and the tab bar, as on Home.
+              child: MobileTabRootScrollFades(
+                child: CustomScrollView(
+                  controller: _scrollAnchor.controller,
+                  slivers: [
+                    SliverPadding(
+                      // The headerless feed adds 12px at each side, so rows
+                      // land on the page margin.
+                      padding: EdgeInsets.fromLTRB(
+                        kMobilePageMargin - AppSpacing.s,
+                        AppSpacing.s,
+                        kMobilePageMargin - AppSpacing.s,
+                        MobileNavigationScope.bottomClearanceOf(
+                          context,
+                          kMobileTabBarHeight + AppSpacing.lg,
+                        ),
+                      ),
+                      sliver: ActivityFeedSliver(
+                        key: const ValueKey('mobile_activity_feed'),
+                        sections: sections,
+                        showHeader: false,
+                        cardWidth: null,
+                        rowKeyPrefix: 'mobile_activity',
+                        scrollAnchor: _scrollAnchor,
+                        isLoadingMore:
+                            _pager?.isLoading == true &&
+                            loadedTransactions != null,
+                        loadMoreError:
+                            loadedTransactions != null && _pager?.error != null,
+                        onRetry: () => _pager?.retry(),
+                        isLoading:
+                            _isLoading &&
+                            loadedTransactions == null &&
+                            sections.isEmpty,
+                        errorText:
+                            sections.isEmpty && loadedTransactions == null
+                            ? _error
+                            : null,
                       ),
                     ),
-                    sliver: ActivityFeedSliver(
-                      key: const ValueKey('mobile_activity_feed'),
-                      sections: sections,
-                      showHeader: false,
-                      cardWidth: null,
-                      rowKeyPrefix: 'mobile_activity',
-                      scrollAnchor: _scrollAnchor,
-                      isLoadingMore:
-                          _pager?.isLoading == true &&
-                          loadedTransactions != null,
-                      loadMoreError:
-                          loadedTransactions != null && _pager?.error != null,
-                      onRetry: () => _pager?.retry(),
-                      isLoading:
-                          _isLoading &&
-                          loadedTransactions == null &&
-                          sections.isEmpty,
-                      errorText: sections.isEmpty && loadedTransactions == null
-                          ? _error
-                          : null,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],

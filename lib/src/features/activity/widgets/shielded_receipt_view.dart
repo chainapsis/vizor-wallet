@@ -116,7 +116,7 @@ class ShieldedReceiptView extends StatelessWidget {
                 label: l10n.commonTo,
                 value: l10n.commonShieldedBalance,
                 leading: const ReviewInfoIconCircle(
-                  iconName: AppIcons.shieldKeyholeOutline,
+                  iconName: AppIcons.shieldKeyhole,
                 ),
                 bottomLeftIconName: AppIcons.shieldKeyhole,
                 bottomLeftIconColor: colors.text.brandCrimson,

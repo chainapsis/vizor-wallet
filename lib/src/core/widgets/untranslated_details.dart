@@ -53,13 +53,12 @@ Future<void> showUntranslatedDetails(BuildContext context, String details) {
   if (kAppFormFactor == AppFormFactor.mobile) {
     return showAppMobileSheet<void>(
       context: context,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
-          AppSpacing.base,
-          AppSpacing.sm,
-          AppSpacing.base,
-        ),
+      // The shared sheet template supplies the title and close button; the
+      // hint below reads as the title's subtitle.
+      builder: (sheetContext) => MobileModalScaffold(
+        title: sheetContext.l10n.commonErrorDetailsTitle,
+        onClose: () => Navigator.of(sheetContext).pop(),
+        bodyGap: AppSpacing.xxs,
         child: _UntranslatedDetailsBody(details: details, mobile: true),
       ),
     );
@@ -165,18 +164,20 @@ class _UntranslatedDetailsBodyState extends State<_UntranslatedDetailsBody> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          l10n.commonErrorDetailsTitle,
-          style:
-              (mobile
-                      ? AppTypography.headlineSmall
-                      : AppTypography.bodyMediumStrong)
-                  .copyWith(color: colors.text.accent),
-        ),
-        const SizedBox(height: AppSpacing.xs),
+        // On mobile the sheet scaffold draws the title.
+        if (!mobile) ...[
+          Text(
+            l10n.commonErrorDetailsTitle,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
         Text(
           l10n.commonErrorDetailsHint,
-          style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
+          style: (mobile ? AppTypography.bodyMedium : AppTypography.bodySmall)
+              .copyWith(color: colors.text.secondary),
         ),
         const SizedBox(height: AppSpacing.sm),
         Container(
@@ -220,7 +221,7 @@ class _UntranslatedDetailsBodyState extends State<_UntranslatedDetailsBody> {
           ),
           child: Text(l10n.commonCopy),
         ),
-        const SizedBox(height: AppSpacing.xs),
+        SizedBox(height: mobile ? AppSpacing.s : AppSpacing.xs),
         AppButton(
           key: const ValueKey('untranslated_details_close'),
           expand: true,

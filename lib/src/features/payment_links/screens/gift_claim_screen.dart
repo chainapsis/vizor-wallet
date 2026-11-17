@@ -13,6 +13,8 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../onboarding/shared/onboarding_auth_shell.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../core/layout/mobile/mobile_scroll_edge_fades.dart';
+import '../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -21,6 +23,12 @@ import '../../../providers/zec_price_change_provider.dart';
 import '../providers/gift_card_entry_price_provider.dart';
 import '../providers/gift_card_check_progress_provider.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
+import '../../onboarding/shared/account_persona_draft.dart';
+import '../../onboarding/shared/account_setup_submission.dart';
+import '../../onboarding/shared/onboarding_error_messages.dart';
+import '../services/gift_claim_setup_coordinator.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../models/vizor_payment_link.dart';
 import '../providers/gift_claim_flow_provider.dart';
@@ -62,11 +70,17 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   bool _reading = false;
   bool _invalidPaste = false;
   bool _handingOff = false;
+  final _setupSubmission = AccountSetupSubmission();
+  OnboardingSubmitError? _setupError;
   GiftClaimFlowState? _desktopLongSyncWarning;
+  late final GiftClaimFlowNotifier _flowNotifier;
+  PaymentLinkClaimInspection? _setupInspection;
+  bool _transferringToSecurity = false;
 
   @override
   void initState() {
     super.initState();
+    _flowNotifier = ref.read(giftClaimFlowProvider.notifier);
     ref.listenManual(giftClaimFlowProvider, (_, next) {
       if (next?.phase != GiftClaimPhase.longSyncConfirmation) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -82,6 +96,15 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         _openPendingLink();
       });
     }, fireImmediately: true);
+  }
+
+  @override
+  void dispose() {
+    final inspection = _setupInspection;
+    if (inspection != null && !_transferringToSecurity) {
+      scheduleMicrotask(() => _flowNotifier.finishWalletSetup(inspection));
+    }
+    super.dispose();
   }
 
   void _openPendingLink() {
@@ -100,6 +123,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   }
 
   Future<void> _close() async {
+    if (_handingOff || _setupSubmission.requiresRecovery) return;
     try {
       await ref.read(giftClaimFlowProvider.notifier).close();
       if (mounted) {
@@ -135,7 +159,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   }
 
   Future<void> _continueToSetup(String location) async {
-    if (_handingOff) return;
+    if (_handingOff || _setupSubmission.requiresRecovery) return;
     _handingOff = true;
     try {
       final saved = await ref
@@ -159,7 +183,16 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         );
         return;
       }
-      if (mounted && saved) context.startOnboarding(location);
+      // A failed pre-account creation attempt may still own this inspection.
+      // The durable import handoff now owns it, including if this Card route is
+      // replaced or the wallet locks while the user imports an account.
+      final inspection = _setupInspection;
+      if (inspection != null) {
+        _flowNotifier.cancelWalletSetup(inspection);
+        _setupInspection = null;
+        _setupError = null;
+      }
+      context.startOnboarding(location);
     } catch (_) {
       if (mounted) {
         showAppToast(
@@ -175,24 +208,65 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
 
   Future<void> _createGiftWallet() async {
     if (_handingOff) return;
-    _handingOff = true;
+    setState(() {
+      _handingOff = true;
+      _setupError = null;
+    });
     try {
-      await ref.read(giftClaimFlowProvider.notifier).cancelSetupReturn();
+      if (_setupSubmission.requiresRecovery) {
+        await _setupSubmission.recover(ref);
+        return;
+      }
+      final notifier = ref.read(giftClaimFlowProvider.notifier);
+      await notifier.cancelSetupReturn();
       if (!mounted) return;
-      final inspection = ref.read(giftClaimFlowProvider)?.inspection;
+      final flow = ref.read(giftClaimFlowProvider);
+      final inspection = flow?.inspection;
       if (inspection == null) return;
-      ref.read(giftClaimFlowProvider.notifier).beginWalletSetup(inspection);
-      context.push('/gift/customise');
-    } catch (_) {
+      final persona = flow?.setupPersona ?? AccountPersona.generate();
+      _setupInspection = inspection;
+      notifier.beginWalletSetup(inspection, persona: persona);
+      if (!ref.read(appSecurityProvider).isPasswordConfigured) {
+        _transferringToSecurity = true;
+        context.go(
+          kAppFormFactor == AppFormFactor.mobile
+              ? '/gift/passcode'
+              : '/gift/set-password',
+        );
+        return;
+      }
+      await _setupSubmission.run(ref, () async {
+        await ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+          try {
+            await completeGiftClaimWalletSetup(
+              ref,
+              password: null,
+              accountName: persona.name,
+              profilePictureId: persona.profilePictureId,
+              inspection: inspection,
+              onComplete: () {
+                if (mounted) context.go('/home');
+              },
+            );
+          } on GiftClaimAccountCreatedException catch (error) {
+            // Retry durable recovery, never create another receiving account.
+            throw WalletAccountSetupInterruptedException(
+              error.accountUuid,
+              error.cause,
+            );
+          }
+        });
+      });
+    } catch (error, stack) {
+      log('GiftClaim: account setup failed: $error\n$stack');
       if (mounted) {
-        showAppToast(
-          context,
-          context.l10n.paymentLinkClaimSaveFailed,
-          iconName: AppIcons.warning,
+        _setupError = OnboardingSubmitError.fromError(
+          error,
+          requiresRecovery: _setupSubmission.requiresRecovery,
         );
       }
     } finally {
-      _handingOff = false;
+      if (mounted) setState(() => _handingOff = false);
     }
   }
 
@@ -253,15 +327,21 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       return _guardBack(
         Scaffold(
           backgroundColor: context.colors.background.window,
-          body: SafeArea(
-            child: MobileGiftCardEntryView(
-              addingAccount: widget.addingAccount,
-              state: _invalidPaste
-                  ? PaymentLinkRedeemMobileState.invalid
-                  : PaymentLinkRedeemMobileState.paste,
-              onBack: _close,
-              onPaste: _reading ? null : _paste,
-              onScan: _reading ? null : _scan,
+          // This route sits outside the page viewport, so it installs the
+          // page fades itself.
+          body: MobileScrollEdgeFades(
+            color: context.colors.background.window,
+            bottomHeight: AppSpacing.xl,
+            child: SafeArea(
+              child: MobileGiftCardEntryView(
+                addingAccount: widget.addingAccount,
+                state: _invalidPaste
+                    ? PaymentLinkRedeemMobileState.invalid
+                    : PaymentLinkRedeemMobileState.paste,
+                onBack: _close,
+                onPaste: _reading ? null : _paste,
+                onScan: _reading ? null : _scan,
+              ),
             ),
           ),
         ),
@@ -283,114 +363,133 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     return _guardBack(
       Scaffold(
         backgroundColor: context.colors.background.window,
-        body: SafeArea(
-          child: Column(
-            children: [
-              if (waitingForCheck)
-                const SizedBox(height: kMobileTopNavHeight)
-              else
-                MobileTopNav.back(
-                  key: const ValueKey('gift_claim_close_button'),
-                  title: '',
-                  onBack: _close,
-                  backIcon: AppIcons.cross,
-                ),
-              Expanded(
-                child: SingleChildScrollView(
-                  key: const ValueKey('gift_claim_stage_scroll'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: AppSpacing.sm,
+        body: MobileScrollEdgeFades(
+          color: context.colors.background.window,
+          bottomHeight: AppSpacing.xl,
+          child: SafeArea(
+            child: Column(
+              children: [
+                if (waitingForCheck)
+                  const SizedBox(height: kMobileTopNavHeight)
+                else
+                  MobileTopNav.back(
+                    key: const ValueKey('gift_claim_close_button'),
+                    title: '',
+                    onBack: _handingOff || _setupSubmission.requiresRecovery
+                        ? null
+                        : _close,
+                    backIcon: AppIcons.cross,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _GiftClaimStageHeading(
-                        checking: waitingForCheck,
-                        showArrival: canContinue,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: _card(
-                          flow.link,
-                          celebrate: canContinue,
-                          loading:
-                              waitingForCheck &&
-                              !(checkProgress?.hasFunding ?? false),
+                Expanded(
+                  child: SingleChildScrollView(
+                    key: const ValueKey('gift_claim_stage_scroll'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _GiftClaimStageHeading(
+                          checking: waitingForCheck,
+                          showArrival: canContinue,
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      // Keep the scroll extent stable when the progress
-                      // details become the shorter inspection result.
-                      Stack(
-                        alignment: Alignment.topCenter,
-                        children: [
-                          Visibility(
-                            visible: false,
-                            maintainSize: true,
-                            maintainAnimation: true,
-                            maintainState: true,
-                            child: PaymentLinkMobileCheckingDetails(
-                              label: context.l10n.paymentLinkCheckingGiftFull,
-                            ),
+                        const SizedBox(height: AppSpacing.md),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: _card(
+                            flow.link,
+                            celebrate: canContinue,
+                            loading:
+                                waitingForCheck &&
+                                !(checkProgress?.hasFunding ?? false),
                           ),
-                          if (waitingForCheck)
-                            PaymentLinkMobileCheckingDetails(
-                              label:
-                                  checkProgress?.label(context.l10n) ??
-                                  context.l10n.paymentLinkCheckingGiftEllipsis,
-                            )
-                          else
-                            _GiftClaimStatus(
-                              flow: flow,
-                              addingAccount: widget.addingAccount,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        // Keep the scroll extent stable when the progress
+                        // details become the shorter inspection result.
+                        Stack(
+                          alignment: Alignment.topCenter,
+                          children: [
+                            Visibility(
+                              visible: false,
+                              maintainSize: true,
+                              maintainAnimation: true,
+                              maintainState: true,
+                              child: PaymentLinkMobileCheckingDetails(
+                                label: context.l10n.paymentLinkCheckingGiftFull,
+                              ),
                             ),
-                        ],
-                      ),
-                    ],
+                            if (waitingForCheck)
+                              PaymentLinkMobileCheckingDetails(
+                                label:
+                                    checkProgress?.label(context.l10n) ??
+                                    context
+                                        .l10n
+                                        .paymentLinkCheckingGiftEllipsis,
+                              )
+                            else
+                              _GiftClaimStatus(
+                                flow: flow,
+                                addingAccount: widget.addingAccount,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Stack(
-                  children: [
-                    if (!waitingForCheck && !canContinue)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                    kMobileFooterGap,
+                  ),
+                  child: Stack(
+                    children: [
+                      if (!waitingForCheck && !canContinue)
+                        Visibility(
+                          visible: false,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: _GiftClaimActions(
+                            flow: flow,
+                            reserveClaimActions: true,
+                            addingAccount: widget.addingAccount,
+                            setupBusy: _handingOff,
+                            setupError: _setupError,
+                            requiresRecovery: _setupSubmission.requiresRecovery,
+                            onCreate: _createGiftWallet,
+                            onExisting: () =>
+                                _continueToSetup('/onboarding/method'),
+                            onClose: _close,
+                          ),
+                        ),
                       Visibility(
-                        visible: false,
+                        visible: !waitingForCheck,
                         maintainSize: true,
                         maintainAnimation: true,
                         maintainState: true,
                         child: _GiftClaimActions(
                           flow: flow,
-                          reserveClaimActions: true,
+                          reserveClaimActions: waitingForCheck,
                           addingAccount: widget.addingAccount,
+                          setupBusy: _handingOff,
+                          setupError: _setupError,
+                          requiresRecovery: _setupSubmission.requiresRecovery,
                           onCreate: _createGiftWallet,
                           onExisting: () =>
                               _continueToSetup('/onboarding/method'),
                           onClose: _close,
                         ),
                       ),
-                    Visibility(
-                      visible: !waitingForCheck,
-                      maintainSize: true,
-                      maintainAnimation: true,
-                      maintainState: true,
-                      child: _GiftClaimActions(
-                        flow: flow,
-                        reserveClaimActions: waitingForCheck,
-                        addingAccount: widget.addingAccount,
-                        onCreate: _createGiftWallet,
-                        onExisting: () =>
-                            _continueToSetup('/onboarding/method'),
-                        onClose: _close,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -446,6 +545,9 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                         child: _GiftClaimActions(
                           flow: flow,
                           addingAccount: widget.addingAccount,
+                          setupBusy: _handingOff,
+                          setupError: _setupError,
+                          requiresRecovery: _setupSubmission.requiresRecovery,
                           onCreate: _createGiftWallet,
                           onExisting: () =>
                               _continueToSetup('/import/method?from=gift'),
@@ -494,6 +596,8 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     final hasHandoff = ref.watch(giftClaimSetupReturnProvider) != null;
     return PopScope<void>(
       canPop:
+          !_handingOff &&
+          !_setupSubmission.requiresRecovery &&
           !hasHandoff &&
           phase != GiftClaimPhase.checking &&
           phase != GiftClaimPhase.longSyncConfirmation,
@@ -636,22 +740,18 @@ class MobileGiftCardEntryView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: AppSpacing.s),
-        SizedBox(
-          height: 74,
-          child: MobileTopNav.steps(
-            progress: OnboardingProgressPosition.start.value,
-            progressOffset: const Offset(-4.5, 0),
-            progressTrackColor: const Color(0xffb1b3b3),
-            onBack: onBack,
-          ),
+        // The shared steps geometry, as on every onboarding step, so the
+        // progress bar holds still into the steps that follow.
+        MobileTopNav.steps(
+          progress: OnboardingProgressPosition.start.value,
+          onBack: onBack,
         ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(
+              kMobilePageMargin,
               AppSpacing.sm,
-              AppSpacing.sm,
-              AppSpacing.sm,
+              kMobilePageMargin,
               AppSpacing.md,
             ),
             child: Column(
@@ -999,9 +1099,15 @@ class _GiftClaimActions extends ConsumerWidget {
     required this.onExisting,
     required this.onClose,
     this.reserveClaimActions = false,
+    this.setupBusy = false,
+    this.setupError,
+    this.requiresRecovery = false,
   });
 
   final bool reserveClaimActions;
+  final bool setupBusy;
+  final OnboardingSubmitError? setupError;
+  final bool requiresRecovery;
   final GiftClaimFlowState flow;
   final bool addingAccount;
   final VoidCallback onCreate;
@@ -1061,15 +1167,19 @@ class _GiftClaimActions extends ConsumerWidget {
           addingAccount
               ? 'gift_claim_create_an_account_to_claim'
               : 'gift_claim_create_a_wallet_to_claim',
-          addingAccount
+          requiresRecovery
+              ? context.l10n.onboardingRetrySetup
+              : setupBusy
+              ? context.l10n.onboardingPasscodeSettingUp
+              : addingAccount
               ? context.l10n.paymentLinkClaimActionCreateAccount
               : context.l10n.paymentLinkClaimActionCreateWallet,
-          onCreate,
+          setupBusy ? null : onCreate,
         ),
         _secondary(
           'gift_claim_claim_with_an_existing_wallet',
           context.l10n.paymentLinkClaimActionExistingWallet,
-          onExisting,
+          setupBusy || requiresRecovery ? null : onExisting,
         ),
       ],
       GiftClaimPhase.inspected => [
@@ -1087,6 +1197,16 @@ class _GiftClaimActions extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (setupError != null) ...[
+          Text(
+            setupError!.resolve(context.l10n),
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.destructive,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
         for (final (index, action) in actions.indexed) ...[
           if (index > 0) const SizedBox(height: AppSpacing.xs),
           action,

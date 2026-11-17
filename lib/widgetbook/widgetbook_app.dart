@@ -184,14 +184,6 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildDesktopGiftPasswordUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Customise - First account',
-                      builder: buildDesktopGiftCustomiseUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Customise - Additional account',
-                      builder: buildDesktopGiftAdditionalCustomiseUseCase,
-                    ),
-                    WidgetbookUseCase(
                       name: 'Inspection error',
                       builder: buildDesktopGiftCheckErrorUseCase,
                     ),
@@ -296,7 +288,7 @@ class WidgetbookApp extends StatelessWidget {
                   ],
                 ),
                 WidgetbookComponent(
-                  name: 'Customise account',
+                  name: 'Import customise account',
                   useCases: [
                     WidgetbookUseCase(
                       name: 'Default',
@@ -305,7 +297,7 @@ class WidgetbookApp extends StatelessWidget {
                   ],
                 ),
                 WidgetbookComponent(
-                  name: 'Mobile customise account',
+                  name: 'Mobile import customise account',
                   useCases: [
                     WidgetbookUseCase(
                       name: 'Default',
@@ -1159,6 +1151,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildReceiveMobileTransparentSheetUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Home options sheet',
+                      builder: buildReceiveMobileOptionsSheetUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Entry - Request ZEC button',
                       builder: buildRequestMobileEntryUseCase,
                     ),
@@ -1429,10 +1425,6 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Onboarding - Passcode',
                       builder: buildMobileGiftOnboardingPasscode,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Onboarding - Customise account',
-                      builder: buildMobileGiftOnboardingCustomise,
                     ),
                     WidgetbookUseCase(
                       name: 'Onboarding - Face ID',

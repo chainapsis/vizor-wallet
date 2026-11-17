@@ -12,7 +12,8 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/mobile_top_nav.dart'
-    show kMobileTopNavHeight;
+    show kMobilePageMargin, kMobileTopNavHeight;
+import '../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../core/l10n/inline_spans.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
@@ -587,10 +588,10 @@ class _MobileKeystonePcztSigningFlowState
                         hasScrollBody: false,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm,
+                            horizontal: kMobilePageMargin,
                           ),
                           child: qrRegion(
-                            constraints.crossAxisExtent - 2 * AppSpacing.sm,
+                            constraints.crossAxisExtent - 2 * kMobilePageMargin,
                             constraints.viewportMainAxisExtent -
                                 constraints.precedingScrollExtent,
                           ),
@@ -605,7 +606,7 @@ class _MobileKeystonePcztSigningFlowState
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
+                    horizontal: kMobilePageMargin,
                   ),
                   child: LayoutBuilder(
                     builder: (context, constraints) =>
@@ -616,10 +617,10 @@ class _MobileKeystonePcztSigningFlowState
             ],
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
+                kMobilePageMargin,
                 0,
-                AppSpacing.sm,
-                AppSpacing.base,
+                kMobilePageMargin,
+                kMobileFooterGap,
               ),
               child: Column(
                 key: _key('actions'),
@@ -1205,7 +1206,7 @@ class _KeystoneSigningTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(horizontal: kMobilePageMargin),
       child: Column(
         children: [
           Text(

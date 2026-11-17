@@ -48,6 +48,8 @@ bool requiresMobileSidebarExitPolicy(String path) =>
           '/activity',
           '/settings',
           '/receive',
+          // A request draft is discarded by leaving, as closing its sheet did.
+          '/receive/request',
           '/about',
           '/voting',
         ].contains(path) ||
