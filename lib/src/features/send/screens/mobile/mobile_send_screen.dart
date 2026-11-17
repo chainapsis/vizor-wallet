@@ -3053,8 +3053,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   /// "+1.3 ZEC in 1–3 min" while funds are confirming, with the amount
   /// masked like the balance above it. The amount keeps the Home balance's
-  /// digits, cut rather than rounded, so the line fits beside Max; the sheet
-  /// it opens lists the exact amounts.
+  /// digits, cut rather than rounded, so the line fits beside Max.
   String? _spendableWaitLine(SpendableWait? spendableWait) {
     final wait = spendableWait?.wait;
     if (spendableWait == null || wait == null) return null;
