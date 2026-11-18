@@ -17904,6 +17904,12 @@ abstract class AppLocalizations {
   /// **'{symbol} sent'**
   String swapActivityStepSent(String symbol);
 
+  /// Description of the first swap progress step after the user says they sent an external deposit that NEAR Intents has not seen yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for NEAR Intents to detect your deposit.'**
+  String get swapActivityStepSentAwaitingDetection;
+
   /// Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit.
   ///
   /// In en, this message translates to:

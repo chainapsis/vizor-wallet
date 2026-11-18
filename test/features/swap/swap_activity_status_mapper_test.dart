@@ -1563,12 +1563,13 @@ void main() {
   );
 
   test(
-    'claimed external deposit advances progress to the confirmation step',
+    'claimed external deposit waits for the provider before it is deposited',
     () {
       final awaiting = _intent(
         status: SwapIntentStatus.awaitingExternalDeposit,
         direction: SwapDirection.externalToZec,
         externalAsset: SwapAsset.usdc,
+        pair: 'USDC -> ZEC',
         depositAddress: '0xdeposit-address',
       );
       expect(
@@ -1580,16 +1581,33 @@ void main() {
         0,
       );
 
+      // The user's tap alone keeps the first step active, as sent.
       final claimed = awaiting.copyWith(
         depositClaimedAt: DateTime.utc(2026, 5, 29, 12),
       );
+      final claimedPresentation = swapActivityStatusPresentationForIntent(
+        testL10n,
+        _state(),
+        claimed,
+      );
+      expect(claimedPresentation.progressIndex, 0);
+      final sent = claimedPresentation.steps.first;
+      expect(sent.titleForState(SwapStatusStepState.active), 'USDC sent');
       expect(
-        swapActivityStatusPresentationForIntent(
-          testL10n,
-          _state(),
-          claimed,
-        ).progressIndex,
-        1,
+        sent.description,
+        'Waiting for NEAR Intents to detect your deposit.',
+      );
+
+      // Only the provider seeing the deposit completes the step.
+      final observed = swapActivityStatusPresentationForIntent(
+        testL10n,
+        _state(),
+        claimed.copyWith(status: SwapIntentStatus.depositObserved),
+      );
+      expect(observed.progressIndex, 1);
+      expect(
+        observed.steps.first.titleForState(SwapStatusStepState.complete),
+        'USDC Deposited',
       );
     },
   );

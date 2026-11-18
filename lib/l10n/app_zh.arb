@@ -2955,6 +2955,7 @@
   "swapActivityStepSendActive": "发送 {symbol}...",
   "swapActivityStepSending": "正在发送 {symbol}...",
   "swapActivityStepSent": "已发送 {symbol}",
+  "swapActivityStepSentAwaitingDetection": "正在等待 NEAR Intents 检测到这笔入金。",
   "swapActivityStepSourceDescription": "等待源链和服务商确认存入",
   "swapActivityStepSpend": "花费 {symbol}",
   "swapActivityStepSpendDescription": "正在从隐私余额中支付。",

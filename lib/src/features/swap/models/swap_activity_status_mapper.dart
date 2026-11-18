@@ -464,8 +464,9 @@ SwapStatusBadgeKind _swapActivityStatusBadgeKind(SwapIntentStatus status) {
 }
 
 int _swapActivityStatusProgressIndex(SwapIntent intent) {
-  final hasDepositTx = intent.depositTxHash?.trim().isNotEmpty ?? false;
-  final depositSent = hasDepositTx || intent.depositClaimedAt != null;
+  // The user's "I've sent it" tap alone is not a deposit: the first step stays
+  // active until the provider sees one.
+  final depositSent = intent.depositTxHash?.trim().isNotEmpty ?? false;
   return switch (intent.status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit => depositSent ? 1 : 0,
@@ -526,8 +527,13 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
     ];
   }
   final sendsZecToExternal = intent.direction == SwapDirection.zecToExternal;
+  final awaitingDetection =
+      intent.status == SwapIntentStatus.awaitingExternalDeposit &&
+      intent.depositClaimedAt != null;
   final sourceActive = sendsZecToExternal
       ? l10n.swapActivityStepSending(sourceSymbol)
+      : awaitingDetection
+      ? l10n.swapActivityStepSent(sourceSymbol)
       : l10n.swapActivityStepDepositing(sourceSymbol);
   final sourceDone = sendsZecToExternal
       ? l10n.swapActivityStepSent(sourceSymbol)
@@ -554,7 +560,9 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
           ? l10n.swapActivityStepSend(sourceSymbol)
           : l10n.swapActivityStepDeposit(sourceSymbol),
       lastCheckedLabel: lastCheckedLabel,
-      description: l10n.swapActivityStepSourceDescription,
+      description: awaitingDetection
+          ? l10n.swapActivityStepSentAwaitingDetection
+          : l10n.swapActivityStepSourceDescription,
     ),
     SwapStatusStepData(
       title: l10n.swapActivityStepDepositConfirmation,

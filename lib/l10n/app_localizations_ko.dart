@@ -10770,6 +10770,10 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepSentAwaitingDetection =>
+      'NEAR Intents‍가 입‍금‍을 확‍인‍하‍기‍를 기‍다‍리‍고 있‍어‍요.';
+
+  @override
   String get swapActivityStepSourceDescription =>
       '출‍발 체‍인‍과 제‍공‍자‍가 입‍금‍을 인‍식‍할 때‍까‍지 기‍다‍리‍고 있‍어‍요';
 

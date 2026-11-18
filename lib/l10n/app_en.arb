@@ -13960,6 +13960,10 @@
       }
     }
   },
+  "swapActivityStepSentAwaitingDetection": "Waiting for NEAR Intents to detect your deposit.",
+  "@swapActivityStepSentAwaitingDetection": {
+    "description": "Description of the first swap progress step after the user says they sent an external deposit that NEAR Intents has not seen yet."
+  },
   "swapActivityStepSourceDescription": "Confirm waiting for the source chain and provider to recognise the deposit",
   "@swapActivityStepSourceDescription": {
     "description": "Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit."

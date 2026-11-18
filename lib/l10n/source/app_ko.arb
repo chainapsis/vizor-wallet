@@ -2955,6 +2955,7 @@
   "swapActivityStepSendActive": "{symbol} 보내는 중...",
   "swapActivityStepSending": "{symbol} 보내는 중...",
   "swapActivityStepSent": "{symbol} 전송 완료",
+  "swapActivityStepSentAwaitingDetection": "NEAR Intents가 입금을 확인하기를 기다리고 있어요.",
   "swapActivityStepSourceDescription": "출발 체인과 제공자가 입금을 인식할 때까지 기다리고 있어요",
   "swapActivityStepSpend": "{symbol} 사용",
   "swapActivityStepSpendDescription": "비공개 잔액에서 사용하고 있어요.",

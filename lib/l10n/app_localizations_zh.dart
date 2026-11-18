@@ -10100,6 +10100,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepSentAwaitingDetection =>
+      '正在等待 NEAR Intents 检测到这笔入金。';
+
+  @override
   String get swapActivityStepSourceDescription => '等待源链和服务商确认存入';
 
   @override

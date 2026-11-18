@@ -10937,6 +10937,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepSentAwaitingDetection =>
+      'Waiting for NEAR Intents to detect your deposit.';
+
+  @override
   String get swapActivityStepSourceDescription =>
       'Confirm waiting for the source chain and provider to recognise the deposit';
 
