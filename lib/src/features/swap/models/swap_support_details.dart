@@ -6,9 +6,11 @@ const swapSupportEmail = 'support@vizor.cash';
 
 bool swapNeedsSupportNotice(SwapIntent intent) =>
     !intent.startPending &&
-    (intent.status == SwapIntentStatus.failed ||
-        intent.status == SwapIntentStatus.expired) &&
-    intent.providerRefundInfo?.hasRecordedRefund != true;
+    intent.providerRefundInfo?.hasRecordedRefund != true &&
+    (intent.status == SwapIntentStatus.expired ||
+        (intent.status == SwapIntentStatus.failed &&
+            (intent.hasConfirmedDepositEvidence ||
+                intent.hasProviderObservedDepositEvidence)));
 
 /// Only transaction identifiers enter the explicitly copied support details.
 /// Wallet credentials, recipient addresses and amounts are never included.

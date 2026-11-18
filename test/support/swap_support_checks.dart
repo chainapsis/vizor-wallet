@@ -37,6 +37,12 @@ void runSwapSupportChecks() {
   setUpAll(loadFigmaCompareFonts);
   for (final scenario in [
     ('failed swap', buildSwapActivityFailedCapture, true),
+    (
+      'failed swap without a deposit',
+      (BuildContext context) =>
+          buildSwapActivityFailedCapture(context, hasDeposit: false),
+      false,
+    ),
     ('failed payment', buildPayActivityFailedCapture, true),
     ('expired swap', buildSwapActivityExpiredCapture, true),
     ('processing swap', buildSwapActivityProcessingCapture, false),

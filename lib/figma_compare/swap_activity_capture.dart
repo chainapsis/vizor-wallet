@@ -23,8 +23,15 @@ Widget buildSwapActivityProcessingCapture(BuildContext context) =>
 Widget buildPayActivityProcessingCapture(BuildContext context) =>
     _capture(context, payMode: true);
 
-Widget buildSwapActivityFailedCapture(BuildContext context) =>
-    _capture(context, payMode: false, status: SwapIntentStatus.failed);
+Widget buildSwapActivityFailedCapture(
+  BuildContext context, {
+  bool hasDeposit = true,
+}) => _capture(
+  context,
+  payMode: false,
+  status: SwapIntentStatus.failed,
+  hasDeposit: hasDeposit,
+);
 
 Widget buildPayActivityFailedCapture(BuildContext context) =>
     _capture(context, payMode: true, status: SwapIntentStatus.failed);
@@ -64,6 +71,7 @@ Widget _capture(
   BuildContext context, {
   required bool payMode,
   SwapIntentStatus status = SwapIntentStatus.processing,
+  bool hasDeposit = true,
 }) {
   final awaitingDeposit = status == SwapIntentStatus.awaitingExternalDeposit;
   final intent = awaitingDeposit
@@ -96,8 +104,9 @@ Widget _capture(
           direction: SwapDirection.zecToExternal,
           externalAsset: SwapAsset.usdc,
           depositAddress: 't1V7jJp2rH2X8Qg7KDNpKc3Vn2m8yL9aBcD',
-          depositTxHash:
-              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          depositTxHash: hasDeposit
+              ? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+              : null,
           nearIntentHash: 'capture-near-intent',
           oneClickRecipient: '0x52908400098527886E0F7030069857D2E4169EE7',
           oneClickRefundTo: 'u1capturewalletrefundaddress',

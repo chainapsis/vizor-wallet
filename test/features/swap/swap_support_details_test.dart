@@ -1,10 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_support_details.dart';
 
 import '../../support/test_l10n.dart';
 
-SwapIntent _intent() => SwapIntent(
+SwapIntent _intent({String? originTx = 'origin-tx'}) => SwapIntent(
   id: 'local-only-id',
   pair: 'USDC -> ZEC',
   sellAmount: '113000 USDC',
@@ -14,7 +15,7 @@ SwapIntent _intent() => SwapIntent(
   nextAction: 'Failed',
   providerStatusRaw: 'FAILED',
   depositAddress: '0xdeposit',
-  originChainTxHash: 'origin-tx',
+  originChainTxHash: originTx,
   oneClickRecipient: 'private-recipient',
   oneClickRefundTo: 'private-refund-address',
 );
@@ -44,6 +45,37 @@ void main() {
         refund != '2.3 USDC',
       );
     }
+  });
+
+  test('failed support requires a confirmed or provider-observed deposit', () {
+    final unfunded = _intent(originTx: null);
+    expect(swapNeedsSupportNotice(unfunded), isFalse);
+    final deposit = unfunded.copyWith(depositTxHash: 'local-deposit-tx');
+    expect(swapNeedsSupportNotice(deposit), isTrue);
+    expect(
+      swapNeedsSupportNotice(
+        deposit.copyWith(
+          broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast,
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      swapNeedsSupportNotice(
+        unfunded.copyWith(
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '100 USDC',
+          ),
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      swapNeedsSupportNotice(
+        unfunded.copyWith(status: SwapIntentStatus.expired),
+      ),
+      isTrue,
+    );
   });
 
   test('copied support details exclude unrelated wallet data', () {
