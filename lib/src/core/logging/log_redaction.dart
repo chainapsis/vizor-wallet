@@ -12,6 +12,8 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import '../zcash/address_shape.dart';
+
 /// Redacts [text] in bounded passes, stopping when it no longer changes.
 String redactLogText(String text) => _redactWithPassLimit(text, _maxPasses);
 
@@ -127,9 +129,10 @@ void installLogRedaction() {
 // a token made possible. The bound is a backstop, not an expected depth.
 const _maxPasses = 4;
 
-// Zakura protocol HRPs (zakura-protocol 3.0.0 constants/{mainnet,testnet,
-// regtest}.rs). Ironwood shares the Orchard receiver, so it has no HRP of its
-// own. Longer prefixes come first.
+// Zakura protocol key HRPs (zakura-protocol 3.0.0 constants/{mainnet,testnet,
+// regtest}.rs); the address HRPs live in address_shape.dart. Ironwood shares
+// the Orchard receiver, so it has no HRP of its own. Longer prefixes come
+// first.
 const _keyHrps = [
   'secret-extended-key-regtest',
   'secret-extended-key-main',
@@ -144,24 +147,6 @@ const _keyHrps = [
   'uview',
   'uivk',
 ];
-const _addressHrps = [
-  'zregtestsapling',
-  'ztestsapling',
-  'texregtest',
-  'uregtest',
-  'textest',
-  'utest',
-  'tex',
-  'zs',
-  'u',
-];
-const _bech32Charset = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
-// The shortest encoding above is a TEX address: 20 bytes, 38 characters.
-const _bech32MinData = 38;
-// Base58Check prefixes 0x1cb8/0x1cbd (mainnet), 0x1d25/0x1cba (test/regtest)
-// encode as t1/t3 and tm/t2; every transparent address is 35 characters.
-const _transparent = r'(?:t1|t3|tm|t2)[1-9A-HJ-NP-Za-km-z]{33}';
-
 // Explicit ASCII classes keep Dart and Rust matching the same characters.
 const _space = r'\t\n\v\f\r ';
 const _notAlnum = r'[^0-9A-Za-z]';
@@ -169,14 +154,6 @@ const _pathStart = r'(^|file://|[^0-9A-Za-z_.~/\\\-])';
 const _pathChar = '[^$_space\'"<>|:;,()\\[\\]{}\\\\]';
 const _unixRoots =
     'Users|home|root|private|var|tmp|data|storage|sdcard|mnt|media|Volumes|run'; // l10n-ignore: regular expression
-
-String _bech32(List<String> hrps) {
-  final lower = hrps.join('|');
-  final upper = hrps.map((hrp) => hrp.toUpperCase()).join('|');
-  final upperCharset = _bech32Charset.toUpperCase();
-  return '(?:(?:$lower)1[$_bech32Charset]{$_bech32MinData,}' // l10n-ignore: regular expression
-      '|(?:$upper)1[$upperCharset]{$_bech32MinData,})';
-}
 
 final _url = RegExp(
   '\\b([A-Za-z][A-Za-z0-9+.\\-]*://)'
@@ -200,10 +177,8 @@ final _opaqueUri = RegExp(
   '\\b(?:([zZ][cC][aA][sS][hH]:)|[uU][rR]:[A-Za-z0-9\\-]+/)'
   '[^$_space\'"<>]+',
 );
-final _key = RegExp('($_notAlnum|^)${_bech32(_keyHrps)}');
-final _address = RegExp(
-  '($_notAlnum|^)(?:${_bech32(_addressHrps)}|$_transparent)',
-);
+final _key = RegExp('($_notAlnum|^)${bech32Shape(_keyHrps)}');
+final _address = RegExp('($_notAlnum|^)$zcashAddressShape');
 
 String _redactOnce(String text) => text
     // Component replacements introduce '<' tokens that would truncate a URI.

@@ -31,6 +31,7 @@ import 'src/core/navigation/incoming_link_dispatch.dart';
 import 'src/core/navigation/incoming_link_entry_policy.dart';
 import 'src/core/navigation/external_action_guard_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
+import 'src/core/navigation/shared_payment_intake.dart';
 import 'src/core/navigation/windows_update_prompt_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/navigation/swap_composer_session_route_tracker.dart';
@@ -162,6 +163,7 @@ import 'src/providers/rpc_endpoint_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/migration_send_gate_provider.dart';
 import 'src/providers/payment_uri_prefill_provider.dart';
+import 'src/providers/shared_payment_inbox_provider.dart';
 import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
@@ -176,6 +178,7 @@ import 'src/rust/api/voting.dart' as rust_voting;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/incoming_uri_service.dart';
+import 'src/services/shared_payment_service.dart';
 import 'src/providers/payment_request_flow_provider.dart';
 import 'src/core/layout/mobile/ios_native_tab_bar_root.dart';
 
@@ -2090,6 +2093,9 @@ Widget buildIncomingLinkHostForTest({
 /// * **vizor home** — brings an idle, unlocked wallet to `/home`. An active
 ///   task keeps its screen and receives a notice; the weak home intent is
 ///   ignored rather than queued for a later jump.
+/// * **shared content** (the system share sheet, Android) — resolved by
+///   `SharedPaymentInbox` into one of the links above, then handed to that
+///   link's lane exactly as if it had been tapped.
 ///
 /// The two intakes defer to each other: a Gift Card waits while a request card
 /// is up (`paymentLinkEntryDeferredMessageAtLocation`), and a request waits
@@ -2115,6 +2121,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   // covered page's more recently mounted host cannot receive them offstage.
   final _toastScopeKey = GlobalKey();
   StreamSubscription<String>? _subscription;
+  StreamSubscription<SharedPaymentOutcome>? _sharedSubscription;
   ProviderSubscription<List<VizorPaymentLink>>? _intakeSubscription;
 
   // --- gift card lane ---
@@ -2155,6 +2162,15 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     final service = ref.read(incomingUriServiceProvider);
     _subscription = service.uriStream.listen(_handleIncomingUri);
     unawaited(service.initialize());
+    // A link tapped while a share is still resolving overtakes it, as it
+    // would a parked link; the runner numbers both channels so the inbox
+    // can tell, see `SharedPaymentInbox`. Only a wallet reset is reported
+    // from here.
+    _sharedSubscription = ref
+        .read(sharedPaymentInboxProvider)
+        .outcomes
+        .listen(_handleSharedOutcome);
+    unawaited(ref.read(sharedPaymentServiceProvider).initialize());
   }
 
   @override
@@ -2169,6 +2185,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   void dispose() {
     widget.router.routerDelegate.removeListener(_handleRouteChanged);
     unawaited(_subscription?.cancel());
+    unawaited(_sharedSubscription?.cancel());
     _intakeSubscription?.close();
     super.dispose();
   }
@@ -2199,6 +2216,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
           // by design — see `paymentLinkIntakeProvider`.
           ref.read(paymentUriPrefillProvider.notifier).clear();
           ref.read(paymentRequestFlowProvider.notifier).clear();
+          ref.read(sharedPaymentInboxProvider).supersede();
           return;
         }
       }
@@ -2259,7 +2277,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   void _handleIncomingUri(String rawUri) {
     switch (classifyIncomingLink(rawUri)) {
       case IncomingPaymentRequestLink(:final raw):
-        _handlePaymentRequestLink(raw);
+        _handlePaymentRequestLink(raw, PaymentRequestSource.link);
       case IncomingGiftCardLink():
         _handleGiftCardLink(rawUri);
       case IncomingVizorHomeLink():
@@ -2267,6 +2285,23 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       case IncomingLinkUnknown():
         // Silent by contract — see `classifyIncomingLink`.
         return;
+    }
+  }
+
+  /// A share takes the lane a tapped link of its kind takes, so every rule
+  /// downstream (the park and drain policy, the request card, the Gift Card
+  /// queue) applies to it as to a link. A payment request is presented as a
+  /// pasted link: warned about the same way, but reviewed rather than
+  /// re-scanned, since what was shared is rarely a QR the user can point the
+  /// camera at.
+  void _handleSharedOutcome(SharedPaymentOutcome outcome) {
+    switch (outcome) {
+      case SharedPaymentRequest(:final raw):
+        _handlePaymentRequestLink(raw, PaymentRequestSource.pastedLink);
+      case SharedGiftCard(:final link):
+        _handleGiftCardLink(link);
+      case SharedPaymentNotice notice:
+        _showLinkToast(notice.text);
     }
   }
 
@@ -2461,11 +2496,14 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   // Payment request lane
   // ---------------------------------------------------------------------
 
-  void _handlePaymentRequestLink(String rawUri) {
+  void _handlePaymentRequestLink(
+    String rawUri,
+    PaymentRequestSource requestSource,
+  ) {
     try {
       final replacedParkedPrefill = ref
           .read(paymentUriPrefillProvider.notifier)
-          .set(_prefillFromUri(rawUri));
+          .set(_prefillFromUri(rawUri).withRequestSource(requestSource));
       _schedulePendingDrain();
       if (replacedParkedPrefill) {
         // A batch of links from native on cold start, or a second link while

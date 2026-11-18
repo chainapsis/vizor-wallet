@@ -22,8 +22,8 @@ class MainActivity : FlutterFragmentActivity() {
     private var incomingUriDartReady = false
 
     /**
-     * Replay guard for links this activity record already delivered, held as
-     * SHA-256 digests rather than the links themselves.
+     * Replay guard for links and shares this activity record already
+     * delivered, held as SHA-256 digests rather than the content itself.
      *
      * A Gift Card link carries a 24-word claim mnemonic in its fragment, and
      * saved instance state is written to disk by the system. The guard only
@@ -44,6 +44,16 @@ class MainActivity : FlutterFragmentActivity() {
      * the onNewIntent links, which are re-deliverable by design.
      */
     private var launchIncomingUriDigest: String? = null
+
+    private val sharedPaymentHandler = SharedPaymentHandler()
+
+    /**
+     * Numbers everything this activity takes in, links and shares alike, so
+     * Dart can order a share against a link that came in on the other
+     * channel while the share's image was still being copied. See
+     * [SharedPaymentHandler].
+     */
+    private var intakeSequence = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Restored before super.onCreate: on a recreated activity super
@@ -261,22 +271,10 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
         }
-        // A link that cold-starts Vizor arrives as the launch intent. Restoring
-        // the task after the process was killed recreates the activity with a
-        // VIEW intent (NEW_TASK only, no LAUNCHED_FROM_HISTORY), which replayed
-        // the link. Saved state keeps every consumed URI, not just the last one,
-        // because after cold-starting on link A and receiving link B through
-        // onNewIntent the restore may hand back either A or B, and both were
-        // already delivered. The launch link is checked against its own pinned
-        // field as well, because the bounded set can evict it.
-        val incomingLaunchUri = intent?.dataString
-        val incomingLaunchUriDigest = incomingLaunchUri?.let(::incomingUriDigest)
-        if (incomingLaunchUriDigest == null ||
-            (incomingLaunchUriDigest != launchIncomingUriDigest &&
-                !consumedIncomingUriDigests.contains(incomingLaunchUriDigest))
-        ) {
-            captureIncomingUri(intent, isLaunchIntent = true)
-        }
+        sharedPaymentHandler.attach(flutterEngine.dartExecutor.binaryMessenger, this)
+        // A link or share that cold-starts Vizor arrives as the launch intent,
+        // which a task restore hands back again; see captureIncomingIntent.
+        captureIncomingIntent(intent, isLaunchIntent = true)
     }
 
     /** REJECT is the platform's error haptic; older APIs report
@@ -339,15 +337,16 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // singleTop launchMode: a link tapped while Vizor is already running is
-        // delivered here instead of through a fresh launch intent.
+        // singleTop launchMode: a link tapped, or content shared, while Vizor
+        // is already running is delivered here instead of through a fresh
+        // launch intent.
         setIntent(intent)
-        // No consumed-URI check here: tapping the same link again is a
-        // deliberate user action and must be delivered again. captureIncomingUri
-        // still records the URI into the consumed set; setIntent() only rewrites
-        // this process's copy, so a restore after process death may hand back
-        // either this intent or the one that created the activity record.
-        captureIncomingUri(intent)
+        // Not checked against the replay guard: tapping the same link again
+        // is a deliberate user action and must be delivered again. It is still
+        // recorded as consumed; setIntent() only rewrites this process's copy,
+        // so a restore after process death may hand back either this intent
+        // or the one that created the activity record.
+        captureIncomingIntent(intent)
     }
 
     override fun onRequestPermissionsResult(
@@ -370,6 +369,7 @@ class MainActivity : FlutterFragmentActivity() {
         devicePowerHandler = null
         screenFacingHandler?.onCancel(null)
         screenFacingHandler = null
+        sharedPaymentHandler.close()
         super.onDestroy()
     }
 
@@ -420,29 +420,100 @@ class MainActivity : FlutterFragmentActivity() {
             data.port == -1
     }
 
-    private fun captureIncomingUri(intent: Intent?, isLaunchIntent: Boolean = false) {
-        if (intent == null || intent.action != Intent.ACTION_VIEW) return
+    /**
+     * What an intent brings in, parsed once: a link this app takes, or a
+     * share. [key] is the one string the replay guard digests.
+     */
+    private sealed class Incoming(val key: String) {
+        class Link(val rawUri: String) : Incoming(rawUri)
+        class Share(val share: SharedPaymentHandler.Share) : Incoming(share.key)
+    }
+
+    private fun parseIncoming(intent: Intent): Incoming? =
+        when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data?.takeIf(::acceptsIncomingUri)?.let {
+                Incoming.Link(intent.dataString ?: it.toString())
+            }
+            Intent.ACTION_SEND -> sharedPaymentHandler.parse(intent)?.let(Incoming::Share)
+            else -> null
+        }
+
+    /**
+     * Queues what [intent] brings in and records it as delivered.
+     *
+     * The creating intent is checked against the replay guard first. Restoring
+     * the task after the process was killed recreates the activity with that
+     * intent (NEW_TASK only, no LAUNCHED_FROM_HISTORY), which replayed the
+     * link. Saved state keeps every consumed digest, not just the last one,
+     * because after cold-starting on link A and receiving link B through
+     * onNewIntent the restore may hand back either A or B, and both were
+     * already delivered. The creating intent is checked against its own pinned
+     * digest as well, because the bounded set can evict it.
+     *
+     * Recorded only once it is actually queued: a link or share the caps
+     * refused was never delivered, so a restore must stay free to replay it.
+     * The creating intent is what a restore hands back, so it is pinned rather
+     * than added to the set the bound trims.
+     */
+    private fun captureIncomingIntent(intent: Intent?, isLaunchIntent: Boolean = false) {
+        if (intent == null) return
         if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
-        val data = intent.data ?: return
-        if (!acceptsIncomingUri(data)) return
-        val rawUri = intent.dataString ?: data.toString()
+        val incoming = parseIncoming(intent) ?: return
+        val digest = incomingUriDigest(incoming.key)
+        if (isLaunchIntent &&
+            (digest == launchIncomingUriDigest || digest in consumedIncomingUriDigests)
+        ) {
+            // Delivered before this process; the restore handed the intent
+            // back with its text, which has no business staying in memory.
+            if (incoming is Incoming.Share && incoming.share is SharedPaymentHandler.Share.Text) {
+                clearSharedText(intent)
+            }
+            return
+        }
+        val seq = intakeSequence + 1
+        val queued = when (incoming) {
+            is Incoming.Link -> queueIncomingUri(incoming.rawUri).also { queued ->
+                if (queued) sharedPaymentHandler.noteLink(seq)
+            }
+            // Shared text can be a Gift Card link, so once it is queued this
+            // process's copy of the intent keeps none of it. The guard is the
+            // digest, so a restore handing back an intent without the text
+            // delivers nothing rather than something twice.
+            is Incoming.Share -> sharedPaymentHandler.capture(incoming.share, seq).also { captured ->
+                if (captured && incoming.share is SharedPaymentHandler.Share.Text) clearSharedText(intent)
+            }
+        }
+        if (!queued) return
+        intakeSequence = seq
+        if (isLaunchIntent) {
+            launchIncomingUriDigest = digest
+        } else {
+            rememberConsumedDigest(digest)
+        }
+    }
+
+    /**
+     * Strips the shared text from this process's copy of [intent]: the text
+     * extra, the HTML one, and the clip the system fills from both when it
+     * dispatches a share.
+     */
+    private fun clearSharedText(intent: Intent) {
+        intent.removeExtra(Intent.EXTRA_TEXT)
+        intent.removeExtra(Intent.EXTRA_HTML_TEXT)
+        intent.clipData = null
+    }
+
+    /** Queues [rawUri] for Dart. Returns false when a cap refused it. */
+    private fun queueIncomingUri(rawUri: String): Boolean {
         // Memory bound only. A link that is merely too big for Dart to parse
         // still travels, so Dart can say so; see [MAX_INCOMING_URI_BYTES].
-        if (rawUri.length > MAX_INCOMING_URI_BYTES) return
-        if (rawUri.toByteArray(Charsets.UTF_8).size > MAX_INCOMING_URI_BYTES) return
-        if (rawUri in pendingIncomingUris) return
-        if (pendingIncomingUris.size >= MAX_PENDING_INCOMING_URIS) return
-        // Recorded only once the link is actually queued: a link the caps
-        // refused was never delivered, so a restore must stay free to replay
-        // it. The creating intent is what a restore hands back, so it is
-        // pinned rather than added to the set the bound trims.
-        if (isLaunchIntent) {
-            launchIncomingUriDigest = incomingUriDigest(rawUri)
-        } else {
-            rememberConsumedIncomingUri(rawUri)
-        }
+        if (rawUri.length > MAX_INCOMING_URI_BYTES) return false
+        if (rawUri.toByteArray(Charsets.UTF_8).size > MAX_INCOMING_URI_BYTES) return false
+        if (rawUri in pendingIncomingUris) return false
+        if (pendingIncomingUris.size >= MAX_PENDING_INCOMING_URIS) return false
         pendingIncomingUris.add(rawUri)
         flushPendingIncomingUris()
+        return true
     }
 
     /**
@@ -452,8 +523,7 @@ class MainActivity : FlutterFragmentActivity() {
      * restore replays, so trimming from the front would drop exactly the wrong
      * one.
      */
-    private fun rememberConsumedIncomingUri(uri: String) {
-        val digest = incomingUriDigest(uri)
+    private fun rememberConsumedDigest(digest: String) {
         consumedIncomingUriDigests.remove(digest)
         consumedIncomingUriDigests.add(digest)
         while (consumedIncomingUriDigests.size > MAX_CONSUMED_INCOMING_URIS) {

@@ -7,8 +7,9 @@ const kPaymentUriPrefillSource = 'zcash-uri';
 
 /// Input provenance, not authentication of the requester.
 ///
-/// [pastedLink] is a link pasted into the send recipient field: as untrusted
-/// as any [link], but usually with no original QR at hand to scan.
+/// [pastedLink] is a link pasted into the send recipient field, or content
+/// shared from another app: as untrusted as any [link], but usually with no
+/// original QR at hand to scan.
 enum PaymentRequestSource { link, pastedLink, qrCode }
 
 class SendPrefillArgs {

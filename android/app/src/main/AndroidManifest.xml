@@ -71,6 +71,16 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="zcash"/>
             </intent-filter>
+            <!-- The system share sheet: text that may hold a Zcash address or a
+                 zcash: payment link, or an image of a payment QR code. Handled
+                 by SharedPaymentHandler (com.zcash.wallet/shared_payment); Dart
+                 works out what was shared and routes it like a tapped link. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
