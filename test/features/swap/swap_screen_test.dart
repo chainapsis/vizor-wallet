@@ -2757,6 +2757,39 @@ void main() {
     expect(cameraRect.size, const Size(272, 220));
   });
 
+  testWidgets('address scanner checks the selected chain', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final scanner = tester.widget<AddressQrScanModal>(
+      find.byType(AddressQrScanModal),
+    );
+    expect(
+      (await scanner.resolve('https://example.com/pay')).error,
+      testL10n.commonQrNoAddress,
+    );
+    expect(
+      (await scanner.resolve(
+        'zcash:t1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCi',
+      )).error,
+      testL10n.addressScanWrongNetworkNamed('Zcash'),
+    );
+  });
+
   testWidgets('address scan modal content matches camera state layouts', (
     tester,
   ) async {

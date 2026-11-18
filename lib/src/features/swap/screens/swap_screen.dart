@@ -32,6 +32,7 @@ import '../providers/swap_address_wait_provider.dart';
 import '../providers/swap_funding_balance_provider.dart';
 import '../providers/swap_zec_staging_address_service.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
+import '../../address_scan/widgets/address_scan_resolver.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
@@ -408,6 +409,12 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                           onCancel: _closeSwapModal,
                         ),
                         _SwapModalSurface.addressScanner => AddressQrScanModal(
+                          resolve: addressScanResolver(
+                            context.l10n,
+                            network: AddressBookNetwork.tryFromChainTicker(
+                              swapState.externalAsset.chainTicker,
+                            ),
+                          ),
                           onAddressScanned: (value) {
                             swapNotifier.updateDestination(value);
                             _closeSwapModal();

@@ -1,24 +1,17 @@
 import '../../../core/zcash/zip321_payment_request.dart';
 
+/// The Zcash recipient of a scanned payload.
+///
+/// A `zcash:` URI gives up its address; anything else comes back trimmed, for
+/// the caller's validation to accept or refuse. Other chains' payment URIs are
+/// read by `resolveAddressScan`, which knows which chain the field is on.
 String? normalizeAddressScanPayload(String? input) {
   final trimmed = input?.trim();
   if (trimmed == null || trimmed.isEmpty) return null;
 
   final uri = Uri.tryParse(trimmed);
-  if (uri == null || uri.scheme.isEmpty) return trimmed;
-
-  final scheme = uri.scheme.toLowerCase();
-  return switch (scheme) {
-    'zcash' => _zcashAddressFromUri(trimmed, uri) ?? trimmed,
-    'ethereum' || 'eth' => _ethereumAddressFromUri(uri) ?? trimmed,
-    'near' ||
-    'bitcoin' ||
-    'litecoin' ||
-    'dogecoin' ||
-    'solana' ||
-    'tron' => _genericAddressFromUri(uri) ?? trimmed,
-    _ => trimmed,
-  };
+  if (uri == null || uri.scheme.toLowerCase() != 'zcash') return trimmed;
+  return _zcashAddressFromUri(trimmed, uri) ?? trimmed;
 }
 
 String? _zcashAddressFromUri(String raw, Uri uri) {
@@ -194,40 +187,4 @@ String? _indexedZcashAddressFromUri(Uri uri) {
     }
   }
   return lowestAddress;
-}
-
-String? _ethereumAddressFromUri(Uri uri) {
-  final queryAddress = uri.queryParameters['address']?.trim();
-  if (queryAddress != null && queryAddress.isNotEmpty) return queryAddress;
-
-  var path = Uri.decodeComponent(uri.path).trim();
-  if (path.startsWith('pay-')) {
-    path = path.substring(4);
-  }
-  if (path.isEmpty) return _genericAddressFromUri(uri);
-
-  final stop = _firstPositiveIndex([
-    path.indexOf('@'),
-    path.indexOf('/'),
-    path.indexOf('?'),
-  ]);
-  final address = stop == null ? path : path.substring(0, stop);
-  return address.trim().isEmpty ? null : address.trim();
-}
-
-String? _genericAddressFromUri(Uri uri) {
-  final queryAddress = uri.queryParameters['address']?.trim();
-  if (queryAddress != null && queryAddress.isNotEmpty) return queryAddress;
-
-  final path = Uri.decodeComponent(uri.path).trim();
-  if (path.isNotEmpty) return path;
-
-  final host = Uri.decodeComponent(uri.host).trim();
-  if (host.isNotEmpty) return host;
-  return null;
-}
-
-int? _firstPositiveIndex(Iterable<int> values) {
-  final positives = values.where((value) => value > 0).toList()..sort();
-  return positives.isEmpty ? null : positives.first;
 }

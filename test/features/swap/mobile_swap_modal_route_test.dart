@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippa
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_address_edit_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_confidential_ui.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
+import 'package:zcash_wallet/src/services/qr_scanner.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -44,6 +45,7 @@ import '../../fakes/fake_sync_notifier.dart';
 
 import '../../support/full_text_expectations.dart';
 import '../../support/leading_decimal_input.dart';
+import '../../support/test_l10n.dart';
 import '../../support/widget_test_viewport.dart';
 
 const _accountState = AccountState(
@@ -1122,9 +1124,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MobileAddressScanCard), findsOneWidget);
 
-    tester
-        .widget<MobileAddressScanCard>(find.byType(MobileAddressScanCard))
-        .onScanned(scannedAddress);
+    final scanner = tester.widget<MobileAddressScanCard>(
+      find.byType(MobileAddressScanCard),
+    );
+    // The caption names the destination chain, not the Zcash default.
+    expect(scanner.caption, isNotNull);
+    expect(scanner.caption, isNot(testL10n.addressScanZcashPrompt));
+    expect(
+      (await scanner.resolve('https://example.com/pay')).error,
+      testL10n.commonQrNoAddress,
+    );
+    expect(
+      (await scanner.resolve(
+        'zcash:t1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCi',
+      )).error,
+      testL10n.addressScanWrongNetworkNamed('Zcash'),
+    );
+    scanner.onScanned(scannedAddress);
     await tester.pumpAndSettle();
 
     expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
@@ -1152,10 +1168,24 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
     await tester.pumpAndSettle();
+    // Through the camera this time, so the card's own checks run inside the
+    // swap modal route.
     tester
-        .widget<MobileAddressScanCard>(find.byType(MobileAddressScanCard))
-        .onScanned(scannedAddress);
+        .widget<PlainQrScannerView>(
+          find.byType(PlainQrScannerView, skipOffstage: false),
+        )
+        .onComplete('ethereum:$scannedAddress?value=1');
     await tester.pumpAndSettle();
+    expect(find.byType(MobileAddressScanCard), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('swap_destination_field')),
+          )
+          .controller
+          ?.text,
+      scannedAddress,
+    );
 
     await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
     await tester.pumpAndSettle();

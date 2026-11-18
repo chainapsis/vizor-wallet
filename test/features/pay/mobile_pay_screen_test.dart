@@ -4,6 +4,8 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_status.dart';
 import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
 import '../swap/support/service_status_fixture.dart';
@@ -35,6 +37,7 @@ import '../../fakes/fake_sync_notifier.dart';
 import '../../support/full_text_expectations.dart';
 import '../../support/widget_test_viewport.dart';
 import '../../support/app_test_fonts.dart';
+import '../../support/test_l10n.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -733,6 +736,54 @@ void main() {
       find.byKey(const ValueKey('mobile_pay_amount_input')),
     );
     expect(amountInput.controller?.text, '10');
+  });
+
+  testWidgets('a scanned payment request fills the recipient', (tester) async {
+    const recipient = '0x1111111111111111111111111111111111111111';
+    await _setMobileViewport(tester, const Size(393, 852));
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_pay_amount_input')),
+      '10',
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(testL10n.payScanQrTitle));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileAddressScanCard), findsOneWidget);
+
+    PlainQrScannerView scanner() => tester.widget<PlainQrScannerView>(
+      find.byType(PlainQrScannerView, skipOffstage: false),
+    );
+    scanner().onComplete('bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+    await tester.pumpAndSettle();
+    // Refused: the scanner stays up and the recipient is left alone. (The
+    // wording shows only over a live preview, which a test has no camera for.)
+    expect(find.byType(MobileAddressScanCard), findsOneWidget);
+    expect(find.text(recipient), findsNothing);
+
+    scanner().onComplete('ethereum:$recipient?value=1e18');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(MobileAddressScanCard), findsNothing);
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('mobile_pay_recipient_input')),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .controller
+          .text,
+      recipient,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('contact row selects the clicked identity before review', (

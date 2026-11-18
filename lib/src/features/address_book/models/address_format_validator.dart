@@ -5,6 +5,7 @@ import '../../../core/crypto/bech32.dart';
 import '../../../core/crypto/keccak256.dart';
 import '../../../core/l10n/l10n.dart';
 import 'address_book_contact.dart';
+import 'external_address_network_validator.dart';
 
 /// Severity of an address-format finding.
 ///
@@ -20,20 +21,29 @@ enum AddressFormatKind {
   invalidSolana,
   invalidNear,
   invalidZcash,
+
+  /// A chain with no address family of its own to name; the message names
+  /// [AddressFormatFinding.network] instead.
+  invalidNetworkAddress,
   nearMissingSuffix,
 }
 
 /// A format finding for an address, carrying a short user-facing message
 /// ([localizedMessage]) and its [severity].
 class AddressFormatFinding {
-  const AddressFormatFinding.error(this.kind)
+  const AddressFormatFinding.error(this.kind, {this.network})
     : severity = AddressFormatSeverity.error;
 
   const AddressFormatFinding.warning(this.kind)
-    : severity = AddressFormatSeverity.warning;
+    : severity = AddressFormatSeverity.warning,
+      network = null;
 
   final AddressFormatKind kind;
   final AddressFormatSeverity severity;
+
+  /// The chain the address was checked against, set only for
+  /// [AddressFormatKind.invalidNetworkAddress].
+  final AddressBookNetwork? network;
 
   String localizedMessage(AppLocalizations l10n) => switch (kind) {
     AddressFormatKind.invalidEvm => l10n.addressBookInvalidEvm,
@@ -41,6 +51,8 @@ class AddressFormatFinding {
     AddressFormatKind.invalidSolana => l10n.addressBookInvalidSolana,
     AddressFormatKind.invalidNear => l10n.addressBookInvalidNear,
     AddressFormatKind.invalidZcash => l10n.addressBookInvalidZcash,
+    AddressFormatKind.invalidNetworkAddress =>
+      l10n.addressBookInvalidNetworkAddress(network?.label ?? ''),
     AddressFormatKind.nearMissingSuffix => l10n.addressBookNearSuffixWarning,
   };
 }
@@ -59,8 +71,10 @@ class AddressFormatFinding {
 /// reads "Invalid EVM address" rather than "Invalid Base address".
 ///
 /// Scope: EVM family (0x + 40 hex, with EIP-55 checksum enforced on mixed-case
-/// input), Bitcoin, Solana, NEAR, and Zcash. Every other network passes
-/// through unchecked. Zcash transparent addresses are fully Base58Check
+/// input), Bitcoin, Litecoin, Dogecoin, Dash, Bitcoin Cash, TON, Cardano,
+/// Solana, NEAR, and Zcash. Every other network passes through unchecked.
+/// Litecoin through Cardano accept mainnet encodings only, wherever the
+/// encoding names a network. Zcash transparent addresses are fully Base58Check
 /// verified; unified/Sapling addresses use a best-effort prefix/charset check
 /// restricted to the active [zcashNetwork] (defaults to the build's network),
 /// so a testnet address is rejected on mainnet and vice versa, with the
@@ -95,6 +109,18 @@ AddressFormatFinding? addressFormatCheck(
           : const AddressFormatFinding.error(AddressFormatKind.invalidSolana);
     case AddressBookNetwork.near:
       return _nearFinding(trimmed);
+    case AddressBookNetwork.litecoin:
+    case AddressBookNetwork.dogecoin:
+    case AddressBookNetwork.dash:
+    case AddressBookNetwork.bitcoinCash:
+    case AddressBookNetwork.ton:
+    case AddressBookNetwork.cardano:
+      return isMainnetExternalAddress(network, trimmed)
+          ? null
+          : AddressFormatFinding.error(
+              AddressFormatKind.invalidNetworkAddress,
+              network: network,
+            );
     case AddressBookNetwork.zcash:
       return _isZcashAddress(
             trimmed,

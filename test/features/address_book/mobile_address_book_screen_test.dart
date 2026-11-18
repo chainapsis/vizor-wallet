@@ -285,6 +285,58 @@ void main() {
     await tester.pump();
     expect(save().onPressed, isNotNull);
   });
+
+  testWidgets('a saved address the format check now refuses can be renamed', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    final repo = _FakeRepo([
+      _contact(
+        id: 'doge',
+        label: 'Doge',
+        address: 'DPlaceholderDogecoinAddress',
+        network: AddressBookNetwork.dogecoin,
+      ),
+    ]);
+    await tester.pumpWidget(_harness(repo));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_contact_menu_doge')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit contact'));
+    await tester.pumpAndSettle();
+
+    AppButton save() => tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_address_book_save')),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_address_book_label')),
+      'Doge wallet',
+    );
+    await tester.pump();
+    expect(save().onPressed, isNotNull);
+
+    // A changed address has to pass the check.
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_address_book_address')),
+      'DAnotherPlaceholder',
+    );
+    await tester.pump();
+    expect(save().onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_address_book_address')),
+      'DPlaceholderDogecoinAddress',
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_address_book_save')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_address_book_save')));
+    await tester.pumpAndSettle();
+    expect(repo.contacts.single.label, 'Doge wallet');
+    expect(repo.contacts.single.address, 'DPlaceholderDogecoinAddress');
+  });
 }
 
 Future<void> _setMobileViewport(WidgetTester tester) async {

@@ -694,6 +694,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressBookInvalidNear => 'Invalid NEAR address';
 
   @override
+  String addressBookInvalidNetworkAddress(String network) {
+    return 'Invalid $network address';
+  }
+
+  @override
   String get addressBookInvalidSolana => 'Invalid Solana address';
 
   @override
@@ -837,6 +842,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addressScanTitle => 'Scan the address QR code';
+
+  @override
+  String get addressScanWrongNetwork =>
+      'This QR code is for a different network.';
+
+  @override
+  String addressScanWrongNetworkNamed(String network) {
+    return 'This QR code is for $network.';
+  }
 
   @override
   String get addressScanZcashPrompt => 'Scan a Zcash QR code to continue';

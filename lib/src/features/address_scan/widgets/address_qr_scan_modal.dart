@@ -15,7 +15,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart' show appModalShadow;
 import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
-import '../domain/address_scan_payload.dart';
+import 'mobile_address_scan_view.dart' show MobileScanResolver;
 
 /// [restricted] is an iOS Screen Time/MDM block that Settings cannot lift.
 enum AddressQrCameraStatus {
@@ -29,11 +29,14 @@ enum AddressQrCameraStatus {
 
 class AddressQrScanModal extends StatefulWidget {
   const AddressQrScanModal({
+    required this.resolve,
     required this.onAddressScanned,
     required this.onCancel,
     super.key,
   });
 
+  /// Decides what a scanned payload is for the field this scanner fills.
+  final MobileScanResolver resolve;
   final ValueChanged<String> onAddressScanned;
   final VoidCallback onCancel;
 
@@ -50,6 +53,8 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   bool _loadingCameras = false;
   bool _switchingCamera = false;
   bool _completed = false;
+  bool _validating = false;
+  bool _closed = false;
   bool _restartCameraOnResume = false;
   int _scanResetToken = 0;
   String? _error;
@@ -239,18 +244,39 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
     }
   }
 
-  void _handleScanComplete(String value) {
-    if (_completed) return;
-    final normalized = normalizeAddressScanPayload(value);
-    if (normalized == null || normalized.isEmpty) {
-      setState(() {
-        _error = context.l10n.commonQrNoAddress;
-        _scanResetToken++;
-      });
-      return;
+  void _cancel() {
+    _closed = true;
+    widget.onCancel();
+  }
+
+  /// Shows [error] and lets the camera report the next code. Without the
+  /// reset, the camera view stays latched on the code it already reported.
+  void _scanAgain(String? error) {
+    if (!mounted || _closed) return;
+    setState(() {
+      _validating = false;
+      _error = error;
+      _scanResetToken++;
+    });
+  }
+
+  Future<void> _handleScanComplete(String value) async {
+    if (_completed || _validating || _closed) return;
+    setState(() {
+      _validating = true;
+      _error = null;
+    });
+    try {
+      final outcome = await widget.resolve(value);
+      if (!mounted || _closed) return;
+      if (!outcome.isAccepted) {
+        return _scanAgain(outcome.error ?? context.l10n.commonQrNoAddress);
+      }
+      _completed = true;
+      widget.onAddressScanned(outcome.address!);
+    } catch (_) {
+      _scanAgain(mounted ? context.l10n.commonKeepQrSteady : null);
     }
-    _completed = true;
-    widget.onAddressScanned(normalized);
   }
 
   @override
@@ -269,7 +295,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
               ? PlainQrScannerView(
                   controller: _controller,
                   scanSessionResetToken: _scanResetToken,
-                  onComplete: _handleScanComplete,
+                  onComplete: (value) => unawaited(_handleScanComplete(value)),
                 )
               : null,
           cameraLabel: _cameraLabel(scannerState),
@@ -283,7 +309,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
           onCameraTap: () => unawaited(_selectNextCamera()),
           onRetry: () =>
               unawaited(_retryCameraStart(openSettingsOnDenied: true)),
-          onCancel: widget.onCancel,
+          onCancel: _cancel,
           unavailableDescription: unavailableDescription,
           error: _error,
         );

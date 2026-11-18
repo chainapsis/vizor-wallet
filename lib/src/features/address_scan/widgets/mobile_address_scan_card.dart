@@ -289,11 +289,43 @@ class MobileAddressScanCard extends StatefulWidget {
 
 class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
   bool _validating = false;
+  bool _closed = false;
+  bool _routeWasCurrent = true;
   int _scanResetToken = 0;
   String? _error;
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // A code the camera read while the scanner was covered was dropped, and
+    // the camera stays latched on it. Let it scan again once back in front.
+    final isCurrent = ModalRoute.isCurrentOf(context) ?? true;
+    if (isCurrent && !_routeWasCurrent) _scanResetToken++;
+    _routeWasCurrent = isCurrent;
+  }
+
+  /// Whether a result may still act on this scanner. A sheet stays mounted
+  /// through its closing animation, so [mounted] alone lets a late result pop
+  /// the screen underneath.
+  bool get _acceptsResults =>
+      mounted && !_closed && ModalRoute.of(context)?.isCurrent != false;
+
+  void _close() {
+    _closed = true;
+    widget.onClose();
+  }
+
+  /// Drops a result that arrived too late, letting the camera scan again.
+  void _discardLateResult() {
+    if (!mounted || _closed) return;
+    setState(() {
+      _validating = false;
+      _scanResetToken++;
+    });
+  }
+
   Future<void> _handleScan(String raw) async {
-    if (_validating || !mounted) return;
+    if (_validating || !_acceptsResults) return;
     if (raw.trim().isEmpty) return;
     setState(() {
       _validating = true;
@@ -301,7 +333,7 @@ class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
     });
     try {
       final outcome = await widget.resolve(raw);
-      if (!mounted) return;
+      if (!_acceptsResults) return _discardLateResult();
       if (outcome.isAccepted) {
         widget.onScanned(outcome.address!);
         return;
@@ -316,7 +348,7 @@ class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
             context.l10n.commonKeepQrSteady;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!_acceptsResults) return _discardLateResult();
       setState(() {
         _validating = false;
         _scanResetToken++;
@@ -333,7 +365,7 @@ class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
       permissionTitle: widget.permissionTitle,
       error: _error,
       unavailableDescription: context.l10n.addressScanAddressCameraNeeded,
-      onClose: widget.onClose,
+      onClose: _close,
       cameraViewBuilder: (context, controller) => PlainQrScannerView(
         key: const ValueKey('mobile_address_scan_card_camera'),
         controller: controller,

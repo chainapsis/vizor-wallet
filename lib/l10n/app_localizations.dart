@@ -1287,6 +1287,12 @@ abstract class AppLocalizations {
   /// **'Invalid NEAR address'**
   String get addressBookInvalidNear;
 
+  /// Error under an address field when the text is not a valid mainnet address for the named chain. Used for chains without a wording of their own (Litecoin, Dogecoin, Dash, Bitcoin Cash, TON, Cardano).
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid {network} address'**
+  String addressBookInvalidNetworkAddress(String network);
+
   /// Error under an address field when the text is not a valid Solana address.
   ///
   /// In en, this message translates to:
@@ -1443,7 +1449,7 @@ abstract class AppLocalizations {
   /// **'Scan address QR'**
   String get addressBookScanAddressQr;
 
-  /// Title of the camera scanner that reads a contact address. {network} is the chain name such as Ethereum.
+  /// Title of the camera scanner that reads a contact address, and caption under the mobile Swap scanner. {network} is the chain name such as Ethereum.
   ///
   /// In en, this message translates to:
   /// **'Scan {network} QR code'**
@@ -1538,6 +1544,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Scan the address QR code'**
   String get addressScanTitle;
+
+  /// Error under the QR scanner when the scanned code is for another chain than the address field it was opened from, and that chain cannot be named, for example an Ethereum payment request without a chain scanned for a Bitcoin address.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code is for a different network.'**
+  String get addressScanWrongNetwork;
+
+  /// Error under the QR scanner when the scanned code names a different chain than the address field it was opened from, for example a Base payment request scanned for an Ethereum address. {network} is the chain the code is for, such as Base, so the user can pick that chain instead.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code is for {network}.'**
+  String addressScanWrongNetworkNamed(String network);
 
   /// Caption under the viewfinder of the mobile QR scanner.
   ///

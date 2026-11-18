@@ -11,9 +11,11 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
+import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_scan_screen.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/services/qr_scanner.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../support/test_l10n.dart';
 
@@ -104,6 +106,68 @@ void main() {
     expect(find.text('Send page behind scanner'), findsOneWidget);
     expect(find.byType(MobileAddressScanCard), findsOneWidget);
     expect(find.text('Scan the address QR code'), findsOneWidget);
+  });
+
+  testWidgets('a result that lands while the sheet closes pops nothing else', (
+    tester,
+  ) async {
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+    final validation = Completer<MobileScanOutcome>();
+    Future<SendScanResult?>? scan;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        home: const Scaffold(body: Text('Home')),
+      ),
+    );
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => AppTheme(
+            data: AppThemeData.light,
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () => scan = showMobileSendScanSheet(
+                    context,
+                    networkName: kZcashDefaultNetworkName,
+                    controller: controller,
+                    resolve: (_) => validation.future,
+                  ),
+                  child: const Text('Open scanner'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open scanner'));
+    await tester.pumpAndSettle();
+
+    tester
+        .widget<PlainQrScannerView>(
+          find.byType(PlainQrScannerView, skipOffstage: false),
+        )
+        .onComplete(_mainnetAddress);
+    await tester.pump();
+    // System back, not the card's own close: the sheet stays mounted while it
+    // animates out.
+    navigator.pop();
+    await tester.pump();
+    expect(find.byType(MobileAddressScanCard), findsOneWidget);
+
+    validation.complete(const MobileScanOutcome.accepted(_mainnetAddress));
+    await tester.pumpAndSettle();
+
+    expect(await scan, isNull);
+    expect(find.text('Open scanner'), findsOneWidget);
+    expect(find.text('Home'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   group('the sheet\'s default resolver', () {

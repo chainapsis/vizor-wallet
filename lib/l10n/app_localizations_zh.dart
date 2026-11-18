@@ -658,6 +658,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressBookInvalidNear => '无效的 NEAR 地址';
 
   @override
+  String addressBookInvalidNetworkAddress(String network) {
+    return '无效的 $network 地址';
+  }
+
+  @override
   String get addressBookInvalidSolana => '无效的 Solana 地址';
 
   @override
@@ -790,6 +795,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addressScanTitle => '扫描地址二维码';
+
+  @override
+  String get addressScanWrongNetwork => '此二维码属于其他网络。';
+
+  @override
+  String addressScanWrongNetworkNamed(String network) {
+    return '此二维码属于 $network 网络。';
+  }
 
   @override
   String get addressScanZcashPrompt => '请扫描 Zcash 二维码以继续';

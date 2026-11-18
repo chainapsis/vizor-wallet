@@ -16,10 +16,8 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../address_book/models/address_book_contact.dart';
-import '../../../address_scan/domain/address_scan_payload.dart';
+import '../../../address_scan/widgets/address_scan_resolver.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
-import '../../../address_scan/widgets/mobile_address_scan_view.dart'
-    show MobileScanOutcome;
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../address_book/providers/address_book_provider.dart';
@@ -231,15 +229,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 caption: context.l10n.payScanCaption,
                 permissionTitle: context.l10n.payScanPermissionTitle,
                 steadyHint: context.l10n.commonKeepQrSteady,
-                resolve: (raw) async {
-                  final address = normalizeAddressScanPayload(raw)?.trim();
-                  if (address == null || address.isEmpty) {
-                    return MobileScanOutcome.rejected(
-                      context.l10n.commonQrNoAddress,
-                    );
-                  }
-                  return MobileScanOutcome.accepted(address);
-                },
+                resolve: addressScanResolver(context.l10n, network: network),
                 onScanned: _handleAddressScanned,
                 onClose: _closePayModal,
               ),

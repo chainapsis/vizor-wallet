@@ -27,10 +27,8 @@ import '../../../../core/widgets/mobile/mobile_section.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
     show MobileSheetCancel, showProfilePictureSheet;
-import '../../../address_scan/domain/address_scan_payload.dart';
+import '../../../address_scan/widgets/address_scan_resolver.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
-import '../../../address_scan/widgets/mobile_address_scan_view.dart'
-    show MobileScanOutcome;
 import '../../models/address_book_contact.dart';
 import '../../models/address_format_validator.dart';
 import '../../providers/address_book_provider.dart';
@@ -955,6 +953,14 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     if (_labelController.text.trim().isEmpty) return false;
     final address = _addressController.text.trim();
     if (address.isEmpty) return false;
+    // A saved address stays as it was saved, so renaming a contact is not
+    // blocked by a format check added after it, as on desktop.
+    final saved = widget.contact;
+    if (saved != null &&
+        saved.network == _network &&
+        saved.address.trim() == address) {
+      return true;
+    }
     return addressFormatIssue(_network, address) == null;
   }
 
@@ -993,13 +999,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
       builder: (sheetContext) => MobileAddressScanCard(
         caption: scanTitle,
         permissionTitle: scanTitle,
-        resolve: (raw) async {
-          final address = normalizeAddressScanPayload(raw);
-          if (address == null || address.isEmpty) {
-            return MobileScanOutcome.rejected(context.l10n.commonQrNoAddress);
-          }
-          return MobileScanOutcome.accepted(address);
-        },
+        resolve: addressScanResolver(context.l10n, network: _network),
         onScanned: (value) => Navigator.of(sheetContext).pop(value),
         onClose: () => Navigator.of(sheetContext).pop(),
       ),

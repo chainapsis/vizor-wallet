@@ -1,4 +1,6 @@
 // l10n-ignore-file: token and chain names and symbols are data
+import '../../address_book/models/address_book_contact.dart';
+
 class SwapAsset {
   const SwapAsset._({
     required this.name,
@@ -596,16 +598,11 @@ String _tokenIconAssetPath(String iconKey) {
   return 'assets/swap/tokens/$assetKey.webp';
 }
 
+/// Chains with an address book network take its icon, so the two lists
+/// cannot drift. The rest are chains contacts do not cover yet.
 String _chainIconAssetPath(String iconKey) {
-  return switch (iconKey) {
-    'abs' => 'assets/swap/chains/eth.webp',
-    'bsc' => 'assets/swap/tokens/bnb.webp',
-    'cardano' => 'assets/swap/tokens/ada.webp',
-    'fogo' => 'assets/swap/tokens/fogo.webp',
-    'qtc' => 'assets/swap/tokens/qtc.webp',
-    'xlayer' => 'assets/swap/tokens/okb.webp',
-    _ => 'assets/swap/chains/$iconKey.webp',
-  };
+  return AddressBookNetwork.tryFromChainTicker(iconKey)?.assetPath ??
+      'assets/swap/chains/$iconKey.webp';
 }
 
 String _tokenDisplayName(String symbol) {
@@ -623,47 +620,14 @@ String _tokenDisplayName(String symbol) {
   };
 }
 
+/// Chains with an address book network take its label, as for
+/// [_chainIconAssetPath].
 String swapChainDisplayName(String ticker) {
-  return switch (ticker.toLowerCase()) {
-    'abs' => 'Abstract',
-    'adi' => 'Adi',
-    'aleo' => 'Aleo',
-    'aptos' => 'Aptos',
-    'arb' => 'Arbitrum',
-    'avax' => 'Avalanche',
-    'base' => 'Base',
-    'bera' => 'Bera',
-    'bch' => 'Bitcoin Cash',
-    'bsc' => 'Binance Smart Chain',
-    'btc' => 'Bitcoin',
-    'cardano' => 'Cardano',
-    'dash' => 'Dash',
-    'doge' => 'Dogecoin',
-    'eth' => 'Ethereum',
-    'gnosis' => 'Gnosis',
-    'hood' => 'Robinhood Chain',
-    'ltc' => 'Litecoin',
-    'monad' => 'Monad',
-    'near' => 'NEAR',
-    'op' => 'Optimism',
-    'plasma' => 'Plasma',
-    'pol' => 'Polygon',
-    'qtc' => 'Quantus',
-    'scroll' => 'Scroll',
-    'sol' => 'Solana',
-    'starknet' => 'Starknet',
-    'stellar' => 'Stellar',
-    'sui' => 'Sui',
-    'ton' => 'TON',
-    'tron' => 'Tron',
-    'xrp' => 'XRP',
-    'xlayer' => 'X Layer',
-    'zec' => 'Zcash',
-    _ =>
-      ticker.isEmpty
-          ? ticker
-          : '${ticker[0].toUpperCase()}${ticker.substring(1)}',
-  };
+  final network = AddressBookNetwork.tryFromChainTicker(ticker);
+  if (network != null) return network.label;
+  return ticker.isEmpty
+      ? ticker
+      : '${ticker[0].toUpperCase()}${ticker.substring(1)}';
 }
 
 double _fallbackRateFor(String symbol) {
