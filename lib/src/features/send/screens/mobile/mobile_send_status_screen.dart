@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/sync_provider.dart';
 
 import '../../../../core/feedback/app_haptics.dart';
@@ -272,6 +273,30 @@ class _MobileSendStatusScreenState
     };
   }
 
+  /// When the payment left nothing spendable and its change is on the way
+  /// back, says when the account can send again: when the first waiting
+  /// funds that cover more than a fee arrive, not when all of them have.
+  /// Read in build, so the sentence appears once the balance refresh after
+  /// the send lands.
+  String? get _sendAgainSubtitle {
+    // The paying account, which the user may have switched away from.
+    final spendable = ref.watch(
+      spendableWaitProvider(widget.args.proposalAccountUuid),
+    );
+    final wait = spendable?.waitFor(BigInt.one, includesFee: false);
+    if (spendable == null ||
+        wait == null ||
+        wait.isUnderMinute ||
+        spendable.availableNow > BigInt.zero ||
+        spendable.changeWaiting == BigInt.zero) {
+      return null;
+    }
+    return context.l10n.sendStatusMobileSendAgainIn(
+      wait.minMinutes.toString(),
+      wait.maxMinutes.toString(),
+    );
+  }
+
   String get _subtitle {
     if (_isDonation && _phase == _MobileSendStatusPhase.succeeded) {
       return context.l10n.sendStatusMobileDonationSupport;
@@ -284,7 +309,7 @@ class _MobileSendStatusScreenState
             ? context.l10n.sendStatusMobilePendingDefault
             : statusMessage,
       _MobileSendStatusPhase.succeeded =>
-        context.l10n.sendStatusMobileConfirmSoon,
+        _sendAgainSubtitle ?? context.l10n.sendStatusMobileConfirmSoon,
       _MobileSendStatusPhase.failed =>
         _canRetryBroadcast
             ? (_error ?? context.l10n.sendStatusRetryAfterSync)

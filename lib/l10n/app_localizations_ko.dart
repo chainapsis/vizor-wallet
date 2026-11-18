@@ -438,6 +438,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityReceiptCardFee => '카‍드 수‍수‍료';
 
   @override
+  String get activityReceiptConfirmations => '확‍인 수';
+
+  @override
+  String activityReceiptConfirmationsProgress(String count, String required) {
+    return '$required‍회 중 $count‍회';
+  }
+
+  @override
   String get activityReceiptDetails => '상‍세 정‍보';
 
   @override
@@ -1165,6 +1173,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonAmount => '금‍액';
 
   @override
+  String commonAvailableInMinutes(String min, String max) {
+    return '$min–$max‍분 뒤 사‍용 가‍능';
+  }
+
+  @override
+  String get commonAvailableInUnderMinute => '1‍분 이‍내 사‍용 가‍능';
+
+  @override
   String get commonBack => '뒤‍로';
 
   @override
@@ -1884,6 +1900,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonWelcomeBack => '반‍가‍워‍요';
+
+  @override
+  String get commonWhatsThis => '이‍게 뭔‍가‍요?';
 
   @override
   String get commonWizard => '마‍법‍사';
@@ -6197,6 +6216,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get navVote => '투‍표';
 
   @override
+  String get nearSwapPrivacyUnsaved =>
+      '이 선‍택‍을 저‍장‍하‍지 못‍했‍어‍요. Vizor‍를 닫‍을 때‍까‍지‍만 적‍용‍돼‍요.';
+
+  @override
   String get networkPrivacyFinishUpdateBeforeTorOff =>
       'Tor‍를 끄‍기 전‍에 진‍행 중‍인 소‍프‍트‍웨‍어 업‍데‍이‍트‍를 끝‍내‍세‍요.';
 
@@ -6959,6 +6982,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get payFetchingQuote => '견‍적 가‍져‍오‍는 중';
+
+  @override
+  String payIronwoodOnlyShortfall(String amount) {
+    return '비‍공‍개 결‍제‍는 Ironwood ZEC‍만 사‍용‍해‍요. Ironwood 잔‍액‍은 $amount‍예‍요.';
+  }
 
   @override
   String get payNewAddressDetected => '새 주‍소‍가 감‍지‍되‍었‍어‍요.';
@@ -8637,6 +8665,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendAmountCtaEnterAmount => '계‍속‍하‍려‍면 금‍액‍을 입‍력‍하‍세‍요';
 
   @override
+  String get sendAvailableChangeRow => '방‍금 보‍낸 결‍제‍의 잔‍돈';
+
+  @override
+  String get sendAvailableFootnote =>
+      '네‍트‍워‍크 확‍인‍이 몇 번 끝‍나‍면 자‍금‍을 사‍용‍할 수 있‍어‍요.';
+
+  @override
+  String get sendAvailableReceivedRow => '방‍금 받‍은 자‍금';
+
+  @override
+  String get sendAvailableTitle => '지‍금 사‍용 가‍능';
+
+  @override
   String get sendBroadcastCancelledBeforeParams =>
       '증‍명 매‍개‍변‍수‍를 내‍려‍받‍기 전‍에 보‍내‍기‍가 취‍소‍됐‍어‍요.';
 
@@ -9319,6 +9360,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendStatusMobileReturnToSettings => '설‍정‍으‍로 돌‍아‍가‍기';
 
   @override
+  String sendStatusMobileSendAgainIn(String min, String max) {
+    return '곧 온‍체‍인‍에‍서 확‍인‍돼‍요. $min–$max‍분 뒤‍에 다‍시 보‍낼 수 있‍어‍요.';
+  }
+
+  @override
   String get sendStatusMobileSendingDonation => '후‍원‍을 보‍내‍는 중...';
 
   @override
@@ -9373,6 +9419,16 @@ class AppLocalizationsKo extends AppLocalizations {
       other: '이‍전 거‍래 $count‍건',
     );
     return '$_temp0';
+  }
+
+  @override
+  String sendWaitingMoreInMinutes(String amount, String min, String max) {
+    return '+$amount · $min–$max‍분 뒤';
+  }
+
+  @override
+  String sendWaitingMoreInUnderMinute(String amount) {
+    return '+$amount · 1‍분 이‍내';
   }
 
   @override
@@ -9603,6 +9659,68 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsLanguageUpdateFailed => '언‍어‍를 바‍꾸‍지 못‍했‍어‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyCheckingPastSwaps => '지‍난 스‍왑 확‍인 중';
+
+  @override
+  String get settingsNearSwapPrivacyHardware =>
+      '하‍드‍웨‍어 지‍갑 계‍정‍에‍서‍는 사‍용‍할 수 없‍어‍요. 이 계‍정‍의 스‍왑‍은 일‍반 Zcash 주‍소‍를 사‍용‍해‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoChangesBody =>
+      'ZEC‍를 보‍내‍는 스‍왑‍은 Ironwood 잔‍액‍에‍서‍만 결‍제‍돼‍요. Vizor‍가 주‍소 기‍록‍을 확‍인‍하‍는 동‍안 스‍왑 준‍비‍에 몇 분 걸‍릴 수 있‍어‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoChangesTitle => '달‍라‍지‍는 점';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLead =>
+      '스‍왑‍할 때‍마‍다 NEAR Intents‍에‍는 ZEC 쪽‍에 쓸 일‍회‍용 Zcash 주‍소‍가 전‍달‍돼‍요. ZEC‍를 받‍을 때‍는 수‍령 주‍소, ZEC‍를 보‍낼 때‍는 환‍불 주‍소‍예‍요. 미‍래‍의 양‍자 컴‍퓨‍터‍도 이 주‍소‍를 이 지‍갑‍과 연‍결‍할 수 없‍어‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLimitsBody =>
+      '이 주‍소‍들‍이 지‍갑‍과 연‍결‍되‍지 않‍게 할 뿐, 자‍금‍을 보‍호‍하‍는 방‍식‍은 바‍뀌‍지 않‍아‍요. 다‍시 쓰‍는 Ethereum 주‍소‍처‍럼 직‍접 입‍력‍한 주‍소‍는 여‍전‍히 스‍왑‍들‍을 서‍로 연‍결‍할 수 있‍어‍요. 하‍드‍웨‍어 지‍갑 계‍정‍은 일‍반 주‍소‍를 사‍용‍해‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLimitsTitle => '보‍호‍하‍지 않‍는 것';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestore =>
+      '복‍구‍한 뒤‍에‍는 지‍갑‍이 이 결‍제‍들‍을 스‍스‍로 비‍공‍개‍로 찾‍아‍요. 복‍구‍할 때 이 설‍정‍이 꺼‍져 있‍으‍면, ZEC‍로 받‍는 스‍왑‍의 수‍령‍액‍은 설‍정‍을 켜‍거‍나 스‍왑 기‍록 확‍인‍을 실‍행‍하‍면 표‍시‍돼‍요. 이 설‍정‍을 끄‍면 새 스‍왑‍에‍만 일‍반 주‍소‍가 쓰‍여‍요. 이‍미 사‍용‍한 일‍회‍용 주‍소‍로 들‍어‍오‍는 수‍령‍액‍과 환‍불‍은 계‍속 표‍시‍돼‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestoreTitle => '복‍구‍한 뒤 또‍는 꺼‍져 있‍을 때';
+
+  @override
+  String get settingsNearSwapPrivacyInfoReuse =>
+      '결‍제‍되‍지 않‍고 만‍료‍된 견‍적‍의 수‍령 주‍소‍는 나‍중‍의 견‍적‍에 다‍시 쓰‍일 수 있‍어‍요. 드‍물‍게, 같‍은 지‍갑‍을 쓰‍는 두 기‍기‍가 같‍은 순‍간‍에 견‍적‍을 받‍으‍면 같‍은 주‍소‍를 받‍을 수 있‍어‍요. 이‍때 NEAR‍는 두 견‍적‍이 같‍은 주‍소‍를 쓴‍다‍는 건 알 수 있‍지‍만, 그 주‍소‍가 어‍느 지‍갑‍의 것‍인‍지‍는 여‍전‍히 알 수 없‍어‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoReuseTitle => '수‍령 주‍소‍가 다‍시 쓰‍이‍는 경‍우';
+
+  @override
+  String get settingsNearSwapPrivacyLabel => '스‍왑 프‍라‍이‍버‍시 강‍화';
+
+  @override
+  String get settingsNearSwapPrivacyLearnMore => '자‍세‍히 알‍아‍보‍기';
+
+  @override
+  String get settingsNearSwapPrivacyLearnMoreSemantics =>
+      '스‍왑 프‍라‍이‍버‍시 강‍화 자‍세‍히 알‍아‍보‍기';
+
+  @override
+  String get settingsNearSwapPrivacyOff => '스‍왑‍에 일‍반 Zcash 주‍소‍를 사‍용‍해‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyOn => '스‍왑‍에 일‍회‍용 Zcash 주‍소‍를 사‍용‍해‍요.';
+
+  @override
+  String get settingsNearSwapPrivacyUnavailable => '사‍용 불‍가';
+
+  @override
+  String get settingsNearSwapPrivacyUnknown =>
+      'Vizor‍가 저‍장‍된 선‍택‍을 읽‍지 못‍했‍어‍요. 스‍왑‍하‍려‍면 다‍시 설‍정‍해 주‍세‍요.';
 
   @override
   String get settingsNewBadge => '신‍규';
@@ -9867,6 +9985,56 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsStatusOn => '켜‍짐';
+
+  @override
+  String get settingsSwapHistoryCheckAgainButton => '다‍시 확‍인';
+
+  @override
+  String get settingsSwapHistoryCheckButton => '스‍왑 기‍록 확‍인';
+
+  @override
+  String get settingsSwapHistoryChecking => '확‍인 중… 몇 분 걸‍릴 수 있‍어‍요.';
+
+  @override
+  String get settingsSwapHistoryContinuing =>
+      'Vizor‍가 열‍려 있‍는 동‍안 확‍인‍이 계‍속‍돼‍요.';
+
+  @override
+  String get settingsSwapHistoryDone => '확‍인‍을 마‍쳤‍어‍요.';
+
+  @override
+  String get settingsSwapHistoryFailed =>
+      '지‍금‍은 스‍왑 기‍록‍을 확‍인‍할 수 없‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get settingsSwapHistoryIdle => '받‍지 못‍한 수‍령‍액‍이‍나 환‍불‍이 있‍나‍요?';
+
+  @override
+  String get settingsSwapHistoryNotStarted =>
+      '확‍인‍을 시‍작‍하‍지 못‍했‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get settingsSwapHistoryPauseButton => '일‍시 중‍지';
+
+  @override
+  String get settingsSwapHistoryPauseFailed =>
+      '확‍인‍을 일‍시 중‍지‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get settingsSwapHistoryPaused =>
+      '일‍시 중‍지‍됐‍어‍요. 다‍시 확‍인‍하‍면 이‍어‍서 진‍행‍해‍요.';
+
+  @override
+  String get settingsSwapHistoryWaitingForService =>
+      '스‍왑 복‍구 서‍비‍스‍가 아‍직 이 지‍갑‍을 따‍라‍잡‍지 못‍했‍어‍요. 몇 분 후‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get settingsSwapHistoryWaitingForSync =>
+      '지‍갑 동‍기‍화‍를 기‍다‍리‍고 있‍어‍요. 몇 분 후‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get settingsSwapHistoryWalletChanged =>
+      '지‍갑‍이 바‍뀌‍어‍서 확‍인‍이 멈‍췄‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get settingsThemeDark => '다‍크';
@@ -10290,6 +10458,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapActionAddRefundAddress => '환‍불 주‍소 추‍가';
 
   @override
+  String get swapActionGetConfidentialQuote => '기‍밀 견‍적 받‍기';
+
+  @override
   String get swapActionGettingQuote => '견‍적 가‍져‍오‍는 중';
 
   @override
@@ -10566,6 +10737,10 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepFindingPayoutDescription =>
+      'NEAR‍가 일‍회‍용 주‍소‍로 보‍냈‍어‍요. Vizor‍가 찾‍고 있‍어‍요.';
+
+  @override
   String get swapActivityStepRecipientReceives => '받‍는 사‍람 수‍령';
 
   @override
@@ -10687,6 +10862,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapAddressRememberRefund => '환‍불 주‍소‍로 이 주‍소 기‍억‍하‍기';
 
   @override
+  String get swapAddressWaitServer => '서‍버 선‍택';
+
+  @override
+  String get swapAddressWaitSync => '동‍기‍화 대‍기 중…';
+
+  @override
   String get swapAssetSelectorEmpty => '토‍큰‍이‍나 체‍인‍을 찾‍을 수 없‍어‍요';
 
   @override
@@ -10708,6 +10889,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapComposerYouReceive => '내‍가 받‍는 금‍액';
+
+  @override
+  String get swapConfidentialLabel => '기‍밀';
+
+  @override
+  String get swapConfidentialRouteTooltip =>
+      'NEAR Intents‍에‍서 입‍금‍과 수‍령‍이 서‍로 연‍결‍되‍지 않‍고, 블‍록 탐‍색‍기‍에‍도 나‍오‍지 않‍아‍요. 두 거‍래‍는 각‍자‍의 체‍인‍에‍는 그‍대‍로 보‍여‍요.';
+
+  @override
+  String get swapConfidentialSettingDescription =>
+      '입‍금‍과 수‍령‍을 서‍로 추‍적‍할 수 없‍어‍요.';
 
   @override
   String get swapContactAlreadyInAddressBook => '이‍미 주‍소‍록‍에 있‍어‍요';
@@ -10748,6 +10940,20 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapDepositOneTimeAddress => '일‍회‍용 주‍소';
+
+  @override
+  String get swapDepositRecoveryHelp => '잘‍못 입‍금‍하‍면?';
+
+  @override
+  String get swapDepositRecoveryIntro =>
+      '다‍른 토‍큰‍을 보‍내‍거‍나 다‍른 네‍트‍워‍크‍를 이‍용‍하‍면 입‍금‍이 반‍영‍되‍지 않‍을 수 있‍어‍요.';
+
+  @override
+  String get swapDepositRecoveryPolicy =>
+      '잘‍못 보‍낸 자‍산‍의 송‍금 당‍시 가‍치‍가 미‍화 300‍달‍러 미‍만‍이‍면 NEAR Intents‍는 복‍구 요‍청‍을 검‍토‍하‍지 않‍아‍요. 미‍화 300‍달‍러 이‍상‍이‍면 NEAR Intents‍가 복‍구‍를 지‍원‍할‍지 건‍별‍로 판‍단‍해‍요.';
+
+  @override
+  String get swapDepositRecoveryTitle => '잘‍못 입‍금‍했‍을 때';
 
   @override
   String swapDepositSendOnly(String symbol, String chain) {
@@ -10864,12 +11070,28 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 스‍왑 금‍액‍과 네‍트‍워‍크 수‍수‍료‍를 내‍기‍에 사‍용 가‍능‍한 ZEC‍가 부‍족‍해‍요.\n더 적‍은 금‍액‍으‍로 시‍도‍하‍거‍나 최‍대 금‍액‍을 사‍용‍해 주‍세‍요.';
 
   @override
+  String get swapFailureZecDepositIronwoodFunding =>
+      '비‍공‍개 스‍왑‍은 Ironwood ZEC‍만 사‍용‍하‍는‍데, 이 스‍왑 금‍액‍과 네‍트‍워‍크 수‍수‍료‍를 내‍기‍에 부‍족‍해‍요.\nIronwood‍로 자‍금‍을 옮‍기‍거‍나 더 적‍은 금‍액‍으‍로 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get swapFailureZecDepositIronwoodFundingPay =>
+      '비‍공‍개 결‍제‍는 Ironwood ZEC‍만 사‍용‍하‍는‍데, 이 결‍제 금‍액‍과 네‍트‍워‍크 수‍수‍료‍를 내‍기‍에 부‍족‍해‍요.\nIronwood‍로 자‍금‍을 옮‍기‍거‍나 더 적‍은 금‍액‍으‍로 시‍도‍해 주‍세‍요.';
+
+  @override
   String get swapFailureZecDepositPreflight =>
       'ZEC 입‍금‍을 준‍비‍하‍지 못‍했‍어‍요.\n잔‍액‍을 확‍인‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get swapFailureZecDepositSendFailed =>
       'ZEC‍를 입‍금‍하‍지 못‍했‍어‍요.\n나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get swapFindingPayout => 'ZEC 찾‍는 중…';
+
+  @override
+  String swapIronwoodOnlyShortfall(String amount) {
+    return '비‍공‍개 스‍왑‍은 Ironwood ZEC‍만 사‍용‍해‍요. Ironwood 잔‍액‍은 $amount‍예‍요.';
+  }
 
   @override
   String get swapKeystoneBroadcastFailed => '거‍래‍를 전‍송‍하‍지 못‍했‍어‍요.';
@@ -11003,10 +11225,41 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get swapNoticeNearSwapPrivacyUnknown =>
+      'Vizor‍가 스‍왑 프‍라‍이‍버‍시 강‍화 설‍정‍을 읽‍지 못‍했‍어‍요. 설‍정‍에‍서 다‍시 지‍정‍해 주‍세‍요.';
+
+  @override
+  String get swapNoticeNoConfidentialQuoteForAmount =>
+      '이 금‍액‍에 사‍용‍할 수 있‍는 기‍밀 견‍적‍이 없‍어‍요.';
+
+  @override
+  String get swapNoticeNoQuoteForAmount => '이 금‍액‍에 사‍용‍할 수 있‍는 견‍적‍이 없‍어‍요.';
+
+  @override
   String get swapNoticeOk => '확‍인';
 
   @override
   String get swapNoticePaymentsMayFail => '지‍금‍은 결‍제‍가 되‍지 않‍을 수 있‍어‍요.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressLimit =>
+      '대‍기 중‍인 스‍왑‍이 너‍무 많‍아‍요. 스‍왑 하‍나‍가 끝‍나‍거‍나 만‍료‍된 뒤 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparationFailed =>
+      '지‍갑‍의 새 받‍는 주‍소‍를 준‍비‍하‍지 못‍했‍어‍요. 지‍갑 동‍기‍화 후 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparing =>
+      '비‍공‍개 스‍왑 주‍소‍를 준‍비‍하‍고 있‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale =>
+      '이 스‍왑 주‍소‍는 더 이‍상 사‍용‍할 수 없‍어‍요. 새 견‍적‍을 요‍청‍해 주‍세‍요.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressUnavailable =>
+      '지‍금‍은 비‍공‍개 스‍왑‍을 사‍용‍할 수 없‍어‍요. 몇 분 뒤 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>
@@ -11021,10 +11274,38 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get swapNoticeStartNotFinished =>
+      'Vizor‍가 이 스‍왑‍이 시‍작‍됐‍는‍지 확‍인‍하‍지 못‍했‍어‍요. 다‍른 스‍왑‍을 시‍작‍하‍기 전‍에 이 스‍왑‍의 입‍금‍을 이‍미 보‍냈‍는‍지 확‍인‍해 주‍세‍요.';
+
+  @override
   String get swapNoticeStatusPage => 'NEAR Intents 상‍태 페‍이‍지';
 
   @override
   String get swapNoticeSwapsMayFail => '지‍금‍은 스‍왑‍이 되‍지 않‍을 수 있‍어‍요.';
+
+  @override
+  String get swapOneTimeAddressLabel => '일‍회‍용 주‍소';
+
+  @override
+  String get swapOneTimeAddressPayoutExplanation =>
+      '이 스‍왑‍에‍만 쓰‍는 일‍회‍용 Zcash 주‍소‍예‍요. 미‍래‍의 양‍자 컴‍퓨‍터‍도 이 주‍소‍를 지‍갑‍과 연‍결‍할 수 없‍어‍요.';
+
+  @override
+  String get swapOneTimeAddressPreparing => '주‍소 준‍비 중…';
+
+  @override
+  String get swapOneTimeAddressPreparingExplanation =>
+      'Vizor‍가 이 주‍소‍를 쓰‍기 전‍에 기‍록‍을 확‍인‍하‍고 있‍어‍요. 몇 분 걸‍릴 수 있‍어‍요.';
+
+  @override
+  String get swapOneTimeAddressPreparingSemantics => '일‍회‍용 주‍소 준‍비 중';
+
+  @override
+  String get swapOneTimeAddressRefundExplanation =>
+      '이 스‍왑‍이 환‍불‍되‍면 ZEC‍는 일‍회‍용 Zcash 주‍소‍로 돌‍아‍와‍요. 미‍래‍의 양‍자 컴‍퓨‍터‍도 이 주‍소‍를 지‍갑‍과 연‍결‍할 수 없‍어‍요.';
+
+  @override
+  String get swapOneTimeRefundAddressLabel => '일‍회‍용 환‍불 주‍소';
 
   @override
   String get swapPageTitle => '스‍왑';
@@ -11058,7 +11339,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapPayStatusSourceAmount => '원‍래 금‍액';
 
   @override
+  String get swapPayoutUpdateRequired =>
+      '이 스‍왑‍의 수‍령‍액‍을 계‍속 확‍인‍하‍려‍면 Vizor‍를 업‍데‍이‍트‍하‍세‍요. 자‍금‍은 안‍전‍해‍요.';
+
+  @override
   String get swapPoweredByLabel => '제‍공:';
+
+  @override
+  String get swapQuoteErrorViewSwaps => '스‍왑 보‍기';
 
   @override
   String swapQuoteExpiresAt(String time) {
@@ -11070,6 +11358,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapQuoteRatePending => '환‍율 확‍인 중';
+
+  @override
+  String get swapRecoveryUpdateRequired =>
+      '비‍공‍개 스‍왑‍을 계‍속 사‍용‍하‍려‍면 Vizor‍를 업‍데‍이‍트‍하‍세‍요.';
+
+  @override
+  String get swapRefundUpdateRequired =>
+      '이 스‍왑‍의 환‍불‍을 계‍속 확‍인‍하‍려‍면 Vizor‍를 업‍데‍이‍트‍하‍세‍요. 자‍금‍은 안‍전‍해‍요.';
 
   @override
   String get swapReviewBackPay => '결‍제';
@@ -11125,6 +11421,12 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get swapSettingsTitlePay => '결‍제 설‍정';
+
+  @override
+  String get swapSettingsTitleSwap => '스‍왑 설‍정';
+
+  @override
   String get swapSignPayment => '결‍제 서‍명';
 
   @override
@@ -11132,6 +11434,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapSlippageCustom => '직‍접 입‍력';
+
+  @override
+  String get swapSlippageCustomValueSemantics => '직‍접 입‍력‍한 슬‍리‍피‍지 허‍용 범‍위(%)';
+
+  @override
+  String get swapSlippageDecrease => '슬‍리‍피‍지 줄‍이‍기';
 
   @override
   String get swapSlippageDescriptionPay =>
@@ -11142,10 +11450,24 @@ class AppLocalizationsKo extends AppLocalizations {
       '허‍용‍할 최‍대 환‍율 변‍동‍폭‍을 설‍정‍해‍요. 네‍트‍워‍크 수‍수‍료‍는 별‍도‍예‍요.';
 
   @override
+  String get swapSlippageIncrease => '슬‍리‍피‍지 늘‍리‍기';
+
+  @override
+  String swapSlippagePresetSemantics(String value) {
+    return '슬‍리‍피‍지 $value';
+  }
+
+  @override
   String get swapSlippageRangeError => '슬‍리‍피‍지‍는 0.1 - 5%여‍야 해‍요';
 
   @override
   String get swapSlippageTitle => '슬‍리‍피‍지';
+
+  @override
+  String get swapSlippageValueSemantics => '슬‍리‍피‍지 허‍용 범‍위(%)';
+
+  @override
+  String get swapStartPending => '스‍왑 시‍작 중…';
 
   @override
   String get swapStatusBadgeNeedsAttention => '확‍인 필‍요';
@@ -11155,6 +11477,55 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapStatusRowLabel => '상‍태';
+
+  @override
+  String get swapSupportConfidentialRoute => '경‍로: 기‍밀';
+
+  @override
+  String get swapSupportCopyAction => '입‍금 세‍부‍정‍보 복‍사';
+
+  @override
+  String get swapSupportCopyFailed =>
+      '세‍부‍정‍보‍를 복‍사‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String swapSupportDetails(
+    String status,
+    String address,
+    String txHash,
+    String routeDetails,
+  ) {
+    return '거‍래‍와 환‍불 상‍태‍를 확‍인‍해 주‍세‍요.\n\n서‍비‍스 상‍태: $status\n입‍금 주‍소: $address\n입‍금 거‍래: $txHash\n$routeDetails';
+  }
+
+  @override
+  String get swapSupportDirectHelp =>
+      '도‍움‍이 필‍요‍하‍다‍면 입‍금 세‍부‍정‍보‍를 복‍사‍해 아‍래 주‍소‍로 보‍낼 이‍메‍일‍에 붙‍여‍넣‍어 주‍세‍요.';
+
+  @override
+  String get swapSupportExpiredBody =>
+      '보‍낸 지‍갑‍에‍서 거‍래‍를 확‍인‍해 주‍세‍요. 입‍금‍이 늦‍게 도‍착‍했‍다‍면 NEAR‍에‍서 환‍불 주‍소‍로 반‍환‍을 시‍도‍할 수 있‍어‍요.';
+
+  @override
+  String get swapSupportExpiredPrompt => '이‍미 입‍금‍하‍셨‍나‍요?';
+
+  @override
+  String get swapSupportExpiredTitle => '입‍금 확‍인';
+
+  @override
+  String swapSupportExplorer(String explorer) {
+    return '탐‍색‍기: $explorer';
+  }
+
+  @override
+  String get swapSupportFailedBody =>
+      '거‍래 세‍부‍정‍보‍에 표‍시‍된 환‍불 주‍소‍를 확‍인‍해 주‍세‍요.';
+
+  @override
+  String get swapSupportFailedPrompt => '아‍직 환‍불‍을 받‍지 못‍하‍셨‍나‍요?';
+
+  @override
+  String get swapSupportFailedTitle => '환‍불 확‍인';
 
   @override
   String get swapSwitchDirection => '스‍왑 방‍향 전‍환';

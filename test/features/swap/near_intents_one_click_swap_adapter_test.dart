@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_failure_policy.dart';
 
 void main() {
   test('quote posts exact-input payload and parses 1Click quote', () async {
@@ -71,6 +72,94 @@ void main() {
     expect(quote.depositInstruction.memo, 'memo-7');
     expect(quote.quoteExpiresAt, DateTime.utc(2026, 5, 7, 12));
     expect(quote.depositInstruction.deadline, DateTime.utc(2026, 5, 7, 12));
+  });
+
+  test(
+    'quote runs beforeSend after local checks, just before posting',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokensWithPrices('72.5')),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            amountIn: '150000000',
+            amountInFormatted: '1.5',
+            amountOutFormatted: '105.25',
+            minAmountOut: '104750000',
+            depositAddress: 't1deposit',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: transport,
+        now: () => DateTime.utc(2026, 5, 7, 10, 0, 0, 250),
+      );
+      final deadlines = <DateTime>[];
+      SwapQuoteRequest request({
+        String? amountText = '1.5',
+        SwapQuoteSendHook? beforeSend,
+      }) => SwapQuoteRequest(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: 1.5,
+        sellAmountText: amountText,
+        destination: '0xrecipient',
+        refundAddress: 'u1refund',
+        beforeSend:
+            beforeSend ??
+            (deadline) async {
+              // The token list is fetched first; the quote is not yet posted.
+              expect(transport.requests.map((r) => r.uri.path), ['/v0/tokens']);
+              deadlines.add(deadline);
+            },
+      );
+
+      await expectLater(
+        provider.quote(request(amountText: null)),
+        throwsA(isA<OneClickApiException>()),
+      );
+      expect(deadlines, isEmpty);
+      await provider.quote(request());
+      expect(deadlines, [DateTime.utc(2026, 5, 7, 12, 0, 0, 250)]);
+      expect(transport.requests.last.body?['deadline'], '2026-05-07T12:00:00Z');
+      await expectLater(
+        provider.quote(
+          request(beforeSend: (_) async => throw StateError('not ready')),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(transport.requests, hasLength(2));
+    },
+  );
+
+  test('zone-less timestamps are read as device-local time', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithPrices('72.5')),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:usdc.example',
+          amountInFormatted: '1.5',
+          amountOutFormatted: '105.25',
+          minAmountOut: '104750000',
+          depositAddress: 't1deposit',
+          quoteRequestDeadline: '2026-05-07T12:00:00',
+          status: 'PENDING_DEPOSIT',
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final status = await provider.getStatus('t1deposit');
+
+    expect(
+      status.depositInstruction.deadline,
+      DateTime(2026, 5, 7, 12).toUtc(),
+    );
   });
 
   test('quote captures USDC token price from token response', () async {
@@ -794,6 +883,127 @@ void main() {
       );
     },
   );
+
+  group('confidential route', () {
+    const request = SwapQuoteRequest(
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+      sellAmount: 1,
+      sellAmountText: '1',
+      destination: '0xrecipient',
+      refundAddress: 'u1refund',
+    );
+    const confidentialRequest = SwapQuoteRequest(
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+      sellAmount: 1,
+      sellAmountText: '1',
+      destination: '0xrecipient',
+      refundAddress: 'u1refund',
+      confidential: true,
+    );
+
+    _FakeOneClickTransport quoteTransport({String? confidentiality}) =>
+        _FakeOneClickTransport([
+          _FakeResponse.get('/v0/tokens', _tokens),
+          _FakeResponse.post(
+            '/v0/quote',
+            _quoteResponse(
+              originAsset: 'nep141:zec.omft.near',
+              destinationAsset: 'nep141:usdc.example',
+              amountInFormatted: '1',
+              amountOutFormatted: '70',
+              minAmountOut: '69300000',
+              depositAddress: 't1deposit',
+              confidentiality: confidentiality,
+              status: null,
+            ),
+          ),
+        ]);
+
+    test('standard quotes omit the field and stay public', () async {
+      final transport = quoteTransport();
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final quote = await provider.quote(request);
+
+      expect(transport.requests.last.body, isNot(contains('confidentiality')));
+      expect(quote.confidential, isFalse);
+    });
+
+    test('a standard quote accepts an explicit public echo', () async {
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: quoteTransport(confidentiality: 'PUBLIC'),
+      );
+
+      expect((await provider.quote(request)).confidential, isFalse);
+    });
+
+    test('confidential quotes request basic and record the echo', () async {
+      final transport = quoteTransport(confidentiality: 'basic');
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final quote = await provider.quote(confidentialRequest);
+
+      expect(transport.requests.last.body?['confidentiality'], 'basic');
+      expect(quote.confidential, isTrue);
+      expect(SwapIntentSnapshot.fromQuote(quote).confidential, isTrue);
+    });
+
+    for (final echo in [null, 'public', 'advanced']) {
+      test('a confidential quote rejects a $echo echo', () async {
+        final provider = NearIntentsOneClickSwapAdapter(
+          transport: quoteTransport(confidentiality: echo),
+        );
+
+        await expectLater(
+          provider.quote(confidentialRequest),
+          throwsA(
+            isA<OneClickApiException>().having(
+              (error) => swapFailureCategory(SwapFailureOperation.quote, error),
+              'category',
+              SwapFailureCategory.unverifiedResponse,
+            ),
+          ),
+        );
+      });
+    }
+
+    test('a standard quote rejects a confidential echo', () async {
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: quoteTransport(confidentiality: 'basic'),
+      );
+
+      await expectLater(
+        provider.quote(request),
+        throwsA(isA<OneClickApiException>()),
+      );
+    });
+
+    test('status snapshots carry the confidential echo', () async {
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: _FakeOneClickTransport([
+          _FakeResponse.get('/v0/tokens', _tokens),
+          _FakeResponse.get(
+            '/v0/status',
+            _quoteResponse(
+              originAsset: 'nep141:zec.omft.near',
+              destinationAsset: 'nep141:usdc.example',
+              amountInFormatted: '1',
+              amountOutFormatted: '70',
+              depositAddress: 'status-deposit',
+              confidentiality: 'basic',
+              status: 'PROCESSING',
+            ),
+          ),
+        ]),
+      );
+
+      final status = await provider.getStatus('status-deposit');
+
+      expect(status.confidential, isTrue);
+    });
+  });
 
   test('quote rejects response with mismatched slippage echo', () async {
     final transport = _FakeOneClickTransport([
@@ -1866,18 +2076,67 @@ void main() {
     );
   });
 
-  test('status rejects unsupported provider asset pairs as status errors', () {
+  test(
+    'status of an unlisted token reports only the provider status',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: 'nep141:unsupported.asset',
+            destinationAsset: 'nep141:zec.omft.near',
+            amountInFormatted: '12',
+            amountOutFormatted: '1',
+            minAmountOut: '99500000',
+            depositAddress: 'unsupported-deposit',
+            depositMemo: 'memo-9',
+            status: 'REFUNDED',
+            swapDetails: {
+              'refundedAmount': '1200000000',
+              'originChainTxHashes': [
+                {'hash': '0xorigin'},
+              ],
+            },
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final error = await _statusOnlyError(
+        provider.getStatus('unsupported-deposit'),
+      );
+      // It fails as an unreadable pair always did, with the status attached.
+      expect(error.operation, 'status');
+      expect(
+        error.message,
+        'Unsupported 1Click status pair: '
+        'nep141:unsupported.asset -> nep141:zec.omft.near',
+      );
+      final status = error.snapshot;
+      expect(status.statusOnly, isTrue);
+      expect(status.status, SwapIntentStatus.refunded);
+      expect(status.providerStatusRaw, 'REFUNDED');
+      expect(status.providerSwapType, 'EXACT_INPUT');
+      expect(status.refundedAmountBaseUnits, '1200000000');
+      expect(status.originChainTxHash, '0xorigin');
+      expect(status.depositInstruction.address, 'unsupported-deposit');
+      expect(status.depositInstruction.memo, 'memo-9');
+      expect(status.depositInstruction.deadline, DateTime.utc(2026, 5, 7, 12));
+    },
+  );
+
+  test('status without a ZEC side is still rejected', () {
     final transport = _FakeOneClickTransport([
       _FakeResponse.get('/v0/tokens', _tokens),
       _FakeResponse.get(
         '/v0/status',
         _quoteResponse(
           originAsset: 'nep141:unsupported.asset',
-          destinationAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:usdc.example',
           amountInFormatted: '12',
           amountOutFormatted: '1',
-          minAmountOut: '99500000',
-          depositAddress: 'unsupported-deposit',
+          depositAddress: 'foreign-deposit',
           status: 'PROCESSING',
         ),
       ),
@@ -1885,7 +2144,7 @@ void main() {
     final provider = NearIntentsOneClickSwapAdapter(transport: transport);
 
     expect(
-      provider.getStatus('unsupported-deposit'),
+      provider.getStatus('foreign-deposit'),
       throwsA(
         isA<OneClickApiException>()
             .having((error) => error.operation, 'operation', 'status')
@@ -1898,75 +2157,47 @@ void main() {
     );
   });
 
-  test('status rejects ambiguous 1Click ticker fallback', () {
-    final transport = _FakeOneClickTransport([
-      _FakeResponse.get('/v0/tokens', _tokensWithNearUsdcFirst),
-      _FakeResponse.get(
-        '/v0/status',
-        _quoteResponse(
-          originAsset: '1cs_v1:usdc:native:coin',
-          destinationAsset: 'nep141:zec.omft.near',
-          swapType: 'FLEX_INPUT',
-          amountInFormatted: '12',
-          amountOutFormatted: '1',
-          minAmountOut: '99500000',
-          depositAddress: 'ambiguous-deposit',
-          quoteRequestRefundTo: '0xrefund',
-          quoteRequestRecipient: 'u1recipient',
-          status: 'PROCESSING',
+  for (final (name, tokens, depositAddress) in [
+    (
+      'status of an ambiguous 1Click ticker reports only the status',
+      _tokensWithNearUsdcFirst,
+      'ambiguous-deposit',
+    ),
+    (
+      'status of duplicate 1Click ticker market variants reports only the status',
+      _tokensWithDuplicateEthUsdc,
+      'duplicate-market-deposit',
+    ),
+  ]) {
+    test(name, () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: '1cs_v1:usdc:native:coin',
+            destinationAsset: 'nep141:zec.omft.near',
+            swapType: 'FLEX_INPUT',
+            amountInFormatted: '12',
+            amountOutFormatted: '1',
+            minAmountOut: '99500000',
+            depositAddress: depositAddress,
+            quoteRequestRefundTo: '0xrefund',
+            quoteRequestRecipient: 'u1recipient',
+            status: 'PROCESSING',
+          ),
         ),
-      ),
-    ]);
-    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
 
-    expect(
-      provider.getStatus('ambiguous-deposit'),
-      throwsA(
-        isA<OneClickApiException>()
-            .having((error) => error.operation, 'operation', 'status')
-            .having(
-              (error) => error.message,
-              'message',
-              contains('Unsupported 1Click status pair'),
-            ),
-      ),
-    );
-  });
+      final status = (await _statusOnlyError(
+        provider.getStatus(depositAddress),
+      )).snapshot;
 
-  test('status rejects duplicate 1Click ticker fallback market variants', () {
-    final transport = _FakeOneClickTransport([
-      _FakeResponse.get('/v0/tokens', _tokensWithDuplicateEthUsdc),
-      _FakeResponse.get(
-        '/v0/status',
-        _quoteResponse(
-          originAsset: '1cs_v1:usdc:native:coin',
-          destinationAsset: 'nep141:zec.omft.near',
-          swapType: 'FLEX_INPUT',
-          amountInFormatted: '12',
-          amountOutFormatted: '1',
-          minAmountOut: '99500000',
-          depositAddress: 'duplicate-market-deposit',
-          quoteRequestRefundTo: '0xrefund',
-          quoteRequestRecipient: 'u1recipient',
-          status: 'PROCESSING',
-        ),
-      ),
-    ]);
-    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
-
-    expect(
-      provider.getStatus('duplicate-market-deposit'),
-      throwsA(
-        isA<OneClickApiException>()
-            .having((error) => error.operation, 'operation', 'status')
-            .having(
-              (error) => error.message,
-              'message',
-              contains('Unsupported 1Click status pair'),
-            ),
-      ),
-    );
-  });
+      expect(status.statusOnly, isTrue);
+      expect(status.status, SwapIntentStatus.processing);
+    });
+  }
 
   test(
     'status derives minimum receive from swap details slippage when min amount is missing',
@@ -2491,9 +2722,11 @@ void main() {
               'intentHashes': ['intent-hash-1'],
               'originChainTxHashes': [
                 {'hash': 'origin-chain-tx-hash'},
+                {'hash': 'origin-refund-tx-hash'},
               ],
               'destinationChainTxHashes': [
                 {'hash': 'destination-chain-tx-hash'},
+                'destination-second-tx-hash',
               ],
             },
           ),
@@ -2509,6 +2742,15 @@ void main() {
       expect(status.nearIntentHash, 'intent-hash-1');
       expect(status.originChainTxHash, 'origin-chain-tx-hash');
       expect(status.destinationChainTxHash, 'destination-chain-tx-hash');
+      // Every hash reaches the wallet, which attributes recovered payments by them.
+      expect(status.originChainTxHashes, [
+        'origin-chain-tx-hash',
+        'origin-refund-tx-hash',
+      ]);
+      expect(status.destinationChainTxHashes, [
+        'destination-chain-tx-hash',
+        'destination-second-tx-hash',
+      ]);
     },
   );
 
@@ -2681,6 +2923,7 @@ Map<String, Object?> _quoteResponse({
   String? quoteRequestAmount,
   String quoteRequestRefundTo = 'u1refund',
   String quoteRequestRecipient = '0xrecipient',
+  String? confidentiality,
   Map<String, Object?>? swapDetails,
 }) {
   final resolvedAmountIn =
@@ -2709,6 +2952,7 @@ Map<String, Object?> _quoteResponse({
       'recipientType': 'DESTINATION_CHAIN',
       'deadline': quoteRequestDeadline,
       'appFees': appFees,
+      'confidentiality': ?confidentiality,
     },
     'quote': {
       'amountIn': resolvedAmountIn,
@@ -2944,4 +3188,16 @@ class _StatusScenario {
   final SwapIntentStatus expectedStatus;
   final SwapNextAction expectedNextAction;
   final String expectedPairText;
+}
+
+/// The status-only failure `status` ends with.
+Future<OneClickStatusOnlyException> _statusOnlyError(
+  Future<SwapIntentSnapshot> status,
+) async {
+  try {
+    await status;
+  } on OneClickStatusOnlyException catch (error) {
+    return error;
+  }
+  fail('the status did not fail as status-only');
 }

@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart' as rust_swap;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -33,6 +34,26 @@ class _Api extends RustLibApi {
 
   @override
   bool crateApiSyncIsSyncRunning() => running;
+
+  /// Reports the cancellation generation every call here is submitted under.
+  @override
+  BigInt crateApiOneTimeIvkSwapRecoveryGeneration() => BigInt.zero;
+
+  // No account has private swap work, so a recovery round is idle.
+  @override
+  Future<rust_swap.SwapRecoveryRound> crateApiOneTimeIvkRunSwapRecovery({
+    required String dbPath,
+    required String networkName,
+    required BigInt generation,
+  }) async => rust_swap.SwapRecoveryRound(
+    changed: false,
+    checked: false,
+    more: false,
+    rescan: false,
+  );
+
+  @override
+  void crateApiOneTimeIvkCancelSwapRecovery() {}
 
   @override
   bool crateApiSyncIsSyncCancelRequested() => false;
@@ -104,6 +125,8 @@ class _Api extends RustLibApi {
       orchardPending: BigInt.zero,
       ironwoodPending: BigInt.zero,
       changePendingConfirmation: BigInt.zero,
+      pendingSpendable: const [],
+      pendingSpendableTipHeight: 0,
       valuePendingSpendability: BigInt.zero,
       uneconomicValue: BigInt.zero,
       spendable: amount,

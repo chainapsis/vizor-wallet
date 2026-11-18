@@ -45,7 +45,7 @@ captured from the official RPCs on the listed dates:
 <!-- voting-validator-anchors:start -->
 | Network | Chain | RPC | Captured | Validator-set hash |
 | --- | --- | --- | --- | --- |
-| main | zvote-1 | https://vote-rpc-primary.valargroup.org | 2026-11-02 | E2E8170C807DAB936C75A02E092E9EE81C9F4776B03BA672FCD3DFF7AB2FD8C1 |
+| main | zvote-1 | https://vote-rpc-primary.valargroup.org | 2026-11-16 | C2CD3D284498035F3237D4072E1D65E6CB1D8D4962C43AD628B84821014D7866 |
 | test | svote-1 | https://stage.vote-rpc-primary.valargroup.org | 2026-09-10 | 6E81F631CB63A527AB5A659529BA8942C46CCF78BA87D1B3AD4CF8AE5BDC2E8B |
 <!-- voting-validator-anchors:end -->
 

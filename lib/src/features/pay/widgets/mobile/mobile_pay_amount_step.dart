@@ -14,11 +14,16 @@ import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../../core/widgets/pool_badge.dart';
 import '../../../swap/models/swap_models.dart';
 import '../../../swap/widgets/swap_asset_icon.dart';
+import '../../../swap/widgets/swap_quote_error_text.dart';
+import '../../../swap/widgets/swap_confidential_ui.dart';
 import '../../../../core/widgets/mobile/mobile_amount_card.dart';
 import '../../models/pay_amount_input.dart';
 
-const _slippageButtonWidth = 90.0;
 const _slippageIconSize = 20.0;
+
+/// The confidential mark's slot and its gap before the label.
+const _slippageMarkWidth = _slippageIconSize + AppSpacing.xxs;
+const _slippageButtonWidth = 90.0 + _slippageMarkWidth;
 
 /// Mobile Pay amount step from the 393 px Figma frame. The screen host owns
 /// top navigation; this widget fills the remaining height and pins its actions
@@ -29,11 +34,13 @@ class MobilePayAmountStep extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.zecAvailableZatoshi,
+    this.balanceMessage,
     required this.onAmountChanged,
     required this.onFiatAmountChanged,
     required this.onToggleFiatInputMode,
     required this.onOpenAssetSelector,
     required this.slippageLabel,
+    required this.confidentialReveal,
     required this.onOpenSlippage,
     required this.onContinue,
     super.key,
@@ -43,17 +50,23 @@ class MobilePayAmountStep extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final BigInt zecAvailableZatoshi;
+
+  /// Why [zecAvailableZatoshi] can't fund the payment, in place of
+  /// "Not enough ZEC".
+  final String? balanceMessage;
   final ValueChanged<String> onAmountChanged;
   final ValueChanged<String> onFiatAmountChanged;
   final VoidCallback onToggleFiatInputMode;
   final VoidCallback onOpenAssetSelector;
   final String slippageLabel;
+
+  /// Raised each time confidential turns on, landing the mark once.
+  final int confidentialReveal;
   final VoidCallback onOpenSlippage;
   final VoidCallback onContinue;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final precisionError = state.quoteAmountPrecisionError(context.l10n);
     final balanceExceeded = payAmountExceedsAvailableZec(
       state,
@@ -93,17 +106,15 @@ class MobilePayAmountStep extends StatelessWidget {
                 _EstimatedZecRow(state: state),
                 if (errorText != null || balanceExceeded) ...[
                   const SizedBox(height: AppSpacing.s),
-                  Text(
-                    balanceExceeded
-                        ? context.l10n.commonNotEnoughZec
+                  SwapQuoteErrorText(
+                    message: balanceExceeded
+                        ? balanceMessage ?? context.l10n.commonNotEnoughZec
                         : errorText!,
-                    key: const ValueKey('mobile_pay_amount_error'),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.destructive,
-                    ),
+                    textKey: const ValueKey('mobile_pay_amount_error'),
+                    maxLines: balanceExceeded && balanceMessage != null
+                        ? null
+                        : 2,
+                    style: AppTypography.bodyMedium,
                   ),
                 ],
               ],
@@ -119,7 +130,8 @@ class MobilePayAmountStep extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              // Icon, gap, label-slot padding and the custom button padding.
+              // Mark, icon, gaps, label-slot padding and the custom button
+              // padding.
               final slippageWidth = math.max(
                 _slippageButtonWidth,
                 _scaledTextWidth(
@@ -127,6 +139,7 @@ class MobilePayAmountStep extends StatelessWidget {
                       slippageLabel,
                       AppTypography.labelLarge,
                     ) +
+                    _slippageMarkWidth +
                     _slippageIconSize +
                     AppSpacing.xxs * 5,
               );
@@ -142,7 +155,17 @@ class MobilePayAmountStep extends StatelessWidget {
                     horizontal: AppSpacing.xxs,
                   ),
                   onPressed: onOpenSlippage,
-                  trailing: const AppIcon(AppIcons.cog, size: _slippageIconSize),
+                  // Shows the confidential route the settings it opens can
+                  // set, crimson while it is on.
+                  leading: SwapConfidentialIcon(
+                    on: state.confidential,
+                    reveal: confidentialReveal,
+                    labeled: state.confidential,
+                  ),
+                  trailing: const AppIcon(
+                    AppIcons.cog,
+                    size: _slippageIconSize,
+                  ),
                   child: Text(
                     slippageLabel,
                     maxLines: 1,

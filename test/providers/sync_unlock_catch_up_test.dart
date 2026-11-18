@@ -88,6 +88,10 @@ class _Api extends RustLibApi {
     return controller.stream;
   }
 
+  /// Accepts the receiver-round cancellation the sync notifier sends.
+  @override
+  void crateApiOneTimeIvkCancelSwapRecovery() {}
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -275,6 +279,8 @@ rust_sync.WalletBalance _walletBalance({
   orchardPending: BigInt.zero,
   ironwoodPending: BigInt.zero,
   changePendingConfirmation: BigInt.zero,
+  pendingSpendable: const [],
+  pendingSpendableTipHeight: 0,
   valuePendingSpendability: BigInt.zero,
   uneconomicValue: BigInt.zero,
   spendable: BigInt.from(orchard),

@@ -457,6 +457,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptCardFee => 'Card fee';
 
   @override
+  String get activityReceiptConfirmations => 'Confirmations';
+
+  @override
+  String activityReceiptConfirmationsProgress(String count, String required) {
+    return '$count of $required';
+  }
+
+  @override
   String get activityReceiptDetails => 'Details';
 
   @override
@@ -1183,6 +1191,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonAmount => 'Amount';
 
   @override
+  String commonAvailableInMinutes(String min, String max) {
+    return 'Available in $min–$max min';
+  }
+
+  @override
+  String get commonAvailableInUnderMinute => 'Available in under 1 min';
+
+  @override
   String get commonBack => 'Back';
 
   @override
@@ -1907,6 +1923,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonWelcomeBack => 'Welcome Back';
+
+  @override
+  String get commonWhatsThis => 'What\'s this?';
 
   @override
   String get commonWizard => 'Wizard';
@@ -6284,6 +6303,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navVote => 'Vote';
 
   @override
+  String get nearSwapPrivacyUnsaved =>
+      'Couldn\'t save this choice. It applies until you close Vizor.';
+
+  @override
   String get networkPrivacyFinishUpdateBeforeTorOff =>
       'Finish the current software update before turning off Tor.';
 
@@ -7060,6 +7083,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get payFetchingQuote => 'Fetching quote';
+
+  @override
+  String payIronwoodOnlyShortfall(String amount) {
+    return 'Private payments use Ironwood ZEC only. You have $amount there.';
+  }
 
   @override
   String get payNewAddressDetected => 'New address detected.';
@@ -8765,6 +8793,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendAmountCtaEnterAmount => 'Enter amount to continue';
 
   @override
+  String get sendAvailableChangeRow => 'Finishing your last payment';
+
+  @override
+  String get sendAvailableFootnote =>
+      'Funds are available after a few network confirmations.';
+
+  @override
+  String get sendAvailableReceivedRow => 'Just received';
+
+  @override
+  String get sendAvailableTitle => 'Available now';
+
+  @override
   String get sendBroadcastCancelledBeforeParams =>
       'Sending was cancelled before proving parameters were downloaded.';
 
@@ -9466,6 +9507,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendStatusMobileReturnToSettings => 'Return to settings';
 
   @override
+  String sendStatusMobileSendAgainIn(String min, String max) {
+    return 'It will confirm on-chain shortly. You can send again in $min–$max min.';
+  }
+
+  @override
   String get sendStatusMobileSendingDonation => 'Sending donation...';
 
   @override
@@ -9522,6 +9568,16 @@ class AppLocalizationsEn extends AppLocalizations {
       one: '1 previous transaction',
     );
     return '$_temp0';
+  }
+
+  @override
+  String sendWaitingMoreInMinutes(String amount, String min, String max) {
+    return '+$amount in $min–$max min';
+  }
+
+  @override
+  String sendWaitingMoreInUnderMinute(String amount) {
+    return '+$amount in under 1 min';
   }
 
   @override
@@ -9753,6 +9809,70 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsLanguageUpdateFailed => 'Couldn\'t update language.';
+
+  @override
+  String get settingsNearSwapPrivacyCheckingPastSwaps => 'Checking past swaps';
+
+  @override
+  String get settingsNearSwapPrivacyHardware =>
+      'Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoChangesBody =>
+      'Swaps that send ZEC are paid from your Ironwood balance only. A swap can take a few minutes to prepare while Vizor checks its address\'s history.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoChangesTitle => 'What changes';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLead =>
+      'Each swap gives NEAR Intents a one-time Zcash address for its ZEC side, the payout when you receive ZEC or the refund when you send it. Even a future quantum computer can\'t tie it to this wallet.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLimitsBody =>
+      'It keeps these addresses from being tied to your wallet; it doesn\'t change how your funds are secured. Addresses you enter yourself, like an Ethereum address you reuse, can still link your swaps. Hardware wallet accounts use regular addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoLimitsTitle => 'What it doesn\'t cover';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestore =>
+      'After a restore, your wallet finds these payments privately on its own. If this is off when you restore, payouts of swaps into ZEC show up once you turn it on or run Check swap history. Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestoreTitle =>
+      'After a restore, or while it is off';
+
+  @override
+  String get settingsNearSwapPrivacyInfoReuse =>
+      'A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoReuseTitle =>
+      'When a payout address is shared';
+
+  @override
+  String get settingsNearSwapPrivacyLabel => 'Enhance swap privacy';
+
+  @override
+  String get settingsNearSwapPrivacyLearnMore => 'Learn more';
+
+  @override
+  String get settingsNearSwapPrivacyLearnMoreSemantics =>
+      'Learn more about Enhance swap privacy';
+
+  @override
+  String get settingsNearSwapPrivacyOff => 'Swaps use regular Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyOn => 'Swaps use one-time Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyUnavailable => 'Not available';
+
+  @override
+  String get settingsNearSwapPrivacyUnknown =>
+      'Vizor couldn\'t read your saved choice. Set it again to swap.';
 
   @override
   String get settingsNewBadge => 'New';
@@ -10022,6 +10142,56 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsStatusOn => 'On';
+
+  @override
+  String get settingsSwapHistoryCheckAgainButton => 'Check again';
+
+  @override
+  String get settingsSwapHistoryCheckButton => 'Check swap history';
+
+  @override
+  String get settingsSwapHistoryChecking =>
+      'Checking… this can take a few minutes.';
+
+  @override
+  String get settingsSwapHistoryContinuing =>
+      'The check will keep going while Vizor is open.';
+
+  @override
+  String get settingsSwapHistoryDone => 'Check complete.';
+
+  @override
+  String get settingsSwapHistoryFailed =>
+      'Swap history can\'t be checked right now. Try again later.';
+
+  @override
+  String get settingsSwapHistoryIdle => 'Missing a payout or refund?';
+
+  @override
+  String get settingsSwapHistoryNotStarted =>
+      'The check couldn\'t start. Try again in a moment.';
+
+  @override
+  String get settingsSwapHistoryPauseButton => 'Pause';
+
+  @override
+  String get settingsSwapHistoryPauseFailed =>
+      'Couldn\'t pause the check. Try again.';
+
+  @override
+  String get settingsSwapHistoryPaused => 'Paused. Check again to resume.';
+
+  @override
+  String get settingsSwapHistoryWaitingForService =>
+      'The swap recovery service hasn\'t caught up with this wallet yet. Try again in a few minutes.';
+
+  @override
+  String get settingsSwapHistoryWaitingForSync =>
+      'Waiting for wallet sync. Try again in a few minutes.';
+
+  @override
+  String get settingsSwapHistoryWalletChanged =>
+      'The check stopped because the wallet changed. Try again.';
 
   @override
   String get settingsThemeDark => 'Dark';
@@ -10453,6 +10623,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapActionAddRefundAddress => 'Add refund address';
 
   @override
+  String get swapActionGetConfidentialQuote => 'Get confidential quote';
+
+  @override
   String get swapActionGettingQuote => 'Getting quote';
 
   @override
@@ -10731,6 +10904,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepFindingPayoutDescription =>
+      'NEAR sent it to your one-time address. Vizor is finding it.';
+
+  @override
   String get swapActivityStepRecipientReceives => 'Recipient receives';
 
   @override
@@ -10854,6 +11031,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapAddressRememberRefund => 'Remember this address for refunds';
 
   @override
+  String get swapAddressWaitServer => 'Choose a server';
+
+  @override
+  String get swapAddressWaitSync => 'Waiting for sync…';
+
+  @override
   String get swapAssetSelectorEmpty => 'No tokens or chains found';
 
   @override
@@ -10876,6 +11059,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapComposerYouReceive => 'You receive';
+
+  @override
+  String get swapConfidentialLabel => 'Confidential';
+
+  @override
+  String get swapConfidentialRouteTooltip =>
+      'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.';
+
+  @override
+  String get swapConfidentialSettingDescription =>
+      'Your deposit and payout can\'t be tracked to each other.';
 
   @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';
@@ -10916,6 +11110,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapDepositOneTimeAddress => 'One-time address';
+
+  @override
+  String get swapDepositRecoveryHelp => 'What if I deposit incorrectly?';
+
+  @override
+  String get swapDepositRecoveryIntro =>
+      'Sending the wrong token or using a different network may prevent your deposit from being credited.';
+
+  @override
+  String get swapDepositRecoveryPolicy =>
+      'NEAR Intents does not consider recovery requests for incorrect deposits worth less than \$300 at the time of transfer. For amounts of \$300 or more, NEAR Intents decides whether to help recover the funds on a case-by-case basis.';
+
+  @override
+  String get swapDepositRecoveryTitle => 'Incorrect deposits';
 
   @override
   String swapDepositSendOnly(String symbol, String chain) {
@@ -11032,12 +11240,28 @@ class AppLocalizationsEn extends AppLocalizations {
       'Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.';
 
   @override
+  String get swapFailureZecDepositIronwoodFunding =>
+      'Private swaps use Ironwood ZEC only, which can\'t cover this swap and its network fee.\nMove funds to Ironwood or try a smaller amount.';
+
+  @override
+  String get swapFailureZecDepositIronwoodFundingPay =>
+      'Private payments use Ironwood ZEC only, which can\'t cover this payment and its network fee.\nMove funds to Ironwood or try a smaller amount.';
+
+  @override
   String get swapFailureZecDepositPreflight =>
       'ZEC deposit could not be prepared.\nCheck your balance and try again.';
 
   @override
   String get swapFailureZecDepositSendFailed =>
       'ZEC deposit could not be sent.\nTry again later.';
+
+  @override
+  String get swapFindingPayout => 'Finding your ZEC…';
+
+  @override
+  String swapIronwoodOnlyShortfall(String amount) {
+    return 'Private swaps use Ironwood ZEC only. You have $amount there.';
+  }
 
   @override
   String get swapKeystoneBroadcastFailed =>
@@ -11176,10 +11400,41 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapNoticeNearSwapPrivacyUnknown =>
+      'Vizor couldn\'t read Enhance swap privacy. Set it again in Settings.';
+
+  @override
+  String get swapNoticeNoConfidentialQuoteForAmount =>
+      'No confidential quote for this amount';
+
+  @override
+  String get swapNoticeNoQuoteForAmount => 'No quote for this amount';
+
+  @override
   String get swapNoticeOk => 'Ok';
 
   @override
   String get swapNoticePaymentsMayFail => 'Payments may not work right now.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressLimit =>
+      'Too many swaps are waiting. Try again after one finishes or expires.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparationFailed =>
+      'Could not prepare a fresh wallet receive address. Try again after wallet sync.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressPreparing =>
+      'Preparing a private swap address. Try again in a moment.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressStale =>
+      'This swap address is no longer available. Request a new quote.';
+
+  @override
+  String get swapNoticePrivateReceiveAddressUnavailable =>
+      'Private swaps aren\'t available right now. Try again in a few minutes.';
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>
@@ -11194,10 +11449,39 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapNoticeStartNotFinished =>
+      'Vizor couldn\'t confirm this swap started. Check whether you already sent its deposit before starting another.';
+
+  @override
   String get swapNoticeStatusPage => 'NEAR Intents status page';
 
   @override
   String get swapNoticeSwapsMayFail => 'Swaps may not work right now.';
+
+  @override
+  String get swapOneTimeAddressLabel => 'One-time address';
+
+  @override
+  String get swapOneTimeAddressPayoutExplanation =>
+      'A one-time Zcash address for this swap. Even a future quantum computer can\'t tie it to your wallet.';
+
+  @override
+  String get swapOneTimeAddressPreparing => 'Preparing address…';
+
+  @override
+  String get swapOneTimeAddressPreparingExplanation =>
+      'Vizor is checking this address\'s history before using it. This can take a few minutes.';
+
+  @override
+  String get swapOneTimeAddressPreparingSemantics =>
+      'Preparing one-time address';
+
+  @override
+  String get swapOneTimeAddressRefundExplanation =>
+      'If this swap is refunded, the ZEC comes back to a one-time Zcash address. Even a future quantum computer can\'t tie it to your wallet.';
+
+  @override
+  String get swapOneTimeRefundAddressLabel => 'One-time refund address';
 
   @override
   String get swapPageTitle => 'Swap';
@@ -11231,7 +11515,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapPayStatusSourceAmount => 'Source amount';
 
   @override
+  String get swapPayoutUpdateRequired =>
+      'Update Vizor to keep checking this swap\'s payout. Your funds are safe.';
+
+  @override
   String get swapPoweredByLabel => 'Powered by';
+
+  @override
+  String get swapQuoteErrorViewSwaps => 'View swaps';
 
   @override
   String swapQuoteExpiresAt(String time) {
@@ -11243,6 +11534,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapQuoteRatePending => 'Rate pending';
+
+  @override
+  String get swapRecoveryUpdateRequired =>
+      'Update Vizor to keep using private swaps.';
+
+  @override
+  String get swapRefundUpdateRequired =>
+      'Update Vizor to keep checking this swap\'s refund. Your funds are safe.';
 
   @override
   String get swapReviewBackPay => 'Pay';
@@ -11298,6 +11597,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapSettingsTitlePay => 'Payment settings';
+
+  @override
+  String get swapSettingsTitleSwap => 'Swap settings';
+
+  @override
   String get swapSignPayment => 'Sign payment';
 
   @override
@@ -11305,6 +11610,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapSlippageCustom => 'Custom';
+
+  @override
+  String get swapSlippageCustomValueSemantics =>
+      'Custom slippage tolerance, percent';
+
+  @override
+  String get swapSlippageDecrease => 'Decrease slippage';
 
   @override
   String get swapSlippageDescriptionPay =>
@@ -11315,10 +11627,24 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sets the maximum rate change you\'ll accept. Network fees are separate.';
 
   @override
+  String get swapSlippageIncrease => 'Increase slippage';
+
+  @override
+  String swapSlippagePresetSemantics(String value) {
+    return '$value slippage';
+  }
+
+  @override
   String get swapSlippageRangeError => 'Slippage must be 0.1 - 5%';
 
   @override
   String get swapSlippageTitle => 'Slippage';
+
+  @override
+  String get swapSlippageValueSemantics => 'Slippage tolerance, percent';
+
+  @override
+  String get swapStartPending => 'Starting swap…';
 
   @override
   String get swapStatusBadgeNeedsAttention => 'Needs attention';
@@ -11328,6 +11654,54 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapStatusRowLabel => 'Status';
+
+  @override
+  String get swapSupportConfidentialRoute => 'Route: Confidential';
+
+  @override
+  String get swapSupportCopyAction => 'Copy deposit details';
+
+  @override
+  String get swapSupportCopyFailed => 'Couldn’t copy the details. Try again.';
+
+  @override
+  String swapSupportDetails(
+    String status,
+    String address,
+    String txHash,
+    String routeDetails,
+  ) {
+    return 'Could you check this transaction and its refund status?\n\nProvider status: $status\nDeposit address: $address\nDeposit transaction: $txHash\n$routeDetails';
+  }
+
+  @override
+  String get swapSupportDirectHelp =>
+      'If you still need help, copy the deposit details and paste them into an email to the address below.';
+
+  @override
+  String get swapSupportExpiredBody =>
+      'Check the transaction in the wallet you sent from. If your deposit arrived late, NEAR may try to refund it to your refund address.';
+
+  @override
+  String get swapSupportExpiredPrompt => 'Sent a deposit?';
+
+  @override
+  String get swapSupportExpiredTitle => 'Check your deposit';
+
+  @override
+  String swapSupportExplorer(String explorer) {
+    return 'Explorer: $explorer';
+  }
+
+  @override
+  String get swapSupportFailedBody =>
+      'Check the refund address in your transaction details.';
+
+  @override
+  String get swapSupportFailedPrompt => 'No refund yet?';
+
+  @override
+  String get swapSupportFailedTitle => 'Check your refund';
 
   @override
   String get swapSwitchDirection => 'Switch swap direction';

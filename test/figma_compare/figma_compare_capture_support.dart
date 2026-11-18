@@ -134,6 +134,29 @@ void runFigmaCompareCaptureTest({
     // too; a single pump may capture its first, almost invisible frame.
     await tester.pump(const Duration(milliseconds: 400));
 
+    if (scenario.id == 'activity-swap-failed-support' ||
+        scenario.id == 'activity-pay-failed-support') {
+      final prompt = find.byKey(const ValueKey('swap_support_prompt'));
+      await tester.ensureVisible(prompt);
+      await tester.tap(prompt);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    if (scenario.id == 'activity-swap-deposit-recovery-open') {
+      final help = find.byKey(const ValueKey('swap_deposit_recovery_help'));
+      await tester.ensureVisible(help);
+      await tester.tap(help);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.byKey(const ValueKey('swap_deposit_recovery_details')),
+        findsOneWidget,
+      );
+    }
+
     if (scenario.scrollToEnd) {
       final scrollable = find.byType(Scrollable);
       expect(scrollable, findsOneWidget);

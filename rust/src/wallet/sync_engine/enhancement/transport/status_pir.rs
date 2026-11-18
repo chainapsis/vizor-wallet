@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use super::{routed_response, RoutedTransport};
+use super::{routed_response, RoutedTransport, HTTP_TIMEOUT};
 
 const STATUS_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -98,6 +98,7 @@ impl<F: Fn() -> bool> StatusPirTransport<'_, F> {
                 body,
                 self.route.should_exit,
                 &self.route.direct,
+                HTTP_TIMEOUT,
             )
             .await
             .map_err(|_| Error::Unavailable)?;

@@ -1,11 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/l10n.dart';
+import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_section.dart';
+import '../near_swap_privacy_info.dart';
+import '../settings_sub_option.dart';
 import 'mobile_tor_control.dart';
 import 'mobile_private_queries_control.dart';
 export 'mobile_tor_control.dart' show MobilePrivacyToggle;
+
+const _rowHeight = 44.0;
+const _rowIconSize = 20.0;
 
 /// Mobile Tor control.
 ///
@@ -13,11 +23,13 @@ export 'mobile_tor_control.dart' show MobilePrivacyToggle;
 /// mostly about desktop software updates, which mobile gets from the app
 /// stores, and its toggle geometry belongs to a settings page rather than a
 /// grouped card. The state machine behind both is the same provider.
-class MobileNetworkPrivacyCard extends StatelessWidget {
+class MobileNetworkPrivacyCard extends ConsumerWidget {
   const MobileNetworkPrivacyCard({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final nearSwapPrivacy = ref.watch(nearSwapPrivacySettingProvider);
     // Titled above its card like the Settings list groups.
     return MobileSection(
       title: context.l10n.settingsPrivacyTitle,
@@ -27,12 +39,170 @@ class MobileNetworkPrivacyCard extends StatelessWidget {
         AppSpacing.sm,
         AppSpacing.md,
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          MobileTorControl(),
-          MobilePrivateQueriesControl(divided: true),
+          const MobileTorControl(),
+          const MobilePrivateQueriesControl(divided: true),
+          if (nearSwapPrivacy != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            // An option of Private queries: its icon sits under the label
+            // above, and the hook starts under that row's icon.
+            SettingsSubOption(
+              key: const ValueKey(
+                'mobile_settings_near_swap_privacy_sub_option',
+              ),
+              indent: _rowIconSize + AppSpacing.s,
+              lineX: _rowIconSize / 2,
+              rowCenter: _rowHeight / 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _MobileSubOptionRow(
+                    iconName: AppIcons.linkOff,
+                    label: context.l10n.settingsNearSwapPrivacyLabel,
+                    keyPrefix: 'mobile_settings_near_swap_privacy',
+                    enabled: nearSwapPrivacy.enabled,
+                    unavailableLabel: nearSwapPrivacy.available
+                        ? null
+                        : context.l10n.settingsNearSwapPrivacyUnavailable,
+                    onToggle: nearSwapPrivacy.available
+                        ? () => unawaited(
+                            ref.read(nearSwapPrivacyProvider.notifier).toggle(),
+                          )
+                        : null,
+                  ),
+                  // Feedback for this toggle only, as under Private queries.
+                  if (nearSwapPrivacy.transition case final transition?)
+                    Text(
+                      transition.message(context.l10n),
+                      key: const ValueKey(
+                        'mobile_settings_near_swap_privacy_transition',
+                      ),
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    nearSwapPrivacy.description.text(context.l10n),
+                    key: const ValueKey(
+                      'mobile_settings_near_swap_privacy_description',
+                    ),
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                  if (nearSwapPrivacy.checkingPastSwaps) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    const NearSwapPrivacyCheckingPastSwaps(),
+                  ],
+                  const SizedBox(height: AppSpacing.xs),
+                  const NearSwapPrivacyLearnMore(),
+                ],
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// A sub-option row: the icon under the parent's label as on desktop, the
+/// label with its status under it, and the switch at the end. At 320px with
+/// large text the label wraps to three lines rather than truncating.
+class _MobileSubOptionRow extends StatelessWidget {
+  const _MobileSubOptionRow({
+    required this.iconName,
+    required this.label,
+    required this.keyPrefix,
+    required this.enabled,
+    required this.onToggle,
+    this.unavailableLabel,
+  });
+  final String iconName;
+  final String label;
+  final String keyPrefix;
+  final bool enabled;
+  final VoidCallback? onToggle;
+
+  /// Shown in place of On/Off, with no switch, where the setting doesn't
+  /// apply.
+  final String? unavailableLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final unavailable = unavailableLabel != null;
+    return Semantics(
+      container: true,
+      button: !unavailable,
+      toggled: unavailable ? null : enabled,
+      enabled: onToggle != null,
+      label: unavailable ? '$label, $unavailableLabel' : label,
+      onTap: onToggle,
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: ValueKey('${keyPrefix}_row'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onToggle,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _rowHeight),
+          child: Padding(
+            padding: const EdgeInsetsDirectional.only(end: AppSpacing.xxs),
+            child: Row(
+              children: [
+                AppIcon(
+                  iconName,
+                  size: _rowIconSize,
+                  color: enabled && !unavailable
+                      ? colors.icon.brandCrimson
+                      : colors.icon.muted,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                      Text(
+                        unavailableLabel ??
+                            (enabled
+                                ? context.l10n.settingsStatusOn
+                                : context.l10n.settingsStatusOff),
+                        key: ValueKey('${keyPrefix}_status'),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: enabled && !unavailable
+                              ? colors.text.brandCrimson
+                              : colors.text.secondary,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!unavailable) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  MobilePrivacyToggle(
+                    key: ValueKey('${keyPrefix}_toggle'),
+                    enabled: enabled,
+                    interactive: onToggle != null,
+                    thumbKey: ValueKey('${keyPrefix}_toggle_thumb'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

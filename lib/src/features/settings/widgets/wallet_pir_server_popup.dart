@@ -52,7 +52,8 @@ Future<void> showWalletPirServerPopup(BuildContext context) async {
   );
 }
 
-/// A quiet settings action beside Private queries, unavailable while off.
+/// A quiet settings action beside Private queries, unavailable while nothing
+/// uses the server.
 class WalletPirServerSettingsButton extends StatelessWidget {
   const WalletPirServerSettingsButton({required this.enabled, super.key});
 
@@ -87,8 +88,9 @@ class WalletPirServerSettingsButton extends StatelessWidget {
 }
 
 /// Mobile's way into the server settings: a chevron row under the Private
-/// queries description, shown only while private queries are on. Desktop
-/// keeps the cog beside the toggle ([WalletPirServerSettingsButton]).
+/// queries description, shown while private queries or swap recovery use the
+/// server. Desktop keeps the cog beside the toggle
+/// ([WalletPirServerSettingsButton]).
 class WalletPirServerSettingsRow extends StatelessWidget {
   const WalletPirServerSettingsRow({required this.enabled, super.key});
 

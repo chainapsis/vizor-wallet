@@ -129,8 +129,15 @@ pub(crate) const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
 const ZCASH_SIGN_STATUS_SIGNED: u32 = 0;
 // The firmware supports at most 40 PCZTs per signing request.
 pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 40;
-// Keep the displayed QR short enough to scan comfortably in both directions.
-pub(crate) const ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES: usize = 80 * 1024;
+// Keystone firmware 3.1.4 and later reject a `zcash-sign-batch` UR whose
+// reassembled CBOR is longer than 32 KiB (`ur_budget.rs` in
+// KeystoneHQ/keystone3-firmware, cypherpunk build). The device checks the
+// fountain message length on the first frame, so a larger round fails before
+// signing starts. The limit is inclusive.
+pub(crate) const ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES: usize = 32 * 1024;
+// The same firmware check rejects a UR split into more than 256 fountain
+// fragments.
+const ZCASH_SIGN_BATCH_MAX_UR_FRAGMENTS: usize = 256;
 // Keep the signature-only response small enough to scan comfortably.
 pub(crate) const ZCASH_SIGN_BATCH_MAX_SIGNATURES: usize = 96;
 // Keep the resolved firmware representation 46 KiB below the signer's
@@ -771,7 +778,14 @@ pub fn encode_zcash_sign_batch_ur_parts(
     }
     let mut ur_encoder = ur::Encoder::new(&cbor, max_fragment_len, ZCASH_SIGN_BATCH_TYPE)
         .map_err(|e| format!("UR encoder: {e}"))?;
-    let count = ur_part_count(ur_encoder.fragment_count());
+    let fragment_count = ur_encoder.fragment_count();
+    if fragment_count > ZCASH_SIGN_BATCH_MAX_UR_FRAGMENTS {
+        return Err(format!(
+            "Zcash batch QR request needs {fragment_count} fragments; Keystone accepts at most \
+             {ZCASH_SIGN_BATCH_MAX_UR_FRAGMENTS}"
+        ));
+    }
+    let count = ur_part_count(fragment_count);
     let mut parts = Vec::with_capacity(count);
     for _ in 0..count {
         let part = ur_encoder
@@ -1233,6 +1247,61 @@ mod tests {
             format!(
                 "Zcash batch QR request exceeds {ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES} bytes"
             )
+        );
+    }
+
+    #[test]
+    fn compact_qr_limit_matches_keystone_firmware() {
+        // keystone3-firmware `ur_budget.rs` (3.1.4+): reassembled
+        // `zcash-sign-batch` CBOR <= 32 KiB in at most 256 fountain parts.
+        assert_eq!(ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES, 32 * 1024);
+        assert_eq!(ZCASH_SIGN_BATCH_MAX_UR_FRAGMENTS, 256);
+    }
+
+    #[test]
+    fn round_planner_keeps_every_round_within_firmware_qr_limit() {
+        // Five 8-KiB messages cannot share one 32-KiB request.
+        let messages: Vec<_> = (1..=5)
+            .map(|i| ZcashBatchMessageInput {
+                id: format!("tx-{i}"),
+                pczt_bytes: test_pczt_bytes_with_padding(i, 8 * 1024),
+                expected_signature_count: 0,
+            })
+            .collect();
+
+        let counts =
+            zcash_sign_batch_round_message_counts("request-firmware-limit", &messages, 40)
+                .expect("messages should partition");
+
+        assert!(counts.len() > 1, "expected several rounds, got {counts:?}");
+        assert_eq!(counts.iter().sum::<u32>(), 5);
+        let rounds = counts.len();
+        let mut start = 0usize;
+        for (index, count) in counts.iter().enumerate() {
+            let end = start + *count as usize;
+            let request_id = format!("request-firmware-limit-round-{}-of-{rounds}", index + 1);
+            let parts = encode_zcash_sign_batch_ur_parts(&request_id, &messages[start..end], 200)
+                .expect("planned round should encode");
+            assert!(decode_test_ur_parts(&parts).len() <= 32 * 1024);
+            start = end;
+        }
+    }
+
+    #[test]
+    fn rejects_zcash_sign_batch_above_firmware_fragment_limit() {
+        let messages = [ZcashBatchMessageInput {
+            id: "tx-1".to_string(),
+            pczt_bytes: test_pczt_bytes_with_padding(1, 16 * 1024),
+            expected_signature_count: 0,
+        }];
+
+        // About 16 KiB in 50-byte fragments needs more than 256 parts.
+        let err = encode_zcash_sign_batch_ur_parts("request-many-parts", &messages, 50)
+            .expect_err("too many fragments should fail");
+
+        assert!(
+            err.contains("Keystone accepts at most 256"),
+            "unexpected error: {err}"
         );
     }
 

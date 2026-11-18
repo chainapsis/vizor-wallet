@@ -1,23 +1,51 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/private_transparent_recovery_config.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import 'network_privacy_control.dart';
 import 'wallet_pir_server_popup.dart';
-import '../../../providers/enhance_pir_provider.dart';
 
-class EnhancePirPrivacyControl extends StatelessWidget {
+class EnhancePirPrivacyControl extends ConsumerWidget {
   const EnhancePirPrivacyControl({
     required this.enabled,
     required this.onToggle,
     required this.transition,
+    this.label,
+    this.keyPrefix = 'settings_enhance_pir',
+    this.description,
+    this.serverSettings = true,
+    this.iconName = AppIcons.eye,
+    this.unavailableLabel,
+    this.footer = const [],
     super.key,
   });
 
+  /// The row's label, or null for Private queries.
+  final String? label;
+  final String keyPrefix;
+
+  /// The text under the row, or null for the Private queries explanation.
+  final String? description;
   final bool enabled;
   final VoidCallback? onToggle;
+
+  final String iconName;
+
+  /// Shown in place of On/Off, with no switch, where the setting doesn't
+  /// apply.
+  final String? unavailableLabel;
+
+  /// Lines under the description, on its left edge, such as progress and a
+  /// "Learn more" button.
+  final List<Widget> footer;
+
+  /// Shows the private query server picker after the label. Only the Private
+  /// queries row owns the server choice.
+  final bool serverSettings;
 
   /// Feedback for the user's own toggle only. Recovery queue counts are
   /// deliberately not surfaced here: they are dominated by obligations that
@@ -28,8 +56,13 @@ class EnhancePirPrivacyControl extends StatelessWidget {
   /// Whether this build's private queries also recover transparent funds.
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    // Swap recovery uses the server too, so its picker works for that alone.
+    final serverEnabled =
+        serverSettings &&
+        onToggle != null &&
+        (enabled || ref.watch(swapRecoveryUsesServerProvider).value == true);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -43,9 +76,9 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                   dimension: 20,
                   child: Center(
                     child: AppIcon(
-                      AppIcons.eye,
+                      iconName,
                       size: 20,
-                      color: enabled
+                      color: enabled && unavailableLabel == null
                           ? colors.icon.brandCrimson
                           : colors.icon.muted,
                     ),
@@ -61,7 +94,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              context.l10n.settingsPrivateQueriesLabel,
+                              label ?? context.l10n.settingsPrivateQueriesLabel,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTypography.labelLarge.copyWith(
@@ -69,20 +102,23 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          WalletPirServerSettingsButton(
-                            enabled: enabled && onToggle != null,
-                          ),
+                          if (serverSettings) ...[
+                            const SizedBox(width: AppSpacing.xxs),
+                            WalletPirServerSettingsButton(
+                              enabled: serverEnabled,
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        enabled
-                            ? context.l10n.settingsStatusOn
-                            : context.l10n.settingsStatusOff,
-                        key: const ValueKey('settings_enhance_pir_status'),
+                        unavailableLabel ??
+                            (enabled
+                                ? context.l10n.settingsStatusOn
+                                : context.l10n.settingsStatusOff),
+                        key: ValueKey('${keyPrefix}_status'),
                         style: AppTypography.labelLarge.copyWith(
-                          color: enabled
+                          color: enabled && unavailableLabel == null
                               ? colors.text.brandCrimson
                               : colors.text.secondary,
                           fontWeight: FontWeight.w400,
@@ -91,14 +127,17 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                PrivacyToggle(
-                  key: const ValueKey('settings_enhance_pir_toggle'),
-                  trackKey: const ValueKey('settings_enhance_pir_toggle_track'),
-                  enabled: enabled,
-                  semanticsLabel: context.l10n.settingsPrivateQueriesLabel,
-                  onToggle: onToggle,
-                ),
+                if (unavailableLabel == null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  PrivacyToggle(
+                    key: ValueKey('${keyPrefix}_toggle'),
+                    trackKey: ValueKey('${keyPrefix}_toggle_track'),
+                    enabled: enabled,
+                    semanticsLabel:
+                        label ?? context.l10n.settingsPrivateQueriesLabel,
+                    onToggle: onToggle,
+                  ),
+                ],
               ],
             ),
           ),
@@ -107,7 +146,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             transition!.message(context.l10n),
-            key: const ValueKey('settings_enhance_pir_transition'),
+            key: ValueKey('${keyPrefix}_transition'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -117,13 +156,17 @@ class EnhancePirPrivacyControl extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            privateQueriesSettingsCopy(context.l10n),
-            key: const ValueKey('settings_enhance_pir_description'),
+            description ?? privateQueriesSettingsCopy(context.l10n),
+            key: ValueKey('${keyPrefix}_description'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
           ),
         ),
+        for (final line in footer) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(alignment: AlignmentDirectional.centerStart, child: line),
+        ],
       ],
     );
   }

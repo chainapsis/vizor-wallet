@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/models/swap_activity_status_mapper.dart';
 import '../../../swap/models/swap_models.dart';
+import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_panel.dart';
 import '../../../../core/l10n/l10n.dart';
@@ -56,7 +57,13 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
             child: Column(
               children: [
                 MobileTopNav.back(
-                  title: mobileSwapActivityTitle(context.l10n, state, intent),
+                  title: mobileSwapActivityTitle(
+                    context.l10n,
+                    state,
+                    intent,
+                    findingPayout:
+                        intent != null && watchIntentFindingPayout(ref, intent),
+                  ),
                   // Normal flow/row entry has a predecessor. Direct entry or
                   // restoration may have only this page, so use its return target.
                   onBack: () {
@@ -87,13 +94,15 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
 String mobileSwapActivityTitle(
   AppLocalizations l10n,
   SwapState state,
-  SwapIntent? intent,
-) {
+  SwapIntent? intent, {
+  bool findingPayout = false,
+}) {
   if (intent == null) return l10n.activitySwapTitle;
   final presentation = swapActivityStatusPresentationForIntent(
     l10n,
     state,
     intent,
+    findingPayout: findingPayout,
   );
   if (presentation.paymentMode) {
     return switch (intent.status) {

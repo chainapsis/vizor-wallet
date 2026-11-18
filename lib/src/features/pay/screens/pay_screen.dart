@@ -18,7 +18,9 @@ import '../../address_scan/widgets/address_scan_resolver.dart';
 import '../../send/widgets/verify_address_modal.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
+import '../../swap/providers/swap_address_wait_provider.dart';
+import '../../swap/providers/swap_funding_balance_provider.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_intent_presentation_mapper.dart'
     show swapIntentsFromRecords;
@@ -29,6 +31,7 @@ import '../../swap/providers/swap_state_provider.dart';
 import '../../swap/screens/swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import '../../swap/widgets/swap_asset_selector_modal.dart';
+import '../../swap/widgets/swap_confidential_ui.dart';
 import '../../swap/widgets/swap_slippage_modal.dart';
 import '../../swap/widgets/near_intents_service_notice_host.dart';
 import '../models/pay_recent_recipients.dart';
@@ -71,6 +74,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   DateTime? _expiryDeadline;
   Duration? _expiryRemaining;
 
+  final _confidentialReveal = SwapConfidentialRevealCounter();
+
   @override
   void initState() {
     super.initState();
@@ -100,7 +105,15 @@ class _PayScreenState extends ConsumerState<PayScreen> {
 
   void _closePayModal() {
     if (_payModal == null) return;
-    setState(() => _payModal = null);
+    final settingsClosed = _payModal == _PayModalSurface.slippage;
+    setState(() {
+      _payModal = null;
+      if (settingsClosed) {
+        _confidentialReveal.settingsClosed(
+          confidential: ref.read(swapStateProvider).confidential,
+        );
+      }
+    });
   }
 
   void _syncController(TextEditingController controller, String value) {
@@ -146,6 +159,13 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   Future<void> _reviewRecipient(PayRecipientSelection selection) async {
     _chooseRecipient(selection);
     await _openReview();
+  }
+
+  Future<void> _reviewRecipientConfidentially(
+    PayRecipientSelection selection,
+  ) async {
+    ref.read(swapStateProvider.notifier).selectConfidential(true);
+    await _reviewRecipient(selection);
   }
 
   Future<void> _openReview() async {
@@ -254,6 +274,16 @@ class _PayScreenState extends ConsumerState<PayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(swapStateProvider.select((state) => state.confidential), (
+      previous,
+      next,
+    ) {
+      if (previous != false || !next) return;
+      final changed = _confidentialReveal.turnedOn(
+        settingsOpen: _payModal == _PayModalSurface.slippage,
+      );
+      if (changed) setState(() {});
+    });
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -321,14 +351,27 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       contacts,
       effectiveSelection,
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: swapState.reviewAddressPlan?.oneTimeZecAddress ?? false,
+      )),
+    );
+    bool exceeds(BigInt available) =>
+        quote != null && swapReviewQuoteExceedsAvailableZec(quote, available);
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final shortfall = swapIronwoodOnlyShortfallMessage(
+      context.l10n,
+      funding,
+      exceeds,
+      payment: true,
+      privacyModeEnabled: privacyModeEnabled,
     );
     final startBlockedReason =
-        quote != null &&
-            swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
-        ? context.l10n.commonPayInsufficientZec
-        : null;
+        shortfall ??
+        (exceeds(funding.spendable)
+            ? context.l10n.commonPayInsufficientZec
+            : null);
 
     final title = switch (_wizardStep) {
       _PayWizardStep.amount => context.l10n.payTitleAmount(
@@ -342,6 +385,11 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       _PayWizardStep.recipient => context.l10n.commonAmount,
       _PayWizardStep.review => context.l10n.payStepRecipient,
     };
+    // A payment sends ZEC, so a one-time refund address may wait for sync.
+    final addressWait = ref.watch(swapAddressWaitProvider(true));
+    final offersConfidential =
+        swapState.externalAssetSupportError(context.l10n) == null &&
+        swapState.offersConfidentialQuote;
     final recipientActions = PayRecipientActions(
       typedAddress: swapState.destinationText,
       addressError: swapState.destinationAddressFormatIssue?.localizedMessage(
@@ -353,7 +401,17 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       quoteError:
           swapState.externalAssetSupportError(context.l10n) ??
           swapState.quoteError?.text(context.l10n),
-      onSelectRecipient: () => unawaited(_reviewRecipient(effectiveSelection)),
+      waitLabel: addressWait == null
+          ? null
+          : swapAddressWaitLabel(context.l10n, addressWait),
+      selectLabel: offersConfidential
+          ? context.l10n.swapActionGetConfidentialQuote
+          : null,
+      onSelectRecipient: () => unawaited(
+        offersConfidential
+            ? _reviewRecipientConfidentially(effectiveSelection)
+            : _reviewRecipient(effectiveSelection),
+      ),
       onAddToContacts: network == null
           ? () {}
           : () => setState(() => _payModal = _PayModalSurface.addContact),
@@ -374,6 +432,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                 expired: swapState.quoteExpired,
                 starting: _startingIntent || swapState.startSubmitting,
                 startBlockedReason: startBlockedReason,
+                wrapBlockedReason: shortfall != null,
                 onConfirm: _startIntent,
                 onReviewAgain: () => unawaited(_openReview()),
               ),
@@ -413,6 +472,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                 headingTrailing: _wizardStep == _PayWizardStep.amount
                     ? _PaySlippageControl(
                         label: formatSwapSlippage(swapState.slippageBps),
+                        confidential: swapState.confidential,
+                        confidentialReveal: _confidentialReveal.value,
                         selected: _payModal == _PayModalSurface.slippage,
                         onTap: () => setState(
                           () => _payModal = _PayModalSurface.slippage,
@@ -484,6 +545,11 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                             onShowFullAddress: () => setState(
                               () => _payModal = _PayModalSurface.verifyAddress,
                             ),
+                            flowConnector: quote.confidential
+                                ? const SwapConfidentialRouteConnector.pay(
+                                    review: true,
+                                  )
+                                : null,
                             onConfirm: _startIntent,
                             onReviewAgain: () => unawaited(_openReview()),
                           ),
@@ -536,10 +602,14 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                       _PayModalSurface.slippage => SwapSlippageModal(
                         slippageBps: swapState.slippageBps,
                         paymentMode: true,
-                        onSubmitted: (bps) {
+                        confidential: swapState.confidential,
+                        onSubmitted: (slippageBps, confidential) {
                           ref
                               .read(swapStateProvider.notifier)
-                              .updateSlippageBps(bps);
+                              .updateQuoteSettings(
+                                slippageBps: slippageBps,
+                                confidential: confidential,
+                              );
                           _closePayModal();
                         },
                         onCancel: _closePayModal,
@@ -572,11 +642,17 @@ class _PayScreenState extends ConsumerState<PayScreen> {
 class _PaySlippageControl extends StatelessWidget {
   const _PaySlippageControl({
     required this.label,
+    required this.confidential,
+    required this.confidentialReveal,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
+
+  /// Marks the button while the confidential route is set inside it.
+  final bool confidential;
+  final int confidentialReveal;
   final bool selected;
   final VoidCallback onTap;
 
@@ -602,6 +678,12 @@ class _PaySlippageControl extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              SwapConfidentialIcon(
+                on: confidential,
+                reveal: confidentialReveal,
+                labeled: confidential,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
               Text(
                 label,
                 style: AppTypography.labelLarge.copyWith(

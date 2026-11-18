@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `api_broadcast_notices`, `api_proposal_result`, `api_transaction_info`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `active_sync_account`, `api_broadcast_notices`, `api_proposal_result`, `api_transaction_info`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `near_swap_privacy_enabled`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`
 
@@ -1399,6 +1399,46 @@ Future<EnhanceRecoveryStatus> getEnhanceRecoveryStatus({
 }) => RustLib.instance.api.crateApiSyncGetEnhanceRecoveryStatus(
   dbPath: dbPath,
   network: network,
+);
+
+/// Allow new private swap addresses (see `require_new_address`). Private queries don't
+/// affect it, and payments to addresses already handed out are found either way.
+void setNearSwapPrivacyEnabled({required bool enabled}) => RustLib.instance.api
+    .crateApiSyncSetNearSwapPrivacyEnabled(enabled: enabled);
+
+/// Same software send lifecycle, with an authenticated refund record on change.
+Future<ProposalResult> proposeSwapFunding({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required String depositAddress,
+  required BigInt amountZatoshi,
+  required BigInt refundIndex,
+}) => RustLib.instance.api.crateApiSyncProposeSwapFunding(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  depositAddress: depositAddress,
+  amountZatoshi: amountZatoshi,
+  refundIndex: refundIndex,
+);
+
+/// The fee [`propose_swap_funding`] would pay for any refund index: the refund memo
+/// does not change the fee, so this also sizes a swap before its refund quote exists.
+Future<BigInt> estimateSwapFundingFee({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String depositAddress,
+  required BigInt amountZatoshi,
+}) => RustLib.instance.api.crateApiSyncEstimateSwapFundingFee(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  depositAddress: depositAddress,
+  amountZatoshi: amountZatoshi,
 );
 
 /// Lightweight account-wide ordering metadata. Reused while this DB snapshot
@@ -2993,6 +3033,51 @@ class PaymentLinkSpendEvidence {
           verifiedHeight == other.verifiedHeight;
 }
 
+/// Shielded funds one transaction gave the account that are short of
+/// confirmations: its change, or what it received.
+class PendingSpendableEntry {
+  /// As [`TransactionInfo::txid_hex`].
+  final String txidHex;
+
+  /// Change from the account's own transaction, not funds received.
+  final bool isChange;
+  final BigInt value;
+
+  /// Blocks after [`WalletBalance::pending_spendable_tip_height`] before
+  /// the funds can be spent.
+  final int blocksUntilSpendable;
+
+  /// Confirmations the transaction has at that tip; zero while unmined.
+  final int confirmations;
+
+  const PendingSpendableEntry({
+    required this.txidHex,
+    required this.isChange,
+    required this.value,
+    required this.blocksUntilSpendable,
+    required this.confirmations,
+  });
+
+  @override
+  int get hashCode =>
+      txidHex.hashCode ^
+      isChange.hashCode ^
+      value.hashCode ^
+      blocksUntilSpendable.hashCode ^
+      confirmations.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PendingSpendableEntry &&
+          runtimeType == other.runtimeType &&
+          txidHex == other.txidHex &&
+          isChange == other.isChange &&
+          value == other.value &&
+          blocksUntilSpendable == other.blocksUntilSpendable &&
+          confirmations == other.confirmations;
+}
+
 class ProposalResult {
   final BigInt proposalId;
   final bool needsSaplingParams;
@@ -3832,6 +3917,16 @@ class WalletBalance {
   /// Sum of spendable + locked + pending balances across all pools.
   final BigInt total;
 
+  /// The shielded pending value that waits only on confirmations, by
+  /// transaction, read in the same snapshot as the amounts above. Empty
+  /// while the wallet still has older blocks to scan; pending value it does
+  /// not list has no known wait.
+  final List<PendingSpendableEntry> pendingSpendable;
+
+  /// The wallet's chain tip when the entries were read: their block counts
+  /// and confirmations are measured from it.
+  final int pendingSpendableTipHeight;
+
   const WalletBalance({
     required this.availability,
     required this.transparentAuthority,
@@ -3856,6 +3951,8 @@ class WalletBalance {
     required this.spendable,
     required this.locked,
     required this.total,
+    required this.pendingSpendable,
+    required this.pendingSpendableTipHeight,
   });
 
   @override
@@ -3882,7 +3979,9 @@ class WalletBalance {
       uneconomicValue.hashCode ^
       spendable.hashCode ^
       locked.hashCode ^
-      total.hashCode;
+      total.hashCode ^
+      pendingSpendable.hashCode ^
+      pendingSpendableTipHeight.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3911,7 +4010,9 @@ class WalletBalance {
           uneconomicValue == other.uneconomicValue &&
           spendable == other.spendable &&
           locked == other.locked &&
-          total == other.total;
+          total == other.total &&
+          pendingSpendable == other.pendingSpendable &&
+          pendingSpendableTipHeight == other.pendingSpendableTipHeight;
 }
 
 enum WalletBalanceAvailability {
