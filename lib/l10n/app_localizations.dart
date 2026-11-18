@@ -19062,6 +19062,12 @@ abstract class AppLocalizations {
   /// **'Status'**
   String get swapStatusRowLabel;
 
+  /// Line that identifies the confidential route in copied support details.
+  ///
+  /// In en, this message translates to:
+  /// **'Route: Confidential'**
+  String get swapSupportConfidentialRoute;
+
   /// Button that copies swap support details to paste into an email.
   ///
   /// In en, this message translates to:
@@ -19074,15 +19080,15 @@ abstract class AppLocalizations {
   /// **'Couldn’t copy the details. Try again.'**
   String get swapSupportCopyFailed;
 
-  /// Copied details the user can paste into a support email. Contains transaction identifiers only; no wallet secrets or amounts.
+  /// Text copied for a support email. The final line is the explorer link or the confidential route label. Wallet secrets and amounts are excluded.
   ///
   /// In en, this message translates to:
-  /// **'Could you check this transaction and its refund status?\n\nProvider status: {status}\nDeposit address: {address}\nDeposit transaction: {txHash}\nExplorer: {explorer}'**
+  /// **'Could you check this transaction and its refund status?\n\nProvider status: {status}\nDeposit address: {address}\nDeposit transaction: {txHash}\n{routeDetails}'**
   String swapSupportDetails(
     String status,
     String address,
     String txHash,
-    String explorer,
+    String routeDetails,
   );
 
   /// Instructions for copying deposit details into a support email the user writes.
@@ -19108,6 +19114,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Check your deposit'**
   String get swapSupportExpiredTitle;
+
+  /// Line with the explorer URL or its unknown value in copied support details for a standard swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Explorer: {explorer}'**
+  String swapSupportExplorer(String explorer);
 
   /// Existing swap refund-policy design: FailedBody text in the failed or expired deposit support flow.
   ///

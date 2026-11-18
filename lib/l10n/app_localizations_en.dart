@@ -11634,6 +11634,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapStatusRowLabel => 'Status';
 
   @override
+  String get swapSupportConfidentialRoute => 'Route: Confidential';
+
+  @override
   String get swapSupportCopyAction => 'Copy deposit details';
 
   @override
@@ -11644,9 +11647,9 @@ class AppLocalizationsEn extends AppLocalizations {
     String status,
     String address,
     String txHash,
-    String explorer,
+    String routeDetails,
   ) {
-    return 'Could you check this transaction and its refund status?\n\nProvider status: $status\nDeposit address: $address\nDeposit transaction: $txHash\nExplorer: $explorer';
+    return 'Could you check this transaction and its refund status?\n\nProvider status: $status\nDeposit address: $address\nDeposit transaction: $txHash\n$routeDetails';
   }
 
   @override
@@ -11662,6 +11665,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapSupportExpiredTitle => 'Check your deposit';
+
+  @override
+  String swapSupportExplorer(String explorer) {
+    return 'Explorer: $explorer';
+  }
 
   @override
   String get swapSupportFailedBody =>

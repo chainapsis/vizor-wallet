@@ -97,6 +97,25 @@ void main() {
     expect(body, contains('\n\n'));
   });
 
+  test(
+    'confidential support identifies the route without an explorer link',
+    () {
+      for (final status in [
+        SwapIntentStatus.failed,
+        SwapIntentStatus.expired,
+      ]) {
+        final body = swapSupportDetails(
+          testL10n,
+          _intent().copyWith(status: status, confidential: true),
+        );
+        expect(body, contains('Route: Confidential'));
+        expect(body, contains('Deposit transaction: origin-tx'));
+        expect(body, isNot(contains('Explorer:')));
+        expect(body, isNot(contains('explorer.near-intents.org')));
+      }
+    },
+  );
+
   test('known deposit tx takes precedence over the origin fallback', () {
     expect(
       swapSupportDetails(

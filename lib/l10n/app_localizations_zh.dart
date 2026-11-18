@@ -10737,6 +10737,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapStatusRowLabel => '状态';
 
   @override
+  String get swapSupportConfidentialRoute => '路由：保密';
+
+  @override
   String get swapSupportCopyAction => '复制入金详情';
 
   @override
@@ -10747,9 +10750,9 @@ class AppLocalizationsZh extends AppLocalizations {
     String status,
     String address,
     String txHash,
-    String explorer,
+    String routeDetails,
   ) {
-    return '请协助查询这笔交易及其退款状态。\n\n服务状态：$status\n入金地址：$address\n入金交易：$txHash\n浏览器：$explorer';
+    return '请协助查询这笔交易及其退款状态。\n\n服务状态：$status\n入金地址：$address\n入金交易：$txHash\n$routeDetails';
   }
 
   @override
@@ -10764,6 +10767,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapSupportExpiredTitle => '查看入金';
+
+  @override
+  String swapSupportExplorer(String explorer) {
+    return '浏览器：$explorer';
+  }
 
   @override
   String get swapSupportFailedBody => '请查看交易详情中显示的退款地址。';

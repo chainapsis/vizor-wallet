@@ -11458,6 +11458,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapStatusRowLabel => '상‍태';
 
   @override
+  String get swapSupportConfidentialRoute => '경‍로: 기‍밀';
+
+  @override
   String get swapSupportCopyAction => '입‍금 세‍부‍정‍보 복‍사';
 
   @override
@@ -11469,9 +11472,9 @@ class AppLocalizationsKo extends AppLocalizations {
     String status,
     String address,
     String txHash,
-    String explorer,
+    String routeDetails,
   ) {
-    return '거‍래‍와 환‍불 상‍태‍를 확‍인‍해 주‍세‍요.\n\n서‍비‍스 상‍태: $status\n입‍금 주‍소: $address\n입‍금 거‍래: $txHash\n탐‍색‍기: $explorer';
+    return '거‍래‍와 환‍불 상‍태‍를 확‍인‍해 주‍세‍요.\n\n서‍비‍스 상‍태: $status\n입‍금 주‍소: $address\n입‍금 거‍래: $txHash\n$routeDetails';
   }
 
   @override
@@ -11487,6 +11490,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapSupportExpiredTitle => '입‍금 확‍인';
+
+  @override
+  String swapSupportExplorer(String explorer) {
+    return '탐‍색‍기: $explorer';
+  }
 
   @override
   String get swapSupportFailedBody =>

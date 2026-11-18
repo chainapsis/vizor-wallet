@@ -1,5 +1,5 @@
 import '../../../core/l10n/l10n.dart';
-import '../domain/near_intents_explorer.dart';
+import 'swap_activity_status_mapper.dart' show swapActivityExplorerUri;
 import 'swap_models.dart';
 
 const swapSupportEmail = 'support@vizor.cash';
@@ -12,7 +12,7 @@ bool swapNeedsSupportNotice(SwapIntent intent) =>
             (intent.hasConfirmedDepositEvidence ||
                 intent.hasProviderObservedDepositEvidence)));
 
-/// Only transaction identifiers enter the explicitly copied support details.
+/// Copies transaction identifiers and route information for support.
 /// Wallet credentials, recipient addresses and amounts are never included.
 String swapSupportDetails(AppLocalizations l10n, SwapIntent intent) {
   String value(String? text) =>
@@ -20,15 +20,15 @@ String swapSupportDetails(AppLocalizations l10n, SwapIntent intent) {
   final txHash = intent.depositTxHash?.trim().isNotEmpty == true
       ? intent.depositTxHash
       : intent.originChainTxHash;
-  final explorer = nearIntentsExplorerUri(
-    depositAddress: intent.depositAddress,
-    depositTxHash: txHash,
-    nearIntentHash: intent.nearIntentHash,
-  );
+  final routeDetails = intent.confidential
+      ? l10n.swapSupportConfidentialRoute
+      : l10n.swapSupportExplorer(
+          value(swapActivityExplorerUri(intent)?.toString()),
+        );
   return l10n.swapSupportDetails(
     value(intent.providerStatusRaw ?? intent.status.name),
     value(intent.depositAddress),
     value(txHash),
-    explorer?.toString() ?? l10n.commonUnknown,
+    routeDetails,
   );
 }
