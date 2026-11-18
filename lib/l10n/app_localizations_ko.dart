@@ -10458,6 +10458,21 @@ class AppLocalizationsKo extends AppLocalizations {
       '소‍프‍트‍웨‍어 업‍데‍이‍트‍를 사‍용‍할 수 없‍어‍요';
 
   @override
+  String get sharedPaymentImageNoCode => '공‍유‍된 이‍미‍지‍에 QR 코‍드‍가 없‍어‍요.';
+
+  @override
+  String get sharedPaymentImageSeveralCodes =>
+      '공‍유‍된 이‍미‍지‍에 QR 코‍드‍가 두 개 이‍상 있‍어‍요.';
+
+  @override
+  String get sharedPaymentImageUnreadable =>
+      'Vizor‍가 공‍유‍된 이‍미‍지‍를 읽‍지 못‍했‍어‍요.';
+
+  @override
+  String get sharedPaymentNoPayment =>
+      '공‍유‍된 내‍용‍에 Zcash 주‍소‍나 결‍제 링‍크‍가 없‍어‍요.';
+
+  @override
   String get sidebarAccountNameFallback => '사‍용‍자 이‍름';
 
   @override
