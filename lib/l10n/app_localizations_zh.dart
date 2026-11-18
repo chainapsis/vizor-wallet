@@ -10254,6 +10254,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapDepositOneTimeAddress => '一次性地址';
 
   @override
+  String get swapDepositRecoveryHelp => '如果入金有误？';
+
+  @override
+  String get swapDepositRecoveryIntro => '发送错误的代币或使用其他网络，可能导致入金无法到账。';
+
+  @override
+  String get swapDepositRecoveryPolicy =>
+      '如果错误入金的资产在转账时价值低于 300 美元，NEAR Intents 不会考虑找回申请。金额达到或超过 300 美元时，NEAR Intents 会根据具体情况决定是否协助找回。';
+
+  @override
+  String get swapDepositRecoveryTitle => '入金有误';
+
+  @override
   String swapDepositSendOnly(String symbol, String chain) {
     return '仅发送 $chain 上的 $symbol';
   }
@@ -10728,6 +10741,52 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapStatusRowLabel => '状态';
+
+  @override
+  String get swapSupportConfidentialRoute => '路由：保密';
+
+  @override
+  String get swapSupportCopyAction => '复制入金详情';
+
+  @override
+  String get swapSupportCopyFailed => '无法复制详情。请重试。';
+
+  @override
+  String swapSupportDetails(
+    String status,
+    String address,
+    String txHash,
+    String routeDetails,
+  ) {
+    return '请协助查询这笔交易及其退款状态。\n\n服务状态：$status\n入金地址：$address\n入金交易：$txHash\n$routeDetails';
+  }
+
+  @override
+  String get swapSupportDirectHelp => '如仍需帮助，请复制入金详情，粘贴到发往下方地址的邮件中。';
+
+  @override
+  String get swapSupportExpiredBody =>
+      '请在转出资金的钱包中查看交易。如果入金延迟到账，NEAR 可能会尝试将资金退回退款地址。';
+
+  @override
+  String get swapSupportExpiredPrompt => '已经入金？';
+
+  @override
+  String get swapSupportExpiredTitle => '查看入金';
+
+  @override
+  String swapSupportExplorer(String explorer) {
+    return '浏览器：$explorer';
+  }
+
+  @override
+  String get swapSupportFailedBody => '请查看交易详情中显示的退款地址。';
+
+  @override
+  String get swapSupportFailedPrompt => '还没收到退款？';
+
+  @override
+  String get swapSupportFailedTitle => '查看退款';
 
   @override
   String get swapSwitchDirection => '切换兑换方向';

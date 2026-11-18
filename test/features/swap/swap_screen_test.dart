@@ -920,6 +920,8 @@ void main() {
       );
 
       expect(timeoutRect.width, 340);
+      expect(find.byKey(const ValueKey('swap_support_prompt')), findsOneWidget);
+      expect(find.text('Restart swap').hitTestable(), findsOneWidget);
       expect(timeoutRect.center.dy, closeTo(detailRect.center.dy, 1));
 
       await tester.tap(find.text('Restart swap'));
@@ -7161,7 +7163,9 @@ void main() {
     expect(find.text('Refund to'), findsOneWidget);
     expect(find.text('Total fees'), findsNothing);
     expect(find.text('0.19 USDC'), findsNothing);
-    expect(find.text('No refund yet?'), findsNothing);
+    expect(find.byKey(const ValueKey('swap_support_prompt')), findsOneWidget);
+    expect(find.text('Copy deposit details'), findsNothing);
+    expect(find.text('No refund yet?'), findsOneWidget);
     final refundAddressRow = tester.widget<ReviewListRow>(
       find.byWidgetPredicate(
         (widget) => widget is ReviewListRow && widget.label == 'Refund to',

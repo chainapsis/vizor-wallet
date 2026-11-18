@@ -1,20 +1,24 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/material.dart' show Colors, Dialog, showDialog;
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../core/widgets/dot_qr_shape.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_deposit_qr_payload.dart';
+import 'swap_support_notice.dart';
 
 class SwapDepositTokensPageContent extends StatelessWidget {
   const SwapDepositTokensPageContent({
@@ -227,8 +231,7 @@ class _SwapDepositPageShell extends StatelessWidget {
   }
 }
 
-/// Keeps the token and network beside the QR without moving the deposit rows.
-/// The warning wraps instead of truncating, so the network name stays whole.
+/// Opens recovery help from the network warning without adding a second row.
 class _DepositNetworkGuidance extends StatelessWidget {
   const _DepositNetworkGuidance({required this.asset});
 
@@ -236,21 +239,127 @@ class _DepositNetworkGuidance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
+    final colors = context.colors;
+    final l10n = context.l10n;
+    return Padding(
       key: const ValueKey('swap_deposit_network_guidance'),
-      constraints: const BoxConstraints(minHeight: AppSpacing.lg),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-        child: Center(
-          child: Text(
-            context.l10n.swapDepositSendOnly(asset.symbol, asset.chainLabel),
-            textAlign: TextAlign.center,
-            style: AppTypography.labelMedium.copyWith(
-              color: context.colors.text.secondary,
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+      child: Center(
+        child: IntrinsicWidth(
+          child: Semantics(
+            button: true,
+            hint: l10n.swapDepositRecoveryHelp,
+            child: AppButton(
+              key: const ValueKey('swap_deposit_recovery_help'),
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.large,
+              height: AppSpacing.lg - AppSpacing.xxs * 2,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xs,
+              ),
+              constrainContent: true,
+              growWithContent: true,
+              trailing: ExcludeSemantics(
+                child: AppIcon(
+                  AppIcons.help,
+                  size: AppIconSize.medium,
+                  color: colors.icon.warningStrong,
+                ),
+              ),
+              onPressed: () => unawaited(_showDepositRecoveryHelp(context)),
+              child: Text(
+                l10n.swapDepositSendOnly(asset.symbol, asset.chainLabel),
+                textAlign: TextAlign.center,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.warning,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+Future<void> _showDepositRecoveryHelp(BuildContext context) {
+  if (kAppFormFactor == AppFormFactor.mobile) {
+    return showAppMobileSheet<void>(
+      context: context,
+      builder: (_) => const _DepositRecoveryHelp(mobile: true),
+    );
+  }
+  final theme = context.appTheme;
+  return showDialog<void>(
+    context: context,
+    builder: (_) => AppTheme(
+      data: theme,
+      child: const Dialog(
+        backgroundColor: Colors.transparent,
+        child: _DepositRecoveryHelp(mobile: false),
+      ),
+    ),
+  );
+}
+
+class _DepositRecoveryHelp extends StatelessWidget {
+  const _DepositRecoveryHelp({required this.mobile});
+
+  final bool mobile;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final colors = context.colors;
+    final bodyStyle = AppTypography.bodyMedium.copyWith(
+      color: colors.text.secondary,
+    );
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!mobile) ...[
+          Text(
+            l10n.swapDepositRecoveryTitle,
+            style: AppTypography.bodyLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        Text(
+          l10n.swapDepositRecoveryIntro,
+          style: bodyStyle.copyWith(color: colors.text.accent),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(l10n.swapDepositRecoveryPolicy, style: bodyStyle),
+        if (!mobile) ...[
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            onPressed: () => Navigator.of(context).pop(),
+            size: AppButtonSize.mediumLarge,
+            expand: true,
+            constrainContent: true,
+            growWithContent: true,
+            child: Text(l10n.commonClose),
+          ),
+        ],
+      ],
+    );
+
+    return KeyedSubtree(
+      key: const ValueKey('swap_deposit_recovery_details'),
+      child: mobile
+          ? MobileModalScaffold(
+              title: l10n.swapDepositRecoveryTitle,
+              titleMaxLines: 2,
+              onClose: () => Navigator.of(context).pop(),
+              child: content,
+            )
+          : AppModalCard(child: SingleChildScrollView(child: content)),
     );
   }
 }
@@ -515,12 +624,17 @@ class _DepositCheckWarning extends StatelessWidget {
 }
 
 class SwapDepositTimeoutPageContent extends StatelessWidget {
-  const SwapDepositTimeoutPageContent({required this.onRestart, super.key});
+  const SwapDepositTimeoutPageContent({
+    required this.onRestart,
+    this.onLateDeposit,
+    super.key,
+  });
 
   static const _illustration =
       'assets/illustrations/desktop/swap_deposit_timeout_illustration.webp';
 
   final VoidCallback onRestart;
+  final VoidCallback? onLateDeposit;
 
   @override
   Widget build(BuildContext context) {
@@ -598,6 +712,10 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
             leading: const AppIcon(AppIcons.renew, size: 16),
             child: Text(context.l10n.swapTimeoutRestart),
           ),
+          if (onLateDeposit != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            SwapSupportPrompt(onTap: onLateDeposit!, failedSwap: false),
+          ],
         ],
       ),
     );
