@@ -7,7 +7,6 @@ import '../../core/layout/app_form_factor.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
-import '../../core/zcash/spendable_wait.dart';
 import '../../providers/pending_activity_evidence_provider.dart'
     show ActivityEta;
 import '../../rust/api/sync.dart' as rust_sync;
@@ -46,7 +45,6 @@ ActivityRowData buildTransactionActivityRow({
   String? giftCardDisplayPool,
   ActivityEta? pendingEta,
   String? pendingFallbackLabel,
-  Map<String, ReceivedSpendableWait> spendableWaits = const {},
   bool showPendingEstimate = true,
   bool privacyModeEnabled = false,
   bool privateQueriesEnabled = false,
@@ -82,17 +80,10 @@ ActivityRowData buildTransactionActivityRow({
           TransactionFeePresentation.separate;
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent || isShielded);
-  // A mined receipt the account cannot spend yet says when it can, in the
-  // pool label's place.
-  final spendableWait = giftCardKind != null || isPending || isFailed
-      ? null
-      : receivedSpendableWaitFor(transaction, spendableWaits)?.wait;
   final subtitle = replacesPool
       ? pendingEta?.label(l10n) ??
             pendingFallbackLabel ??
             l10n.commonCheckingStatus
-      : spendableWait != null
-      ? availableInLabel(l10n, spendableWait)
       : isMigration
       ? 'Orchard → Ironwood' // l10n-ignore: product names only
       : isNetChange
@@ -146,8 +137,6 @@ ActivityRowData buildTransactionActivityRow({
     subtitle: subtitle,
     subtitleIconName: replacesPool
         ? (pendingEta != null ? AppIcons.time : null)
-        : spendableWait != null
-        ? AppIcons.time
         : isNetChange
         ? null
         : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),

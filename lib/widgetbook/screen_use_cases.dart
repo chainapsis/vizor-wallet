@@ -1273,7 +1273,7 @@ SyncState _homeReceivedWaitingState() => _homeSyncedState(
   ],
 ).copyWith(hasRecentTransactionsData: true);
 
-/// Home while the newest receipt cannot be spent yet: its row says when.
+/// Home while the newest receipt cannot be spent yet: its row keeps the pool.
 Widget buildMobileHomeReceivedWaitingUseCase(BuildContext context) =>
     _buildMobileHomeUseCase(
       accountState: _accountsDesignState,

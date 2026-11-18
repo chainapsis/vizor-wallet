@@ -46,7 +46,6 @@ import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_failure.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_display_progress_provider.dart';
-import '../../../../providers/spendable_wait_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/pending_activity_evidence_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -986,7 +985,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
-        spendableWaits: ref.watch(activeReceivedSpendableWaitsProvider),
         privateQueriesEnabled: ref.watch(enhancePirProvider),
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
