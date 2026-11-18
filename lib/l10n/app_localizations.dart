@@ -18174,19 +18174,19 @@ abstract class AppLocalizations {
   /// **'One-time address'**
   String get swapDepositOneTimeAddress;
 
-  /// Deposit screen button that opens the incorrect deposit help.
+  /// [security] Deposit screen button that opens the incorrect deposit help.
   ///
   /// In en, this message translates to:
   /// **'What if I deposit incorrectly?'**
   String get swapDepositRecoveryHelp;
 
-  /// Explanation of what can happen when a deposit uses the wrong token or network.
+  /// [security] Explanation of what can happen when a deposit uses the wrong token or network.
   ///
   /// In en, this message translates to:
   /// **'Sending the wrong token or using a different network may prevent your deposit from being credited.'**
   String get swapDepositRecoveryIntro;
 
-  /// NEAR Intents policy for manual recovery of incorrectly sent deposits, not automatic swap refunds.
+  /// [security] NEAR Intents policy for manual recovery of incorrectly sent deposits, not automatic swap refunds.
   ///
   /// In en, this message translates to:
   /// **'NEAR Intents does not consider recovery requests for incorrect deposits worth less than \$300 at the time of transfer. For amounts of \$300 or more, NEAR Intents decides whether to help recover the funds on a case-by-case basis.'**
