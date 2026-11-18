@@ -7,8 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_bottom_safe_area.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_poll_eligibility_provider.dart';
@@ -120,7 +122,12 @@ void main() {
       tester.renderObject<RenderParagraph>(descriptionFinder).didExceedMaxLines,
       isTrue,
     );
-    final cardDecoration = tester.widget<Ink>(card).decoration as BoxDecoration;
+    final cardSurface = tester.widget<MobileSurfaceCard>(card);
+    expect(cardSurface.cornerRadius, AppRadii.large);
+    final surfaceBox = tester.widget<DecoratedBox>(
+      find.descendant(of: card, matching: find.byType(DecoratedBox)).first,
+    );
+    final cardDecoration = surfaceBox.decoration as BoxDecoration;
     expect(cardDecoration.boxShadow, isNotEmpty);
     final cardTap = tester.widget<InkWell>(
       find.byKey(
@@ -220,4 +227,59 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  for (final tapPadding in [true, false]) {
+    testWidgets(
+      'poll ${tapPadding ? 'card padding' : 'action button'} opens the round',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(393, 852);
+        addTearDown(tester.view.reset);
+        final router = GoRouter(
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (context, _) => buildMobileVotingPollsUseCase(context),
+            ),
+            GoRoute(
+              path: '/voting/poll/:roundId',
+              builder: (_, state) => Scaffold(
+                body: Text('Poll detail ${state.pathParameters['roundId']}'),
+              ),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(
+          MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (tapPadding) {
+          final card = tester.getRect(
+            find.byKey(
+              const ValueKey('voting_poll_card_snack-governance-active'),
+            ),
+          );
+          await tester.tapAt(card.topCenter + const Offset(0, AppSpacing.s));
+        } else {
+          await tester.tap(
+            find.byKey(
+              const ValueKey('voting_poll_action_snack-governance-active'),
+            ),
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Poll detail snack-governance-active'),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }

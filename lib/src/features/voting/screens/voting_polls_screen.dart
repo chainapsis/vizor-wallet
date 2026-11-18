@@ -413,25 +413,31 @@ class _MobilePollCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0x00000000),
-      child: InkWell(
-        key: ValueKey('voting_poll_card_tap_${round.roundId}'),
-        onTap: onAction,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        splashFactory: NoSplash.splashFactory,
-        overlayColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.pressed) ? Colors.transparent : null,
-        ),
-        child: Ink(
-          key: ValueKey('voting_poll_card_${round.roundId}'),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.md,
+    // Ink decorations are clipped to their Material's rectangular bounds.
+    // Paint the surface outside it so the shadow can extend past the card.
+    return MobileSurfaceCard(
+      key: ValueKey('voting_poll_card_${round.roundId}'),
+      cornerRadius: AppRadii.large,
+      padding: EdgeInsets.zero,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey('voting_poll_card_tap_${round.roundId}'),
+          onTap: onAction,
+          borderRadius: BorderRadius.circular(AppRadii.large),
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.pressed)
+                ? Colors.transparent
+                : null,
           ),
-          decoration: _mobilePollCardDecoration(context),
-          child: _MobilePollCardContent(round: round, onAction: onAction),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.md,
+            ),
+            child: _MobilePollCardContent(round: round, onAction: onAction),
+          ),
         ),
       ),
     );
@@ -466,12 +472,6 @@ class _DesktopPollCard extends StatelessWidget {
     );
   }
 }
-
-BoxDecoration _mobilePollCardDecoration(BuildContext context) => BoxDecoration(
-  color: context.colors.background.ground,
-  borderRadius: BorderRadius.circular(AppRadii.large),
-  boxShadow: mobileSurfaceShadows(context.colors),
-);
 
 class _MobilePollCardContent extends ConsumerWidget {
   const _MobilePollCardContent({required this.round, required this.onAction});

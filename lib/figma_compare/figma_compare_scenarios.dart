@@ -3338,6 +3338,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildMobileVotingPreviouslyUsedListUseCase,
     desktop: false,
     mobile: true,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-previously-used-detail',
@@ -3388,6 +3389,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildMobileVotingPollsUseCase,
     desktop: false,
     mobile: true,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-polls-eligibility',
@@ -3395,6 +3397,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildMobileVotingPollsEligibilityUseCase,
     desktop: false,
     mobile: true,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-voting-config-default',
