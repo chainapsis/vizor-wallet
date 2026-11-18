@@ -148,9 +148,6 @@ class _FakeFlipToHideNotifier extends FlipToHideBalanceNotifier {
   bool? lastEnabled;
 
   @override
-  bool build() => true;
-
-  @override
   Future<void> set(bool enabled) async {
     lastEnabled = enabled;
     state = enabled;
@@ -1854,7 +1851,7 @@ void main() {
     expect(tester.getCenter(thumb).dx, greaterThan(trackCenterX));
   });
 
-  testWidgets('flip to hide row is on by default and turns it off', (
+  testWidgets('flip to hide row is off by default and can be toggled', (
     tester,
   ) async {
     final notifier = _FakeFlipToHideNotifier();
@@ -1882,6 +1879,12 @@ void main() {
     final track = find.byKey(
       const ValueKey('mobile_settings_flip_to_hide_toggle'),
     );
+    expect(tester.getCenter(thumb).dx, lessThan(tester.getCenter(track).dx));
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(notifier.lastEnabled, isTrue);
     expect(tester.getCenter(thumb).dx, greaterThan(tester.getCenter(track).dx));
 
     await tester.tap(row);

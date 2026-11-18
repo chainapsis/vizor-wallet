@@ -67,7 +67,7 @@ class AppBootstrapState {
     this.biometricUnlockEnabled = false,
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
-    this.flipToHideBalanceEnabled = true,
+    this.flipToHideBalanceEnabled = false,
     this.hideBalanceOnUnlockEnabled = false,
     this.enhancePirEnabled = false,
     this.nearSwapPrivacyEnabled = false,
@@ -91,8 +91,8 @@ class AppBootstrapState {
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
 
-  /// Whether turning the phone screen-down hides amounts (mobile). On unless
-  /// turned off in Settings.
+  /// Whether turning the phone screen-down hides amounts (mobile). Off unless
+  /// turned on in Settings.
   final bool flipToHideBalanceEnabled;
 
   /// The saved private queries setting, or `null` when it could not be read.
@@ -326,10 +326,10 @@ Future<AppBootstrapState> loadAppBootstrap({
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag', // l10n-ignore: log label
     );
-    final flipToHideBalanceDisabled = await _readPlainBool(
+    final flipToHideBalanceEnabled = await _readPlainBool(
       storage,
-      key: kFlipToHideBalanceDisabledKey,
-      label: 'flip to hide disabled flag', // l10n-ignore: log label
+      key: kFlipToHideBalanceEnabledKey,
+      label: 'flip to hide enabled flag', // l10n-ignore: log label
     );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
     final nearSwapPrivacyEnabled = await readNearSwapPrivacyPreference();
@@ -534,7 +534,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       biometricUnlockEnabled: biometricUnlockEnabled,
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
-      flipToHideBalanceEnabled: !flipToHideBalanceDisabled,
+      flipToHideBalanceEnabled: flipToHideBalanceEnabled,
       enhancePirEnabled: enhancePirEnabled,
       nearSwapPrivacyEnabled: nearSwapPrivacyEnabled,
       isPasswordConfigured: isPasswordConfigured,

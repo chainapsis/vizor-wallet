@@ -35,10 +35,13 @@ late write cannot reveal amounts after authentication.
 
 ## Flip to hide (mobile)
 
-Turning the phone screen-down hides amounts at once, and they stay hidden when
-it is turned back. With amounts hidden, a flip down and back up within 2
-seconds shows them again. A phone left screen-down longer, on a table or in a
-bag, only ever hides, so picking it up never reveals the balance. A slow turn
+Flip to hide is off by default for both new installs and upgrades. Enable it
+in Settings > Hide balance > Flip to hide.
+
+When enabled, turning the phone screen-down hides amounts at once, and they stay
+hidden when it is turned back. With amounts hidden, a flip down and back up
+within 2 seconds shows them again. A phone left screen-down longer, on a table
+or in a bag, only ever hides, so picking it up never reveals the balance. A slow turn
 (such as holding the phone overhead lying down) is not a flip. A haptic and a
 "Balance hidden" or "Balance shown" toast confirm the change, since the page
 in view may show no amount.
@@ -81,9 +84,11 @@ flow. Legacy installs with no marker keep their saved Boolean preference.
   (`screenFacingEvents`): gravity along the screen's normal, -1 screen up and
   1 screen down, from Core Motion on iOS and the gravity sensor on Android.
   Neither asks for a permission.
-- Settings > Hide balance > Flip to hide turns it off
-  (`flipToHideBalanceProvider`, stored as the off flag
-  `zcash_flip_to_hide_balance_disabled`, so it is on by default).
+- Settings > Hide balance > Flip to hide controls the preference
+  (`flipToHideBalanceProvider`, stored as
+  `zcash_flip_to_hide_balance_enabled`). Only a saved `true` enables it.
+  The earlier default-on implementation shipped only in QA/RC builds
+  (`mobile/v0.0.63` and release candidates); its disabled flag is not migrated.
 
 ## Which amounts to mask
 
