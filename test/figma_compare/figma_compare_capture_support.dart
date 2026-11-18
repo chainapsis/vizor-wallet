@@ -134,6 +134,17 @@ void runFigmaCompareCaptureTest({
     // too; a single pump may capture its first, almost invisible frame.
     await tester.pump(const Duration(milliseconds: 400));
 
+    if (scenario.id == 'mobile-home-receive-options-sheet') {
+      await tester.tap(find.byKey(const ValueKey('mobile_home_receive')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.byKey(const ValueKey('receive_options_redeem_gift_card')),
+        findsOneWidget,
+      );
+    }
+
     if (scenario.id == 'activity-swap-failed-support' ||
         scenario.id == 'activity-pay-failed-support') {
       final prompt = find.byKey(const ValueKey('swap_support_prompt'));

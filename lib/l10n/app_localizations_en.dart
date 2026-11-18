@@ -2268,9 +2268,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeReceiveRedeemGiftCardSubtitle => 'Add a card someone sent you';
 
   @override
-  String get homeReceiveRequestSubtitle => 'Ask for an exact amount';
-
-  @override
   String get homeRecentActivity => 'Recent activity';
 
   @override

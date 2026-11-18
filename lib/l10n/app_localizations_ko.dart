@@ -2241,9 +2241,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeReceiveRedeemGiftCardSubtitle => '받‍은 기‍프‍트 카‍드 추‍가';
 
   @override
-  String get homeReceiveRequestSubtitle => '정‍확‍한 금‍액 요‍청';
-
-  @override
   String get homeRecentActivity => '최‍근 활‍동';
 
   @override

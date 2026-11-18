@@ -2169,9 +2169,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeReceiveRedeemGiftCardSubtitle => '添加收到的礼品卡';
 
   @override
-  String get homeReceiveRequestSubtitle => '按指定金额收款';
-
-  @override
   String get homeRecentActivity => '最近活动记录';
 
   @override
