@@ -19104,7 +19104,7 @@ abstract class AppLocalizations {
   /// **'Copy deposit details'**
   String get swapSupportCopyAction;
 
-  /// Persistent inline message when copying support details fails.
+  /// Error when copying the deposit details from the swap support sheet fails: a toast on mobile, an inline line on desktop.
   ///
   /// In en, this message translates to:
   /// **'Couldn’t copy the details. Try again.'**
@@ -19121,11 +19121,29 @@ abstract class AppLocalizations {
     String routeDetails,
   );
 
+  /// Toast after the swap support sheet copies the deposit details for an email.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit details copied'**
+  String get swapSupportDetailsCopied;
+
   /// Instructions for copying deposit details into a support email the user writes.
   ///
   /// In en, this message translates to:
   /// **'If you still need help, copy the deposit details and paste them into an email to the address below.'**
   String get swapSupportDirectHelp;
+
+  /// Toast after the swap support sheet copies the support email address.
+  ///
+  /// In en, this message translates to:
+  /// **'Support email copied'**
+  String get swapSupportEmailCopied;
+
+  /// Error toast when copying the support email address from the swap support sheet fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t copy the email address. Try again.'**
+  String get swapSupportEmailCopyFailed;
 
   /// Existing swap refund-policy design: ExpiredBody text in the failed or expired deposit support flow.
   ///

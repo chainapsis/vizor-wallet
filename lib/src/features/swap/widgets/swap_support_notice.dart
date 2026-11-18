@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -90,14 +93,29 @@ class _SwapSupportNoticeState extends State<SwapSupportNotice> {
         ),
       );
     } catch (_) {
-      if (mounted) setState(() => _copyFailed = true);
+      if (!mounted) return;
+      // Mobile reports a failed copy with the destructive toast, as Settings
+      // does for the viewing key; desktop keeps the inline line.
+      if (kAppFormFactor == AppFormFactor.mobile) {
+        showAppToast(
+          context,
+          addressOnly
+              ? l10n.swapSupportEmailCopyFailed
+              : l10n.swapSupportCopyFailed,
+          iconName: AppIcons.warningCircle,
+          tone: AppToastTone.destructive,
+        );
+      } else {
+        setState(() => _copyFailed = true);
+      }
       return;
     }
+    unawaited(AppHaptics.copy());
     if (!mounted) return;
     setState(() => _copyFailed = false);
     showAppToast(
       context,
-      addressOnly ? l10n.commonAddressCopied : l10n.commonCopied,
+      addressOnly ? l10n.swapSupportEmailCopied : l10n.swapSupportDetailsCopied,
     );
   }
 

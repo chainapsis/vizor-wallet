@@ -11500,8 +11500,18 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get swapSupportDetailsCopied => '입‍금 세‍부‍정‍보‍를 복‍사‍했‍어‍요';
+
+  @override
   String get swapSupportDirectHelp =>
       '도‍움‍이 필‍요‍하‍다‍면 입‍금 세‍부‍정‍보‍를 복‍사‍해 아‍래 주‍소‍로 보‍낼 이‍메‍일‍에 붙‍여‍넣‍어 주‍세‍요.';
+
+  @override
+  String get swapSupportEmailCopied => '지‍원 이‍메‍일‍을 복‍사‍했‍어‍요';
+
+  @override
+  String get swapSupportEmailCopyFailed =>
+      '이‍메‍일 주‍소‍를 복‍사‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get swapSupportExpiredBody =>

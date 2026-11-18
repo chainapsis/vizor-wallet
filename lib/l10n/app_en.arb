@@ -14875,7 +14875,7 @@
   },
   "swapSupportCopyFailed": "Couldn’t copy the details. Try again.",
   "@swapSupportCopyFailed": {
-    "description": "Persistent inline message when copying support details fails."
+    "description": "Error when copying the deposit details from the swap support sheet fails: a toast on mobile, an inline line on desktop."
   },
   "swapSupportDetails": "Could you check this transaction and its refund status?\n\nProvider status: {status}\nDeposit address: {address}\nDeposit transaction: {txHash}\n{routeDetails}",
   "@swapSupportDetails": {
@@ -14895,9 +14895,21 @@
       }
     }
   },
+  "swapSupportDetailsCopied": "Deposit details copied",
+  "@swapSupportDetailsCopied": {
+    "description": "Toast after the swap support sheet copies the deposit details for an email."
+  },
   "swapSupportDirectHelp": "If you still need help, copy the deposit details and paste them into an email to the address below.",
   "@swapSupportDirectHelp": {
     "description": "Instructions for copying deposit details into a support email the user writes."
+  },
+  "swapSupportEmailCopied": "Support email copied",
+  "@swapSupportEmailCopied": {
+    "description": "Toast after the swap support sheet copies the support email address."
+  },
+  "swapSupportEmailCopyFailed": "Couldn’t copy the email address. Try again.",
+  "@swapSupportEmailCopyFailed": {
+    "description": "Error toast when copying the support email address from the swap support sheet fails."
   },
   "swapSupportExpiredBody": "Check the transaction in the wallet you sent from. If your deposit arrived late, NEAR may try to refund it to your refund address.",
   "@swapSupportExpiredBody": {

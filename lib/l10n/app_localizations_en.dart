@@ -11676,8 +11676,18 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapSupportDetailsCopied => 'Deposit details copied';
+
+  @override
   String get swapSupportDirectHelp =>
       'If you still need help, copy the deposit details and paste them into an email to the address below.';
+
+  @override
+  String get swapSupportEmailCopied => 'Support email copied';
+
+  @override
+  String get swapSupportEmailCopyFailed =>
+      'Couldn’t copy the email address. Try again.';
 
   @override
   String get swapSupportExpiredBody =>

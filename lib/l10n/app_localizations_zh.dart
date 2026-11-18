@@ -10776,7 +10776,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get swapSupportDetailsCopied => '已复制入金详情';
+
+  @override
   String get swapSupportDirectHelp => '如仍需帮助，请复制入金详情，粘贴到发往下方地址的邮件中。';
+
+  @override
+  String get swapSupportEmailCopied => '已复制支持邮箱';
+
+  @override
+  String get swapSupportEmailCopyFailed => '无法复制邮箱地址。请重试。';
 
   @override
   String get swapSupportExpiredBody =>
