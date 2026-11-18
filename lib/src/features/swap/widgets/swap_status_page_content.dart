@@ -672,10 +672,10 @@ class _ProgressStep extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
+                      // Wraps at large text sizes; the step grows from its
+                      // minimum height.
                       child: Text(
                         title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         // Desktop redesign: active title is bold (w600) on
                         // accent. Mobile (mobile-ui-vibe-coding-polishing-2):
                         // every title stays w500 (the active step is set
