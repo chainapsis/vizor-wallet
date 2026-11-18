@@ -1239,7 +1239,7 @@ void main() {
       harness.notifier.startInitialComparisonAfterSyncStart();
       await _flush();
       expect(harness.fullCalls, hasLength(1));
-      expect(harness.fullCalls.single.urls, hasLength(8));
+      expect(harness.fullCalls.single.urls, hasLength(13));
       expect(harness.fullCalls.single.maxConcurrency, 4);
       expect(harness.fullCalls.single.totalTimeout, const Duration(seconds: 7));
       // The foreground operation is independent of the complete-pool future.
@@ -1369,7 +1369,7 @@ void main() {
       harness.notifier.startInitialComparisonAfterSyncStart();
       await _flush();
       expect(harness.fullCalls, hasLength(1));
-      expect(harness.fullCalls.single.urls, hasLength(8));
+      expect(harness.fullCalls.single.urls, hasLength(13));
       harness.notifier.startInitialComparisonAfterSyncStart();
       await _flush();
       expect(harness.fullCalls, hasLength(1));
