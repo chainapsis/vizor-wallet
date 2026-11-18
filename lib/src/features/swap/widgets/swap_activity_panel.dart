@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
@@ -32,6 +33,7 @@ import '../providers/swap_state_provider.dart';
 import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../screens/mobile/mobile_swap_ledger_sign_screen.dart';
 import 'swap_deposit_tokens_page_content.dart';
+import 'swap_support_notice.dart';
 import 'swap_keystone_signing_overlay.dart';
 import 'swap_ledger_signing_overlay.dart';
 import 'mobile/mobile_swap_review_header.dart';
@@ -100,6 +102,7 @@ class _SwapActivityDetailSurfaceState
   _PayRecipientOverlayRequest? _payRecipientOverlayRequest;
   String? _depositCheckingIntentId;
   var _initialIntentApplied = false;
+  bool _supportOverlayVisible = false;
 
   @override
   void initState() {
@@ -116,12 +119,26 @@ class _SwapActivityDetailSurfaceState
     if (oldWidget.intentId != widget.intentId ||
         oldWidget.autoSignZecDeposit != widget.autoSignZecDeposit) {
       _initialIntentApplied = false;
+      _supportOverlayVisible = false;
       _payRecipientOverlayRequest = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _applyInitialIntent();
       });
     }
+  }
+
+  void _showSupport(SwapIntent intent) {
+    if (widget.layout == SwapActivityDetailLayout.mobile) {
+      unawaited(
+        showAppMobileSheet<void>(
+          context: context,
+          builder: (_) => SwapSupportNotice(intent: intent),
+        ),
+      );
+      return;
+    }
+    setState(() => _supportOverlayVisible = true);
   }
 
   void _applyInitialIntent() {
@@ -474,6 +491,7 @@ class _SwapActivityDetailSurfaceState
             onSignZecDeposit: _signZecDeposit,
             intentIsHardware: _isHardwareIntent(activityDetailIntent),
             onShowPayRecipientAddress: _showPayRecipientAddress,
+            onShowSupport: () => _showSupport(activityDetailIntent),
             privacyModeEnabled: privacyModeEnabled,
           );
 
@@ -531,6 +549,13 @@ class _SwapActivityDetailSurfaceState
               contactProfilePictureId: request.contact?.profilePictureId,
               onClose: _closePayRecipientAddress,
             ),
+          ),
+        if (_supportOverlayVisible &&
+            activityDetailIntent != null &&
+            swapNeedsSupportNotice(activityDetailIntent))
+          AppPaneModalOverlay(
+            onDismiss: () => setState(() => _supportOverlayVisible = false),
+            child: SwapSupportNotice(intent: activityDetailIntent),
           ),
         if (widget.layout != SwapActivityDetailLayout.mobile)
           Positioned.fill(
@@ -618,10 +643,12 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.onSignZecDeposit,
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
+    this.onShowSupport,
     this.privacyModeEnabled = false,
     super.key,
   });
 
+  final VoidCallback? onShowSupport;
   final SwapState state;
   final SwapIntent intent;
   final SwapActivityDetailLayout layout;
@@ -658,6 +685,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       onSignZecDeposit: onSignZecDeposit,
       intentIsHardware: intentIsHardware,
       onShowPayRecipientAddress: onShowPayRecipientAddress,
+      onShowSupport: onShowSupport,
       privacyModeEnabled: privacyModeEnabled,
     );
     final isDepositPage = swapActivityShowsDepositPage(
@@ -718,9 +746,11 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.onSignZecDeposit,
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
+    this.onShowSupport,
     required this.privacyModeEnabled,
   });
 
+  final VoidCallback? onShowSupport;
   final SwapState state;
   final SwapIntent intent;
   final SwapActivityDetailLayout layout;
@@ -778,8 +808,18 @@ class _SwapActivityFlowContent extends StatelessWidget {
     final primaryContent = switch (intent.status) {
       SwapIntentStatus.expired =>
         layout == SwapActivityDetailLayout.mobile
-            ? MobileSwapTimeoutContent(onRestart: onReviewFreshQuote)
-            : SwapDepositTimeoutPageContent(onRestart: onReviewFreshQuote),
+            ? MobileSwapTimeoutContent(
+                onRestart: onReviewFreshQuote,
+                onLateDeposit: swapNeedsSupportNotice(intent)
+                    ? onShowSupport
+                    : null,
+              )
+            : SwapDepositTimeoutPageContent(
+                onRestart: onReviewFreshQuote,
+                onLateDeposit: swapNeedsSupportNotice(intent)
+                    ? onShowSupport
+                    : null,
+              ),
       _ when showExternalDepositPage && depositInstruction != null =>
         SwapDepositTokensPageContent(
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
@@ -836,6 +876,18 @@ class _SwapActivityFlowContent extends StatelessWidget {
               ),
             ),
         ],
+        if (intent.status == SwapIntentStatus.failed &&
+            swapNeedsSupportNotice(intent) &&
+            onShowSupport != null)
+          Padding(
+            padding: EdgeInsets.only(
+              top: mobile ? AppSpacing.s : AppSpacing.sm,
+            ),
+            child: SizedBox(
+              width: mobile ? null : 400,
+              child: SwapSupportPrompt(onTap: onShowSupport!, failedSwap: true),
+            ),
+          ),
         _SwapUpdateRequiredNotice(intent: intent, mobile: mobile),
       ],
     );

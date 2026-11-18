@@ -18174,6 +18174,30 @@ abstract class AppLocalizations {
   /// **'One-time address'**
   String get swapDepositOneTimeAddress;
 
+  /// Deposit screen button that opens the incorrect deposit help.
+  ///
+  /// In en, this message translates to:
+  /// **'What if I deposit incorrectly?'**
+  String get swapDepositRecoveryHelp;
+
+  /// Explanation of what can happen when a deposit uses the wrong token or network.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending the wrong token or using a different network may prevent your deposit from being credited.'**
+  String get swapDepositRecoveryIntro;
+
+  /// NEAR Intents policy for manual recovery of incorrectly sent deposits, not automatic swap refunds.
+  ///
+  /// In en, this message translates to:
+  /// **'NEAR Intents does not consider recovery requests for incorrect deposits worth less than \$300 at the time of transfer. For amounts of \$300 or more, NEAR Intents decides whether to help recover the funds on a case-by-case basis.'**
+  String get swapDepositRecoveryPolicy;
+
+  /// Title of the incorrect deposit help dialog or sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect deposits'**
+  String get swapDepositRecoveryTitle;
+
   /// [security] Warning under the deposit address telling the user to send only this asset on this chain, otherwise funds may be lost; {symbol} is the ticker and {chain} the chain name.
   ///
   /// In en, this message translates to:
@@ -19037,6 +19061,71 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Status'**
   String get swapStatusRowLabel;
+
+  /// Button that copies swap support details to paste into an email.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy deposit details'**
+  String get swapSupportCopyAction;
+
+  /// Persistent inline message when copying support details fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t copy the details. Try again.'**
+  String get swapSupportCopyFailed;
+
+  /// Copied details the user can paste into a support email. Contains transaction identifiers only; no wallet secrets or amounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Could you check this transaction and its refund status?\n\nProvider status: {status}\nDeposit address: {address}\nDeposit transaction: {txHash}\nExplorer: {explorer}'**
+  String swapSupportDetails(
+    String status,
+    String address,
+    String txHash,
+    String explorer,
+  );
+
+  /// Instructions for copying deposit details into a support email the user writes.
+  ///
+  /// In en, this message translates to:
+  /// **'If you still need help, copy the deposit details and paste them into an email to the address below.'**
+  String get swapSupportDirectHelp;
+
+  /// Existing swap refund-policy design: ExpiredBody text in the failed or expired deposit support flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the transaction in the wallet you sent from. If your deposit arrived late, NEAR may try to refund it to your refund address.'**
+  String get swapSupportExpiredBody;
+
+  /// Existing swap refund-policy design: ExpiredPrompt text in the failed or expired deposit support flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent a deposit?'**
+  String get swapSupportExpiredPrompt;
+
+  /// Existing swap refund-policy design: ExpiredTitle text in the failed or expired deposit support flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your deposit'**
+  String get swapSupportExpiredTitle;
+
+  /// Existing swap refund-policy design: FailedBody text in the failed or expired deposit support flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the refund address in your transaction details.'**
+  String get swapSupportFailedBody;
+
+  /// Existing swap refund-policy design: FailedPrompt text in the failed or expired deposit support flow.
+  ///
+  /// In en, this message translates to:
+  /// **'No refund yet?'**
+  String get swapSupportFailedPrompt;
+
+  /// Existing swap refund-policy design: FailedTitle text in the failed or expired deposit support flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your refund'**
+  String get swapSupportFailedTitle;
 
   /// Accessibility label of the round button between the pay and receive cards on the mobile Swap screen. Tapping it swaps which asset you pay and which you receive.
   ///

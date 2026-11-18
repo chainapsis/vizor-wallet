@@ -11098,6 +11098,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapDepositOneTimeAddress => 'One-time address';
 
   @override
+  String get swapDepositRecoveryHelp => 'What if I deposit incorrectly?';
+
+  @override
+  String get swapDepositRecoveryIntro =>
+      'Sending the wrong token or using a different network may prevent your deposit from being credited.';
+
+  @override
+  String get swapDepositRecoveryPolicy =>
+      'NEAR Intents does not consider recovery requests for incorrect deposits worth less than \$300 at the time of transfer. For amounts of \$300 or more, NEAR Intents decides whether to help recover the funds on a case-by-case basis.';
+
+  @override
+  String get swapDepositRecoveryTitle => 'Incorrect deposits';
+
+  @override
   String swapDepositSendOnly(String symbol, String chain) {
     return 'Send only $symbol on $chain';
   }
@@ -11618,6 +11632,46 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapStatusRowLabel => 'Status';
+
+  @override
+  String get swapSupportCopyAction => 'Copy deposit details';
+
+  @override
+  String get swapSupportCopyFailed => 'Couldn’t copy the details. Try again.';
+
+  @override
+  String swapSupportDetails(
+    String status,
+    String address,
+    String txHash,
+    String explorer,
+  ) {
+    return 'Could you check this transaction and its refund status?\n\nProvider status: $status\nDeposit address: $address\nDeposit transaction: $txHash\nExplorer: $explorer';
+  }
+
+  @override
+  String get swapSupportDirectHelp =>
+      'If you still need help, copy the deposit details and paste them into an email to the address below.';
+
+  @override
+  String get swapSupportExpiredBody =>
+      'Check the transaction in the wallet you sent from. If your deposit arrived late, NEAR may try to refund it to your refund address.';
+
+  @override
+  String get swapSupportExpiredPrompt => 'Sent a deposit?';
+
+  @override
+  String get swapSupportExpiredTitle => 'Check your deposit';
+
+  @override
+  String get swapSupportFailedBody =>
+      'Check the refund address in your transaction details.';
+
+  @override
+  String get swapSupportFailedPrompt => 'No refund yet?';
+
+  @override
+  String get swapSupportFailedTitle => 'Check your refund';
 
   @override
   String get swapSwitchDirection => 'Switch swap direction';

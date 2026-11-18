@@ -14182,6 +14182,22 @@
   "@swapDepositOneTimeAddress": {
     "description": "[security] Row label for the one-time deposit address; it must not be reused."
   },
+  "swapDepositRecoveryHelp": "What if I deposit incorrectly?",
+  "@swapDepositRecoveryHelp": {
+    "description": "Deposit screen button that opens the incorrect deposit help."
+  },
+  "swapDepositRecoveryIntro": "Sending the wrong token or using a different network may prevent your deposit from being credited.",
+  "@swapDepositRecoveryIntro": {
+    "description": "Explanation of what can happen when a deposit uses the wrong token or network."
+  },
+  "swapDepositRecoveryPolicy": "NEAR Intents does not consider recovery requests for incorrect deposits worth less than $300 at the time of transfer. For amounts of $300 or more, NEAR Intents decides whether to help recover the funds on a case-by-case basis.",
+  "@swapDepositRecoveryPolicy": {
+    "description": "NEAR Intents policy for manual recovery of incorrectly sent deposits, not automatic swap refunds."
+  },
+  "swapDepositRecoveryTitle": "Incorrect deposits",
+  "@swapDepositRecoveryTitle": {
+    "description": "Title of the incorrect deposit help dialog or sheet."
+  },
   "swapDepositSendOnly": "Send only {symbol} on {chain}",
   "@swapDepositSendOnly": {
     "description": "[security] Warning under the deposit address telling the user to send only this asset on this chain, otherwise funds may be lost; {symbol} is the ticker and {chain} the chain name.",
@@ -14817,6 +14833,60 @@
   "swapStatusRowLabel": "Status",
   "@swapStatusRowLabel": {
     "description": "Row label next to the final swap status on the swap status screen."
+  },
+  "swapSupportCopyAction": "Copy deposit details",
+  "@swapSupportCopyAction": {
+    "description": "Button that copies swap support details to paste into an email."
+  },
+  "swapSupportCopyFailed": "Couldn’t copy the details. Try again.",
+  "@swapSupportCopyFailed": {
+    "description": "Persistent inline message when copying support details fails."
+  },
+  "swapSupportDetails": "Could you check this transaction and its refund status?\n\nProvider status: {status}\nDeposit address: {address}\nDeposit transaction: {txHash}\nExplorer: {explorer}",
+  "@swapSupportDetails": {
+    "description": "Copied details the user can paste into a support email. Contains transaction identifiers only; no wallet secrets or amounts.",
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "address": {
+        "type": "String"
+      },
+      "txHash": {
+        "type": "String"
+      },
+      "explorer": {
+        "type": "String"
+      }
+    }
+  },
+  "swapSupportDirectHelp": "If you still need help, copy the deposit details and paste them into an email to the address below.",
+  "@swapSupportDirectHelp": {
+    "description": "Instructions for copying deposit details into a support email the user writes."
+  },
+  "swapSupportExpiredBody": "Check the transaction in the wallet you sent from. If your deposit arrived late, NEAR may try to refund it to your refund address.",
+  "@swapSupportExpiredBody": {
+    "description": "Existing swap refund-policy design: ExpiredBody text in the failed or expired deposit support flow."
+  },
+  "swapSupportExpiredPrompt": "Sent a deposit?",
+  "@swapSupportExpiredPrompt": {
+    "description": "Existing swap refund-policy design: ExpiredPrompt text in the failed or expired deposit support flow."
+  },
+  "swapSupportExpiredTitle": "Check your deposit",
+  "@swapSupportExpiredTitle": {
+    "description": "Existing swap refund-policy design: ExpiredTitle text in the failed or expired deposit support flow."
+  },
+  "swapSupportFailedBody": "Check the refund address in your transaction details.",
+  "@swapSupportFailedBody": {
+    "description": "Existing swap refund-policy design: FailedBody text in the failed or expired deposit support flow."
+  },
+  "swapSupportFailedPrompt": "No refund yet?",
+  "@swapSupportFailedPrompt": {
+    "description": "Existing swap refund-policy design: FailedPrompt text in the failed or expired deposit support flow."
+  },
+  "swapSupportFailedTitle": "Check your refund",
+  "@swapSupportFailedTitle": {
+    "description": "Existing swap refund-policy design: FailedTitle text in the failed or expired deposit support flow."
   },
   "swapSwitchDirection": "Switch swap direction",
   "@swapSwitchDirection": {

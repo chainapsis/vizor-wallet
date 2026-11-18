@@ -84,10 +84,9 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('swap_deposit_qr_logo'))),
       const Size(57, 57),
     );
-    expect(
-      tester.getRect(details).top - tester.getRect(card).bottom,
-      AppSpacing.lg,
-    );
+    final help = find.byKey(const ValueKey('swap_deposit_recovery_help'));
+    expect(tester.getRect(help).top, greaterThan(tester.getRect(card).bottom));
+    expect(tester.getRect(help).bottom, lessThan(tester.getRect(details).top));
 
     final cardDecoration =
         tester.widget<Container>(card).decoration! as BoxDecoration;
