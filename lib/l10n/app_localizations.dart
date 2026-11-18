@@ -15971,13 +15971,13 @@ abstract class AppLocalizations {
   /// Label of the mobile Settings switch that lets turning the phone screen-down hide amounts.
   ///
   /// In en, this message translates to:
-  /// **'Flip to hide'**
+  /// **'Flip phone to hide'**
   String get settingsFlipToHide;
 
   /// Explanation under the mobile Settings flip to hide switch.
   ///
   /// In en, this message translates to:
-  /// **'Turn your phone screen-down to hide amounts on any screen. To show them again, flip it down and back up within 2 seconds.'**
+  /// **'Turn your phone face-down to hide amounts. To show them again, flip it face-down and back up within 2 seconds.'**
   String get settingsFlipToHideDescription;
 
   /// Toast when the mobile Settings flip to hide switch could not be saved.

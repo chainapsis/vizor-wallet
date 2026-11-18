@@ -9619,11 +9619,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsExplorerUrlLabel => '탐‍색‍기 URL';
 
   @override
-  String get settingsFlipToHide => '뒤‍집‍어‍서 숨‍기‍기';
+  String get settingsFlipToHide => '휴‍대‍폰 뒤‍집‍어‍서 숨‍기‍기';
 
   @override
   String get settingsFlipToHideDescription =>
-      '휴‍대‍폰 화‍면‍을 아‍래‍로 뒤‍집‍으‍면 어‍느 화‍면‍에‍서‍든 금‍액‍이 숨‍겨‍져‍요. 다‍시 보‍려‍면 2‍초 안‍에 뒤‍집‍었‍다‍가 다‍시 돌‍려 주‍세‍요.';
+      '휴‍대‍폰 화‍면‍을 아‍래‍로 뒤‍집‍으‍면 금‍액‍이 숨‍겨‍져‍요. 다‍시 보‍려‍면 화‍면‍을 아‍래‍로 뒤‍집‍었‍다‍가 2‍초 안‍에 다‍시 위‍로 돌‍려 주‍세‍요.';
 
   @override
   String get settingsFlipToHideUpdateFailed =>

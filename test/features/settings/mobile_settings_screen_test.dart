@@ -1870,7 +1870,7 @@ void main() {
     await tester.ensureVisible(row);
     await tester.pumpAndSettle();
     expect(
-      find.descendant(of: row, matching: find.text('Flip to hide')),
+      find.descendant(of: row, matching: find.text('Flip phone to hide')),
       findsOneWidget,
     );
     final thumb = find.byKey(
