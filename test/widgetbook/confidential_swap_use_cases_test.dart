@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/mobile/mobile_tor_control.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_confidential_ui.dart';
 import 'package:zcash_wallet/widgetbook/swap_use_cases.dart';
@@ -22,12 +23,21 @@ final _update = find.byKey(const ValueKey('swap_slippage_update_button'));
 
 /// The composer shows the mode only as the mark on the settings button.
 bool _confidential(WidgetTester tester) => find
-    .descendant(of: _settings, matching: find.byType(SwapConfidentialIcon))
+    .descendant(
+      of: _settings,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is SwapConfidentialIcon && widget.on,
+      ),
+    )
     .evaluate()
     .isNotEmpty;
 
-bool _switchOn(WidgetTester tester) =>
-    tester.widget<PrivacyToggle>(find.byType(PrivacyToggle)).enabled;
+/// The desktop modal's privacy toggle, or the mobile sheet's Settings switch.
+bool _switchOn(WidgetTester tester) => _mobile
+    ? tester
+          .widget<MobilePrivacyToggle>(find.byType(MobilePrivacyToggle))
+          .enabled
+    : tester.widget<PrivacyToggle>(find.byType(PrivacyToggle)).enabled;
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
@@ -238,7 +248,8 @@ void main() {
     );
     await tester.tap(_settings);
     await tester.pumpAndSettle();
-    final toggle = find.byType(PrivacyToggle);
+    // The switch's node on desktop, the whole row's on mobile.
+    final toggle = _switch;
     expect(
       tester.getSemantics(toggle),
       isSemantics(
@@ -359,13 +370,21 @@ void main() {
     );
   });
 
-  testWidgets('keyboard flips the setting inside the modal', (tester) async {
+  testWidgets('the setting flips inside the modal and waits for Update', (
+    tester,
+  ) async {
     await _pump(tester, buildConfidentialSwapStandardUseCase);
     await tester.tap(_settings);
     await tester.pumpAndSettle();
-    Focus.of(tester.element(_switch)).requestFocus();
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    if (_mobile) {
+      // The mobile sheet's row flips by touch; keyboard focus is the desktop
+      // modal's.
+      await tester.tap(_switch);
+    } else {
+      Focus.of(tester.element(_switch)).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    }
     await tester.pumpAndSettle();
     expect(_switchOn(tester), isTrue);
     // The flip waits for Update, like a slippage choice.

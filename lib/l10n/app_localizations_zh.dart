@@ -10211,8 +10211,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '在 NEAR Intents 上无法将你的存入与收款对应起来，也无法在其区块浏览器中查到。两笔交易仍会显示在各自的链上。';
 
   @override
-  String get swapConfidentialSettingDescription =>
-      '无法将你的存入与收款相互关联追踪。报价可能与普通路径不同。';
+  String get swapConfidentialSettingDescription => '无法将你的存入与收款相互关联追踪。';
 
   @override
   String get swapContactAlreadyInAddressBook => '已在你的地址簿中';
@@ -10693,6 +10692,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapSlippageDecrease => '降低滑点';
+
+  @override
+  String get swapSlippageDescriptionPay =>
+      '报价波动时最多可多付的 ZEC 数量，超出则执行失败。网络手续费另计。';
+
+  @override
+  String get swapSlippageDescriptionSwap => '设置你可接受的最大汇率变动。网络手续费另计。';
 
   @override
   String get swapSlippageIncrease => '提高滑点';

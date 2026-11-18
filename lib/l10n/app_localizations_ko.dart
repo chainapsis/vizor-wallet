@@ -10886,7 +10886,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      '입‍금‍과 수‍령‍을 서‍로 추‍적‍할 수 없‍어‍요. 일‍반 경‍로‍와 견‍적‍이 다‍를 수 있‍어‍요.';
+      '입‍금‍과 수‍령‍을 서‍로 추‍적‍할 수 없‍어‍요.';
 
   @override
   String get swapContactAlreadyInAddressBook => '이‍미 주‍소‍록‍에 있‍어‍요';
@@ -11413,6 +11413,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapSlippageDecrease => '슬‍리‍피‍지 줄‍이‍기';
+
+  @override
+  String get swapSlippageDescriptionPay =>
+      '견‍적‍이 변‍동‍돼‍도 실‍패‍하‍지 않‍도‍록 이‍만‍큼‍의 ZEC‍를 더 허‍용‍해‍요. 네‍트‍워‍크 수‍수‍료‍는 별‍도‍예‍요.';
+
+  @override
+  String get swapSlippageDescriptionSwap =>
+      '허‍용‍할 최‍대 환‍율 변‍동‍폭‍을 설‍정‍해‍요. 네‍트‍워‍크 수‍수‍료‍는 별‍도‍예‍요.';
 
   @override
   String get swapSlippageIncrease => '슬‍리‍피‍지 늘‍리‍기';

@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_status.dart';
 import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
 import 'support/service_status_fixture.dart';
@@ -492,9 +493,19 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Swap').last);
       await tester.pumpAndSettle();
       final settings = find.byKey(const ValueKey('swap_settings_button'));
+      // The muted mark shows the setting exists; it turns crimson when on.
+      expect(
+        find.descendant(
+          of: settings,
+          matching: find.byType(SwapConfidentialIcon),
+        ),
+        findsOneWidget,
+      );
       final mark = find.descendant(
         of: settings,
-        matching: find.byType(SwapConfidentialIcon),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is SwapConfidentialIcon && widget.on,
+        ),
       );
       expect(mark, findsNothing);
 
@@ -514,6 +525,30 @@ void main() {
       AppButton update() => tester.widget<AppButton>(
         find.byKey(const ValueKey('swap_slippage_update_button')),
       );
+      expect(update().onPressed, isNull);
+      final feedback = <Object?>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            feedback.add(call.arguments);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      // The whole row flips it, its text included, with a selection tick.
+      await tester.tap(find.textContaining("can't be tracked to each other"));
+      await tester.pumpAndSettle();
+      expect(update().onPressed, isNotNull);
+      expect(feedback, ['HapticFeedbackType.selectionClick']);
+      await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+      await tester.pumpAndSettle();
       expect(update().onPressed, isNull);
       await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
       await tester.pumpAndSettle();

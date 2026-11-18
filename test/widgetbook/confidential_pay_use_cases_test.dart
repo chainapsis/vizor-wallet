@@ -18,7 +18,12 @@ final _settings = find.byKey(
 
 /// Pay shows the mode only as the mark on its settings button.
 bool _confidential(WidgetTester tester) => find
-    .descendant(of: _settings, matching: find.byType(SwapConfidentialIcon))
+    .descendant(
+      of: _settings,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is SwapConfidentialIcon && widget.on,
+      ),
+    )
     .evaluate()
     .isNotEmpty;
 

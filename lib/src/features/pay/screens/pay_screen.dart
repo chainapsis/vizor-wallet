@@ -673,13 +673,12 @@ class _PaySlippageControl extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (confidential) ...[
-                SwapConfidentialIcon(
-                  reveal: confidentialReveal,
-                  labeled: true,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-              ],
+              SwapConfidentialIcon(
+                on: confidential,
+                reveal: confidentialReveal,
+                labeled: confidential,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
               Text(
                 label,
                 style: AppTypography.labelLarge.copyWith(

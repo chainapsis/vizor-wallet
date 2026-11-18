@@ -159,7 +159,8 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
     _closeSettings();
   }
 
-  /// Pay's heading settings button; the mark shows while confidential is on.
+  /// Pay's heading settings button; the mark turns crimson while confidential
+  /// is on.
   Widget _settingsButton() => GestureDetector(
     key: const ValueKey('pay_slippage_button'),
     behavior: HitTestBehavior.opaque,
@@ -169,10 +170,11 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_confidential) ...[
-            SwapConfidentialIcon(reveal: _confidentialReveal.value),
-            const SizedBox(width: AppSpacing.xxs),
-          ],
+          SwapConfidentialIcon(
+            on: _confidential,
+            reveal: _confidentialReveal.value,
+          ),
+          const SizedBox(width: AppSpacing.xxs),
           Text(
             formatSwapSlippage(_slippageBps),
             style: AppTypography.labelLarge.copyWith(

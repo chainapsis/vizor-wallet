@@ -188,6 +188,17 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
                       color: colors.text.accent,
                     ),
                   ),
+                  // Heading and explanation, like the Confidential setting.
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    widget.paymentMode
+                        ? context.l10n.swapSlippageDescriptionPay
+                        : context.l10n.swapSlippageDescriptionSwap,
+                    key: const ValueKey('swap_slippage_description'),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   for (final bps in swapSlippagePresetBps) ...[
                     _SlippageRadioCard(

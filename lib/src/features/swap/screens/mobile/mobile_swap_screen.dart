@@ -481,12 +481,11 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                                     : () => _openModal(
                                         _SwapModalSurface.slippageSettings,
                                       ),
-                                leading: swapState.confidential
-                                    ? SwapConfidentialIcon(
-                                        reveal: _confidentialReveal.value,
-                                        labeled: true,
-                                      )
-                                    : null,
+                                leading: SwapConfidentialIcon(
+                                  on: swapState.confidential,
+                                  reveal: _confidentialReveal.value,
+                                  labeled: swapState.confidential,
+                                ),
                                 trailing: const AppIcon(AppIcons.cog),
                                 child: Text(
                                   formatSwapSlippage(swapState.slippageBps),

@@ -14120,7 +14120,7 @@
   "@swapConfidentialRouteTooltip": {
     "description": "Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen."
   },
-  "swapConfidentialSettingDescription": "Your deposit and payout can't be tracked to each other. Quotes can differ from the standard route.",
+  "swapConfidentialSettingDescription": "Your deposit and payout can't be tracked to each other.",
   "@swapConfidentialSettingDescription": {
     "description": "Description under the Confidential toggle in the swap and Pay settings modal."
   },
@@ -14776,6 +14776,14 @@
   "swapSlippageDecrease": "Decrease slippage",
   "@swapSlippageDecrease": {
     "description": "Screen-reader label of the minus button in the mobile slippage stepper."
+  },
+  "swapSlippageDescriptionPay": "Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.",
+  "@swapSlippageDescriptionPay": {
+    "description": "Explanation under the Slippage heading in the Pay settings modal: extra ZEC allowed when the quote moves."
+  },
+  "swapSlippageDescriptionSwap": "Sets the maximum rate change you'll accept. Network fees are separate.",
+  "@swapSlippageDescriptionSwap": {
+    "description": "Explanation under the Slippage heading in the swap settings modal: maximum rate change accepted."
   },
   "swapSlippageIncrease": "Increase slippage",
   "@swapSlippageIncrease": {

@@ -19,8 +19,11 @@ import '../../../swap/widgets/swap_confidential_ui.dart';
 import '../../../../core/widgets/mobile/mobile_amount_card.dart';
 import '../../models/pay_amount_input.dart';
 
-const _slippageButtonWidth = 90.0;
 const _slippageIconSize = 20.0;
+
+/// The confidential mark's slot and its gap before the label.
+const _slippageMarkWidth = _slippageIconSize + AppSpacing.xxs;
+const _slippageButtonWidth = 90.0 + _slippageMarkWidth;
 
 /// Mobile Pay amount step from the 393 px Figma frame. The screen host owns
 /// top navigation; this widget fills the remaining height and pins its actions
@@ -127,7 +130,8 @@ class MobilePayAmountStep extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              // Icon, gap, label-slot padding and the custom button padding.
+              // Mark, icon, gaps, label-slot padding and the custom button
+              // padding.
               final slippageWidth = math.max(
                 _slippageButtonWidth,
                 _scaledTextWidth(
@@ -135,6 +139,7 @@ class MobilePayAmountStep extends StatelessWidget {
                       slippageLabel,
                       AppTypography.labelLarge,
                     ) +
+                    _slippageMarkWidth +
                     _slippageIconSize +
                     AppSpacing.xxs * 5,
               );
@@ -150,14 +155,13 @@ class MobilePayAmountStep extends StatelessWidget {
                     horizontal: AppSpacing.xxs,
                   ),
                   onPressed: onOpenSlippage,
-                  // Marks the button while the confidential route is set in
-                  // the settings it opens.
-                  leading: state.confidential
-                      ? SwapConfidentialIcon(
-                          reveal: confidentialReveal,
-                          labeled: true,
-                        )
-                      : null,
+                  // Shows the confidential route the settings it opens can
+                  // set, crimson while it is on.
+                  leading: SwapConfidentialIcon(
+                    on: state.confidential,
+                    reveal: confidentialReveal,
+                    labeled: state.confidential,
+                  ),
                   trailing: const AppIcon(
                     AppIcons.cog,
                     size: _slippageIconSize,

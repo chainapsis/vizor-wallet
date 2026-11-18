@@ -1168,7 +1168,9 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('pay_slippage_button')),
-        matching: find.byType(SwapConfidentialIcon),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is SwapConfidentialIcon && widget.on,
+        ),
       ),
       findsNothing,
     );
@@ -5042,9 +5044,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // The muted mark shows the setting exists; it turns crimson when on.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_settings_button')),
+        matching: find.byType(SwapConfidentialIcon),
+      ),
+      findsOneWidget,
+    );
     final mark = find.descendant(
       of: find.byKey(const ValueKey('swap_settings_button')),
-      matching: find.byType(SwapConfidentialIcon),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is SwapConfidentialIcon && widget.on,
+      ),
     );
     expect(mark, findsNothing);
     await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
@@ -5161,12 +5173,20 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
     await tester.pumpAndSettle();
 
-    final explainerTop = tester.getBottomLeft(find.text('Slippage')).dy;
+    final description = find.byKey(
+      const ValueKey('swap_slippage_description'),
+    );
+    final explainerTop = tester.getBottomLeft(description).dy;
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
         .dy;
-    // Below the confidential setting, a 16dp gap sits between the Slippage
-    // heading and the presets.
+    // Below the confidential setting, the Slippage heading carries its
+    // explanation 4dp under it, then a 16dp gap before the presets.
+    expect(
+      tester.getTopLeft(description).dy -
+          tester.getBottomLeft(find.text('Slippage')).dy,
+      4,
+    );
     expect(customCardTop - explainerTop, 160);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_slippage_50bps'))).height,
