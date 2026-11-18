@@ -33,8 +33,8 @@ const kHideBalanceOnUnlockKey = 'zcash_hide_balance_on_unlock';
 const kSyncKeepAwakeEnabledKey = 'zcash_sync_keep_awake_enabled';
 const kSyncKeepAwakePromptSeenKey = 'zcash_sync_keep_awake_prompt_seen';
 
-/// Flip to hide, saved as its off flag: a missing value reads as on.
-const kFlipToHideBalanceDisabledKey = 'zcash_flip_to_hide_balance_disabled';
+/// Flip to hide is off unless explicitly enabled in Settings.
+const kFlipToHideBalanceEnabledKey = 'zcash_flip_to_hide_balance_enabled';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
 const kPaymentLinkRecoveryStorageKey = 'zcash_gift_card_recovery_v1';
