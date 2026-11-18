@@ -55,6 +55,21 @@ class SpendableWaitBreakdown extends StatelessWidget {
     );
   }
 
+  /// Waiting rows and their total keep the Home balance's digits, cut rather
+  /// than rounded, so a long amount leaves room for its label.
+  String _waitingAmount(BigInt zatoshi, {bool added = false}) {
+    final text = ZecAmount.fromZatoshi(zatoshi)
+        .compactBalancePretty(
+          minFractionDigits: 0,
+          denomStyle: ZecDenomStyle.upper,
+        )
+        .toString();
+    return hideAmountIfPrivacyMode(
+      added ? '+$text' : text,
+      privacyModeEnabled: privacyModeEnabled,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -116,7 +131,7 @@ class SpendableWaitBreakdown extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Text(
-                  _amount(row.amount, added: true),
+                  _waitingAmount(row.amount, added: true),
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.primary,
                     fontFeatures: const [FontFeature.tabularFigures()],
@@ -143,7 +158,7 @@ class SpendableWaitBreakdown extends StatelessWidget {
                 ),
               ),
               Text(
-                _amount(wait.total),
+                _waitingAmount(wait.total),
                 key: const ValueKey('spendable_wait_total'),
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.primary,

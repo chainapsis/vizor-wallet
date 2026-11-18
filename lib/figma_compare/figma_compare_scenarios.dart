@@ -1744,6 +1744,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     allowFocus: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-send-amount-waiting-long',
+    description: 'Mobile amount step while a long amount is confirming',
+    builder: buildMobileSendAmountWaitingLongUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-send-available-sheet',
     description: 'Sheet listing what can be sent now and what is waiting',
     builder: buildMobileSpendableWaitSheetUseCase,
@@ -1751,9 +1759,22 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-send-available-sheet-long',
+    description: 'Sheet listing what is waiting while a long amount confirms',
+    builder: buildMobileSpendableWaitSheetLongUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'send-spendable-wait-popover',
     description: 'Desktop popover listing what can be sent now',
     builder: buildSendSpendableWaitPopoverUseCase,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'send-spendable-wait-popover-long',
+    description: 'Desktop popover while a long amount is confirming',
+    builder: buildSendSpendableWaitPopoverLongUseCase,
     renderShadows: true,
   ),
   FigmaCompareScenario(

@@ -240,6 +240,14 @@ final _receivedWaiting = SpendableWait(
   receivedWait: const AvailableIn.minutes(1, 3),
 );
 
+/// Confirming funds whose full amount would not fit beside Max.
+final _longReceivedWaiting = SpendableWait(
+  availableNow: BigInt.from(120000000),
+  changeWaiting: BigInt.zero,
+  receivedWaiting: BigInt.from(123456789012),
+  receivedWait: const AvailableIn.minutes(1, 3),
+);
+
 final _changeAndReceivedWaiting = SpendableWait(
   availableNow: BigInt.from(100000000),
   changeWaiting: BigInt.from(120000000),
@@ -258,6 +266,19 @@ Widget buildMobileSendAmountWaitingUseCase(BuildContext context) {
       initialRecipient: _mobileShieldedAddress,
       initialAmount: '2',
       spendableWait: _receivedWaiting,
+    ),
+  );
+}
+
+/// The same step while a long amount is confirming: the line shortens it.
+Widget buildMobileSendAmountWaitingLongUseCase(BuildContext context) {
+  return _mobileSendAmountCaptureFrame(
+    context,
+    _MobileSendHarness(
+      contacts: _mobileSendContacts,
+      initialRecipient: _mobileShieldedAddress,
+      initialAmount: '2',
+      spendableWait: _longReceivedWaiting,
     ),
   );
 }
@@ -328,6 +349,27 @@ Widget buildSendSpendableWaitPopoverUseCase(BuildContext context) {
     child: Align(
       alignment: Alignment.topLeft,
       child: SpendableWaitPopoverSurface(wait: _receivedWaiting),
+    ),
+  );
+}
+
+/// The sheet while a long amount is confirming: its rows are cut to fit.
+Widget buildMobileSpendableWaitSheetLongUseCase(BuildContext context) {
+  return _MobileSendScanFrame(
+    child: SpendableWaitSheetContent(
+      wait: _longReceivedWaiting,
+      onClose: _noop,
+    ),
+  );
+}
+
+/// The desktop popover while a long amount is confirming.
+Widget buildSendSpendableWaitPopoverLongUseCase(BuildContext context) {
+  return Padding(
+    padding: const EdgeInsets.all(AppSpacing.xl),
+    child: Align(
+      alignment: Alignment.topLeft,
+      child: SpendableWaitPopoverSurface(wait: _longReceivedWaiting),
     ),
   );
 }
