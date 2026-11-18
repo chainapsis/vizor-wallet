@@ -12450,11 +12450,11 @@
   "@settingsExplorerUrlLabel": {
     "description": "Label of the text field for a custom block explorer URL."
   },
-  "settingsFlipToHide": "Flip to hide",
+  "settingsFlipToHide": "Flip phone to hide",
   "@settingsFlipToHide": {
     "description": "Label of the mobile Settings switch that lets turning the phone screen-down hide amounts."
   },
-  "settingsFlipToHideDescription": "Turn your phone screen-down to hide amounts on any screen. To show them again, flip it down and back up within 2 seconds.",
+  "settingsFlipToHideDescription": "Turn your phone face-down to hide amounts. To show them again, flip it face-down and back up within 2 seconds.",
   "@settingsFlipToHideDescription": {
     "description": "Explanation under the mobile Settings flip to hide switch."
   },

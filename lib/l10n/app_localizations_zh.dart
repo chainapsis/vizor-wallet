@@ -9013,11 +9013,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsExplorerUrlLabel => '区块浏览器网址';
 
   @override
-  String get settingsFlipToHide => '翻转隐藏';
+  String get settingsFlipToHide => '翻转手机隐藏金额';
 
   @override
   String get settingsFlipToHideDescription =>
-      '将手机屏幕朝下翻转，即可在任意页面隐藏金额。如需再次显示，请在 2 秒内翻转后再翻回。';
+      '将手机屏幕朝下翻转即可隐藏金额。如需再次显示，请将手机屏幕朝下翻转，并在 2 秒内翻回朝上。';
 
   @override
   String get settingsFlipToHideUpdateFailed => '无法更新翻转隐藏设置。';

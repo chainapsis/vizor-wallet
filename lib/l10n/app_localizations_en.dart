@@ -9769,11 +9769,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsExplorerUrlLabel => 'Explorer URL';
 
   @override
-  String get settingsFlipToHide => 'Flip to hide';
+  String get settingsFlipToHide => 'Flip phone to hide';
 
   @override
   String get settingsFlipToHideDescription =>
-      'Turn your phone screen-down to hide amounts on any screen. To show them again, flip it down and back up within 2 seconds.';
+      'Turn your phone face-down to hide amounts. To show them again, flip it face-down and back up within 2 seconds.';
 
   @override
   String get settingsFlipToHideUpdateFailed =>
