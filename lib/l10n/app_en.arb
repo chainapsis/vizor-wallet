@@ -14196,7 +14196,7 @@
   },
   "swapDepositRecoveryTitle": "Incorrect deposits",
   "@swapDepositRecoveryTitle": {
-    "description": "Title of the incorrect deposit help dialog or sheet."
+    "description": "[security] Title of the incorrect deposit help dialog or sheet."
   },
   "swapDepositSendOnly": "Send only {symbol} on {chain}",
   "@swapDepositSendOnly": {

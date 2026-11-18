@@ -18192,7 +18192,7 @@ abstract class AppLocalizations {
   /// **'NEAR Intents does not consider recovery requests for incorrect deposits worth less than \$300 at the time of transfer. For amounts of \$300 or more, NEAR Intents decides whether to help recover the funds on a case-by-case basis.'**
   String get swapDepositRecoveryPolicy;
 
-  /// Title of the incorrect deposit help dialog or sheet.
+  /// [security] Title of the incorrect deposit help dialog or sheet.
   ///
   /// In en, this message translates to:
   /// **'Incorrect deposits'**

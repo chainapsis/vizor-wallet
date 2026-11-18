@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show Dialog, showDialog;
+import 'package:flutter/material.dart' show Colors, Dialog, showDialog;
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -297,7 +297,7 @@ Future<void> _showDepositRecoveryHelp(BuildContext context) {
     builder: (_) => AppTheme(
       data: theme,
       child: const Dialog(
-        backgroundColor: Color(0x00000000),
+        backgroundColor: Colors.transparent,
         child: _DepositRecoveryHelp(mobile: false),
       ),
     ),
