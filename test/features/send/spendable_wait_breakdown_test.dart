@@ -3,10 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
-import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
-import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/send/widgets/spendable_wait_breakdown.dart';
-import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 final _wait = SpendableWait(
   availableNow: BigInt.from(100000000),
@@ -96,67 +93,4 @@ void main() {
     expect(find.textContaining('3.5'), findsNothing);
     expect(find.text('Available in 1–3 min'), findsOneWidget);
   });
-
-  testWidgets('a confirming receipt row says when it is available', (
-    tester,
-  ) async {
-    const waits = <String, ReceivedSpendableWait>{
-      'received-1000': (
-        wait: AvailableIn.minutes(1, 3),
-        confirmations: 1,
-        requiredConfirmations: 6,
-      ),
-    };
-    late ActivityRowData waiting;
-    late ActivityRowData withoutWaits;
-    late ActivityRowData spendable;
-    await tester.pumpWidget(
-      _app(
-        Builder(
-          builder: (context) {
-            waiting = buildTransactionActivityRow(
-              context: context,
-              transaction: _received(minedHeight: 1000),
-              spendableWaits: waits,
-            );
-            withoutWaits = buildTransactionActivityRow(
-              context: context,
-              transaction: _received(minedHeight: 1000),
-            );
-            spendable = buildTransactionActivityRow(
-              context: context,
-              transaction: _received(minedHeight: 990),
-              spendableWaits: waits,
-            );
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
-    );
-
-    expect(waiting.title, 'Received');
-    expect(waiting.subtitle, 'Available in 1–3 min');
-    expect(withoutWaits.subtitle, isNot(contains('Available')));
-    expect(spendable.subtitle, withoutWaits.subtitle);
-  });
-}
-
-rust_sync.TransactionInfo _received({required int minedHeight}) {
-  return rust_sync.TransactionInfo(
-    txidHex: 'received-$minedHeight',
-    minedHeight: BigInt.from(minedHeight),
-    expiredUnmined: false,
-    accountBalanceDelta: 0,
-    fee: BigInt.zero,
-    feeState: rust_sync.TransactionFeeState.notApplicable,
-    detailsComplete: true,
-    provisional: false,
-    amountIncludesFee: false,
-    blockTime: BigInt.from(1800000000),
-    isTransparent: false,
-    txKind: 'received',
-    displayAmount: BigInt.from(130000000),
-    displayPool: 'shielded',
-    createdTime: BigInt.from(1800000000),
-  );
 }

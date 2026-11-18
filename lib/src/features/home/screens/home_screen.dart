@@ -38,7 +38,6 @@ import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
-import '../../../providers/spendable_wait_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -829,7 +828,6 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       row: () => buildTransactionActivityRow(
         context: context,
         transaction: transaction,
-        spendableWaits: ref.watch(activeReceivedSpendableWaitsProvider),
         privateQueriesEnabled: ref.watch(enhancePirProvider),
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)

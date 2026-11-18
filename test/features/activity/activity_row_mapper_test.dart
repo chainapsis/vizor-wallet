@@ -414,16 +414,23 @@ void main() {
     expect(row.leadingIconName, AppIcons.loader);
   });
 
-  testWidgets('confirmed transactions keep their settled titles and icons', (
+  testWidgets('mined transactions keep their settled titles, icons and pools', (
     tester,
   ) async {
     final sent = await mapRow(tester, _transaction(txKind: 'sent'));
     expect(sent.title, 'Sent');
     expect(sent.leadingIconName, AppIcons.plane);
 
-    final received = await mapRow(tester, _transaction(txKind: 'received'));
-    expect(received.title, 'Received');
-    expect(received.leadingIconName, AppIcons.arrowDownCircle);
+    for (final height in [1000, 990]) {
+      final received = await mapRow(
+        tester,
+        _transaction(txKind: 'received', minedHeight: BigInt.from(height)),
+      );
+      expect(received.title, 'Received');
+      expect(received.leadingIconName, AppIcons.arrowDownCircle);
+      expect(received.subtitle, 'Shielded');
+      expect(received.subtitleIconName, AppIcons.shieldKeyhole);
+    }
   });
 
   testWidgets('Gift Card transactions use their Figma titles and icon', (
