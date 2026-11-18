@@ -227,8 +227,7 @@ void main() {
       });
       expect(
         json['statusError'],
-        'Deposit transaction was rejected.\n'
-        'Check the address, memo, and tx hash.',
+        'Couldn’t submit this transaction hash.\nCheck it and try again.',
       );
       expect(json['broadcastNoticeCode'], {
         'type': 'notice',
@@ -246,7 +245,7 @@ void main() {
       expect(restored.broadcastNotice, intent.broadcastNotice);
       expect(
         _plain(restored.statusError!.text(_ko)),
-        '입금 거래가 거부됐어요.\n주소, 메모, 거래 해시를 확인해 주세요.',
+        '이 거래 해시를 제출하지 못했어요.\n해시를 확인하고 다시 시도해 주세요.',
       );
       expect(_plain(restored.broadcastNotice!.text(_ko)), _broadcastUnknownKo);
     },
@@ -393,8 +392,15 @@ void main() {
   });
 
   test('every legacy text maps to a code that renders it unchanged', () {
+    // Copy reworded after codes replaced stored text. The old English still
+    // decodes to its code and now renders the current copy.
+    const reworded = {
+      'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.',
+    };
     for (final entry in swapLegacyMessagesForTest.entries) {
-      expect(entry.value.text(testL10n), entry.key);
+      if (!reworded.contains(entry.key)) {
+        expect(entry.value.text(testL10n), entry.key);
+      }
       expect(swapMessageFromLegacyText(entry.key), entry.value);
     }
   });

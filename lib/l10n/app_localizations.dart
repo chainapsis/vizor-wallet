@@ -18276,10 +18276,10 @@ abstract class AppLocalizations {
   /// **'Deposit is not indexed yet.\nCheck again in a few minutes.'**
   String get swapFailureDepositNotIndexed;
 
-  /// [security] Swap status panel: the provider rejected the submitted deposit transaction. Tells the user which deposit details to check.
+  /// [security] Swap status: the provider did not accept a deposit transaction hash (HTTP 400, invalid input). Asks the user to check the hash and try again.
   ///
   /// In en, this message translates to:
-  /// **'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.'**
+  /// **'Couldn’t submit this transaction hash.\nCheck it and try again.'**
   String get swapFailureDepositRejected;
 
   /// Swap status panel: telling the provider about the deposit transaction failed.

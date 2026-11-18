@@ -10313,7 +10313,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapFailureDepositNotIndexed => '暂未查询到这笔存入交易。\n请几分钟后再查看。';
 
   @override
-  String get swapFailureDepositRejected => '存入交易被拒绝。\n请检查地址、备注和交易哈希。';
+  String get swapFailureDepositRejected => '无法提交此交易哈希。\n请检查后重试。';
 
   @override
   String get swapFailureDepositSubmitFailed => '无法提交存入状态。\n请稍后重试。';

@@ -1613,6 +1613,8 @@ class SwapNotifier extends Notifier<SwapState> {
     if (!submitProviderStatus) {
       await _switchEndpointAfterUncertainBroadcast(broadcastMessage);
     }
+    // The wallet broadcast this hash itself, so a failed submit is only a
+    // missed speed-up: the provider still finds the deposit on chain.
     if (selected == null) {
       await _submitDepositTransactionForStoredIntent(
         accountUuid: accountUuid,
@@ -1622,12 +1624,14 @@ class SwapNotifier extends Notifier<SwapState> {
         broadcastMessage: broadcastMessage,
         broadcastNotices: broadcastNotices,
         submitProviderStatus: submitProviderStatus,
+        reportSubmitFailure: false,
       );
       return;
     }
     await _submitDepositTransaction(
       selected,
       normalizedTxHash,
+      reportSubmitFailure: false,
       broadcastStatus: broadcastStatus,
       broadcastMessage: broadcastMessage,
       broadcastNotices: broadcastNotices,
@@ -1721,15 +1725,10 @@ class SwapNotifier extends Notifier<SwapState> {
           storedIntents.replaceSwapIntent(checkpointed.id, updated),
         );
       } catch (e) {
-        final failed = checkpointed.copyWith(
-          statusError: _providerFailureMessage(
-            SwapFailureOperation.submitDeposit,
-            e,
-          ),
-        );
-        await _persistIntentsForAccount(
-          intent.accountUuid,
-          storedIntents.replaceSwapIntent(checkpointed.id, failed),
+        // A failed submit is a missed speed-up; the checkpoint stays as saved.
+        log(
+          'Swap: hardware deposit submit failed for stored intent '
+          'intent=${_shortSwapValue(intent.id)} error=$e',
         );
       }
       return;
@@ -1792,14 +1791,14 @@ class SwapNotifier extends Notifier<SwapState> {
         'intent=${_shortSwapValue(intent.id)} '
         'tx=${_shortSwapValue(normalizedTxHash)} error=$e',
       );
-      final message = _providerFailureMessage(
-        SwapFailureOperation.submitDeposit,
-        e,
-      );
-      state = state.copyWith(depositSubmitting: false, statusError: message);
+      // The wallet broadcast this deposit, so it ends like a successful submit.
+      state = state.copyWith(depositSubmitting: false, clearStatusError: true);
     }
   }
 
+  /// [reportSubmitFailure] is false when the wallet broadcast [txHash]
+  /// itself. Submitting is an optional hint, so its failure then ends like a
+  /// successful submit.
   Future<void> _submitDepositTransaction(
     SwapIntent selected,
     String txHash, {
@@ -1807,6 +1806,7 @@ class SwapNotifier extends Notifier<SwapState> {
     String? broadcastMessage,
     List<BroadcastNotice> broadcastNotices = const [],
     bool submitProviderStatus = true,
+    bool reportSubmitFailure = true,
   }) async {
     if (!_isAccountActive(selected.accountUuid)) {
       await _submitDepositTransactionForStoredIntent(
@@ -1817,6 +1817,7 @@ class SwapNotifier extends Notifier<SwapState> {
         broadcastMessage: broadcastMessage,
         broadcastNotices: broadcastNotices,
         submitProviderStatus: submitProviderStatus,
+        reportSubmitFailure: reportSubmitFailure,
       );
       return;
     }
@@ -1898,10 +1899,9 @@ class SwapNotifier extends Notifier<SwapState> {
         'Swap: submit deposit failed intent=${_shortSwapValue(selected.id)} '
         'error=$e',
       );
-      final message = _providerFailureMessage(
-        SwapFailureOperation.submitDeposit,
-        e,
-      );
+      final message = reportSubmitFailure
+          ? _providerFailureMessage(SwapFailureOperation.submitDeposit, e)
+          : null;
       if (selected.accountUuid != null &&
           !_isAccountActive(selected.accountUuid)) {
         await _submitDepositTransactionForStoredIntent(
@@ -1928,6 +1928,7 @@ class SwapNotifier extends Notifier<SwapState> {
     String? broadcastMessage,
     List<BroadcastNotice> broadcastNotices = const [],
     bool submitProviderStatus = true,
+    bool reportSubmitFailure = true,
     SwapMessage? statusError,
   }) async {
     final storedIntents = await ref
@@ -1972,6 +1973,13 @@ class SwapNotifier extends Notifier<SwapState> {
       updatedIntents = updatedIntents.replaceSwapIntent(intentId, updated);
       await _persistIntentsForAccount(accountUuid, updatedIntents);
     } catch (e) {
+      if (!reportSubmitFailure) {
+        log(
+          'Swap: submit deposit failed for stored intent '
+          'intent=${_shortSwapValue(intentId)} error=$e',
+        );
+        return;
+      }
       final failed = checkpointed.copyWith(
         statusError: _providerFailureMessage(
           SwapFailureOperation.submitDeposit,
@@ -2139,21 +2147,18 @@ class SwapNotifier extends Notifier<SwapState> {
         'intent=${_shortSwapValue(intentId)} tx=${_shortSwapValue(broadcast.txHash)} '
         'error=$e',
       );
-      final message = _providerFailureMessage(
-        SwapFailureOperation.submitDeposit,
-        e,
-      );
+      // The deposit is on chain and the provider finds it without the hint,
+      // so this ends like a successful submit, with status polling to follow.
       if (!_isAccountActive(accountUuid)) {
         await _submitDepositTransactionForStoredIntent(
           accountUuid: accountUuid,
           intentId: intentId,
           txHash: broadcast.txHash,
           submitProviderStatus: false,
-          statusError: message,
         );
         return;
       }
-      state = state.copyWith(depositSubmitting: false, statusError: message);
+      state = state.copyWith(depositSubmitting: false, clearStatusError: true);
     }
   }
 

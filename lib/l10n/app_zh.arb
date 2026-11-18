@@ -3017,7 +3017,7 @@
   "swapFailureAmountTooLowSwap": "此笔兑换的金额过低。\n请尝试更大的金额。",
   "swapFailureAssetUnavailable": "此资产目前无法兑换。\n请选择其他资产或稍后重试。",
   "swapFailureDepositNotIndexed": "暂未查询到这笔存入交易。\n请几分钟后再查看。",
-  "swapFailureDepositRejected": "存入交易被拒绝。\n请检查地址、备注和交易哈希。",
+  "swapFailureDepositRejected": "无法提交此交易哈希。\n请检查后重试。",
   "swapFailureDepositSubmitFailed": "无法提交存入状态。\n请稍后重试。",
   "swapFailureNoQuote": "此路径或金额暂无可用报价。\n请调整金额、滑点或资产后重试。",
   "swapFailureQuoteTimeout": "报价请求超时。\n请检查网络连接后重试。",

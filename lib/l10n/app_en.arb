@@ -14269,9 +14269,9 @@
   "@swapFailureDepositNotIndexed": {
     "description": "Swap status panel: the provider has not seen the deposit transaction yet."
   },
-  "swapFailureDepositRejected": "Deposit transaction was rejected.\nCheck the address, memo, and tx hash.",
+  "swapFailureDepositRejected": "Couldn’t submit this transaction hash.\nCheck it and try again.",
   "@swapFailureDepositRejected": {
-    "description": "[security] Swap status panel: the provider rejected the submitted deposit transaction. Tells the user which deposit details to check."
+    "description": "[security] Swap status: the provider did not accept a deposit transaction hash (HTTP 400, invalid input). Asks the user to check the hash and try again."
   },
   "swapFailureDepositSubmitFailed": "Deposit status could not be submitted.\nTry again later.",
   "@swapFailureDepositSubmitFailed": {

@@ -10996,7 +10996,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapFailureDepositRejected =>
-      '입‍금 거‍래‍가 거‍부‍됐‍어‍요.\n주‍소, 메‍모, 거‍래 해‍시‍를 확‍인‍해 주‍세‍요.';
+      '이 거‍래 해‍시‍를 제‍출‍하‍지 못‍했‍어‍요.\n해‍시‍를 확‍인‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get swapFailureDepositSubmitFailed =>

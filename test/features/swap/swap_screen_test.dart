@@ -11694,6 +11694,20 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
     await tester.pumpAndSettle();
+    // The submit only speeds detection up, so its failure shows no error,
+    // not even until the next status refresh clears it.
+    final shownErrors = <SwapMessage>[];
+    final errors =
+        ProviderScope.containerOf(
+          tester.element(find.byType(Scaffold).first),
+          listen: false,
+        ).listen(swapStateProvider.select((state) => state.statusError), (
+          _,
+          next,
+        ) {
+          if (next != null) shownErrors.add(next);
+        });
+    addTearDown(errors.close);
     await tester.tap(find.byKey(const ValueKey('swap_start_button')));
     await tester.pumpAndSettle();
 
@@ -11702,10 +11716,98 @@ void main() {
     expect(sessionStore.savedIntents, hasLength(1));
     expect(sessionStore.savedIntents.single.depositTxHash, 'zec-auto-txid');
     expect(sessionStore.savedIntents.single.accountUuid, 'account-1');
+    expect(shownErrors, isEmpty);
     await _openSwapStatusDetails(tester, expand: true);
     expect(find.text('zec-auto-txid'), findsWidgets);
     expect(find.textContaining('Could not send ZEC deposit'), findsNothing);
   });
+
+  testWidgets(
+    'only a transaction hash the user enters reports a failed submit',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider(
+        submitDepositError: Exception('submit temporarily unavailable'),
+      );
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: swapProvider,
+          depositSender: _FakeSwapDepositSender(),
+          sessionStore: _FakeSwapPersistenceStore(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '1.5',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(Scaffold).first),
+        listen: false,
+      );
+      final notifier = container.read(swapStateProvider.notifier);
+      final shownErrors = <SwapMessage>[];
+      final errors = container.listen(
+        swapStateProvider.select((state) => state.statusError),
+        (_, next) {
+          if (next != null) shownErrors.add(next);
+        },
+      );
+      addTearDown(errors.close);
+      final intent = container
+          .read(swapStateProvider)
+          .intents
+          .firstWhere((intent) => intent.depositTxHash == 'zec-auto-txid');
+
+      // Hardware deposits the wallet broadcast itself, for a known intent and
+      // for one the state does not hold yet.
+      await notifier.submitDepositTransactionForIntent(
+        intentId: intent.id,
+        accountUuid: 'account-1',
+        txHash: 'hardware-txid',
+        broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+      );
+      await notifier.recordHardwareDepositBroadcast(
+        intent: intent.copyWith(id: 'hardware-intent'),
+        broadcast: const SwapDepositBroadcastResult(
+          txHash: 'hardware-new-txid',
+          status: SwapDepositBroadcastStatus.broadcasted,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(swapProvider.submittedDeposits, hasLength(3));
+      expect(shownErrors, isEmpty);
+
+      notifier.updateDepositTxHash('typed-txid');
+      await notifier.submitSelectedDepositTransaction();
+      await tester.pumpAndSettle();
+      expect(shownErrors, [
+        const SwapFailureMessage(
+          SwapFailureOperation.submitDeposit,
+          SwapFailureCategory.serviceUnavailable,
+        ),
+      ]);
+    },
+  );
 
   testWidgets('a ZEC deposit held for the network upgrade opens no swap', (
     tester,

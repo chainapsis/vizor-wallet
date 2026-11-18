@@ -11166,7 +11166,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapFailureDepositRejected =>
-      'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.';
+      'Couldn’t submit this transaction hash.\nCheck it and try again.';
 
   @override
   String get swapFailureDepositSubmitFailed =>

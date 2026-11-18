@@ -202,15 +202,14 @@ void main() {
 
     expect(
       swapFailureCategory(SwapFailureOperation.submitDeposit, error),
-      SwapFailureCategory.depositRejected,
+      SwapFailureCategory.unknown,
     );
     expect(
       swapFailureMessage(
         SwapFailureOperation.submitDeposit,
         error,
       ).text(testL10n),
-      'Deposit transaction was rejected.\n'
-      'Check the address, memo, and tx hash.',
+      'Deposit status could not be submitted.\nTry again later.',
     );
   });
 
@@ -311,8 +310,8 @@ void main() {
     );
   });
 
-  test('submit deposit rejection asks for deposit details', () {
-    const error = OneClickApiException('tx hash rejected', statusCode: 422);
+  test('submit deposit 400 asks the user to check the hash', () {
+    const error = OneClickApiException('invalid input', statusCode: 400);
 
     expect(
       swapFailureCategory(SwapFailureOperation.submitDeposit, error),
@@ -323,9 +322,20 @@ void main() {
         SwapFailureOperation.submitDeposit,
         error,
       ).text(testL10n),
-      'Deposit transaction was rejected.\n'
-      'Check the address, memo, and tx hash.',
+      'Couldn’t submit this transaction hash.\nCheck it and try again.',
     );
+  });
+
+  test('submit deposit codes 1Click does not document stay generic', () {
+    for (final statusCode in [404, 422]) {
+      final error = OneClickApiException('rejected', statusCode: statusCode);
+
+      expect(
+        swapFailureCategory(SwapFailureOperation.submitDeposit, error),
+        SwapFailureCategory.unknown,
+        reason: 'status $statusCode',
+      );
+    }
   });
 
   test('provider server errors after deposit explain automatic refresh', () {
