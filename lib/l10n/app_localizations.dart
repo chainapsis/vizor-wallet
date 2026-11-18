@@ -3920,12 +3920,6 @@ abstract class AppLocalizations {
   /// **'Add a card someone sent you'**
   String get homeReceiveRedeemGiftCardSubtitle;
 
-  /// Description under Request ZEC in the mobile Home Receive sheet, whose card opens the payment request sheet.
-  ///
-  /// In en, this message translates to:
-  /// **'Ask for an exact amount'**
-  String get homeReceiveRequestSubtitle;
-
   /// Heading above the recent transactions list on Home.
   ///
   /// In en, this message translates to:
@@ -14330,7 +14324,7 @@ abstract class AppLocalizations {
   /// **'Share transparent address'**
   String get receiveShareTransparentAddress;
 
-  /// Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows. Also a toast when Request ZEC is picked in the mobile Home Receive sheet and the address could not be read.
+  /// Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows.
   ///
   /// In en, this message translates to:
   /// **'Couldn’t load your shielded address. Try again in a moment.'**

@@ -24,8 +24,6 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_memo_sheet.dart';
 import '../../../../core/zcash/zip321_payment_request.dart'
     show stripUnsupportedZip321MemoText;
-import '../../../../providers/account_provider.dart';
-import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../services/request_qr_export.dart';
 import '../../services/zec_request_draft.dart';
@@ -45,35 +43,6 @@ Future<void> openReceiveRequest(
   required String address,
 }) {
   return context.push<void>(kReceiveRequestPath, extra: address);
-}
-
-/// Opens the request page for the active account's shielded address, the
-/// address the Receive screen opens on. Used where no Receive screen is open,
-/// such as the mobile Home Receive sheet.
-Future<void> openActiveAccountReceiveRequest(
-  BuildContext context,
-  WidgetRef ref,
-) async {
-  final accountState = ref.read(accountProvider).value;
-  final accountUuid = accountState?.activeAccountUuid;
-  if (accountUuid == null) return;
-  var address = '';
-  try {
-    address = await ref
-        .read(receiveAddressServiceProvider)
-        .loadShieldedAddress(
-          accountUuid: accountUuid,
-          currentShieldedAddress: accountState?.activeAddress,
-        );
-  } catch (e) {
-    log('ReceiveRequest: ERROR loading shielded address: $e');
-  }
-  if (!context.mounted) return;
-  if (address.isEmpty) {
-    showAppToast(context, context.l10n.receiveShieldedAddressLoadFailed);
-    return;
-  }
-  await openReceiveRequest(context, address: address);
 }
 
 class MobileReceiveRequestScreen extends ConsumerStatefulWidget {

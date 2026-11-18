@@ -9,7 +9,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_action_card.dart';
 
 /// The ways to receive that the mobile Home Receive button offers.
-enum ReceiveOption { receive, request, redeemGiftCard }
+enum ReceiveOption { receive, redeemGiftCard }
 
 /// Opens the sheet behind the mobile Home Receive button. Resolves to the
 /// option picked, or null when the sheet is dismissed; the caller acts on it
@@ -42,14 +42,6 @@ class ReceiveOptionsSheet extends StatelessWidget {
             title: l10n.receiveTitle(kZcashDefaultCurrencyTicker),
             subtitle: l10n.homeReceiveReceiveSubtitle,
             onTap: () => pick(ReceiveOption.receive),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          MobileActionCard(
-            key: const ValueKey('receive_options_request'),
-            icon: AppIcons.request,
-            title: l10n.receiveRequestButton(kZcashDefaultCurrencyTicker),
-            subtitle: l10n.homeReceiveRequestSubtitle,
-            onTap: () => pick(ReceiveOption.request),
           ),
           const SizedBox(height: AppSpacing.s),
           MobileActionCard(

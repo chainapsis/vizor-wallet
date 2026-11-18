@@ -67,7 +67,6 @@ import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.da
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../../../receive/widgets/mobile/receive_options_sheet.dart';
-import '../../../receive/screens/mobile/mobile_receive_request_screen.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/providers/swap_state_provider.dart';
@@ -1041,8 +1040,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     switch (option) {
       case ReceiveOption.receive:
         _pushUsedScreen('/receive');
-      case ReceiveOption.request:
-        await openActiveAccountReceiveRequest(context, ref);
       case ReceiveOption.redeemGiftCard:
         _pushUsedScreen('/payment-links?redeem=1');
     }

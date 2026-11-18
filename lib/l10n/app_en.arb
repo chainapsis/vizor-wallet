@@ -3014,10 +3014,6 @@
   "@homeReceiveRedeemGiftCardSubtitle": {
     "description": "Description under Redeem gift card in the mobile Home Receive sheet."
   },
-  "homeReceiveRequestSubtitle": "Ask for an exact amount",
-  "@homeReceiveRequestSubtitle": {
-    "description": "Description under Request ZEC in the mobile Home Receive sheet, whose card opens the payment request sheet."
-  },
   "homeRecentActivity": "Recent activity",
   "@homeRecentActivity": {
     "description": "Heading above the recent transactions list on Home."
@@ -11164,7 +11160,7 @@
   },
   "receiveShieldedAddressLoadFailed": "Couldn’t load your shielded address. Try again in a moment.",
   "@receiveShieldedAddressLoadFailed": {
-    "description": "Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows. Also a toast when Request ZEC is picked in the mobile Home Receive sheet and the address could not be read."
+    "description": "Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows."
   },
   "receiveTitle": "Receive {ticker}",
   "@receiveTitle": {

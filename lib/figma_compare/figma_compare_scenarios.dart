@@ -4451,10 +4451,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-options-sheet',
-    description: 'Mobile Home Receive sheet: receive, request, redeem',
+    description: 'Mobile Home Receive sheet with address and gift card options',
     builder: buildReceiveMobileOptionsSheetUseCase,
     desktop: false,
     mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-receive-options-sheet',
+    description: 'Mobile Home with the Receive sheet open',
+    builder: buildMobileHomeDefaultUseCase,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    renderShadows: true,
+    outsideScaffold: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-receive-transparent',

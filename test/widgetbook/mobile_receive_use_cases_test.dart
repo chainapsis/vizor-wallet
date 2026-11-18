@@ -160,27 +160,27 @@ void main() {
     );
   });
 
-  testWidgets('receive mobile options sheet use case shows three ways', (
-    tester,
-  ) async {
-    await _pumpReceiveMobileUseCase(
-      tester,
-      buildReceiveMobileOptionsSheetUseCase,
-    );
+  testWidgets(
+    'receive mobile options sheet shows address and gift card options',
+    (tester) async {
+      await _pumpReceiveMobileUseCase(
+        tester,
+        buildReceiveMobileOptionsSheetUseCase,
+      );
 
-    expect(tester.takeException(), isNull);
-    expect(find.byType(ReceiveOptionsSheet), findsOneWidget);
-    for (final label in [
-      'Receive ZEC',
-      'Share your address or QR code',
-      'Request ZEC',
-      'Ask for an exact amount',
-      'Redeem gift card',
-      'Add a card someone sent you',
-    ]) {
-      expect(find.text(label), findsOneWidget);
-    }
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.byType(ReceiveOptionsSheet), findsOneWidget);
+      expect(find.text('Request ZEC'), findsNothing);
+      for (final label in [
+        'Receive ZEC',
+        'Share your address or QR code',
+        'Redeem gift card',
+        'Add a card someone sent you',
+      ]) {
+        expect(find.text(label), findsOneWidget);
+      }
+    },
+  );
 
   testWidgets('receive mobile transparent sheet use case opens info sheet', (
     tester,
