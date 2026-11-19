@@ -2089,6 +2089,7 @@ class SwapNotifier extends Notifier<SwapState> {
         broadcastMessage: broadcast.message,
         broadcastNotices: broadcast.notices,
         submitProviderStatus: broadcast.isCertain,
+        reportSubmitFailure: false,
       );
       return;
     }

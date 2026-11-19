@@ -11955,6 +11955,63 @@ void main() {
     expect(find.textContaining('Could not send ZEC deposit'), findsNothing);
   });
 
+  testWidgets('a deposit broadcast after an account switch saves no submit '
+      'error', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(
+      submitDepositError: Exception('submit temporarily unavailable'),
+    );
+    final depositSender = _DelayedSwapDepositSender();
+    final sessionStore = _FakeSwapPersistenceStore();
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () =>
+            _FakeSwapAccountNotifier(_twoAccountBootstrap.initialAccountState),
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pump();
+    expect(depositSender.requests, hasLength(1));
+
+    // The broadcast lands after the user moved to account-2.
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+    depositSender.completeSend();
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.submittedDeposits, hasLength(1));
+    final saved = sessionStore.intentsFor('account-1').single;
+    expect(saved.depositTxHash, 'zec-auto-txid');
+    expect(saved.statusError, isNull);
+  });
+
   testWidgets(
     'only a transaction hash the user enters reports a failed submit',
     (tester) async {
