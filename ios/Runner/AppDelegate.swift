@@ -12,6 +12,7 @@ import UIKit
   private var nativeTabBarPlugin: NativeTabBarPlugin?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
+  private let privateAccountSnapshot = PrivateAccountSnapshotCover()
   /// True while a seed-entry screen is showing (`keyboard_policy` channel).
   private(set) var rejectsCustomKeyboards = false
 
@@ -673,7 +674,7 @@ import UIKit
     SecureScreenshotShield.shared.onStatusChanged = { status in
       privacyShieldChannel.invokeMethod("protectionStatusChanged", arguments: status)
     }
-    privacyShieldChannel.setMethodCallHandler { (call, result) in
+    privacyShieldChannel.setMethodCallHandler { [weak self] (call, result) in
       switch call.method {
       case "setSensitiveContentVisible":
         guard
@@ -691,6 +692,15 @@ import UIKit
         }
         SecureScreenshotShield.shared.setSensitiveContentVisible(visible)
         result(SecureScreenshotShield.shared.status)
+      case "setPrivateAccountViewVisible":
+        guard let args = call.arguments as? [String: Any],
+          let visible = args["visible"] as? Bool
+        else {
+          result(FlutterError(code: "bad_args", message: "Expected visible argument.", details: nil))
+          return
+        }
+        self?.privateAccountSnapshot.setEnabled(visible)
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -1391,6 +1401,70 @@ final class SecureScreenshotShield {
       .compactMap { $0 as? UIWindowScene }
       .flatMap { $0.windows }
       .first { $0.isKeyWindow }
+  }
+}
+
+/// Protects the app switcher only while a private account or its settings
+/// are displayed. Flutter can be suspended before it paints its lock route.
+private final class PrivateAccountSnapshotCover {
+  private var enabled = false
+  private var cover: UIView?
+  private var heldForBackground = false
+  private var observers: [NSObjectProtocol] = []
+
+  init() {
+    let center = NotificationCenter.default
+    let suspend: (Notification) -> Void = { [weak self] _ in
+      self?.coverWindow()
+    }
+    let enterBackground: (Notification) -> Void = { [weak self] _ in
+      guard let self, self.enabled else { return }
+      self.heldForBackground = true
+      self.coverWindow()
+    }
+    let resume: (Notification) -> Void = { [weak self] _ in
+      guard let self, !self.heldForBackground else { return }
+      self.removeCover()
+    }
+    observers = [
+      center.addObserver(forName: UIScene.willDeactivateNotification, object: nil, queue: .main, using: suspend),
+      center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main, using: suspend),
+      center.addObserver(forName: UIScene.didEnterBackgroundNotification, object: nil, queue: .main, using: enterBackground),
+      center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main, using: enterBackground),
+      center.addObserver(forName: UIScene.didActivateNotification, object: nil, queue: .main, using: resume),
+      center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main, using: resume),
+    ]
+  }
+
+  deinit {
+    for observer in observers {
+      NotificationCenter.default.removeObserver(observer)
+    }
+  }
+
+  func setEnabled(_ value: Bool) {
+    enabled = value
+    if value && UIApplication.shared.applicationState != .active {
+      coverWindow()
+    } else if !value {
+      heldForBackground = false
+      removeCover()
+    }
+  }
+
+  private func coverWindow() {
+    guard enabled, cover == nil, let window = SecureScreenshotShield.keyWindow() else { return }
+    let view = UIView(frame: window.bounds)
+    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.backgroundColor = .systemBackground
+    view.isAccessibilityElement = false
+    window.addSubview(view)
+    cover = view
+  }
+
+  private func removeCover() {
+    cover?.removeFromSuperview()
+    cover = nil
   }
 }
 

@@ -208,6 +208,120 @@ abstract class AppLocalizations {
   /// **'Name can be up to 20 characters.'**
   String get accountNameTooLong;
 
+  /// [security] Mobile Settings > Accounts by passcode. AccountChoice label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the accounts to show when opening with this passcode.'**
+  String get accountVisibilityAccountChoice;
+
+  /// [security] Mobile Settings > Accounts by passcode. Accounts label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Accounts shown with this passcode'**
+  String get accountVisibilityAccounts;
+
+  /// [security] Mobile Settings > Accounts by passcode. BiometricRequired label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Biometric verification is required. Try again.'**
+  String get accountVisibilityBiometricRequired;
+
+  /// [security] Mobile Settings > Accounts by passcode. Change label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Change separate passcode'**
+  String get accountVisibilityChange;
+
+  /// [security] Mobile Settings > Accounts by passcode. Create label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Create separate passcode'**
+  String get accountVisibilityCreate;
+
+  /// [security] Mobile Settings > Accounts by passcode. Delete label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove separate passcode'**
+  String get accountVisibilityDelete;
+
+  /// [security] Mobile Settings > Accounts by passcode. DeleteBody label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'The linked accounts will appear in the regular account list again.'**
+  String get accountVisibilityDeleteBody;
+
+  /// [security] Mobile Settings > Accounts by passcode. Description label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a separate passcode on the lock screen to show the accounts linked to it. Linked accounts are hidden from the regular account list.'**
+  String get accountVisibilityDescription;
+
+  /// [security] Mobile Settings > Accounts by passcode. DifferentPasscode label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a different passcode.'**
+  String get accountVisibilityDifferentPasscode;
+
+  /// [security] Mobile Settings > Accounts by passcode. EditAccounts label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Change which accounts are shown'**
+  String get accountVisibilityEditAccounts;
+
+  /// [security] Mobile Settings > Accounts by passcode. EnterSeparatePasscode label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your separate passcode.'**
+  String get accountVisibilityEnterSeparatePasscode;
+
+  /// [security] Mobile Settings > Accounts by passcode. EnterWalletPasscode label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your wallet passcode.'**
+  String get accountVisibilityEnterWalletPasscode;
+
+  /// [security] Mobile Settings > Accounts by passcode. KeepOrdinary label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave at least one account in the regular account list.'**
+  String get accountVisibilityKeepOrdinary;
+
+  /// [security] Mobile Settings > Accounts by passcode. Manage label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage with separate passcode'**
+  String get accountVisibilityManage;
+
+  /// [security] Mobile Settings > Accounts by passcode. ManageTitle label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage separate passcode'**
+  String get accountVisibilityManageTitle;
+
+  /// [security] Mobile Settings > Accounts by passcode. NewPasscode label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a new separate passcode.'**
+  String get accountVisibilityNewPasscode;
+
+  /// [security] Mobile Settings > Accounts by passcode. SelectAccount label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one account.'**
+  String get accountVisibilitySelectAccount;
+
+  /// [security] Mobile Settings > Accounts by passcode. Title label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Accounts by passcode'**
+  String get accountVisibilityTitle;
+
+  /// [security] Mobile Settings > Accounts by passcode. UpdateFailed label or guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t update account visibility. Try again.'**
+  String get accountVisibilityUpdateFailed;
+
   /// Screen-reader label of the button that opens an account's action menu on desktop.
   ///
   /// In en, this message translates to:
@@ -9971,11 +10085,11 @@ abstract class AppLocalizations {
   /// **'Enable fingerprint unlock'**
   String get nativeBiometricEnableTitle;
 
-  /// Button in the Android system fingerprint prompt that dismisses it so the user can type the 6-digit app passcode instead.
+  /// Cancel button in the Android system fingerprint prompt.
   ///
   /// In en, this message translates to:
-  /// **'Use passcode'**
-  String get nativeBiometricUsePasscode;
+  /// **'Cancel'**
+  String get nativeBiometricPromptCancel;
 
   /// Body of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app.
   ///

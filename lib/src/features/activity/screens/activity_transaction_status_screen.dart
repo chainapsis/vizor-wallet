@@ -286,9 +286,7 @@ class _ActivityTransactionStatusScreenState
     final receivingIsShielded = receivingOutput?.pool == 'shielded';
     final memo = detail?.memo?.trim();
     final hasMemo = memo != null && memo.isNotEmpty;
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     final fromRecipient = hasFromAddress
         ? sendReviewRecipientFor(
             contacts: addressBookContacts,
@@ -354,9 +352,7 @@ class _ActivityTransactionStatusScreenState
     List<AddressBookContact> addressBookContacts, {
     required bool privacyModeEnabled,
   }) {
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     final recipient = recipientAddress == null
         ? null
         : sendReviewRecipientFor(

@@ -11,11 +11,11 @@ import '../../../features/onboarding/mobile/adaptive_passcode_layout.dart';
 import '../../../features/onboarding/shared/onboarding_welcome_art.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/hide_balance_on_unlock_provider.dart';
-import '../../../providers/biometric_unlock_provider.dart';
+import '../../../providers/mobile_account_visibility_provider.dart';
+import '../../../providers/mobile_passcode_auth_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_keep_awake_provider.dart';
 import '../../../providers/sync_scan_slowdown_provider.dart';
-import '../../../services/biometric_unlock.dart';
 import '../../feedback/app_haptics.dart';
 import '../../l10n/l10n.dart';
 import '../../formatting/sync_status_label.dart';
@@ -25,7 +25,6 @@ import '../../platform/device_power.dart';
 import '../../theme/app_theme.dart';
 import '../app_button.dart';
 import '../app_icon.dart';
-import '../biometric_icon.dart';
 
 class SyncKeepAwakePrivacyLockHost extends ConsumerStatefulWidget {
   const SyncKeepAwakePrivacyLockHost({
@@ -158,6 +157,12 @@ class _SyncKeepAwakePrivacyLockHostState
       return;
     }
 
+    if (ref.read(mobileAccountScopeProvider) != null ||
+        ref.read(mobileAccountManagementOpenProvider)) {
+      ref.read(mobileAccountRelockProvider.notifier).request();
+      return;
+    }
+
     // The privacy overlay does not replace the underlying route. Dismiss its
     // input connection and native keyboard controls before covering the content.
     FocusManager.instance.primaryFocus?.unfocus();
@@ -218,7 +223,6 @@ class _SyncKeepAwakePrivacyLockScreenState
   var _showPasscode = false;
   var _passcodeEntry = '';
   var _submittingPasscode = false;
-  var _unlockAttemptInFlight = false;
   String Function(AppLocalizations)? _passcodeError;
   late final VoidCallback _detachBackHandler;
 
@@ -231,7 +235,7 @@ class _SyncKeepAwakePrivacyLockScreenState
   }
 
   void _handleSystemBack() {
-    if (_submittingPasscode || _unlockAttemptInFlight || !_showPasscode) return;
+    if (_submittingPasscode || !_showPasscode) return;
     _returnToStatusScreen();
   }
 
@@ -249,13 +253,12 @@ class _SyncKeepAwakePrivacyLockScreenState
     }
   }
 
-  void _openPasscodePrompt({String? error}) {
+  void _openPasscodePrompt() {
     setState(() {
       _showPasscode = true;
       _passcodeEntry = '';
-      _passcodeError = error == null ? null : (_) => error;
+      _passcodeError = null;
       _submittingPasscode = false;
-      _unlockAttemptInFlight = false;
     });
   }
 
@@ -269,7 +272,6 @@ class _SyncKeepAwakePrivacyLockScreenState
     _passcodeEntry = '';
     _passcodeError = null;
     _submittingPasscode = false;
-    _unlockAttemptInFlight = false;
   }
 
   void _onPasscodeDigit(int digit) {
@@ -298,61 +300,35 @@ class _SyncKeepAwakePrivacyLockScreenState
     await _confirmPasscode(_passcodeEntry);
   }
 
-  Future<void> _unlockOrPromptPasscode() async {
-    if (_submittingPasscode || _unlockAttemptInFlight) return;
-
-    setState(() {
-      _unlockAttemptInFlight = true;
-      _passcodeError = null;
-    });
-
-    final BiometricUnlockState biometric;
-    try {
-      biometric = await ref.read(biometricUnlockProvider.future);
-    } catch (_) {
-      if (mounted) _openPasscodePrompt();
-      return;
-    }
-    if (!mounted) return;
-
-    if (!biometric.usable) {
-      _openPasscodePrompt();
-      return;
-    }
-
-    final wasEnabled = biometric.enabled;
-    final passcode = await ref
-        .read(biometricUnlockProvider.notifier)
-        .readPasscode(reason: context.l10n.commonUnlockVizor);
-    if (!mounted) return;
-
-    if (passcode == null) {
-      final now = ref.read(biometricUnlockProvider).value;
-      final error = wasEnabled && now != null && !now.enabled
-          ? biometric.availability.kind.changedMessage(context.l10n)
-          : null;
-      _openPasscodePrompt(error: error);
-      return;
-    }
-
-    await _confirmPasscode(passcode);
-  }
-
   Future<void> _confirmPasscode(String passcode) async {
     setState(() {
       _submittingPasscode = true;
       _passcodeError = null;
     });
 
+    final session = ref.read(appSecurityProvider);
     var confirmed = false;
+    var biometricFailed = false;
     try {
-      confirmed = await ref
-          .read(appSecurityProvider.notifier)
-          .confirmPassword(passcode);
+      await ref
+          .read(mobilePasscodeAuthProvider)
+          .check(
+            code: passcode,
+            biometricReason: context.l10n.commonUnlockVizor,
+            walletOnly: true,
+            isCurrent: () => mounted && _showPasscode,
+          );
+      confirmed = true;
+    } on MobilePasscodeRejected catch (error) {
+      biometricFailed = error.failure == MobilePasscodeFailure.biometric;
     } catch (_) {
-      confirmed = false;
+      // Keep the overlay in place when authentication cannot be verified.
     }
     if (!mounted) return;
+    if (!identical(session, ref.read(appSecurityProvider))) {
+      _openPasscodePrompt();
+      return;
+    }
 
     if (confirmed) {
       final authenticatedSession = ref.read(appSecurityProvider);
@@ -362,11 +338,11 @@ class _SyncKeepAwakePrivacyLockScreenState
           !identical(authenticatedSession, ref.read(appSecurityProvider))) {
         setState(() {
           _submittingPasscode = false;
-          _unlockAttemptInFlight = false;
           _passcodeEntry = '';
         });
         return;
       }
+      ref.read(syncKeepAwakeInteractionProvider.notifier).markInteraction();
       ref.read(syncKeepAwakePrivacyLockProvider.notifier).unlock();
       unawaited(AppHaptics.accessGranted());
       return;
@@ -375,10 +351,11 @@ class _SyncKeepAwakePrivacyLockScreenState
     unawaited(AppHaptics.error());
     setState(() {
       _submittingPasscode = false;
-      _unlockAttemptInFlight = false;
       _showPasscode = true;
       _passcodeEntry = '';
-      _passcodeError = (l10n) => l10n.passcodeIncorrect;
+      _passcodeError = biometricFailed
+          ? (l10n) => l10n.accountVisibilityBiometricRequired
+          : (l10n) => l10n.passcodeIncorrect;
     });
   }
 
@@ -398,9 +375,7 @@ class _SyncKeepAwakePrivacyLockScreenState
 
     return _SyncKeepAwakeStatusScreen(
       mode: widget.mode,
-      onUnlockPressed: _unlockAttemptInFlight || _submittingPasscode
-          ? null
-          : () => unawaited(_unlockOrPromptPasscode()),
+      onUnlockPressed: _submittingPasscode ? null : _openPasscodePrompt,
     );
   }
 }
@@ -417,9 +392,6 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    final biometric =
-        ref.watch(biometricUnlockProvider).value ??
-        BiometricUnlockState.initial;
     final l10n = context.l10n;
     final main = switch (mode) {
       SyncKeepAwakePrivacyLockMode.done => const _SyncKeepAwakeDoneLockup(),
@@ -473,7 +445,7 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
                       'sync_keep_awake_privacy_unlock_button',
                     ),
                     onPressed: onUnlockPressed,
-                    leading: _SyncKeepAwakeUnlockIcon(biometric: biometric),
+                    leading: const AppIcon(AppIcons.unlock),
                     minWidth: 165,
                     child: Text(l10n.commonUnlockVizor),
                   ),
@@ -600,19 +572,6 @@ class _SyncKeepAwakeLayoutSpec {
       minimumMainToButtonGap:
           SyncKeepAwakePrivacyLockScreen._minimumRingToButtonGap,
     );
-  }
-}
-
-class _SyncKeepAwakeUnlockIcon extends StatelessWidget {
-  const _SyncKeepAwakeUnlockIcon({required this.biometric});
-
-  final BiometricUnlockState biometric;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!biometric.usable) return const AppIcon(AppIcons.unlock);
-
-    return BiometricIcon(kind: biometric.availability.kind);
   }
 }
 

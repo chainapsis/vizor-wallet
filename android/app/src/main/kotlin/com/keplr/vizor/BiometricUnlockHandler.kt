@@ -91,13 +91,15 @@ class BiometricUnlockHandler(private val activity: FragmentActivity) {
 
     private fun enable(passcode: String, result: MethodChannel.Result) {
         try {
-            // Fresh key per enable so a previously invalidated key never
-            // lingers; encryption itself needs a prompt too, so wrap the
-            // init cipher in BiometricPrompt below.
-            deleteKey()
-            val key = createKey()
+            // Preserve a working key until the replacement has been approved.
+            // If the prompt is cancelled, the previous escrow remains readable.
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, key)
+            try {
+                cipher.init(Cipher.ENCRYPT_MODE, loadKey() ?: createKey())
+            } catch (_: KeyPermanentlyInvalidatedException) {
+                deleteKey()
+                cipher.init(Cipher.ENCRYPT_MODE, createKey())
+            }
 
             authenticate(
                 title = NativeStrings.text(activity, NativeString.nativeBiometricEnableTitle),
@@ -217,8 +219,7 @@ class BiometricUnlockHandler(private val activity: FragmentActivity) {
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setAllowedAuthenticators(BIOMETRIC_STRONG)
-            // The in-app passcode numpad is the fallback path.
-            .setNegativeButtonText(NativeStrings.text(activity, NativeString.nativeBiometricUsePasscode))
+            .setNegativeButtonText(NativeStrings.text(activity, NativeString.nativeBiometricPromptCancel))
             .build()
         prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
     }

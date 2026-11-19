@@ -90,6 +90,34 @@ flow. Legacy installs with no marker keep their saved Boolean preference.
   The earlier default-on implementation shipped only in QA/RC builds
   (`mobile/v0.0.63` and release candidates); its disabled flag is not migrated.
 
+## Accounts by passcode (mobile)
+
+Settings > Account > Accounts by passcode always shows both actions. Creating a
+separate passcode lists the ordinary accounts available for assignment. To
+manage a previous assignment, enter its separate passcode and complete wallet
+authentication. The ordinary screen and failed lookups do not display whether
+a separate passcode is configured.
+
+The startup keypad always asks for a passcode first. The wallet passcode opens
+the ordinary account list. A separate passcode selects only the accounts
+assigned to that code and then requires the wallet passcode, or a biometric
+prompt that supplies the wallet passcode if biometric unlock is enabled.
+Biometrics are also required for the ordinary entry when enabled. A cancelled,
+unavailable or invalidated prompt keeps the wallet locked. Biometric settings
+do not disable themselves after errors.
+
+Assignments and separate passcode verifiers live in secure storage. A
+separate passcode never decrypts wallet secrets. Account scope is held in
+memory and is set before the wallet publishes unlocked state. Re-entering
+with the wallet passcode cannot restore a previously active hidden account.
+Sync and reset still cover all accounts. Resetting Vizor is an explicit
+whole-wallet action, including when only one ordinary account is shown.
+
+A background trip or keep-awake idle lock ends a separate account view or an
+authenticated account management view. The native app switcher cover applies
+only to these views, and the app routes back to the keypad before the view
+can be used again.
+
 ## Which amounts to mask
 
 Classify each amount by where it comes from, not by the screen it is on.

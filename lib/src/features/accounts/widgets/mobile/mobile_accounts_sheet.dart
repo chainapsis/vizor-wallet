@@ -19,6 +19,7 @@ import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/mobile_account_visibility_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
 
@@ -112,7 +113,12 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
   }
 
   Future<void> _copyShieldedAddress(AccountInfo account) async {
-    if (_isCopyingAddress) return;
+    if (_isCopyingAddress ||
+        !ref
+            .read(visibleAccountsProvider)
+            .any((item) => item.uuid == account.uuid)) {
+      return;
+    }
     setState(() => _isCopyingAddress = true);
 
     try {
@@ -157,8 +163,11 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final accountState = ref.watch(accountProvider).value;
-    final accounts = accountState?.accounts ?? const <AccountInfo>[];
-    final active = accountState?.activeAccount;
+    final accounts = ref.watch(visibleAccountsProvider);
+    final active = accounts
+        .where((account) => account.uuid == accountState?.activeAccountUuid)
+        .firstOrNull;
+    final canAdd = ref.watch(mobileAccountScopeProvider) == null;
     final others = [
       for (final account in accounts)
         if (account.uuid != active?.uuid) account,
@@ -282,8 +291,10 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                   ),
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
-              _AddAccountButton(onTap: _addAccount),
+              if (canAdd) ...[
+                const SizedBox(width: AppSpacing.xs),
+                _AddAccountButton(onTap: _addAccount),
+              ],
             ],
           ),
         ],

@@ -13,6 +13,8 @@ import 'core/config/rpc_endpoint_config.dart';
 import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
 import 'core/l10n/app_language.dart';
+import 'core/storage/account_visibility_store.dart';
+import 'core/layout/app_form_factor.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/privacy_mode_persistence.dart';
 import 'core/storage/enhance_pir_preference_store.dart';
@@ -65,6 +67,7 @@ class AppBootstrapState {
     required this.passwordRotationRecoveryFailed,
     this.swapEnabledOverrideCachedForRelease = false,
     this.biometricUnlockEnabled = false,
+    this.mobileAccountVisibility = const MobileAccountVisibilityConfig(),
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
     this.flipToHideBalanceEnabled = false,
@@ -108,6 +111,7 @@ class AppBootstrapState {
   /// secure storage. The unlock screen uses this to paint the biometric
   /// backdrop on the first frame before the async availability probe resolves.
   final bool biometricUnlockEnabled;
+  final MobileAccountVisibilityConfig mobileAccountVisibility;
   final bool isPasswordConfigured;
   final bool isUnlocked;
   final bool passwordRotationRecoveryFailed;
@@ -472,7 +476,21 @@ Future<AppBootstrapState> loadAppBootstrap({
         log('bootstrap: completed Gift setup marker cleanup failed: $error');
       }
     }
-    final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
+    final accountVisibility = kAppFormFactor == AppFormFactor.mobile
+        ? await MobileAccountVisibilityStore(storage).read()
+        : const MobileAccountVisibilityConfig();
+    final ordinaryAccounts = accountVisibility.rules.isEmpty
+        ? accounts
+        : accounts
+              .where((account) => accountVisibility.allows(account.uuid, null))
+              .toList();
+    if (accounts.isNotEmpty && ordinaryAccounts.isEmpty) {
+      throw StateError('No ordinary account remains.');
+    }
+    final activeAccountUuid = _resolveActiveUuid(
+      storedActiveUuid,
+      ordinaryAccounts,
+    );
     String? activeAddress;
     if (isUnlocked && activeAccountUuid != null) {
       try {
@@ -532,6 +550,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       hideBalanceOnUnlockEnabled: hideBalanceOnUnlockEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
+      mobileAccountVisibility: accountVisibility,
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
       flipToHideBalanceEnabled: flipToHideBalanceEnabled,

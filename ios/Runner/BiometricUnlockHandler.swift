@@ -95,12 +95,15 @@ final class BiometricUnlockHandler {
 
     // Keychain writes can block; keep them off the platform thread.
     DispatchQueue.global(qos: .userInitiated).async {
-      let deleteQuery: [String: Any] = [
+      let existingQuery: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: Self.service,
         kSecAttrAccount as String: Self.account,
       ]
-      SecItemDelete(deleteQuery as CFDictionary)
+      let updated = SecItemUpdate(
+        existingQuery as CFDictionary,
+        [kSecValueData as String: data] as CFDictionary
+      )
 
       let addQuery: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -109,7 +112,9 @@ final class BiometricUnlockHandler {
         kSecValueData as String: data,
         kSecAttrAccessControl as String: access,
       ]
-      let status = SecItemAdd(addQuery as CFDictionary, nil)
+      let status = updated == errSecItemNotFound
+        ? SecItemAdd(addQuery as CFDictionary, nil)
+        : updated
       DispatchQueue.main.async {
         if status == errSecSuccess {
           result(nil)

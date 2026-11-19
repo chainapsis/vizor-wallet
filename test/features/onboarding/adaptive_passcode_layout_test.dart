@@ -144,8 +144,9 @@ void main() {
             final footer = find.byType(
               enabled ? PasscodeBiometricButton : PasscodeBiometricOptIn,
             );
-            if (!enabled && screen != PasscodeCaptureScreen.unlock) {
-              expect(find.byType(PasscodeBiometricButton), findsNothing);
+            if (enabled == (screen == PasscodeCaptureScreen.unlock)) {
+              expect(footer, findsNothing);
+              expect(find.byType(PasscodeNumpad), findsOneWidget);
               return;
             }
             expect(footer, findsOneWidget);

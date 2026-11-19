@@ -202,6 +202,20 @@ class MobileSettingsScreen extends ConsumerWidget {
                         onTap: () => _openChangePasscode(context),
                       ),
                       MobileListRow(
+                        key: const ValueKey(
+                          'mobile_settings_account_visibility_row',
+                        ),
+                        leading: _RowIcon(AppIcons.lock),
+                        label: context.l10n.accountVisibilityTitle,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        chevronSize: _settingsChevronSize,
+                        showChevron: true,
+                        onTap: () =>
+                            context.push('/settings/account-visibility'),
+                      ),
+                      MobileListRow(
                         key: const ValueKey('mobile_settings_pfp_row'),
                         leading: _RowIcon(AppIcons.user),
                         label: context.l10n.settingsRowProfilePictureMobile,
@@ -501,11 +515,25 @@ class MobileSettingsScreen extends ConsumerWidget {
     if (!context.mounted) return;
     try {
       if (state.enabled) {
+        final session = ref.read(appSecurityProvider);
+        if (!session.isUnlocked) return;
         final confirmed = await showAppMobileSheet<bool>(
           context: context,
           builder: (_) => _DisableBiometricSheet(kind: state.availability.kind),
         );
-        if (!context.mounted || confirmed != true) return;
+        if (!context.mounted ||
+            confirmed != true ||
+            !identical(session, ref.read(appSecurityProvider))) {
+          return;
+        }
+        final authenticated = await context.push<bool>(
+          '/settings/confirm-biometric-change',
+        );
+        if (!context.mounted ||
+            authenticated != true ||
+            !identical(session, ref.read(appSecurityProvider))) {
+          return;
+        }
         await notifier.disable();
         unawaited(AppHaptics.selection());
         if (context.mounted) {

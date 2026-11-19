@@ -2440,9 +2440,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (pending(recents) || pending(addressBook)) return null;
     final allContacts =
         addressBook.value?.contacts ?? const <AddressBookContact>[];
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     return matchRecipientSuggestions(
       query: _addressController.text,
       network: AddressBookNetwork.zcash,
@@ -2485,7 +2483,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final recipient = sendReviewRecipientFor(
       contacts: ref.read(addressBookProvider).value?.contacts ?? const [],
       address: address,
-      ownAccounts: ref.read(ownAccountAddressesProvider).value ?? const {},
+      ownAccounts: ref.read(visibleOwnAccountAddressesProvider),
     );
     _addressController.value = TextEditingValue(
       text: address,
@@ -2512,9 +2510,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final allContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
 
     Widget buildRecentRow(SendRecentRecipient recent) {
       final recipient = sendReviewRecipientFor(
@@ -2760,8 +2756,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       );
     } else if (_hasValidAddress) {
       final address = _addressController.text.trim();
-      final ownAccounts =
-          ref.watch(ownAccountAddressesProvider).value ?? const {};
+      final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
       final recipient = sendReviewRecipientFor(
         contacts:
             ref.watch(addressBookProvider).value?.contacts ??
@@ -2833,7 +2828,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           ref.watch(addressBookProvider).value?.contacts ??
           const <AddressBookContact>[],
       address: _addressController.text.trim(),
-      ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
+      ownAccounts: ref.watch(visibleOwnAccountAddressesProvider),
     );
     final recipientLabel = recipient is SendReviewContactRecipient
         ? recipient.name
@@ -3485,9 +3480,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     final recipient = _reviewRecipientPresentation(
       address: address,
       contacts: addressBookContacts,

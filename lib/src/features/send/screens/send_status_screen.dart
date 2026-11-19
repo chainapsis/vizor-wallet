@@ -17,7 +17,6 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/zcash_explorer_provider.dart';
@@ -351,9 +350,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     final recipient = sendReviewRecipientFor(
       contacts: addressBookContacts,
       address: widget.args.address,

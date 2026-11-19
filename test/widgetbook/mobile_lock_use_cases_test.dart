@@ -93,40 +93,23 @@ void main() {
         .dy;
     expect(footerTop - keypadBottomWithoutMethod, closeTo(AppSpacing.md, 0.1));
 
-    await _pumpMobileLockUseCase(tester, buildMobileUnlockFaceIdUseCase);
-    expect(tester.takeException(), isNull);
-    expect(find.text('Sign in with Face ID'), findsOneWidget);
-    expect(find.text('Sign in with fingerprint'), findsNothing);
-    expect(
-      tester.getTopLeft(find.byType(PasscodeNumpad)).dy,
-      closeTo(keypadTopWithoutMethod, 0.1),
-    );
-    final faceIdButtonSize = tester.getSize(
-      find.byKey(const ValueKey('passcode_biometric_button')),
-    );
-    expect(faceIdButtonSize.height, 36);
-    expect(faceIdButtonSize.width, greaterThan(150));
-    final faceIdLabel = tester.widget<Text>(find.text('Sign in with Face ID'));
-    expect(faceIdLabel.style?.fontSize, AppTypography.labelLarge.fontSize);
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is AppIcon &&
-            widget.name == AppIcons.faceId &&
-            widget.size == 13.5,
-      ),
-      findsOneWidget,
-    );
-
-    await _pumpMobileLockUseCase(tester, buildMobileUnlockFingerprintUseCase);
-    expect(tester.takeException(), isNull);
-    expect(find.text('Sign in with fingerprint'), findsOneWidget);
-    expect(find.text('Sign in with Face ID'), findsNothing);
-    final fingerprintButtonSize = tester.getSize(
-      find.byKey(const ValueKey('passcode_biometric_button')),
-    );
-    expect(fingerprintButtonSize.height, 36);
-    expect(fingerprintButtonSize.width, greaterThan(150));
+    for (final builder in [
+      buildMobileUnlockFaceIdUseCase,
+      buildMobileUnlockFingerprintUseCase,
+    ]) {
+      await _pumpMobileLockUseCase(tester, builder);
+      expect(tester.takeException(), isNull);
+      expect(find.text('Sign in with Face ID'), findsNothing);
+      expect(find.text('Sign in with fingerprint'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('passcode_biometric_button')),
+        findsNothing,
+      );
+      expect(
+        tester.getTopLeft(find.byType(PasscodeNumpad)).dy,
+        closeTo(keypadTopWithoutMethod, 0.1),
+      );
+    }
   });
 
   testWidgets('mobile onboarding use cases render simulator-hard states', (

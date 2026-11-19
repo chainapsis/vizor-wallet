@@ -72,6 +72,72 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountNameTooLong => 'Name can be up to 20 characters.';
 
   @override
+  String get accountVisibilityAccountChoice =>
+      'Choose the accounts to show when opening with this passcode.';
+
+  @override
+  String get accountVisibilityAccounts => 'Accounts shown with this passcode';
+
+  @override
+  String get accountVisibilityBiometricRequired =>
+      'Biometric verification is required. Try again.';
+
+  @override
+  String get accountVisibilityChange => 'Change separate passcode';
+
+  @override
+  String get accountVisibilityCreate => 'Create separate passcode';
+
+  @override
+  String get accountVisibilityDelete => 'Remove separate passcode';
+
+  @override
+  String get accountVisibilityDeleteBody =>
+      'The linked accounts will appear in the regular account list again.';
+
+  @override
+  String get accountVisibilityDescription =>
+      'Enter a separate passcode on the lock screen to show the accounts linked to it. Linked accounts are hidden from the regular account list.';
+
+  @override
+  String get accountVisibilityDifferentPasscode =>
+      'Choose a different passcode.';
+
+  @override
+  String get accountVisibilityEditAccounts => 'Change which accounts are shown';
+
+  @override
+  String get accountVisibilityEnterSeparatePasscode =>
+      'Enter your separate passcode.';
+
+  @override
+  String get accountVisibilityEnterWalletPasscode =>
+      'Enter your wallet passcode.';
+
+  @override
+  String get accountVisibilityKeepOrdinary =>
+      'Leave at least one account in the regular account list.';
+
+  @override
+  String get accountVisibilityManage => 'Manage with separate passcode';
+
+  @override
+  String get accountVisibilityManageTitle => 'Manage separate passcode';
+
+  @override
+  String get accountVisibilityNewPasscode => 'Enter a new separate passcode.';
+
+  @override
+  String get accountVisibilitySelectAccount => 'Select at least one account.';
+
+  @override
+  String get accountVisibilityTitle => 'Accounts by passcode';
+
+  @override
+  String get accountVisibilityUpdateFailed =>
+      'Couldn’t update account visibility. Try again.';
+
+  @override
   String get accountsActionsLabel => 'Account actions';
 
   @override
@@ -6097,7 +6163,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nativeBiometricEnableTitle => 'Enable fingerprint unlock';
 
   @override
-  String get nativeBiometricUsePasscode => 'Use passcode';
+  String get nativeBiometricPromptCancel => 'Cancel';
 
   @override
   String get nativeIronwoodContinueBody =>

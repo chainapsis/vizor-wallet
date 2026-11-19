@@ -92,9 +92,7 @@ class _MobilePasscodeCaptureState extends State<MobilePasscodeCapture> {
                     args: const SetPasswordScreenArgs.createDeferred(),
                   ),
                 ),
-                PasscodeCaptureScreen.unlock => const MobileUnlockScreen(
-                  autoPromptBiometric: false,
-                ),
+                PasscodeCaptureScreen.unlock => const MobileUnlockScreen(),
                 PasscodeCaptureScreen.viewingKey =>
                   const MobileViewingKeyScreen(),
                 PasscodeCaptureScreen.seedPhrase => MobileSeedPhraseScreen(

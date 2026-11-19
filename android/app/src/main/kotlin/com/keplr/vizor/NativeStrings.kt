@@ -13,7 +13,7 @@ import android.content.Context
 @Suppress("EnumEntryName")
 enum class NativeString {
     nativeBiometricEnableTitle,
-    nativeBiometricUsePasscode,
+    nativeBiometricPromptCancel,
     nativeIronwoodContinueBody,
     nativeIronwoodContinueTitle,
     nativeIronwoodNeedsAttentionBody,
@@ -99,7 +99,7 @@ object NativeStrings {
 
     private fun en(key: NativeString): String = when (key) {
         NativeString.nativeBiometricEnableTitle -> "Enable fingerprint unlock"
-        NativeString.nativeBiometricUsePasscode -> "Use passcode"
+        NativeString.nativeBiometricPromptCancel -> "Cancel"
         NativeString.nativeIronwoodContinueBody -> "Open Vizor to prepare the next migration transfer."
         NativeString.nativeIronwoodContinueTitle -> "Continue your Ironwood migration"
         NativeString.nativeIronwoodNeedsAttentionBody -> "Open Vizor to review and continue your migration."
@@ -153,7 +153,7 @@ object NativeStrings {
 
     private val ko: Map<NativeString, String> = mapOf(
         NativeString.nativeBiometricEnableTitle to "지문 잠금 해제 켜기",
-        NativeString.nativeBiometricUsePasscode to "암호 사용",
+        NativeString.nativeBiometricPromptCancel to "취소",
         NativeString.nativeIronwoodContinueBody to "다음 마이그레이션 거래를 준비하려면 Vizor를 열어 주세요.",
         NativeString.nativeIronwoodContinueTitle to "Ironwood 마이그레이션을 계속하세요",
         NativeString.nativeIronwoodNeedsAttentionBody to "마이그레이션을 확인하고 계속하려면 Vizor를 열어 주세요.",
@@ -207,7 +207,7 @@ object NativeStrings {
 
     private val zh: Map<NativeString, String> = mapOf(
         NativeString.nativeBiometricEnableTitle to "启用指纹解锁",
-        NativeString.nativeBiometricUsePasscode to "使用数字密码",
+        NativeString.nativeBiometricPromptCancel to "取消",
         NativeString.nativeIronwoodContinueBody to "打开 Vizor 准备下一笔迁移转账。",
         NativeString.nativeIronwoodContinueTitle to "继续你的 Ironwood 迁移",
         NativeString.nativeIronwoodNeedsAttentionBody to "打开 Vizor 查看并继续你的迁移。",

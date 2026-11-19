@@ -8,7 +8,7 @@ import Foundation
 /// captions and native error messages that Dart displays.
 enum NativeString: String, CaseIterable {
   case nativeBiometricEnableTitle
-  case nativeBiometricUsePasscode
+  case nativeBiometricPromptCancel
   case nativeIronwoodContinueBody
   case nativeIronwoodContinueTitle
   case nativeIronwoodNeedsAttentionBody
@@ -96,7 +96,7 @@ enum NativeStrings {
   private static func en(_ key: NativeString) -> String {
     switch key {
     case .nativeBiometricEnableTitle: return "Enable fingerprint unlock"
-    case .nativeBiometricUsePasscode: return "Use passcode"
+    case .nativeBiometricPromptCancel: return "Cancel"
     case .nativeIronwoodContinueBody: return "Open Vizor to prepare the next migration transfer."
     case .nativeIronwoodContinueTitle: return "Continue your Ironwood migration"
     case .nativeIronwoodNeedsAttentionBody: return "Open Vizor to review and continue your migration."
@@ -151,7 +151,7 @@ enum NativeStrings {
 
   private static let ko: [NativeString: String] = [
     .nativeBiometricEnableTitle: "지문 잠금 해제 켜기",
-    .nativeBiometricUsePasscode: "암호 사용",
+    .nativeBiometricPromptCancel: "취소",
     .nativeIronwoodContinueBody: "다음 마이그레이션 거래를 준비하려면 Vizor를 열어 주세요.",
     .nativeIronwoodContinueTitle: "Ironwood 마이그레이션을 계속하세요",
     .nativeIronwoodNeedsAttentionBody: "마이그레이션을 확인하고 계속하려면 Vizor를 열어 주세요.",
@@ -205,7 +205,7 @@ enum NativeStrings {
 
   private static let zh: [NativeString: String] = [
     .nativeBiometricEnableTitle: "启用指纹解锁",
-    .nativeBiometricUsePasscode: "使用数字密码",
+    .nativeBiometricPromptCancel: "取消",
     .nativeIronwoodContinueBody: "打开 Vizor 准备下一笔迁移转账。",
     .nativeIronwoodContinueTitle: "继续你的 Ironwood 迁移",
     .nativeIronwoodNeedsAttentionBody: "打开 Vizor 查看并继续你的迁移。",

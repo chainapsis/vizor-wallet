@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../providers/account_provider.dart';
+import '../../../providers/mobile_account_visibility_provider.dart';
 import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 
@@ -64,16 +64,10 @@ final nu7AnnouncementProvider = FutureProvider<Nu7AnnouncementState>((
 
   // A wallet that began after activation has nothing to compare against. An
   // account created this session has no birthday until relaunch.
-  final walletPredatesNu7 = ref.watch(
-    accountProvider.select(
-      (state) =>
-          state.value?.accounts.any((account) {
-            final birthday = account.birthdayHeight;
-            return birthday != null && birthday < activation;
-          }) ??
-          false,
-    ),
-  );
+  final walletPredatesNu7 = ref.watch(visibleAccountsProvider).any((account) {
+    final birthday = account.birthdayHeight;
+    return birthday != null && birthday < activation;
+  });
   if (!walletPredatesNu7) return const Nu7AnnouncementState.hidden();
 
   final network = ref.watch(

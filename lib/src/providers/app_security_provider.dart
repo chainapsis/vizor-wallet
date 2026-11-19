@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_bootstrap.dart';
 import '../core/security/password_policy.dart';
+import '../core/layout/app_form_factor.dart';
 import '../core/storage/app_secure_store.dart';
+import '../core/storage/account_visibility_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/migration/models/ironwood_migration_phases.dart';
@@ -11,6 +13,7 @@ import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'rpc_endpoint_provider.dart';
 import 'hide_balance_on_unlock_provider.dart';
+import 'mobile_account_visibility_provider.dart';
 
 const kIronwoodMigrationPasswordChangeBlockedMessage =
     'Cannot change wallet password while Ironwood migration is in progress.'; // l10n-ignore: exception text, never shown
@@ -357,6 +360,16 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
       final newPasswordIssue = requiredWalletPasswordPolicyIssue(newPassword);
       if (newPasswordIssue != null) {
         throw PasswordPolicyViolation(newPasswordIssue);
+      }
+      if (kAppFormFactor == AppFormFactor.mobile) {
+        final store = MobileAccountVisibilityStore(_store);
+        final configuration = await store.read();
+        if (configuration.rules.isNotEmpty &&
+            await store.match(configuration, newPassword) != null) {
+          throw const MobileAccountVisibilityEditException(
+            MobileAccountVisibilityEditFailure.differentPasscode,
+          );
+        }
       }
       await ref.read(passwordChangePreflightProvider)();
       _checkAuthenticationRequest(

@@ -5594,9 +5594,7 @@ Widget _buildMobileUnlockUseCase(
     ],
     child: _MobilePreviewFrame(
       constrainToDesignSize: constrainToDesignSize,
-      child: IgnorePointer(
-        child: MobileUnlockScreen(autoPromptBiometric: false),
-      ),
+      child: IgnorePointer(child: MobileUnlockScreen()),
     ),
   );
 }
@@ -5640,9 +5638,7 @@ Widget _buildMobileUnlockModalUseCase(
     child: _MobilePreviewFrame(
       child: Stack(
         children: [
-          const IgnorePointer(
-            child: MobileUnlockScreen(autoPromptBiometric: false),
-          ),
+          const IgnorePointer(child: MobileUnlockScreen()),
           Positioned.fill(
             child: ColoredBox(
               color: AppTheme.of(context).colors.background.neutralScrim,

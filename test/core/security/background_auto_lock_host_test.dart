@@ -4,12 +4,16 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/security/background_auto_lock_host.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/mobile_account_visibility_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
@@ -100,6 +104,7 @@ void main() {
     addTearDown(router.dispose);
     container = ProviderContainer(
       overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         appSecurityProvider.overrideWith(() => security),
         accountProvider.overrideWith(() => account),
         syncProvider.overrideWith(() => sync),
@@ -114,11 +119,14 @@ void main() {
         child: MaterialApp.router(
           localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
-          builder: (_, child) => BackgroundAutoLockHost(
-            router: router,
-            timeout: timeout,
-            now: now,
-            child: child!,
+          builder: (_, child) => AppTheme(
+            data: AppThemeData.light,
+            child: BackgroundAutoLockHost(
+              router: router,
+              timeout: timeout,
+              now: now,
+              child: child!,
+            ),
           ),
         ),
       ),
@@ -149,6 +157,45 @@ void main() {
     expect(find.text('home'), findsOneWidget);
   });
 
+  for (final manage in [false, true]) {
+    testWidgets(
+      'brief background relocks a private view (management: $manage)',
+      (tester) async {
+        const channel = MethodChannel('com.zcash.wallet/privacy_shield');
+        final visible = <bool>[];
+        final messenger = tester.binding.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'setPrivateAccountViewVisible');
+          visible.add(call.arguments['visible'] as bool);
+          return null;
+        });
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+        await pumpHost(tester, timeout: const Duration(hours: 1));
+        if (manage) {
+          container
+              .read(mobileAccountManagementOpenProvider.notifier)
+              .setOpen(Object(), true);
+        } else {
+          container.read(mobileAccountScopeProvider.notifier).select('private');
+        }
+        await tester.pump();
+        expect(visible, [true]);
+
+        await _sendToBackgroundAndBack(
+          tester,
+          whileAway: () {
+            expect(security.locks, 1);
+            expect(visible, [true]);
+          },
+        );
+        expect(find.text('unlock'), findsOneWidget);
+        expect(container.read(mobileAccountScopeProvider), isNull);
+        expect(container.read(mobileAccountManagementOpenProvider), isFalse);
+        expect(visible, [true, false]);
+      },
+    );
+  }
+
   testWidgets('locks when the clock moved backwards while away', (
     tester,
   ) async {
@@ -163,6 +210,27 @@ void main() {
     expect(security.locks, 1);
     expect(find.text('unlock'), findsOneWidget);
   });
+
+  testWidgets(
+    'keeps the entire child covered while waiting to relock a private view',
+    (tester) async {
+      await pumpHost(tester, timeout: const Duration(hours: 1));
+      final guards = container.read(votingSubmissionGuardProvider.notifier);
+      final guard = guards.acquire(accountUuid: 'private', roundId: 'round-1');
+      container.read(mobileAccountScopeProvider.notifier).select('private');
+      await tester.pump();
+
+      await _sendToBackgroundAndBack(tester);
+      expect(security.locks, 0);
+      expect(router.state.uri.path, '/home');
+      expect(find.text('home'), findsNothing);
+
+      guards.release(guard);
+      await tester.pumpAndSettle();
+      expect(security.locks, 1);
+      expect(find.text('unlock'), findsOneWidget);
+    },
+  );
 
   testWidgets('waits for a voting submission, then locks', (tester) async {
     await pumpHost(tester, timeout: Duration.zero);

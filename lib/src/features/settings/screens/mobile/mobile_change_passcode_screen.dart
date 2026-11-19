@@ -14,6 +14,8 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
+import '../../../../providers/mobile_account_visibility_provider.dart';
+import '../../../../providers/mobile_passcode_auth_provider.dart';
 import '../../../../providers/router_refresh_provider.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
@@ -94,25 +96,31 @@ class _MobileChangePasscodeScreenState
   Future<void> _verifyCurrent() async {
     setState(() => _submitting = true);
     try {
-      final isValid = await ref
-          .read(appSecurityProvider.notifier)
-          .confirmPassword(_entry);
+      await ref
+          .read(mobilePasscodeAuthProvider)
+          .check(
+            code: _entry,
+            biometricReason: context.l10n.onboardingUnlockBiometricReason,
+            walletOnly: true,
+            isCurrent: () => mounted,
+          );
       if (!mounted) return;
-      if (!isValid) {
-        unawaited(AppHaptics.error());
-        setState(() {
-          _submitting = false;
-          _entry = '';
-          _error = context.l10n.passcodeIncorrect;
-        });
-        return;
-      }
       unawaited(AppHaptics.accessGranted());
       setState(() {
         _submitting = false;
         _currentPasscode = _entry;
         _entry = '';
         _phase = _Phase.create;
+      });
+    } on MobilePasscodeRejected catch (error) {
+      if (!mounted) return;
+      unawaited(AppHaptics.error());
+      setState(() {
+        _submitting = false;
+        _entry = '';
+        _error = error.failure == MobilePasscodeFailure.biometric
+            ? context.l10n.accountVisibilityBiometricRequired
+            : context.l10n.passcodeIncorrect;
       });
     } catch (e, st) {
       log('MobileChangePasscode._verifyCurrent: ERROR: $e\n$st');
@@ -125,9 +133,8 @@ class _MobileChangePasscodeScreenState
     }
   }
 
-  /// Best effort only — a failed escrow refresh must never block the
-  /// passcode change itself (worst case the escrow is dropped and the
-  /// user re-enables biometrics in settings).
+  /// Refresh escrow after the wallet passcode has rotated. Keep the
+  /// biometric requirement if refreshing fails.
   Future<void> _refreshBiometricEscrow(String newPasscode) async {
     final notifier = ref.read(biometricUnlockProvider.notifier);
     final BiometricUnlockState biometric;
@@ -140,12 +147,8 @@ class _MobileChangePasscodeScreenState
     try {
       await notifier.enable(newPasscode);
     } catch (_) {
-      try {
-        await notifier.disable();
-      } catch (_) {
-        // The stale escrow cannot decrypt anything on its own; leaving
-        // it behind is safe even when cleanup fails.
-      }
+      // Keep the configured requirement. An unsuccessful refresh cannot
+      // downgrade a later unlock to passcode-only.
     }
   }
 
@@ -184,6 +187,15 @@ class _MobileChangePasscodeScreenState
         // updates synchronously — a deferred router refresh landing in
         // the gap restores the stale config and resurrects this page.
         context.pop(true);
+      });
+    } on MobileAccountVisibilityEditException {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _entry = '';
+        _newPasscode = null;
+        _phase = _Phase.create;
+        _error = context.l10n.accountVisibilityDifferentPasscode;
       });
     } on PasswordRotationRecoveryFailedException {
       if (!mounted) return;

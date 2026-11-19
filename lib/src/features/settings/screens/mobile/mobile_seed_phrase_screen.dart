@@ -34,6 +34,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_account_header.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/mobile_account_visibility_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
@@ -150,9 +151,7 @@ class _MobileSeedPhraseScreenState
 
   Future<void> _tryBiometricGate({required bool automatic}) async {
     if (_checking || _stage != _SeedStage.confirmAccess) return;
-    final expectedAccountUuid = _targetAccount(
-      ref.read(accountProvider).value,
-    )?.uuid;
+    final expectedAccountUuid = _targetAccount()?.uuid;
     // An automatic iOS probe may decide not to authenticate at all. It must
     // not invalidate a manual passcode/biometric check while awaiting it.
     final deferGeneration =
@@ -238,9 +237,7 @@ class _MobileSeedPhraseScreenState
   }
 
   Future<void> _confirmPasscode() async {
-    final expectedAccountUuid = _targetAccount(
-      ref.read(accountProvider).value,
-    )?.uuid;
+    final expectedAccountUuid = _targetAccount()?.uuid;
     final accessCheckGeneration = ++_accessCheckGeneration;
     setState(() => _checking = true);
     try {
@@ -276,20 +273,11 @@ class _MobileSeedPhraseScreenState
 
   // ── Reveal ─────────────────────────────────────────────────────────
 
-  AccountInfo? _targetAccount(AccountState? accountState) {
-    if (accountState == null) return null;
-    final requestedUuid = widget.accountUuid;
-    if (requestedUuid == null) return accountState.activeAccount;
-    for (final account in accountState.accounts) {
-      if (account.uuid == requestedUuid) return account;
-    }
-    return null;
-  }
+  AccountInfo? _targetAccount() =>
+      ref.read(visibleAccountTargetProvider(widget.accountUuid));
 
-  bool _targetAccountChanged(String? expectedAccountUuid) {
-    final accountState = ref.read(accountProvider).value;
-    return _targetAccount(accountState)?.uuid != expectedAccountUuid;
-  }
+  bool _targetAccountChanged(String? expectedAccountUuid) =>
+      _targetAccount()?.uuid != expectedAccountUuid;
 
   void _handleTargetAccountChanged() {
     _accessCheckGeneration += 1;
@@ -317,8 +305,7 @@ class _MobileSeedPhraseScreenState
 
   Future<void> _reveal(String? expectedAccountUuid) async {
     final l10n = context.l10n;
-    final accountState = ref.read(accountProvider).value;
-    final account = _targetAccount(accountState);
+    final account = _targetAccount();
     if (account?.uuid != expectedAccountUuid) {
       _handleTargetAccountChanged();
       return;
@@ -493,13 +480,13 @@ class _MobileSeedPhraseScreenState
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AccountInfo?>(
-      accountProvider.select((state) => _targetAccount(state.value)),
-      (previous, next) {
-        if (previous?.uuid == next?.uuid) return;
-        _handleTargetAccountChanged();
-      },
-    );
+    ref.listen<AccountInfo?>(visibleAccountTargetProvider(widget.accountUuid), (
+      previous,
+      next,
+    ) {
+      if (previous?.uuid == next?.uuid) return;
+      _handleTargetAccountChanged();
+    });
     final colors = context.colors;
     final scaffold = Scaffold(
       backgroundColor: colors.background.window,
@@ -558,7 +545,7 @@ class _MobileSeedPhraseScreenState
   }
 
   Widget _buildIntro() {
-    final account = _targetAccount(ref.watch(accountProvider).value);
+    final account = ref.watch(visibleAccountTargetProvider(widget.accountUuid));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -787,7 +774,7 @@ class _MobileSeedPhraseScreenState
 
   Widget _buildReveal(AppColors colors) {
     final words = _mnemonic?.split(' ') ?? const <String>[];
-    final account = _targetAccount(ref.watch(accountProvider).value);
+    final account = ref.watch(visibleAccountTargetProvider(widget.accountUuid));
     final showBackupAction =
         _revealError == null &&
         account != null &&

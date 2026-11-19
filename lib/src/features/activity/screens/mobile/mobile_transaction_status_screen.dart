@@ -31,6 +31,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/zcash/spendable_wait.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/mobile_account_visibility_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -408,7 +409,7 @@ class _MobileTransactionStatusScreenState
     final contacts =
         addressBook.value?.contacts ?? const <AddressBookContact>[];
     final ownAccountsState = ref.watch(ownAccountAddressesProvider);
-    final ownAccounts = ownAccountsState.value ?? const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     final resolvedRecipient = address == null || address.isEmpty
         ? null
         : sendReviewRecipientFor(
@@ -471,10 +472,7 @@ class _MobileTransactionStatusScreenState
     // Without an exact source address, the account the wallet recorded as
     // sending the received outputs still names where the funds came from.
     final sourceAccount = _isIncoming && addressRow == null && giftCard == null
-        ? receiptSourceAccount(
-            detail,
-            ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[],
-          )
+        ? receiptSourceAccount(detail, ref.watch(visibleAccountsProvider))
         : null;
     final sourceAccountPool = switch (sourcePool) {
       'shielded' => l10n.poolShielded,

@@ -82,6 +82,82 @@
   "@accountNameTooLong": {
     "description": "Validation message when an account name is longer than 20 characters."
   },
+  "accountVisibilityAccountChoice": "Choose the accounts to show when opening with this passcode.",
+  "@accountVisibilityAccountChoice": {
+    "description": "[security] Mobile Settings > Accounts by passcode. AccountChoice label or guidance."
+  },
+  "accountVisibilityAccounts": "Accounts shown with this passcode",
+  "@accountVisibilityAccounts": {
+    "description": "[security] Mobile Settings > Accounts by passcode. Accounts label or guidance."
+  },
+  "accountVisibilityBiometricRequired": "Biometric verification is required. Try again.",
+  "@accountVisibilityBiometricRequired": {
+    "description": "[security] Mobile Settings > Accounts by passcode. BiometricRequired label or guidance."
+  },
+  "accountVisibilityChange": "Change separate passcode",
+  "@accountVisibilityChange": {
+    "description": "[security] Mobile Settings > Accounts by passcode. Change label or guidance."
+  },
+  "accountVisibilityCreate": "Create separate passcode",
+  "@accountVisibilityCreate": {
+    "description": "[security] Mobile Settings > Accounts by passcode. Create label or guidance."
+  },
+  "accountVisibilityDelete": "Remove separate passcode",
+  "@accountVisibilityDelete": {
+    "description": "[security] Mobile Settings > Accounts by passcode. Delete label or guidance."
+  },
+  "accountVisibilityDeleteBody": "The linked accounts will appear in the regular account list again.",
+  "@accountVisibilityDeleteBody": {
+    "description": "[security] Mobile Settings > Accounts by passcode. DeleteBody label or guidance."
+  },
+  "accountVisibilityDescription": "Enter a separate passcode on the lock screen to show the accounts linked to it. Linked accounts are hidden from the regular account list.",
+  "@accountVisibilityDescription": {
+    "description": "[security] Mobile Settings > Accounts by passcode. Description label or guidance."
+  },
+  "accountVisibilityDifferentPasscode": "Choose a different passcode.",
+  "@accountVisibilityDifferentPasscode": {
+    "description": "[security] Mobile Settings > Accounts by passcode. DifferentPasscode label or guidance."
+  },
+  "accountVisibilityEditAccounts": "Change which accounts are shown",
+  "@accountVisibilityEditAccounts": {
+    "description": "[security] Mobile Settings > Accounts by passcode. EditAccounts label or guidance."
+  },
+  "accountVisibilityEnterSeparatePasscode": "Enter your separate passcode.",
+  "@accountVisibilityEnterSeparatePasscode": {
+    "description": "[security] Mobile Settings > Accounts by passcode. EnterSeparatePasscode label or guidance."
+  },
+  "accountVisibilityEnterWalletPasscode": "Enter your wallet passcode.",
+  "@accountVisibilityEnterWalletPasscode": {
+    "description": "[security] Mobile Settings > Accounts by passcode. EnterWalletPasscode label or guidance."
+  },
+  "accountVisibilityKeepOrdinary": "Leave at least one account in the regular account list.",
+  "@accountVisibilityKeepOrdinary": {
+    "description": "[security] Mobile Settings > Accounts by passcode. KeepOrdinary label or guidance."
+  },
+  "accountVisibilityManage": "Manage with separate passcode",
+  "@accountVisibilityManage": {
+    "description": "[security] Mobile Settings > Accounts by passcode. Manage label or guidance."
+  },
+  "accountVisibilityManageTitle": "Manage separate passcode",
+  "@accountVisibilityManageTitle": {
+    "description": "[security] Mobile Settings > Accounts by passcode. ManageTitle label or guidance."
+  },
+  "accountVisibilityNewPasscode": "Enter a new separate passcode.",
+  "@accountVisibilityNewPasscode": {
+    "description": "[security] Mobile Settings > Accounts by passcode. NewPasscode label or guidance."
+  },
+  "accountVisibilitySelectAccount": "Select at least one account.",
+  "@accountVisibilitySelectAccount": {
+    "description": "[security] Mobile Settings > Accounts by passcode. SelectAccount label or guidance."
+  },
+  "accountVisibilityTitle": "Accounts by passcode",
+  "@accountVisibilityTitle": {
+    "description": "[security] Mobile Settings > Accounts by passcode. Title label or guidance."
+  },
+  "accountVisibilityUpdateFailed": "Couldn’t update account visibility. Try again.",
+  "@accountVisibilityUpdateFailed": {
+    "description": "[security] Mobile Settings > Accounts by passcode. UpdateFailed label or guidance."
+  },
   "accountsActionsLabel": "Account actions",
   "@accountsActionsLabel": {
     "description": "Screen-reader label of the button that opens an account's action menu on desktop."
@@ -7854,9 +7930,9 @@
   "@nativeBiometricEnableTitle": {
     "description": "Title of the Android system fingerprint prompt shown by the OS when the user turns on fingerprint unlock for the app passcode."
   },
-  "nativeBiometricUsePasscode": "Use passcode",
-  "@nativeBiometricUsePasscode": {
-    "description": "Button in the Android system fingerprint prompt that dismisses it so the user can type the 6-digit app passcode instead."
+  "nativeBiometricPromptCancel": "Cancel",
+  "@nativeBiometricPromptCancel": {
+    "description": "Cancel button in the Android system fingerprint prompt."
   },
   "nativeIronwoodContinueBody": "Open Vizor to prepare the next migration transfer.",
   "@nativeIronwoodContinueBody": {

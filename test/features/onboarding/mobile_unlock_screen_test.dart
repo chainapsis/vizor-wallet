@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter/services.dart';
@@ -15,6 +14,8 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/storage/account_visibility_store.dart';
+import 'package:zcash_wallet/src/providers/mobile_account_visibility_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
@@ -117,17 +118,13 @@ class _PendingBiometricNotifier extends BiometricUnlockNotifier {
   Future<BiometricUnlockState> build() => _completer.future;
 }
 
-class _FailingBiometricNotifier extends BiometricUnlockNotifier {
-  @override
-  Future<BiometricUnlockState> build() async {
-    throw StateError('biometric probe failed');
-  }
-}
-
 class _SuccessfulSecurityNotifier extends AppSecurityNotifier {
   @override
   AppSecurityState build() =>
       const AppSecurityState(isPasswordConfigured: true, isUnlocked: false);
+
+  @override
+  Future<bool> confirmPassword(String password) async => password == '123456';
 
   @override
   Future<bool> unlock(String password) async {
@@ -137,8 +134,12 @@ class _SuccessfulSecurityNotifier extends AppSecurityNotifier {
 }
 
 class _RestoringAccountNotifier extends AccountNotifier {
+  _RestoringAccountNotifier([this.initial = const AccountState()]);
+
+  final AccountState initial;
+
   @override
-  FutureOr<AccountState> build() => const AccountState();
+  FutureOr<AccountState> build() => initial;
 
   @override
   Future<void> restoreAfterUnlock() async {}
@@ -173,37 +174,46 @@ class _UnlockSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterUnlock() async {}
 
   @override
+  Future<void> clearSensitiveStateForLock() async {}
+
+  @override
   Future<void> startSyncAnyway({int? latestTipHeight}) async {
     syncStarts++;
     await syncStart?.future;
   }
 }
 
-AppBootstrapState _bootstrap({required bool biometricEnabled}) =>
-    AppBootstrapState(
-      initialLocation: '/unlock',
-      initialAccountState: AccountState(),
-      initialSyncSnapshot: AppSyncSnapshot.empty,
-      network: 'main',
-      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-      themeMode: ThemeMode.light,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: false,
-      passwordRotationRecoveryFailed: false,
-      biometricUnlockEnabled: biometricEnabled,
-    );
+AppBootstrapState _bootstrap({
+  required bool biometricEnabled,
+  MobileAccountVisibilityConfig visibility =
+      const MobileAccountVisibilityConfig(),
+}) => AppBootstrapState(
+  initialLocation: '/unlock',
+  initialAccountState: AccountState(),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.light,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: false,
+  passwordRotationRecoveryFailed: false,
+  biometricUnlockEnabled: biometricEnabled,
+  mobileAccountVisibility: visibility,
+);
 
 Widget _app({
   FakeBiometricUnlock? biometric,
   BiometricUnlockNotifier Function()? biometricNotifier,
   AppBootstrapState? bootstrap,
-  bool autoPromptBiometric = true,
+
   List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
     overrides: [
-      if (bootstrap != null) appBootstrapProvider.overrideWithValue(bootstrap),
+      appBootstrapProvider.overrideWithValue(
+        bootstrap ?? _bootstrap(biometricEnabled: false),
+      ),
       if (biometricNotifier != null)
         biometricUnlockProvider.overrideWith(biometricNotifier)
       else if (biometric != null)
@@ -213,26 +223,24 @@ Widget _app({
     child: MaterialApp(
       localizationsDelegates: appLocalizationsDelegates,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
-      home: MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
+      home: MobileUnlockScreen(),
     ),
   );
 }
 
 ({Widget app, GoRouter router}) _routedUnlockApp({
   FakeBiometricUnlock? biometric,
-  bool autoPromptBiometric = false,
+
   bool useRealSecurity = false,
+  MobileAccountVisibilityConfig visibility =
+      const MobileAccountVisibilityConfig(),
   AccountNotifier Function()? accountNotifier,
   _UnlockSyncNotifier Function()? syncNotifier,
 }) {
   final router = GoRouter(
     initialLocation: '/unlock',
     routes: [
-      GoRoute(
-        path: '/unlock',
-        builder: (_, _) =>
-            MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
-      ),
+      GoRoute(path: '/unlock', builder: (_, _) => MobileUnlockScreen()),
       GoRoute(
         path: '/payment-links',
         builder: (_, _) => const Text(
@@ -250,7 +258,7 @@ Widget _app({
   final app = ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
-        _bootstrap(biometricEnabled: biometric != null),
+        _bootstrap(biometricEnabled: biometric != null, visibility: visibility),
       ),
       if (useRealSecurity)
         appSecurityProvider.overrideWith(
@@ -296,21 +304,6 @@ void _queuePendingPaymentLink(WidgetTester tester) {
       .read(paymentLinkIntakeProvider.notifier)
       .receive(_pendingPaymentLink.toUri().toString());
   expect(result, PaymentLinkIntakeResult.accepted);
-}
-
-Future<void> _pumpAutoBiometricPromptWait(WidgetTester tester) async {
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 350));
-  await tester.pump();
-}
-
-Future<void> _pumpUntilBiometricRead(
-  WidgetTester tester,
-  FakeBiometricUnlock biometric,
-) async {
-  for (var i = 0; i < 4 && biometric.reads == 0; i += 1) {
-    await _pumpAutoBiometricPromptWait(tester);
-  }
 }
 
 class _ResetBlockedAccountNotifier extends AccountNotifier {
@@ -379,6 +372,8 @@ void main() {
   tearDownAll(RustLib.dispose);
 
   setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
+    AppSecureStore.instance.clearSessionPassword();
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
@@ -439,11 +434,7 @@ void main() {
     final router = GoRouter(
       initialLocation: '/unlock',
       routes: [
-        GoRoute(
-          path: '/unlock',
-          builder: (_, _) =>
-              const MobileUnlockScreen(autoPromptBiometric: false),
-        ),
+        GoRoute(path: '/unlock', builder: (_, _) => const MobileUnlockScreen()),
         GoRoute(
           path: '/welcome',
           builder: (_, _) => const Text(
@@ -642,15 +633,13 @@ void main() {
         avail: faceAvailability,
         escrow: '123456',
       );
-      final routed = _routedUnlockApp(
-        biometric: biometric,
-        autoPromptBiometric: true,
-      );
+      final routed = _routedUnlockApp(biometric: biometric);
       addTearDown(routed.router.dispose);
       await tester.pumpWidget(routed.app);
       _queuePendingPaymentLink(tester);
 
-      await _pumpUntilBiometricRead(tester, biometric);
+      expect(biometric.reads, 0);
+      await _enterPasscode(tester, '123456');
       await tester.pumpAndSettle();
 
       expect(biometric.reads, 1);
@@ -757,7 +746,6 @@ void main() {
       final routed = _routedUnlockApp(
         biometric: biometric,
         useRealSecurity: true,
-        autoPromptBiometric: true,
       );
       addTearDown(routed.router.dispose);
       await tester.pumpWidget(routed.app);
@@ -787,18 +775,18 @@ void main() {
         'true',
       );
 
-      // Re-entering unlock uses the durable flag and escrow without a new
-      // opt-in, including the production auto-prompt path.
+      // Re-entering unlock asks for both the wallet passcode and biometrics.
       await tester.pumpWidget(const SizedBox.shrink());
       AppSecureStore.instance.clearSessionPassword();
       final reopened = _routedUnlockApp(
         biometric: biometric,
         useRealSecurity: true,
-        autoPromptBiometric: true,
       );
       addTearDown(reopened.router.dispose);
       await tester.pumpWidget(reopened.app);
-      await _pumpUntilBiometricRead(tester, biometric);
+      await tester.pumpAndSettle();
+      expect(biometric.reads, 0);
+      await _enterPasscode(tester, '123456');
       await tester.pumpAndSettle();
       expect(biometric.reads, 1);
       expect(reopened.router.state.uri.path, '/home');
@@ -863,7 +851,6 @@ void main() {
       final routed = _routedUnlockApp(
         biometric: biometric,
         useRealSecurity: true,
-        autoPromptBiometric: true,
       );
       addTearDown(routed.router.dispose);
       await tester.pumpWidget(routed.app);
@@ -991,7 +978,15 @@ void main() {
         );
       });
 
-      await tester.pumpWidget(_app());
+      await tester.pumpWidget(
+        _app(
+          extraOverrides: [
+            appSecurityProvider.overrideWith(_SuccessfulSecurityNotifier.new),
+            accountProvider.overrideWith(_RestoringAccountNotifier.new),
+            syncProvider.overrideWith(_UnlockSyncNotifier.new),
+          ],
+        ),
+      );
       await tester.pump();
 
       await tester.tap(find.bySemanticsLabel('Digit 1'));
@@ -1014,14 +1009,120 @@ void main() {
     });
   });
 
-  group('biometric unlock', () {
-    setUp(() {
+  group('accounts by passcode', () {
+    const ordinary = AccountInfo(uuid: 'ordinary', name: 'Everyday', order: 0);
+    const hidden = AccountInfo(uuid: 'hidden', name: 'Reserve', order: 1);
+    const initial = AccountState(
+      accounts: [ordinary, hidden],
+      activeAccountUuid: 'hidden',
+    );
+
+    Future<MobileAccountVisibilityConfig> configuration() async {
+      final store = MobileAccountVisibilityStore(AppSecureStore.instance);
+      const salt = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+      return MobileAccountVisibilityConfig(
+        salt: salt,
+        rules: [
+          MobileAccountVisibilityRule(
+            id: 'reserve',
+            verifier: await store.verifier('246810', salt),
+            accountIds: const {'hidden'},
+          ),
+        ],
+      );
+    }
+
+    testWidgets(
+      'B requires A without biometrics and A later restores an ordinary account',
+      (tester) async {
+        final visibility = await configuration();
+        final routed = _routedUnlockApp(
+          visibility: visibility,
+          accountNotifier: () => _RestoringAccountNotifier(initial),
+        );
+        addTearDown(routed.router.dispose);
+        await tester.pumpWidget(routed.app);
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(MobileUnlockScreen)),
+        );
+
+        await _enterPasscode(tester, '246810');
+        expect(routed.router.state.uri.path, '/unlock');
+        expect(container.read(appSecurityProvider).isUnlocked, isFalse);
+        expect(container.read(visibleAccountsProvider), [ordinary]);
+        expect(find.text('Enter your wallet passcode.'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_unlock_cancel_separate_passcode')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Enter your wallet passcode.'), findsNothing);
+        expect(container.read(appSecurityProvider).isUnlocked, isFalse);
+        await _enterPasscode(tester, '246810');
+        await _enterPasscode(tester, '123456');
+        expect(container.read(visibleAccountsProvider), [hidden]);
+        expect(
+          container.read(accountProvider).value?.activeAccountUuid,
+          hidden.uuid,
+        );
+        expect(routed.router.state.uri.path, '/home');
+
+        container.read(appSecurityProvider.notifier).lock();
+        routed.router.go('/unlock');
+        await tester.pumpAndSettle();
+        await _enterPasscode(tester, '123456');
+        expect(container.read(visibleAccountsProvider), [ordinary]);
+        expect(
+          container.read(accountProvider).value?.activeAccountUuid,
+          ordinary.uuid,
+        );
+        expect(routed.router.state.uri.path, '/home');
+      },
+    );
+
+    testWidgets('B and biometrics show linked accounts without another code', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final biometric = FakeBiometricUnlock(
+        avail: faceAvailability,
+        escrow: '123456',
+      );
+      final routed = _routedUnlockApp(
+        visibility: await configuration(),
+        biometric: biometric,
+        accountNotifier: () => _RestoringAccountNotifier(initial),
+      );
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileUnlockScreen)),
+      );
+      expect(biometric.reads, 0);
+      await _enterPasscode(tester, '246810');
+      expect(biometric.reads, 1);
+      expect(container.read(visibleAccountsProvider), [hidden]);
+      expect(routed.router.state.uri.path, '/home');
+    });
+  });
+
+  group('passcode before biometrics', () {
+    setUp(() async {
       FlutterSecureStorage.setMockInitialValues({});
+      await AppSecureStore.instance.configurePassword('123456');
       AppSecureStore.instance.clearSessionPassword();
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
     });
 
     testWidgets(
-      'bootstrap hint paints the backdrop before the probe resolves',
+      'the first frame is the keypad while biometric availability loads',
       (tester) async {
         await tester.pumpWidget(
           _app(
@@ -1029,311 +1130,70 @@ void main() {
             biometricNotifier: _PendingBiometricNotifier.new,
           ),
         );
-        // Provider is still loading (never resolves); only the hint can show
-        // the backdrop here.
         await tester.pump();
-
-        expect(find.byType(MobileBiometricSignInView), findsOneWidget);
-        expect(find.byType(PasscodeNumpad), findsNothing);
+        expect(find.byType(PasscodeNumpad), findsOneWidget);
+        expect(find.byType(MobileBiometricSignInView), findsNothing);
       },
     );
 
-    testWidgets('no backdrop while loading when the hint is disabled', (
+    testWidgets('an incorrect passcode never prompts for biometrics', (
       tester,
     ) async {
-      await tester.pumpWidget(
-        _app(
-          bootstrap: _bootstrap(biometricEnabled: false),
-          biometricNotifier: _PendingBiometricNotifier.new,
-        ),
-      );
-      await tester.pump();
-
-      expect(find.byType(MobileBiometricSignInView), findsNothing);
-      expect(find.byType(PasscodeNumpad), findsOneWidget);
-    });
-
-    testWidgets('probe errors fall back to the numpad even with the hint', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _app(
-          bootstrap: _bootstrap(biometricEnabled: true),
-          biometricNotifier: _FailingBiometricNotifier.new,
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
-
-      expect(find.byType(MobileBiometricSignInView), findsNothing);
-      expect(find.byType(PasscodeNumpad), findsOneWidget);
-    });
-
-    testWidgets('iOS Face ID still auto-prompts for app unlock', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.configurePassword('123456');
-      AppSecureStore.instance.clearSessionPassword();
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
       final biometric = FakeBiometricUnlock(
         avail: faceAvailability,
-        escrow: '999999',
+        escrow: '123456',
       );
-      await tester.pumpWidget(_app(biometric: biometric));
-      await _pumpUntilBiometricRead(tester, biometric);
+      final routed = _routedUnlockApp(
+        biometric: biometric,
+        useRealSecurity: true,
+      );
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
       await tester.pumpAndSettle();
-      expect(biometric.reads, 1);
-      expect(find.text('Incorrect Passcode'), findsOneWidget);
-    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
-
-    testWidgets('auto-prompt feeds the escrowed passcode to unlock', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.configurePassword('123456');
-      AppSecureStore.instance.clearSessionPassword();
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
-      // A mismatching escrow proves the value travelled the whole
-      // read → submit → verify pipeline without touching Rust.
-      final biometric = FakeBiometricUnlock(
-        avail: faceAvailability,
-        escrow: '999999',
-      );
-
-      await tester.pumpWidget(_app(biometric: biometric));
-      await tester.pump();
-
       expect(biometric.reads, 0);
-
-      await _pumpUntilBiometricRead(tester, biometric);
-      await tester.pumpAndSettle();
-
-      expect(biometric.reads, 1);
-      expect(find.text('Incorrect Passcode'), findsOneWidget);
-    });
-
-    testWidgets('auto-prompt shows the biometric sign-in screen first', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.configurePassword('123456');
-      AppSecureStore.instance.clearSessionPassword();
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
-      final pendingRead = Completer<String>();
-      final biometric = FakeBiometricUnlock(
-        avail: faceAvailability,
-        escrow: '999999',
-      )..readCompleter = pendingRead;
-
-      await tester.pumpWidget(_app(biometric: biometric));
-      await tester.pump();
-      await tester.pump();
-
-      expect(find.byType(MobileBiometricSignInView), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('mobile_biometric_sign_in_background')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('mobile_biometric_sign_in_badge')),
-        findsOneWidget,
-      );
-      expect(find.byType(PasscodeNumpad), findsNothing);
+      await _enterPasscode(tester, '999999');
       expect(biometric.reads, 0);
-
-      await _pumpUntilBiometricRead(tester, biometric);
-      expect(biometric.reads, 1);
-
-      pendingRead.complete('999999');
-      await tester.pumpAndSettle();
-
-      expect(find.byType(MobileBiometricSignInView), findsNothing);
+      expect(routed.router.state.uri.path, '/unlock');
       expect(find.text('Incorrect Passcode'), findsOneWidget);
     });
 
-    testWidgets('auto-prompt waits for a painted backdrop frame', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.configurePassword('123456');
-      AppSecureStore.instance.clearSessionPassword();
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
-      final availability = Completer<BiometricAvailability>();
-      final pendingRead = Completer<String>();
-      final biometric =
-          FakeBiometricUnlock(avail: faceAvailability, escrow: '999999')
-            ..availabilityCompleter = availability
-            ..readCompleter = pendingRead;
-
-      await tester.pumpWidget(
-        _app(
-          bootstrap: _bootstrap(biometricEnabled: true),
+    for (final failure in [
+      BiometricUnlockErrorKind.cancelled,
+      BiometricUnlockErrorKind.invalidated,
+      BiometricUnlockErrorKind.unavailable,
+    ]) {
+      testWidgets('$failure keeps the second factor enabled across retries', (
+        tester,
+      ) async {
+        final biometric = FakeBiometricUnlock(
+          avail: faceAvailability,
+          escrow: '123456',
+        )..readError = failure;
+        final routed = _routedUnlockApp(
           biometric: biometric,
-        ),
-      );
-      await tester.pump();
+          useRealSecurity: true,
+        );
+        addTearDown(routed.router.dispose);
+        await tester.pumpWidget(routed.app);
+        await tester.pumpAndSettle();
 
-      expect(find.byType(MobileBiometricSignInView), findsOneWidget);
-      expect(biometric.reads, 0);
+        await _enterPasscode(tester, '123456');
+        expect(biometric.reads, 1);
+        expect(routed.router.state.uri.path, '/unlock');
+        expect(
+          find.text('Biometric verification is required. Try again.'),
+          findsOneWidget,
+        );
+        expect(
+          await AppSecureStore.instance.readPlain(kBiometricUnlockEnabledKey),
+          'true',
+        );
 
-      availability.complete(faceAvailability);
-      await tester.pump();
-
-      expect(find.byType(MobileBiometricSignInView), findsOneWidget);
-      expect(biometric.reads, 0);
-
-      await _pumpUntilBiometricRead(tester, biometric);
-      expect(biometric.reads, 1);
-    });
-
-    testWidgets('auto-prompt waits until the app is active again', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.configurePassword('123456');
-      AppSecureStore.instance.clearSessionPassword();
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
-      final biometric = FakeBiometricUnlock(
-        avail: faceAvailability,
-        escrow: '999999',
-      )..readCompleter = Completer<String>();
-      // Returning from the background: iOS reports inactive before the
-      // surface is shown again.
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      addTearDown(
-        () => tester.binding.handleAppLifecycleStateChanged(
-          AppLifecycleState.resumed,
-        ),
-      );
-
-      await tester.pumpWidget(_app(biometric: biometric));
-      await _pumpUntilBiometricRead(tester, biometric);
-
-      expect(find.byType(MobileBiometricSignInView), findsOneWidget);
-      expect(biometric.reads, 0);
-
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await _pumpUntilBiometricRead(tester, biometric);
-
-      expect(biometric.reads, 1);
-    });
-
-    testWidgets('cancel falls back to the numpad with a retry key', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
-      final biometric = FakeBiometricUnlock(
-        avail: faceAvailability,
-        escrow: '123456',
-      )..readError = BiometricUnlockErrorKind.cancelled;
-
-      await tester.pumpWidget(_app(biometric: biometric));
-      await _pumpUntilBiometricRead(tester, biometric);
-      await tester.pumpAndSettle();
-
-      expect(biometric.reads, 1);
-      expect(find.text('Incorrect Passcode'), findsNothing);
-      expect(find.bySemanticsLabel('Sign in with Face ID'), findsOneWidget);
-
-      // Manual retry triggers another prompt.
-      biometric.readError = BiometricUnlockErrorKind.cancelled;
-      await tester.tap(find.bySemanticsLabel('Sign in with Face ID'));
-      await tester.pumpAndSettle();
-      expect(biometric.reads, 2);
-    });
-
-    testWidgets('fingerprint devices label the retry action by modality', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
-      final biometric = FakeBiometricUnlock(
-        avail: fingerprintAvailability,
-        escrow: '123456',
-      );
-
-      await tester.pumpWidget(
-        _app(biometric: biometric, autoPromptBiometric: false),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.bySemanticsLabel('Sign in with fingerprint'), findsOneWidget);
-      expect(find.byIcon(Icons.fingerprint), findsOneWidget);
-      expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
-    });
-
-    testWidgets('Touch ID devices label the retry action by modality', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
-      final biometric = FakeBiometricUnlock(
-        avail: const BiometricAvailability(
-          supported: true,
-          enrolled: true,
-          kind: BiometricKind.touchId,
-        ),
-        escrow: '123456',
-      );
-
-      await tester.pumpWidget(
-        _app(biometric: biometric, autoPromptBiometric: false),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.bySemanticsLabel('Sign in with Touch ID'), findsOneWidget);
-      expect(
-        find.byWidgetPredicate(
-          (w) => w is AppIcon && w.name == AppIcons.touchId,
-        ),
-        findsOneWidget,
-      );
-      expect(find.byIcon(Icons.fingerprint), findsNothing);
-      expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
-    });
-
-    testWidgets('invalidation drops the flag and explains the fallback', (
-      tester,
-    ) async {
-      await AppSecureStore.instance.writePlain(
-        kBiometricUnlockEnabledKey,
-        'true',
-      );
-      final biometric = FakeBiometricUnlock(avail: faceAvailability)
-        ..readError = BiometricUnlockErrorKind.invalidated;
-
-      await tester.pumpWidget(_app(biometric: biometric));
-      await _pumpUntilBiometricRead(tester, biometric);
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text('Face ID changed. Enter your passcode.'),
-        findsOneWidget,
-      );
-      // The retry key disappears with the flag.
-      expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
-      expect(
-        await AppSecureStore.instance.readPlain(kBiometricUnlockEnabledKey),
-        'false',
-      );
-    });
+        biometric.readError = null;
+        await _enterPasscode(tester, '123456');
+        expect(biometric.reads, 2);
+        expect(routed.router.state.uri.path, '/home');
+      });
+    }
   });
 }

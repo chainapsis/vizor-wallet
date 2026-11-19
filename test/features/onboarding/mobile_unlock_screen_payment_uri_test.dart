@@ -53,6 +53,9 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
   String requireSessionPasswordForNativeSecretUse() => _passcode;
 
   @override
+  Future<bool> confirmPassword(String password) async => password == _passcode;
+
+  @override
   Future<bool> unlock(String password) async {
     if (password != _passcode) return false;
     state = state.copyWith(isUnlocked: true);
@@ -195,10 +198,7 @@ Future<ProviderContainer> _pumpUnlock(
   _router = GoRouter(
     initialLocation: '/unlock',
     routes: [
-      GoRoute(
-        path: '/unlock',
-        builder: (_, _) => const MobileUnlockScreen(autoPromptBiometric: false),
-      ),
+      GoRoute(path: '/unlock', builder: (_, _) => const MobileUnlockScreen()),
       GoRoute(
         path: '/home',
         builder: (_, _) => const Scaffold(body: Text('home-route')),

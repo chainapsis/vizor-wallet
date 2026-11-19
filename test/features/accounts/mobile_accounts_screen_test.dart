@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/storage/account_visibility_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -60,7 +61,10 @@ AccountInfo _account(
   zip32AccountIndex: zip32AccountIndex,
 );
 
-AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
+AppBootstrapState _bootstrap(
+  AccountState accounts, {
+  String? hiddenAccountUuid,
+}) => AppBootstrapState(
   initialLocation: '/accounts',
   initialAccountState: accounts,
   initialSyncSnapshot: AppSyncSnapshot.empty,
@@ -71,6 +75,16 @@ AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
+  mobileAccountVisibility: MobileAccountVisibilityConfig(
+    rules: [
+      if (hiddenAccountUuid != null)
+        MobileAccountVisibilityRule(
+          id: 'private',
+          verifier: 'unused',
+          accountIds: {hiddenAccountUuid},
+        ),
+    ],
+  ),
 );
 
 Widget _app(
@@ -82,6 +96,7 @@ Widget _app(
   Map<String, rust_sync.MigrationStatus> migrationStatuses = const {},
   Map<String, int> unsharedGiftCardCounts = const {},
   Set<String> unsharedGiftCardCheckFailures = const {},
+  String? hiddenAccountUuid,
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -115,7 +130,9 @@ Widget _app(
   );
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap(accounts)),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(accounts, hiddenAccountUuid: hiddenAccountUuid),
+      ),
       appSecurityProvider.overrideWith(
         () => securityNotifier ?? _FakeSecurityNotifier(),
       ),
@@ -1089,7 +1106,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
       await tester.pumpAndSettle();
-      expect(find.text('Remove account'), findsOneWidget);
+      expect(find.text('Reset Vizor'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey('mobile_account_menu_remove')),
@@ -1097,7 +1114,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('deletes every account'), findsOneWidget);
-      expect(find.text('Reset Vizor'), findsOneWidget);
+      expect(find.widgetWithText(AppButton, 'Reset Vizor'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
         setupPending ? findsOneWidget : findsNothing,
@@ -1236,20 +1253,22 @@ void main() {
     });
   }
 
-  for (final (isLastAccount, recheckFailed) in [
-    (false, false),
-    (true, false),
-    (false, true),
-    (true, true),
+  for (final (isLastAccount, recheckFailed, hiddenAccountUuid) in [
+    (false, false, null),
+    (true, false, null),
+    (false, true, null),
+    (true, true, null),
+    (true, false, 'private'),
   ]) {
     testWidgets('removal sheet reopens after the post-drain recheck '
-        '(last account: $isLastAccount, recheck failed: $recheckFailed)', (
-      tester,
-    ) async {
+        '(last visible account: $isLastAccount, recheck failed: $recheckFailed, '
+        'hidden account: $hiddenAccountUuid)', (tester) async {
       final accountState = AccountState(
         accounts: [
           _account('a', 'Active').copyWith(setupPending: true),
           if (!isLastAccount) _account('b', 'Replacement'),
+          if (hiddenAccountUuid != null)
+            _account(hiddenAccountUuid, 'Private account'),
         ],
         activeAccountUuid: 'a',
       );
@@ -1273,6 +1292,7 @@ void main() {
           accountNotifier: () => accountNotifier,
           syncNotifier: _FakeWalletMutationSyncNotifier.new,
           unsharedGiftCardCounts: counts,
+          hiddenAccountUuid: hiddenAccountUuid,
         ),
       );
       await tester.pump();
@@ -2020,7 +2040,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove account'));
+    await tester.tap(find.text('Reset Vizor'));
     await tester.pumpAndSettle();
 
     expect(
@@ -2033,6 +2053,6 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('fully sync'), findsOneWidget);
-    expect(find.text('Reset Vizor'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Reset Vizor'), findsOneWidget);
   });
 }

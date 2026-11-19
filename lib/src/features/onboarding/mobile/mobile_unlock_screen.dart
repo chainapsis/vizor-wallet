@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Scaffold;
-import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,13 +14,15 @@ import '../../../core/navigation/payment_uri_unlock_claim.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/biometric_icon.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../payment_links/providers/payment_link_intake_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/payment_request_flow_provider.dart';
+import '../../../providers/mobile_account_visibility_provider.dart';
+import '../../../providers/mobile_passcode_auth_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
@@ -35,25 +36,14 @@ import 'adaptive_passcode_layout.dart';
 const mobileBiometricSignInBackgroundAsset =
     'assets/illustrations/mobile_onboarding_auth_background.webp';
 
-/// Backdrop assets shared by [MobileBiometricSignInView] and the unlock
-/// screen's precache, so the warmed [ImageCache] entries match the providers
-/// painted behind the Face ID sheet (same key -> cache hit, no blank frame).
 const _authBackgroundImage = AssetImage(mobileBiometricSignInBackgroundAsset);
 const _welcomeBadgeImage = AssetImage(
   'assets/illustrations/welcome_badge_mobile.webp',
 );
-const _biometricBackdropMaxWait = Duration(milliseconds: 350);
 
-/// Mobile unlock — Figma `Sign In Passcode` (4885:23041): "Welcome Back",
-/// crimson-filling dots, round numpad keys, a bottom biometric retry action,
-/// and the numpad's help action opening the Forgot Passcode reset sheet.
+/// Mobile unlock always collects a passcode before prompting for biometrics.
 class MobileUnlockScreen extends ConsumerStatefulWidget {
-  const MobileUnlockScreen({this.autoPromptBiometric = true, super.key});
-
-  /// Production unlock auto-prompts biometric escrow once on entry. Widgetbook
-  /// disables this so Face ID / biometric states can be inspected without
-  /// invoking platform APIs or immediately submitting the preview passcode.
-  final bool autoPromptBiometric;
+  const MobileUnlockScreen({super.key});
 
   @override
   ConsumerState<MobileUnlockScreen> createState() => _MobileUnlockScreenState();
@@ -63,143 +53,43 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   var _entry = '';
   var _submitting = false;
   var _enableBiometricOnUnlock = false;
-  var _biometricPromptShown = false;
-  var _biometricFallback = false;
-  // True from a successful biometric read through unlock → navigation, so the
-  // branded backdrop stays up across submit instead of flipping back to the
-  // numpad while the Face ID sheet dismisses.
-  var _biometricUnlocking = false;
-  var _didPrecacheBackdrop = false;
+  int _attempt = 0;
+  String? _selectedRule;
   OnboardingSubmitError? _error;
+  late final AppLifecycleListener _lifecycle;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_didPrecacheBackdrop) return;
-    _didPrecacheBackdrop = true;
-    // Warm the backdrop assets opportunistically. The auto-prompt waits for
-    // the backdrop shell frame, but image decode must not delay Face ID.
-    unawaited(_precacheBiometricBackdrop());
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onHide: _cancelAttempt);
   }
 
-  Future<void> _precacheBiometricBackdrop() async {
-    await Future.wait<void>([
-      precacheImage(
-        _authBackgroundImage,
-        context,
-        onError: (_, _) {},
-      ).catchError((_) {}),
-      precacheImage(
-        _welcomeBadgeImage,
-        context,
-        onError: (_, _) {},
-      ).catchError((_) {}),
-    ]);
-  }
-
-  /// iOS presents no new frame until the app is active again, so a prompt
-  /// raised while returning from the background covers the pre-background
-  /// screen instead of this backdrop.
-  Future<void> _waitUntilResumed() async {
-    final state = WidgetsBinding.instance.lifecycleState;
-    if (state == null || state == AppLifecycleState.resumed) return;
-    final resumed = Completer<void>();
-    final listener = AppLifecycleListener(
-      onResume: () {
-        if (!resumed.isCompleted) resumed.complete();
-      },
-    );
-    await resumed.future;
-    listener.dispose();
-  }
-
-  Future<void> _waitForBiometricBackdropFrame() async {
-    await _waitForBackdropFrame().timeout(
-      _biometricBackdropMaxWait,
-      onTimeout: () {},
-    );
-  }
-
-  Future<void> _waitForBackdropFrame() async {
-    await SchedulerBinding.instance.endOfFrame;
+  void _cancelAttempt() {
+    _attempt++;
     if (!mounted) return;
-
-    final binding = WidgetsBinding.instance;
-    if (!binding.firstFrameRasterized) {
-      await binding.waitUntilFirstFrameRasterized;
-    }
-  }
-
-  Future<void> _tryBiometricUnlock() async {
-    if (_submitting) return;
-    final biometric = await ref.read(biometricUnlockProvider.future);
-    if (!mounted) return;
-    if (!biometric.usable) {
-      setState(() => _biometricFallback = true);
-      return;
-    }
-
-    final wasEnabled = biometric.enabled;
-    final passcode = await ref
-        .read(biometricUnlockProvider.notifier)
-        .readPasscode(reason: context.l10n.onboardingUnlockBiometricReason);
-    if (!mounted) return;
-    if (passcode == null) {
-      final now = ref.read(biometricUnlockProvider).value;
-      var nextError = _error;
-      if (wasEnabled && now != null && !now.enabled) {
-        // The escrow was invalidated (biometric data changed) — explain
-        // why the prompt stopped appearing.
-        nextError = OnboardingSubmitError.text(
-          biometric.availability.kind.changedMessage(context.l10n),
-        );
+    if (_submitting) {
+      final wasUnlocked = ref.read(appSecurityProvider).isUnlocked;
+      ref.read(appSecurityProvider.notifier).lock();
+      ref.read(mobileAccountScopeProvider.notifier).select(null);
+      if (wasUnlocked) {
+        ref.read(accountProvider.notifier).clearSensitiveStateForLock();
+        unawaited(ref.read(syncProvider.notifier).clearSensitiveStateForLock());
       }
-      setState(() {
-        _biometricFallback = true;
-        _error = nextError;
-      });
-      return;
     }
     setState(() {
-      _biometricUnlocking = true;
-      _entry = passcode;
+      _entry = '';
+      _selectedRule = null;
+      _submitting = false;
       _error = null;
     });
-    await _submit();
   }
 
-  void _scheduleBiometricPrompt(BiometricUnlockState biometric) {
-    if (!widget.autoPromptBiometric ||
-        _biometricPromptShown ||
-        _biometricFallback ||
-        _submitting ||
-        _entry.isNotEmpty ||
-        !biometric.usable) {
-      return;
-    }
-    _biometricPromptShown = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(_tryBiometricUnlockAfterBackdropFrame());
-    });
-  }
-
-  Future<void> _tryBiometricUnlockAfterBackdropFrame() async {
-    await _waitUntilResumed();
-    if (!mounted) return;
-    await _waitForBiometricBackdropFrame();
-    if (!mounted) return;
-
-    final biometric = ref.read(biometricUnlockProvider).value;
-    if (!widget.autoPromptBiometric ||
-        _biometricFallback ||
-        _submitting ||
-        _entry.isNotEmpty ||
-        biometric == null ||
-        !biometric.usable) {
-      return;
-    }
-    await _tryBiometricUnlock();
+  @override
+  void dispose() {
+    _attempt++;
+    _lifecycle.dispose();
+    _entry = '';
+    super.dispose();
   }
 
   void _onDigit(int digit) {
@@ -221,8 +111,10 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   /// Mirrors the desktop unlock sequence: validate, then rehydrate the
   /// account address and sync state before entering the app.
   Future<void> _submit() async {
-    final fromBiometric = _biometricUnlocking;
-    final enableBiometric = _enableBiometricOnUnlock && !fromBiometric;
+    final entered = _entry;
+    final attempt = ++_attempt;
+    bool current() => mounted && attempt == _attempt;
+    final enableBiometric = _enableBiometricOnUnlock;
     setState(() {
       _submitting = true;
       _error = null;
@@ -235,19 +127,47 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     var unlocked = false;
 
     try {
+      final proof = await ref
+          .read(mobilePasscodeAuthProvider)
+          .check(
+            code: entered,
+            biometricReason: context.l10n.onboardingUnlockBiometricReason,
+            isCurrent: current,
+            walletOnly: _selectedRule != null,
+            selectedRule: _selectedRule,
+          );
+      if (!current()) return;
+      if (proof.needsWalletPasscode) {
+        setState(() {
+          _selectedRule = proof.ruleId;
+          _entry = '';
+          _submitting = false;
+        });
+        return;
+      }
+
       await routerRefresh.pauseWhile(() async {
-        final isValid = await securityNotifier.unlock(_entry);
-        if (!isValid) return;
+        accountNotifier.selectMobileAccountBeforeUnlock(proof.ruleId);
+        final scope = ref.read(mobileAccountScopeProvider.notifier);
+        scope.select(proof.ruleId);
+        final isValid = await securityNotifier.unlock(proof.walletPasscode!);
+        if (!isValid || !current()) {
+          if (isValid) securityNotifier.lock();
+          scope.select(null);
+          return;
+        }
 
         unlocked = true;
         await accountNotifier.restoreAfterUnlock();
+        if (!current() || !ref.read(appSecurityProvider).isUnlocked) return;
         await syncNotifier.refreshAfterUnlock();
+        if (!current() || !ref.read(appSecurityProvider).isUnlocked) return;
         // Home does not wait for the sync, whose start can wait out a
         // cancelled one.
         unawaited(startSyncAfterUnlock(syncNotifier));
-        if (!mounted) return;
+        if (!current()) return;
         if (enableBiometric) await _enableBiometricForNextUnlock();
-        if (!mounted) return;
+        if (!mounted || !current()) return;
         // A native enrollment prompt can outlive the unlocked session (for
         // example, returning after the background auto-lock timeout).
         if (!ref.read(appSecurityProvider).isUnlocked) {
@@ -296,34 +216,39 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
           );
         }
       });
-    } catch (e, st) {
-      log('MobileUnlockScreen._submit: ERROR: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _biometricUnlocking = false;
-        // A biometric-initiated submit that fails drops to the numpad + retry.
-        if (fromBiometric) _biometricFallback = true;
-        _entry = '';
-        _error = OnboardingSubmitError.localized(
-          (l10n) => l10n.onboardingUnlockOpenFailed,
-        );
-      });
+    } on MobilePasscodeRejected catch (error) {
+      if (!current()) return;
+      _showUnlockError(
+        error.failure == MobilePasscodeFailure.biometric
+            ? (l10n) => l10n.accountVisibilityBiometricRequired
+            : (l10n) => l10n.passcodeIncorrect,
+      );
+      return;
+    } catch (error) {
+      if (!current()) return;
+      if (ref.read(appSecurityProvider).isUnlocked) {
+        securityNotifier.lock();
+        accountNotifier.clearSensitiveStateForLock();
+        unawaited(syncNotifier.clearSensitiveStateForLock());
+      }
+      ref.read(mobileAccountScopeProvider.notifier).select(null);
+      _showUnlockError((l10n) => l10n.onboardingUnlockOpenFailed);
       return;
     }
 
-    if (!unlocked && mounted) {
-      unawaited(AppHaptics.error());
-      setState(() {
-        _submitting = false;
-        _biometricUnlocking = false;
-        if (fromBiometric) _biometricFallback = true;
-        _entry = '';
-        _error = OnboardingSubmitError.localized(
-          (l10n) => l10n.passcodeIncorrect,
-        );
-      });
+    if (!unlocked && current()) {
+      _showUnlockError((l10n) => l10n.passcodeIncorrect);
     }
+  }
+
+  void _showUnlockError(String Function(AppLocalizations) message) {
+    unawaited(AppHaptics.error());
+    setState(() {
+      _submitting = false;
+      _selectedRule = null;
+      _entry = '';
+      _error = OnboardingSubmitError.localized(message);
+    });
   }
 
   Future<void> _enableBiometricForNextUnlock() async {
@@ -422,193 +347,159 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     router.go('/welcome');
   }
 
-  Widget _buildBiometricFooter(BiometricUnlockState biometric) {
-    if (biometric.availability.usable && !biometric.enabled) {
-      return PasscodeBiometricOptIn(
-        key: const ValueKey('mobile_unlock_biometric_opt_in'),
-        label: biometric.availability.kind.useNextTimeLabel(context.l10n),
-        selected: _enableBiometricOnUnlock,
-        onChanged: _submitting
-            ? null
-            : (selected) => setState(() => _enableBiometricOnUnlock = selected),
+  Widget _buildUnlockFooter(BiometricUnlockState biometric) {
+    if (_selectedRule != null) {
+      return AppButton(
+        key: const ValueKey('mobile_unlock_cancel_separate_passcode'),
+        variant: AppButtonVariant.secondary,
+        height: 44,
+        onPressed: _submitting ? null : _cancelAttempt,
+        child: Text(context.l10n.commonCancel),
       );
     }
-    if (!biometric.usable) return const SizedBox.shrink();
-    return SizedBox(
-      height: 36,
-      child: PasscodeBiometricButton(
-        label: biometric.availability.kind.signInLabel(context.l10n),
-        icon: Center(
-          child: BiometricIcon(
-            kind: biometric.availability.kind,
-            size: 13.5,
-            fingerprintSize: 16,
-          ),
-        ),
-        onPressed: _submitting ? null : () => unawaited(_tryBiometricUnlock()),
-      ),
+    if (!biometric.availability.usable || biometric.enabled) {
+      return const SizedBox.shrink();
+    }
+    return PasscodeBiometricOptIn(
+      key: const ValueKey('mobile_unlock_biometric_opt_in'),
+      label: biometric.availability.kind.useNextTimeLabel(context.l10n),
+      selected: _enableBiometricOnUnlock,
+      onChanged: _submitting
+          ? null
+          : (selected) => setState(() => _enableBiometricOnUnlock = selected),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final biometricAsync = ref.watch(biometricUnlockProvider);
-    final biometric = biometricAsync.value ?? BiometricUnlockState.initial;
-    // While the async availability probe is still resolving on cold launch,
-    // trust the bootstrap snapshot's "enabled" hint so the branded backdrop
-    // paints on the first frame instead of flashing the numpad before Face ID.
-    final enabledHint = ref.watch(biometricUnlockEnabledHintProvider);
-    final likelyUsable =
-        biometric.usable || (biometricAsync.isLoading && enabledHint);
-    final showBiometricSignIn =
-        _biometricUnlocking ||
-        (widget.autoPromptBiometric &&
-            !_biometricFallback &&
-            !_submitting &&
-            _entry.isEmpty &&
-            likelyUsable);
-    // Only schedule the real prompt once the probe confirms usability — the
-    // hint paints the backdrop early but must not fire Face ID prematurely.
-    if (showBiometricSignIn && !_biometricUnlocking) {
-      _scheduleBiometricPrompt(biometric);
-    }
+    final biometric =
+        ref.watch(biometricUnlockProvider).value ??
+        BiometricUnlockState.initial;
+    final subtitle = _submitting
+        ? context.l10n.onboardingUnlockOpening
+        : _selectedRule != null
+        ? context.l10n.accountVisibilityEnterWalletPasscode
+        : context.l10n.onboardingUnlockEnterPasscode;
     return Scaffold(
       backgroundColor: colors.background.window,
-      body: showBiometricSignIn
-          ? const MobileBiometricSignInView()
-          : SafeArea(
-              child: AdaptivePasscodeLayout(
-                title: context.l10n.commonWelcomeBack,
-                subtitle: _submitting
-                    ? context.l10n.onboardingUnlockOpening
-                    : context.l10n.onboardingUnlockEnterPasscode,
-                prompt: PasscodePromptField(
-                  length: kMobilePasscodeLength,
-                  filled: _entry.length,
-                  error: _error?.resolve(context.l10n),
-                  minGap: 0,
-                ),
-                keypad: PasscodeNumpad(
-                  onDigit: _onDigit,
-                  onBackspace: _onBackspace,
-                  canDelete: _entry.isNotEmpty,
-                  enabled: !_submitting,
-                  onHelp: _submitting ? null : _showForgotPasscodeSheet,
-                ),
-                legacyPadding: const EdgeInsets.symmetric(
-                  horizontal: kMobilePageMargin,
-                  vertical: AppSpacing.md,
-                ),
-                scaleLegacyKeypadToWidth: true,
-                footerHeight: 44,
-                footer: ConstrainedBox(
-                  key: const ValueKey('mobile_unlock_biometric_footer'),
-                  constraints: const BoxConstraints(minHeight: 44),
-                  child: Center(child: _buildBiometricFooter(biometric)),
-                ),
-                legacy: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: kMobilePageMargin,
-                    vertical: AppSpacing.md,
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final keypadScale = math.min(
-                        1.0,
-                        constraints.maxWidth / kPasscodeKeypadWidth,
-                      );
-                      return CustomScrollView(
-                        slivers: [
-                          SliverFillRemaining(
-                            hasScrollBody: false,
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          context.l10n.commonWelcomeBack,
-                                          textAlign: TextAlign.center,
-                                          style: AppTypography.displayLarge
-                                              .copyWith(
-                                                color: colors.text.accent,
-                                              ),
-                                        ),
-                                        const SizedBox(height: AppSpacing.s),
-                                        Text(
-                                          _submitting
-                                              ? context
-                                                    .l10n
-                                                    .onboardingUnlockOpening
-                                              : context
-                                                    .l10n
-                                                    .onboardingUnlockEnterPasscode,
-                                          textAlign: TextAlign.center,
-                                          style: AppTypography.bodyMediumStrong
-                                              .copyWith(
-                                                color: colors.text.primary,
-                                              ),
-                                        ),
-                                        const SizedBox(height: AppSpacing.md),
-                                        SizedBox(
-                                          height: kPasscodePromptDigitsHeight,
-                                          child: PasscodePromptField(
-                                            length: kMobilePasscodeLength,
-                                            filled: _entry.length,
-                                            error: _error?.resolve(
-                                              context.l10n,
-                                            ),
-                                            minGap: 0,
-                                          ),
-                                        ),
-                                      ],
+      body: SafeArea(
+        child: AdaptivePasscodeLayout(
+          title: context.l10n.commonWelcomeBack,
+          subtitle: subtitle,
+          prompt: PasscodePromptField(
+            length: kMobilePasscodeLength,
+            filled: _entry.length,
+            error: _error?.resolve(context.l10n),
+            minGap: 0,
+          ),
+          keypad: PasscodeNumpad(
+            onDigit: _onDigit,
+            onBackspace: _onBackspace,
+            canDelete: _entry.isNotEmpty,
+            enabled: !_submitting,
+            onHelp: _submitting || _selectedRule != null
+                ? null
+                : _showForgotPasscodeSheet,
+          ),
+          legacyPadding: const EdgeInsets.symmetric(
+            horizontal: kMobilePageMargin,
+            vertical: AppSpacing.md,
+          ),
+          scaleLegacyKeypadToWidth: true,
+          footerHeight: 44,
+          footer: ConstrainedBox(
+            key: const ValueKey('mobile_unlock_biometric_footer'),
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Center(child: _buildUnlockFooter(biometric)),
+          ),
+          legacy: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: kMobilePageMargin,
+              vertical: AppSpacing.md,
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final keypadScale = math.min(
+                  1.0,
+                  constraints.maxWidth / kPasscodeKeypadWidth,
+                );
+                return CustomScrollView(
+                  slivers: [
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    context.l10n.commonWelcomeBack,
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.displayLarge.copyWith(
+                                      color: colors.text.accent,
                                     ),
                                   ),
-                                ),
-                                SizedBox(
-                                  height: kPasscodeKeypadHeight * keypadScale,
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: SizedBox(
-                                      width: kPasscodeKeypadWidth,
-                                      height: kPasscodeKeypadHeight,
-                                      child: PasscodeNumpad(
-                                        onDigit: _onDigit,
-                                        onBackspace: _onBackspace,
-                                        canDelete: _entry.isNotEmpty,
-                                        onHelp: _submitting
-                                            ? null
-                                            : _showForgotPasscodeSheet,
-                                        enabled: !_submitting,
-                                      ),
+                                  const SizedBox(height: AppSpacing.s),
+                                  Text(
+                                    subtitle,
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.bodyMediumStrong
+                                        .copyWith(color: colors.text.primary),
+                                  ),
+                                  const SizedBox(height: AppSpacing.md),
+                                  SizedBox(
+                                    height: kPasscodePromptDigitsHeight,
+                                    child: PasscodePromptField(
+                                      length: kMobilePasscodeLength,
+                                      filled: _entry.length,
+                                      error: _error?.resolve(context.l10n),
+                                      minGap: 0,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: AppSpacing.md),
-                                ConstrainedBox(
-                                  key: const ValueKey(
-                                    'mobile_unlock_biometric_footer',
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minHeight: 44,
-                                  ),
-                                  child: Center(
-                                    child: _buildBiometricFooter(biometric),
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
+                          SizedBox(
+                            height: kPasscodeKeypadHeight * keypadScale,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: SizedBox(
+                                width: kPasscodeKeypadWidth,
+                                height: kPasscodeKeypadHeight,
+                                child: PasscodeNumpad(
+                                  onDigit: _onDigit,
+                                  onBackspace: _onBackspace,
+                                  canDelete: _entry.isNotEmpty,
+                                  onHelp: _submitting || _selectedRule != null
+                                      ? null
+                                      : _showForgotPasscodeSheet,
+                                  enabled: !_submitting,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          ConstrainedBox(
+                            key: const ValueKey(
+                              'mobile_unlock_biometric_footer',
+                            ),
+                            constraints: const BoxConstraints(minHeight: 44),
+                            child: Center(child: _buildUnlockFooter(biometric)),
+                          ),
                         ],
-                      );
-                    },
-                  ),
-                ),
-              ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -58,6 +58,7 @@ import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../features/about/screens/mobile/mobile_about_screens.dart';
 import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
+import '../../features/settings/screens/mobile/mobile_account_visibility_screen.dart';
 import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
 import '../../features/settings/screens/mobile/mobile_explorer_screen.dart';
 import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
@@ -192,6 +193,22 @@ List<RouteBase> _walletRoutes() {
         key: state.pageKey,
         child: MobileAccountRemovalPasscodeScreen(
           isLastAccount: state.extra == true,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/settings/account-visibility',
+      pageBuilder: (context, state) => _mobilePage(
+        key: state.pageKey,
+        child: const MobileAccountVisibilityScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/settings/confirm-biometric-change',
+      pageBuilder: (context, state) => _mobilePage(
+        key: state.pageKey,
+        child: const MobileAccountVisibilityScreen(
+          confirmBiometricChange: true,
         ),
       ),
     ),

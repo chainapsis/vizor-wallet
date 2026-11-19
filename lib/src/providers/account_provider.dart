@@ -40,6 +40,7 @@ import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'wallet_balance_cache_provider.dart';
 import 'app_security_provider.dart';
+import 'mobile_account_visibility_provider.dart';
 import 'hide_balance_on_unlock_provider.dart';
 import 'enhance_pir_provider.dart';
 import 'public_details_loads_provider.dart';
@@ -268,7 +269,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final accounts = state.value?.accounts ?? [];
       final accountName =
           name ??
-          'Account ${accounts.length + 1}'; // l10n-ignore: log label or persisted default name
+          _nextDefaultAccountName(
+            accounts,
+          ); // l10n-ignore: log label or persisted default name
 
       String mnemonic;
       String accountUuid;
@@ -404,7 +407,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final accounts = state.value?.accounts ?? [];
       final accountName = normalizeAccountName(
         name ??
-            'Account ${accounts.length + 1}', // l10n-ignore: log label or persisted default name
+            _nextDefaultAccountName(
+              accounts,
+            ), // l10n-ignore: log label or persisted default name
       );
       validateAccountName(accountName);
       if (!isKnownProfilePictureId(profilePictureId)) {
@@ -949,7 +954,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final accounts = state.value?.accounts ?? [];
       final accountName = normalizeAccountName(
         name ??
-            'Account ${accounts.length + 1}', // l10n-ignore: log label or persisted default name
+            _nextDefaultAccountName(
+              accounts,
+            ), // l10n-ignore: log label or persisted default name
       );
       validateAccountName(accountName);
       if (!isKnownProfilePictureId(profilePictureId)) {
@@ -1527,6 +1534,25 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
   }
 
+  /// Resolve the visible account while the mobile wallet is still locked.
+  void selectMobileAccountBeforeUnlock(String? ruleId, {bool force = false}) {
+    final visibility = ref.read(mobileAccountVisibilityProvider);
+    if (!force && visibility.rules.isEmpty && ruleId == null) return;
+    final current = state.requireValue;
+    final allowed = current.accounts
+        .where((account) => visibility.allows(account.uuid, ruleId))
+        .toList();
+    if (allowed.isEmpty) throw StateError('No account is available.');
+    if (!allowed.any((account) => account.uuid == current.activeAccountUuid)) {
+      state = AsyncData(
+        AccountState(
+          accounts: current.accounts,
+          activeAccountUuid: allowed.first.uuid,
+        ),
+      );
+    }
+  }
+
   /// Switch active account.
   Future<void> switchAccount(String uuid) => ref
       .read(linuxKeyringCoordinatorProvider)
@@ -1534,6 +1560,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   Future<void> _switchAccount(String uuid) async {
     if (ref.read(appSecurityProvider).requiresUnlock) return;
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        !_visibleMobileAccounts(
+          state.requireValue.accounts,
+        ).any((account) => account.uuid == uuid)) {
+      throw StateError('Account unavailable.');
+    }
+    final authenticationGeneration = _storage.authenticationGeneration;
     final previousActiveUuid = state.value?.activeAccountUuid;
     if (previousActiveUuid != uuid) {
       _storage.invalidatePendingSecretOperations();
@@ -1565,6 +1598,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
     }
 
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        (!ref.mounted ||
+            !_storage.isAuthenticationGenerationCurrent(
+              authenticationGeneration,
+            ))) {
+      return;
+    }
     if (_storage.enforcesSessionGeneration) {
       if (!ref.mounted) return;
       final current = state.value ?? const AccountState();
@@ -1827,6 +1867,14 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      final visible = _visibleMobileAccounts(prev.accounts);
+      if (visible.length <= 1 ||
+          !visible.any((account) => account.uuid == uuid)) {
+        throw StateError('Cannot remove this account.');
+      }
+    }
+
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
@@ -1994,10 +2042,21 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       for (var i = 0; i < remaining.length; i++)
         remaining[i].copyWith(order: i),
     ];
+    final visibility = kAppFormFactor == AppFormFactor.mobile
+        ? ref.read(mobileAccountVisibilityProvider)
+        : null;
+    final scope = visibility == null
+        ? null
+        : ref.read(mobileAccountScopeProvider);
+    final visibleAfterRemoval = visibility == null
+        ? updated
+        : updated
+              .where((account) => visibility.allows(account.uuid, scope))
+              .toList();
     final nextActiveUuid = _nextActiveAccountUuid(
       previousState: prev,
       removedAccount: target,
-      remainingAccounts: updated,
+      remainingAccounts: visibleAfterRemoval,
     );
     final nextActiveAddress = await _nextActiveAddress(
       prev,
@@ -2006,6 +2065,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       network,
     );
 
+    if (visibility != null) {
+      // The wallet rows are already gone. Stale assignments are harmless and
+      // must not turn a committed deletion into a failed account operation.
+      try {
+        await ref
+            .read(mobileAccountVisibilityProvider.notifier)
+            .forgetAccount(uuid);
+      } catch (_) {
+        log(
+          'Account visibility cleanup will be retried after account deletion.',
+        );
+      }
+    }
     await _saveAccounts(updated);
     if (nextActiveUuid == null) {
       await _storage.delete(_activeAccountKey);
@@ -2086,9 +2158,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
+      // Mobile confirms the visible account's gift cards. Match that scope
+      // during the recheck so it cannot reveal activity on other accounts.
+      final confirmedAccounts = kAppFormFactor == AppFormFactor.mobile
+          ? ref.read(visibleAccountsProvider)
+          : state.value?.accounts ?? const <AccountInfo>[];
       await _throwIfUnsharedGiftCardsIncreased([
-        for (final account in state.value?.accounts ?? const <AccountInfo>[])
-          account.uuid,
+        for (final account in confirmedAccounts) account.uuid,
       ], confirmedUnsharedGiftCardCount);
       await _resetWalletWithShareTrackingStopped();
       resetCompleted = true;
@@ -2443,6 +2519,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<void> restoreAfterUnlock() async {
+    final authenticationGeneration = _storage.authenticationGeneration;
     try {
       await recoverPendingAccountMnemonic();
     } catch (e) {
@@ -2475,6 +2552,14 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('restoreAfterUnlock: failed to get address: $e');
     }
 
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        (!ref.mounted ||
+            !_storage.isAuthenticationGenerationCurrent(
+              authenticationGeneration,
+            ) ||
+            state.value?.activeAccountUuid != accountUuid)) {
+      return;
+    }
     final AccountState current;
     if (_storage.enforcesSessionGeneration) {
       if (!_hasCurrentUnlockedSession(sessionGeneration)) return;
@@ -3073,6 +3158,32 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   // ======================== Helpers ========================
+
+  List<AccountInfo> _visibleMobileAccounts(List<AccountInfo> accounts) {
+    final visibility = ref.read(mobileAccountVisibilityProvider);
+    final scope = ref.read(mobileAccountScopeProvider);
+    return accounts
+        .where((account) => visibility.allows(account.uuid, scope))
+        .toList();
+  }
+
+  String _nextDefaultAccountName(List<AccountInfo> accounts) {
+    if (kAppFormFactor != AppFormFactor.mobile) {
+      return 'Account ${accounts.length + 1}'; // l10n-ignore: persisted default name
+    }
+    final visibility = ref.read(mobileAccountVisibilityProvider);
+    final visibleNames = {
+      for (final account in accounts)
+        if (visibility.allows(account.uuid, null)) account.name,
+    };
+    var index = visibleNames.length;
+    String candidate;
+    do {
+      index++;
+      candidate = 'Account $index'; // l10n-ignore: persisted default name
+    } while (visibleNames.contains(candidate));
+    return candidate;
+  }
 
   Future<void> _saveAccounts(List<AccountInfo> accounts) async {
     final json = jsonEncode(accounts.map((a) => a.toJson()).toList());

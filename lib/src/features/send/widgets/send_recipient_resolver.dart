@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/mobile_account_visibility_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../address_book/models/address_book_contact.dart';
@@ -13,15 +15,13 @@ import 'send_review_layout.dart';
 const _selfSendTransparentLookbackLimit = 20;
 
 /// Current/legacy unified addresses and recent transparent receive addresses of every
-/// local account, keyed by the trimmed address. Used by send review surfaces to
+/// visible local account, keyed by the trimmed address. Used by send review surfaces to
 /// recognize a recipient as one of the user's own accounts without persisting
 /// addresses in [AccountInfo].
 final ownAccountAddressesProvider = FutureProvider<Map<String, AccountInfo>>((
   ref,
 ) async {
-  final accounts = ref.watch(
-    accountProvider.select((state) => state.value?.accounts ?? const []),
-  );
+  final accounts = ref.watch(visibleAccountsProvider);
   if (accounts.isEmpty) return const <String, AccountInfo>{};
 
   final network = ref.watch(rpcEndpointProvider).networkName;
@@ -51,6 +51,30 @@ final ownAccountAddressesProvider = FutureProvider<Map<String, AccountInfo>>((
     );
   }
   return byAddress;
+});
+
+/// The async address load can retain its previous value while recomputing.
+/// Filter that value at presentation time so a newly hidden account's label
+/// disappears immediately without waiting for another Rust read.
+final visibleOwnAccountAddressesProvider = Provider<Map<String, AccountInfo>>((
+  ref,
+) {
+  final addresses =
+      ref.watch(ownAccountAddressesProvider).value ??
+      const <String, AccountInfo>{};
+  if (kAppFormFactor != AppFormFactor.mobile ||
+      addresses.isEmpty ||
+      ref.watch(mobileAccountVisibilityProvider).rules.isEmpty) {
+    return addresses;
+  }
+  final visible = ref
+      .watch(visibleAccountsProvider)
+      .map((account) => account.uuid)
+      .toSet();
+  return {
+    for (final entry in addresses.entries)
+      if (visible.contains(entry.value.uuid)) entry.key: entry.value,
+  };
 });
 
 Future<void> _addOwnAccountAddresses({

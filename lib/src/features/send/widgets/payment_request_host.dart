@@ -170,9 +170,7 @@ class _PaymentRequestHostState extends ConsumerState<PaymentRequestHost>
     final contacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     // Same story for the price: `zecHomeUsdUnitPriceProvider` is autoDispose
     // and its market data fills asynchronously, so a request that arrives over
     // Settings or Activity — screens that subscribe to neither — would read

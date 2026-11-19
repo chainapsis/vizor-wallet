@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/storage/app_secure_store.dart';
+import '../core/layout/app_form_factor.dart';
 import '../services/biometric_unlock.dart';
 
 const kBiometricUnlockEnabledKey = 'zcash_biometric_unlock_enabled';
@@ -100,31 +101,21 @@ class BiometricUnlockNotifier extends AsyncNotifier<BiometricUnlockState> {
     state = AsyncData(current.copyWith(enabled: false));
   }
 
-  /// Prompts and returns the escrowed passcode, or null when the
-  /// passcode path should take over (cancel, lockout, failure).
-  /// Invalidation (biometric re-enrollment) also disables the flag so
-  /// surfaces stop offering the biometric path.
+  /// Read the biometric-protected wallet passcode. A failed native prompt must
+  /// never turn off the second factor or alter a subsequent unlock attempt.
   Future<String?> readPasscode({required String reason}) async {
     try {
       return await _service.read(reason: reason);
-    } on BiometricUnlockException catch (e) {
-      switch (e.kind) {
-        case BiometricUnlockErrorKind.invalidated:
-        case BiometricUnlockErrorKind.unavailable:
-          log('BiometricUnlock.read: ${e.kind.name} — dropping enabled flag');
-          await disable();
-        case BiometricUnlockErrorKind.cancelled:
-        case BiometricUnlockErrorKind.lockedOut:
-        case BiometricUnlockErrorKind.failed:
-          break;
+    } on BiometricUnlockException catch (error) {
+      if (kAppFormFactor != AppFormFactor.mobile &&
+          (error.kind == BiometricUnlockErrorKind.invalidated ||
+              error.kind == BiometricUnlockErrorKind.unavailable)) {
+        await disable();
       }
       return null;
     }
   }
 
-  /// True when the escrow became invalid behind the user's back (the
-  /// last [readPasscode] disabled it); lets the unlock screen explain
-  /// why the prompt stopped appearing.
   Future<void> refreshAvailability() async {
     final availability = await _service.availability();
     final current = await _current();

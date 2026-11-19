@@ -25,6 +25,7 @@ import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../core/widgets/mobile/mobile_section.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
+import '../../../../providers/mobile_account_visibility_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
@@ -80,7 +81,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
 
   void _showInitialSheet() {
     if (!mounted) return;
-    final accounts = ref.read(accountProvider).value?.accounts ?? const [];
+    final accounts = ref.read(visibleAccountsProvider);
     AccountInfo? account;
     for (final candidate in accounts) {
       if (candidate.uuid == widget.initialSheetAccountUuid) {
@@ -97,11 +98,12 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
-  /// Mirrors the desktop eligibility rule: account removal is available for
-  /// every listed account. The last remaining account becomes a full app reset.
-  bool _canRemove(AccountInfo account, List<AccountInfo> accounts) {
-    return accounts.any((candidate) => candidate.uuid == account.uuid);
-  }
+  // With one ordinary account, offer the same explicit wallet reset whether
+  // or not other accounts exist. A private view must retain at least one
+  // linked account until the user removes that passcode.
+  bool _canRemoveOrReset(AccountInfo account, List<AccountInfo> accounts) =>
+      accounts.any((candidate) => candidate.uuid == account.uuid) &&
+      (accounts.length > 1 || ref.read(mobileAccountScopeProvider) == null);
 
   /// Anchored dark popup at the row's ⋯ button — Figma `Accounts` row
   /// menu: secret passphrase (software only) / viewing key / copy address /
@@ -115,9 +117,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
 
     final accountState = ref.read(accountProvider).value;
-    final accounts = accountState?.accounts ?? const [];
+    final accounts = ref.read(visibleAccountsProvider);
     final isCurrentAccount = accountState?.activeAccountUuid == account.uuid;
-    final canRemove = _canRemove(account, accounts);
+    final canRemove = _canRemoveOrReset(account, accounts);
 
     final overlay = Overlay.of(context, rootOverlay: true);
     final overlayRenderObject = overlay.context.findRenderObject();
@@ -278,7 +280,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         item(
           key: const ValueKey('mobile_account_menu_remove'),
           iconName: AppIcons.trash,
-          label: context.l10n.accountsRemove,
+          label: accounts.length == 1
+              ? context.l10n.commonResetVizor
+              : context.l10n.accountsRemove,
           action: _AccountAction.remove,
           textColor: colors.text.destructiveLight,
           iconColor: colors.icon.destructiveLight,
@@ -446,7 +450,8 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     AccountInfo account, {
     bool recheckFailed = false,
   }) async {
-    final accounts = ref.read(accountProvider).value?.accounts ?? const [];
+    final accounts = ref.read(visibleAccountsProvider);
+    if (!_canRemoveOrReset(account, accounts)) return;
     final isLastAccount = accounts.length == 1;
     final migrationStatus = ref
         .read(ironwoodMigrationCoordinatorProvider)
@@ -481,6 +486,11 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       extra: isLastAccount,
     );
     if (authenticated != true || !mounted) return;
+    final visible = ref.read(visibleAccountsProvider);
+    if (!_canRemoveOrReset(account, visible) ||
+        (visible.length == 1) != isLastAccount) {
+      return;
+    }
 
     final router = GoRouter.of(context);
     setState(() => _busy = true);
@@ -559,8 +569,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final state = ref.watch(accountProvider).value;
-    final accounts = state?.accounts ?? const <AccountInfo>[];
-    final active = state?.activeAccount;
+    final accounts = ref.watch(visibleAccountsProvider);
+    final active = accounts
+        .where((account) => account.uuid == state?.activeAccountUuid)
+        .firstOrNull;
     final others = [
       for (final account in accounts)
         if (account.uuid != active?.uuid) account,
@@ -598,7 +610,8 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                       key: const ValueKey('mobile_accounts_add_account'),
                       expand: true,
                       constrainContent: true,
-                      onPressed: _busy
+                      onPressed:
+                          _busy || ref.watch(mobileAccountScopeProvider) != null
                           ? null
                           : () => context.push('/add-account'),
                       leading: const AppIcon(AppIcons.addNew),
@@ -768,7 +781,9 @@ class MobileAccountRemovalSheet extends StatelessWidget {
       walletReset: isLastAccount,
     );
     return MobileModalScaffold(
-      title: context.l10n.accountsRemove,
+      title: isLastAccount
+          ? context.l10n.commonResetVizor
+          : context.l10n.accountsRemove,
       onClose: () => Navigator.of(context).pop(false),
       leading: MobileAccountAvatar(
         profilePictureId: account.profilePictureId,

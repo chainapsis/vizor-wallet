@@ -23,6 +23,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_account_header.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/mobile_account_visibility_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -168,9 +169,7 @@ class _MobileViewingKeyScreenState
 
   Future<void> _tryBiometricGate({required bool automatic}) async {
     if (_checking || _stage != _ViewingKeyStage.confirmAccess) return;
-    final expectedAccountUuid = _targetAccount(
-      ref.read(accountProvider).value,
-    )?.uuid;
+    final expectedAccountUuid = _targetAccount()?.uuid;
     // A skipped automatic probe must not invalidate a manual access check.
     final deferGeneration =
         automatic && defaultTargetPlatform == TargetPlatform.iOS;
@@ -251,9 +250,7 @@ class _MobileViewingKeyScreenState
   }
 
   Future<void> _confirmPasscode() async {
-    final expectedAccountUuid = _targetAccount(
-      ref.read(accountProvider).value,
-    )?.uuid;
+    final expectedAccountUuid = _targetAccount()?.uuid;
     final accessCheckGeneration = ++_accessCheckGeneration;
     setState(() => _checking = true);
     try {
@@ -289,20 +286,11 @@ class _MobileViewingKeyScreenState
 
   // ── Reveal ─────────────────────────────────────────────────────────
 
-  AccountInfo? _targetAccount(AccountState? accountState) {
-    if (accountState == null) return null;
-    final requestedUuid = widget.accountUuid;
-    if (requestedUuid == null) return accountState.activeAccount;
-    for (final account in accountState.accounts) {
-      if (account.uuid == requestedUuid) return account;
-    }
-    return null;
-  }
+  AccountInfo? _targetAccount() =>
+      ref.read(visibleAccountTargetProvider(widget.accountUuid));
 
-  bool _targetAccountChanged(String? expectedAccountUuid) {
-    final accountState = ref.read(accountProvider).value;
-    return _targetAccount(accountState)?.uuid != expectedAccountUuid;
-  }
+  bool _targetAccountChanged(String? expectedAccountUuid) =>
+      _targetAccount()?.uuid != expectedAccountUuid;
 
   void _handleTargetAccountChanged() {
     _accessCheckGeneration += 1;
@@ -328,8 +316,7 @@ class _MobileViewingKeyScreenState
 
   Future<void> _reveal(String? expectedAccountUuid) async {
     final l10n = context.l10n;
-    final accountState = ref.read(accountProvider).value;
-    final account = _targetAccount(accountState);
+    final account = _targetAccount();
     if (account?.uuid != expectedAccountUuid) {
       _handleTargetAccountChanged();
       return;
@@ -396,16 +383,18 @@ class _MobileViewingKeyScreenState
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AccountInfo?>(
-      accountProvider.select((state) => _targetAccount(state.value)),
-      (previous, next) {
-        if (previous?.uuid == next?.uuid) return;
-        _handleTargetAccountChanged();
-      },
-    );
+    ref.listen<AccountInfo?>(visibleAccountTargetProvider(widget.accountUuid), (
+      previous,
+      next,
+    ) {
+      if (previous?.uuid == next?.uuid) return;
+      _handleTargetAccountChanged();
+    });
     final colors = context.colors;
     final accounts = ref.watch(accountProvider).value;
-    final targetAccount = _targetAccount(accounts);
+    final targetAccount = ref.watch(
+      visibleAccountTargetProvider(widget.accountUuid),
+    );
     // The account's balance under its name, read only once the keys show:
     // the passcode gate needs no wallet state.
     final balanceText = _stage == _ViewingKeyStage.reveal

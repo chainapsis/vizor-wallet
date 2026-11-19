@@ -30,14 +30,16 @@ void main() {
         find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
         findsOneWidget,
       );
-      expect(find.text(action), findsOneWidget);
+      expect(find.widgetWithText(AppButton, action), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(find.byKey(ValueKey(removedMenu)), findsOneWidget);
 
       await tester.tap(find.byKey(ValueKey(removedMenu)));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove account'));
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_remove')),
+      );
       await tester.pumpAndSettle();
       final confirm = find.byKey(
         const ValueKey('mobile_account_remove_confirm'),

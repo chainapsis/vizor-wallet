@@ -497,6 +497,13 @@ suppression around sensitive access gates, and exclude shielded content from
 screen-reader semantics without unmounting it. Desktop continues to use
 `SensitivePrivacyOverlay`.
 
+Mobile's Accounts by passcode feature protects app-switcher snapshots only
+while a separate account view or its authenticated settings are open. Keep
+ordinary screens above unaffected. Passcodes for account display select a UI
+scope, and only the wallet passcode opens the secure-storage session. Sync,
+account reconciliation and whole-wallet reset continue using the full account
+list. See the account display section in [docs/privacy-mode.md](docs/privacy-mode.md).
+
 The mobile keep-awake lock owns system Back before payment cards and routes.
 Back may return from passcode entry to the lock status screen, but never acts
 on the covered app or interrupts authentication. Its idle deadline counts

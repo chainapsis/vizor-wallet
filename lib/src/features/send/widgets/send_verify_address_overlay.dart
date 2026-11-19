@@ -7,7 +7,6 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../../../providers/account_models.dart';
 import 'send_recipient_resolver.dart';
 import 'send_review_layout.dart';
 import 'verify_address_modal.dart';
@@ -86,9 +85,7 @@ class SendVerifyAddressOverlay extends ConsumerWidget {
     final contacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     final savedContact = sendRecipientContactFor(
       contacts: contacts,
       address: address,

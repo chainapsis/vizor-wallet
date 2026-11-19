@@ -71,6 +71,64 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountNameTooLong => '名称最多 20 个字符。';
 
   @override
+  String get accountVisibilityAccountChoice => '请选择使用此数字密码解锁时要显示的账户。';
+
+  @override
+  String get accountVisibilityAccounts => '使用此数字密码解锁时显示的账户';
+
+  @override
+  String get accountVisibilityBiometricRequired => '需要生物识别验证。请重试。';
+
+  @override
+  String get accountVisibilityChange => '更改独立数字密码';
+
+  @override
+  String get accountVisibilityCreate => '创建独立数字密码';
+
+  @override
+  String get accountVisibilityDelete => '移除独立数字密码';
+
+  @override
+  String get accountVisibilityDeleteBody => '关联账户将重新出现在常规账户列表中。';
+
+  @override
+  String get accountVisibilityDescription =>
+      '在锁定界面输入独立数字密码，即可显示与其关联的账户。关联账户会从常规账户列表中隐藏。';
+
+  @override
+  String get accountVisibilityDifferentPasscode => '请选择其他数字密码。';
+
+  @override
+  String get accountVisibilityEditAccounts => '更改要显示的账户';
+
+  @override
+  String get accountVisibilityEnterSeparatePasscode => '请输入独立数字密码。';
+
+  @override
+  String get accountVisibilityEnterWalletPasscode => '请输入钱包数字密码。';
+
+  @override
+  String get accountVisibilityKeepOrdinary => '请在常规账户列表中至少保留一个账户。';
+
+  @override
+  String get accountVisibilityManage => '使用独立数字密码管理';
+
+  @override
+  String get accountVisibilityManageTitle => '管理独立数字密码';
+
+  @override
+  String get accountVisibilityNewPasscode => '请输入新的独立数字密码。';
+
+  @override
+  String get accountVisibilitySelectAccount => '请至少选择一个账户。';
+
+  @override
+  String get accountVisibilityTitle => '按数字密码显示账户';
+
+  @override
+  String get accountVisibilityUpdateFailed => '无法更新账户显示设置。请重试。';
+
+  @override
   String get accountsActionsLabel => '账户操作';
 
   @override
@@ -5668,7 +5726,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nativeBiometricEnableTitle => '启用指纹解锁';
 
   @override
-  String get nativeBiometricUsePasscode => '使用数字密码';
+  String get nativeBiometricPromptCancel => '取消';
 
   @override
   String get nativeIronwoodContinueBody => '打开 Vizor 准备下一笔迁移转账。';

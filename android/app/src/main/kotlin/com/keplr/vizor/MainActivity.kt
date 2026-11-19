@@ -220,6 +220,19 @@ class MainActivity : FlutterFragmentActivity() {
                         result.success(null)
                     }
                 }
+                "setPrivateAccountViewVisible" -> {
+                    val visible = call.argument<Boolean>("visible")
+                    if (visible == null) {
+                        result.error("bad_args", "Expected visible argument.", null)
+                    } else {
+                        privateAccountViewVisible = visible
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            setRecentsScreenshotEnabled(!visible)
+                        }
+                        updateSecureWindow()
+                        result.success(null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -386,8 +399,18 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    private var sensitiveContentVisible = false
+    private var privateAccountViewVisible = false
+
     private fun setSensitiveContentVisible(visible: Boolean) {
-        if (visible) {
+        sensitiveContentVisible = visible
+        updateSecureWindow()
+    }
+
+    private fun updateSecureWindow() {
+        val protectOlderRecents = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU &&
+            privateAccountViewVisible
+        if (sensitiveContentVisible || protectOlderRecents) {
             window.setFlags(
                 WindowManager.LayoutParams.FLAG_SECURE,
                 WindowManager.LayoutParams.FLAG_SECURE

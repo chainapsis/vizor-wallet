@@ -16,6 +16,7 @@ import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
 import 'src/providers/wallet_pir_server_provider.dart';
 import 'src/providers/account_provider.dart';
+import 'src/providers/mobile_account_visibility_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
@@ -731,7 +732,9 @@ String? appRedirect({
 
   final wallet = walletAsync.value;
   final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
-  final isUnlocked = security.isUnlocked || bootstrap.isUnlocked;
+  final isUnlocked =
+      security.isUnlocked ||
+      (kAppFormFactor != AppFormFactor.mobile && bootstrap.isUnlocked);
   final requiresUnlock = hasWallet && !isUnlocked;
   final isOnboarding = isOnboardingLocation(state.matchedLocation);
   final isPublicLegal =
@@ -769,7 +772,9 @@ String? appRedirect({
       if (requiresUnlock) return '/unlock';
       if ((state.matchedLocation == '/gift' ||
               state.matchedLocation == '/gift/scan') &&
-          state.uri.queryParameters['addAccount'] == 'true') {
+          state.uri.queryParameters['addAccount'] == 'true' &&
+          (kAppFormFactor != AppFormFactor.mobile ||
+              ref.read(mobileAccountScopeProvider) == null)) {
         return null;
       }
       return '/payment-links';
@@ -786,6 +791,13 @@ String? appRedirect({
   // `/lost-password` is intentionally part of the unlock flow: a locked
   // wallet must be able to reach its local reset path from `/unlock`.
   if (requiresUnlock && !isUnlockFlow && !isPublicLegal) return '/unlock';
+  if (kAppFormFactor == AppFormFactor.mobile &&
+      hasWallet &&
+      !requiresUnlock &&
+      ref.read(mobileAccountScopeProvider) != null &&
+      (isOnboarding || state.matchedLocation == '/add-account')) {
+    return '/home';
+  }
   if (!requiresUnlock && isUnlockFlow) {
     return hasWallet ? '/home' : '/welcome';
   }
@@ -820,7 +832,9 @@ List<RouteBase> appAuthRoutes(
       if (walletAsync.hasError) return '/home'; // home shows error state
       final wallet = walletAsync.value;
       final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
-      final isUnlocked = security.isUnlocked || bootstrap.isUnlocked;
+      final isUnlocked =
+          security.isUnlocked ||
+          (kAppFormFactor != AppFormFactor.mobile && bootstrap.isUnlocked);
       if (!hasWallet) return '/welcome';
       if (!isUnlocked) return '/unlock';
       return '/home';
@@ -1935,48 +1949,48 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: LinuxKeyringGate(
-            child: _LinuxUpdateNoticeListener(
-              child: _WindowsUpdateStartupCheck(
-                child: _WindowsUpdatePromptHost(
-                  router: router,
-                  child: _IncomingLinkHost(
+          child: BackgroundAutoLockHost(
+            router: router,
+            child: LinuxKeyringGate(
+              child: _LinuxUpdateNoticeListener(
+                child: _WindowsUpdateStartupCheck(
+                  child: _WindowsUpdatePromptHost(
                     router: router,
-                    child: _RpcEndpointFailoverToastListener(
-                      child: _DesktopOpaqueWindowBackground(
-                        child: IronwoodMigrationCoordinatorHost(
-                          child: IronwoodMigrationPrivacyLockHost(
-                            child: SyncKeepAwakeNativeHost(
-                              child: SyncKeepAwakePrivacyLockHost(
-                                child: SyncKeepAwakeInteractionListener(
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      // Leaf-only: skip when the primary focus is a
-                                      // `FocusScopeNode` rather than a concrete `FocusNode`.
-                                      // Unfocusing the scope itself strips the scope's
-                                      // "most-recently-focused child" memory, which leaves the
-                                      // next Tab with no deterministic starting point.
-                                      final primary =
-                                          FocusManager.instance.primaryFocus;
-                                      if (primary != null &&
-                                          primary is! FocusScopeNode) {
-                                        primary.unfocus();
-                                      }
-                                    },
-                                    behavior: HitTestBehavior.translucent,
-                                    // Innermost app-level layer: the payment
-                                    // request card sits directly over the
-                                    // router's content, under the privacy lock
-                                    // and the keep-awake hosts above it. The
-                                    // link intake that feeds it lives further
-                                    // up, in `_IncomingLinkHost`.
-                                    child: _WalletNativeTabBarRootHost(
-                                      child: PaymentRequestHost(
-                                        router: router,
-                                        child: LedgerOperationRecoveryHost(
-                                          child: MobileKeyboardToolbar(
-                                            child: BackgroundAutoLockHost(
-                                              router: router,
+                    child: _IncomingLinkHost(
+                      router: router,
+                      child: _RpcEndpointFailoverToastListener(
+                        child: _DesktopOpaqueWindowBackground(
+                          child: IronwoodMigrationCoordinatorHost(
+                            child: IronwoodMigrationPrivacyLockHost(
+                              child: SyncKeepAwakeNativeHost(
+                                child: SyncKeepAwakePrivacyLockHost(
+                                  child: SyncKeepAwakeInteractionListener(
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        // Leaf-only: skip when the primary focus is a
+                                        // `FocusScopeNode` rather than a concrete `FocusNode`.
+                                        // Unfocusing the scope itself strips the scope's
+                                        // "most-recently-focused child" memory, which leaves the
+                                        // next Tab with no deterministic starting point.
+                                        final primary =
+                                            FocusManager.instance.primaryFocus;
+                                        if (primary != null &&
+                                            primary is! FocusScopeNode) {
+                                          primary.unfocus();
+                                        }
+                                      },
+                                      behavior: HitTestBehavior.translucent,
+                                      // Innermost app-level layer: the payment
+                                      // request card sits directly over the
+                                      // router's content, under the privacy lock
+                                      // and the keep-awake hosts above it. The
+                                      // link intake that feeds it lives further
+                                      // up, in `_IncomingLinkHost`.
+                                      child: _WalletNativeTabBarRootHost(
+                                        child: PaymentRequestHost(
+                                          router: router,
+                                          child: LedgerOperationRecoveryHost(
+                                            child: MobileKeyboardToolbar(
                                               child: AppReviewHost(
                                                 router: router,
                                                 child: child!,

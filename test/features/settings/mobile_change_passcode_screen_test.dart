@@ -49,6 +49,7 @@ class _FakeBiometricController {
   BiometricUnlockState initialState;
   String? enabledWith;
   var disabled = false;
+  var reads = 0;
 }
 
 class _FakeBiometricNotifier extends BiometricUnlockNotifier {
@@ -61,7 +62,8 @@ class _FakeBiometricNotifier extends BiometricUnlockNotifier {
 
   @override
   Future<String?> readPasscode({required String reason}) async {
-    throw StateError('Change-passcode gate must not read biometrics.');
+    controller.reads++;
+    return '111111';
   }
 
   @override
@@ -132,10 +134,14 @@ Widget _app(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       appSecurityProvider.overrideWith(() => security),
-      if (biometric != null)
-        biometricUnlockProvider.overrideWith(
-          () => _FakeBiometricNotifier(biometric),
+      biometricUnlockProvider.overrideWith(
+        () => _FakeBiometricNotifier(
+          biometric ??
+              _FakeBiometricController(
+                initialState: BiometricUnlockState.initial,
+              ),
         ),
+      ),
     ],
     child: MaterialApp.router(
       localizationsDelegates: appLocalizationsDelegates,
@@ -296,28 +302,30 @@ void main() {
     expect(security.changedWith, isNull);
   });
 
-  testWidgets('current-passcode phase does not offer biometric verification', (
-    tester,
-  ) async {
-    final security = _FakeSecurityNotifier();
-    final biometric = _FakeBiometricController(
-      initialState: _faceBiometricState,
-    );
-    await tester.pumpWidget(
-      _app(security, popResult: [], biometric: biometric),
-    );
-    await open(tester);
+  testWidgets(
+    'current-passcode phase requires biometric verification after the passcode',
+    (tester) async {
+      final security = _FakeSecurityNotifier();
+      final biometric = _FakeBiometricController(
+        initialState: _faceBiometricState,
+      );
+      await tester.pumpWidget(
+        _app(security, popResult: [], biometric: biometric),
+      );
+      await open(tester);
 
-    expect(find.text('Enter Passcode'), findsOneWidget);
-    expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('mobile_change_passcode_biometric_footer')),
-      findsNothing,
-    );
+      expect(find.text('Enter Passcode'), findsOneWidget);
+      expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_change_passcode_biometric_footer')),
+        findsNothing,
+      );
 
-    await _enterPasscode(tester, '111111');
+      await _enterPasscode(tester, '111111');
 
-    expect(security.confirmedWith, ['111111']);
-    expect(find.text('Set New Passcode'), findsOneWidget);
-  });
+      expect(security.confirmedWith, ['111111']);
+      expect(biometric.reads, 1);
+      expect(find.text('Set New Passcode'), findsOneWidget);
+    },
+  );
 }

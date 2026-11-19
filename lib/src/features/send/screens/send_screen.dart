@@ -1288,7 +1288,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final recipient = sendReviewRecipientFor(
         contacts: addressBookContacts,
         address: _addressController.text.trim(),
-        ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
+        ownAccounts: ref.watch(visibleOwnAccountAddressesProvider),
       );
       if (recipient is SendReviewContactRecipient) {
         matchedRecipientName = recipient.name;

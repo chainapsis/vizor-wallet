@@ -28,6 +28,7 @@ import '../../../core/zcash/block_spacing.dart';
 import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/mobile_account_visibility_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -2592,7 +2593,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final accountState = ref.read(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
     if (accountState == null || activeAccountUuid == null) return;
-    if (session.isSetupClaim || accountState.accounts.length == 1) {
+    final accounts = ref.read(visibleAccountsProvider);
+    if (!accounts.any((account) => account.uuid == activeAccountUuid)) return;
+    if (session.isSetupClaim || accounts.length == 1) {
       _claimReceivedLink();
       return;
     }
@@ -2602,7 +2605,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       final confirmed = await showPaymentLinkClaimAccountSheet(
         context: context,
         amountZatoshi: link.amountZatoshi,
-        accounts: accountState.accounts,
+        accounts: accounts,
         activeAccountUuid: activeAccountUuid,
         onConfirm: (uuid) => _prepareMobileClaimDestination(link, uuid),
       );
@@ -2622,7 +2625,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
     final accountState = ref.read(accountProvider).value;
     if (accountState == null ||
-        !accountState.accounts.any((account) => account.uuid == accountUuid)) {
+        !ref
+            .read(visibleAccountsProvider)
+            .any((account) => account.uuid == accountUuid)) {
       throw const PaymentLinkClaimDestinationChangedException();
     }
     final previousSession = _receivedClaimSession;

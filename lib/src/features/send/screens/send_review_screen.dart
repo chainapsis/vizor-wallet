@@ -1179,9 +1179,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
-    final ownAccounts =
-        ref.watch(ownAccountAddressesProvider).value ??
-        const <String, AccountInfo>{};
+    final ownAccounts = ref.watch(visibleOwnAccountAddressesProvider);
     final recipient = sendReviewRecipientFor(
       contacts: addressBookContacts,
       address: _reviewArgs.address,

@@ -462,6 +462,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.drag(find.byType(ListView).first, const Offset(0, -2000));
       await tester.pumpAndSettle();
+      if (network == 'main') {
+        await tester.scrollUntilVisible(find.text('Support Vizor'), 180);
+      }
       expect(
         find.text('Support Vizor'),
         network == 'main' ? findsOneWidget : findsNothing,
@@ -2053,7 +2056,30 @@ void main() {
       ),
     );
 
-    await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
+    const authorization = ValueKey('authorize_biometric_disable');
+    final router = GoRouter(
+      initialLocation: '/settings',
+      routes: [
+        GoRoute(
+          path: '/settings',
+          builder: (_, _) => const MobileSettingsScreen(),
+        ),
+        GoRoute(
+          path: '/settings/confirm-biometric-change',
+          builder: (context, _) => Scaffold(
+            body: TextButton(
+              key: authorization,
+              onPressed: () => context.pop(true),
+              child: const Text('Authorize'),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      _app(router: router, biometricNotifier: () => biometricNotifier),
+    );
     await tester.pump();
 
     await tester.ensureVisible(
@@ -2080,6 +2106,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(biometricNotifier.disableCount, 0);
+    await tester.tap(find.byKey(authorization));
+    await tester.pumpAndSettle();
     expect(biometricNotifier.disableCount, 1);
     expect(find.text('Turn off Face ID unlock?'), findsNothing);
     expect(

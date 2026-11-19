@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_change_
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _FakeSecurityNotifier extends AppSecurityNotifier {
@@ -39,6 +40,11 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+class _UnavailableBiometrics extends BiometricUnlockNotifier {
+  @override
+  Future<BiometricUnlockState> build() async => BiometricUnlockState.initial;
+}
 
 void main() {
   setUp(() {
@@ -75,6 +81,7 @@ void main() {
         overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap()),
           appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+          biometricUnlockProvider.overrideWith(_UnavailableBiometrics.new),
         ],
         child: MaterialApp.router(
           localizationsDelegates: appLocalizationsDelegates,
