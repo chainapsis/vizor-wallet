@@ -4,6 +4,77 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import '../../support/test_l10n.dart';
 
 void main() {
+  test('one notice covers several rows waiting on the private check', () {
+    final waiting = _transaction('aa', 'received', provisional: true);
+    final alsoWaiting = _transaction('bb', 'received', provisional: true);
+    final settled = _transaction('cc', 'received');
+    bool shows(
+      List<rust_sync.TransactionInfo> txs, {
+      bool privateQueriesEnabled = true,
+      bool recoveryStopped = false,
+    }) => showsPrivateCheckNotice(
+      txs,
+      privateQueriesEnabled: privateQueriesEnabled,
+      recoveryStopped: recoveryStopped,
+    );
+
+    expect(shows([waiting, alsoWaiting, settled]), isTrue);
+    // An expired transaction is never mined into coverage.
+    final expired = _transaction(
+      'dd',
+      'received',
+      provisional: true,
+      expiredUnmined: true,
+    );
+    expect(shows([waiting, expired]), isFalse);
+    // A single new receive keeps its own label.
+    expect(shows([waiting, settled]), isFalse);
+    expect(shows([waiting, alsoWaiting], recoveryStopped: true), isFalse);
+    expect(
+      shows([waiting, alsoWaiting], privateQueriesEnabled: false),
+      isFalse,
+    );
+  });
+
+  test('a receipt waits on the private check only for unsettled effects', () {
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'received', provisional: true),
+        recoveryStopped: false,
+      ),
+      isTrue,
+    );
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'received', provisional: true),
+        recoveryStopped: true,
+      ),
+      isFalse,
+    );
+    // Missing payment details are not the private check's to finish.
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'sent', provisional: true, detailsComplete: false),
+        recoveryStopped: false,
+      ),
+      isFalse,
+    );
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'received', detailsComplete: false),
+        recoveryStopped: false,
+      ),
+      isFalse,
+    );
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'received', provisional: true, expiredUnmined: true),
+        recoveryStopped: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('network fee is display-only and bound to the receipt identity', () {
     final tx = _transaction(
       'aa',
@@ -317,11 +388,12 @@ rust_sync.TransactionInfo _transaction(
   BigInt? fee,
   int accountBalanceDelta = 0,
   String displayPool = 'shielded',
+  bool expiredUnmined = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
-    minedHeight: BigInt.from(2500000),
-    expiredUnmined: false,
+    minedHeight: expiredUnmined ? BigInt.zero : BigInt.from(2500000),
+    expiredUnmined: expiredUnmined,
     accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.from(10000),
     feeState: feeState,

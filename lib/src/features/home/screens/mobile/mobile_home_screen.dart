@@ -37,6 +37,8 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
+import '../../../activity/transaction_completeness.dart';
+import '../../../activity/widgets/private_check_notice.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
 import '../../../../providers/voting/voting_config_source_provider.dart';
@@ -976,6 +978,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     rust_sync.TransactionInfo transaction,
     GiftCardActivityMetadata? giftCard, {
     required bool privacyModeEnabled,
+    required bool privateCheckNoticeShown,
+    required bool privateCheckStopped,
   }) {
     return ActivityEntry(
       timestamp:
@@ -985,6 +989,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         context: context,
         transaction: transaction,
         privateQueriesEnabled: ref.watch(enhancePirProvider),
+        privateCheckNoticeShown: privateCheckNoticeShown,
+        privateCheckStopped: privateCheckStopped,
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
@@ -1201,6 +1207,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 awaitingTxid: item.payoutAwaitingDiscovery,
               ),
         );
+    final listedTransactions = sync.recentTransactions.where(
+      (tx) => !absorption.absorbs(tx),
+    );
+    final privateCheckNotice = showsPrivateCheckNotice(
+      listedTransactions,
+      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      recoveryStopped: sync.transparentStop != null,
+    );
     final entries = <ActivityEntry>[
       for (final tx in giftCardActivityIndex.withPendingClaims(
         sync.recentTransactions,
@@ -1215,6 +1229,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               transactions: sync.recentTransactions,
             ),
             privacyModeEnabled: privacyModeEnabled,
+            privateCheckNoticeShown: privateCheckNotice,
+            privateCheckStopped: sync.transparentStop != null,
           ),
       for (final item in swapItems)
         ActivityEntry(timestamp: item.activityTimestamp, row: swapRow(item)),
@@ -1439,6 +1455,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     context.go('/activity');
                   },
                 ),
+                // Mounted with the rows, so it never slides in on load.
+                if (!activityLoading)
+                  PrivateCheckNoticeSlot(
+                    checking: privateCheckNotice,
+                    padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  ),
                 const SizedBox(height: AppSpacing.md),
                 Semantics(
                   label: activityLoading

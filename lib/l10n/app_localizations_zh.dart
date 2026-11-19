@@ -407,6 +407,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityPoolMixed => '混合';
 
   @override
+  String get activityPrivateCheckNotice => '正在以隐私方式核对详情，金额可能仍会变化。';
+
+  @override
   String get activityPublicLookupBody => 'Vizor 会向服务器请求这一笔交易，以显示隐私查询未包含的信息。';
 
   @override
@@ -421,6 +424,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityReceiptCardFee => '卡片手续费';
+
+  @override
+  String get activityReceiptCheckingPrivately => '正在以隐私方式核对';
+
+  @override
+  String get activityReceiptCheckingPrivatelyHelp =>
+      '一笔交易也可能涉及你的公开资金。Vizor 正在以隐私方式核对这笔交易，核对会自动完成。显示的金额可能会变化。';
 
   @override
   String get activityReceiptConfirmations => '确认数';
@@ -472,6 +482,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityReceiptUnattributedFeeHelp => '此交易的总手续费。你的账户承担的部分未知。';
+
+  @override
+  String get activityRowCheckingPrivately => '正在以隐私方式核对';
 
   @override
   String activityRowToday(String time) {

@@ -31,6 +31,7 @@ import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
 import '../../swap_activity_row_mapper.dart';
+import '../../transaction_completeness.dart';
 import '../../widgets/activity_feed.dart';
 import '../../widgets/deferred_gift_card_recovery.dart';
 import 'mobile_transaction_status_screen.dart';
@@ -241,6 +242,8 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     GiftCardActivityMetadata? giftCard, {
     required bool privacyModeEnabled,
     required DateTime activityNow,
+    required bool privateCheckNoticeShown,
+    required bool privateCheckStopped,
   }) {
     return ActivityEntry(
       timestamp:
@@ -250,6 +253,8 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         context: context,
         transaction: transaction,
         privateQueriesEnabled: ref.watch(enhancePirProvider),
+        privateCheckNoticeShown: privateCheckNoticeShown,
+        privateCheckStopped: privateCheckStopped,
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
@@ -374,6 +379,14 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
           );
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
+    final privateCheckStopped = ref.watch(
+      syncProvider.select((sync) => sync.value?.transparentStop != null),
+    );
+    final privateCheckNotice = showsPrivateCheckNotice(
+      transactions,
+      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      recoveryStopped: privateCheckStopped,
+    );
     final activityNow = DateTime.now();
     final entries = <ActivityEntry>[
       for (final tx in giftCardActivityIndex.withPendingClaims(transactions))
@@ -384,6 +397,8 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             giftCardActivityIndex.metadataFor(tx, transactions: transactions),
             privacyModeEnabled: privacyModeEnabled,
             activityNow: activityNow,
+            privateCheckNoticeShown: privateCheckNotice,
+            privateCheckStopped: privateCheckStopped,
           ),
       for (final item in swapItems)
         ActivityEntry(
@@ -455,6 +470,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
                         key: const ValueKey('mobile_activity_feed'),
                         sections: sections,
                         showHeader: false,
+                        showPrivateCheckNotice: privateCheckNotice,
                         cardWidth: null,
                         rowKeyPrefix: 'mobile_activity',
                         scrollAnchor: _scrollAnchor,

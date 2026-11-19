@@ -5,6 +5,8 @@ import '../providers/home_activity_state.dart';
 import '../providers/home_initialization_provider.dart';
 import '../widgets/home_activity_skeleton.dart';
 import '../../activity/widgets/deferred_gift_card_recovery.dart';
+import '../../activity/widgets/private_check_notice.dart';
+import '../../activity/transaction_completeness.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -634,6 +636,14 @@ class _HomePaneState extends ConsumerState<_HomePane> {
 
     final notice = _noticeData();
     final rows = _activityRows(context);
+    // Home's rows never label incomplete details, so only the notice shows.
+    final privateCheckNotice =
+        widget.hasActivitySyncData &&
+        showsPrivateCheckNotice(
+          widget.sync.recentTransactions,
+          privateQueriesEnabled: ref.watch(enhancePirProvider),
+          recoveryStopped: widget.sync.transparentStop != null,
+        );
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
     String? activeAccountName;
@@ -699,6 +709,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       isShieldingBalance: widget.isShieldingBalance,
       privacyModeEnabled: widget.privacyModeEnabled,
       activityRows: rows,
+      showPrivateCheckNotice: privateCheckNotice,
       isActivityLoading: activityState == HomeActivityState.loading,
       isActivityUnavailable: activityState == HomeActivityState.unavailable,
       notice: notice,
@@ -1254,6 +1265,7 @@ class _HomeDesktopPane extends StatelessWidget {
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.activityRows,
+    this.showPrivateCheckNotice = false,
     required this.isActivityLoading,
     this.isActivityUnavailable = false,
     required this.notice,
@@ -1288,6 +1300,7 @@ class _HomeDesktopPane extends StatelessWidget {
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final List<ActivityRowData> activityRows;
+  final bool showPrivateCheckNotice;
   final bool isActivityLoading;
   final bool isActivityUnavailable;
   final _HomeNoticeData? notice;
@@ -1397,6 +1410,7 @@ class _HomeDesktopPane extends StatelessWidget {
                           ),
                           child: _HomeDesktopActivityCard(
                             rows: activityRows,
+                            showPrivateCheckNotice: showPrivateCheckNotice,
                             isLoading: isActivityLoading,
                             onSeeAll: onActivity,
                           ),
@@ -2631,9 +2645,11 @@ class _HomeDesktopActivityCard extends StatelessWidget {
   const _HomeDesktopActivityCard({
     required this.rows,
     required this.onSeeAll,
+    this.showPrivateCheckNotice = false,
     this.isLoading = false,
   });
 
+  final bool showPrivateCheckNotice;
   final bool isLoading;
   final List<ActivityRowData> rows;
   final VoidCallback onSeeAll;
@@ -2664,6 +2680,12 @@ class _HomeDesktopActivityCard extends StatelessWidget {
               color: colors.button.ghost.label,
             ),
           ),
+          // Mounted with the rows, so it never slides in on load.
+          if (!isLoading)
+            PrivateCheckNoticeSlot(
+              checking: showPrivateCheckNotice,
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+            ),
           const SizedBox(height: AppSpacing.sm),
           Semantics(
             label: isLoading ? context.l10n.commonLoadingActivity : null,

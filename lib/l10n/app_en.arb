@@ -550,6 +550,10 @@
   "@activityPoolMixed": {
     "description": "Badge on an activity row for a transaction that involves more than one pool."
   },
+  "activityPrivateCheckNotice": "Checking details privately. Amounts may still change.",
+  "@activityPrivateCheckNotice": {
+    "description": "Short notice above Activity lists (Home's recent activity and the Activity tab) while Private queries is still checking several entries; replaces the label on each of them. Avoid leaving one word alone on a second line."
+  },
   "activityPublicLookupBody": "Vizor will ask the server for this one transaction to show what private lookups leave out.",
   "@activityPublicLookupBody": {
     "description": "Body of the dialog that confirms loading one transaction's details from the server."
@@ -569,6 +573,14 @@
   "activityReceiptCardFee": "Card fee",
   "@activityReceiptCardFee": {
     "description": "Label of a row on a transaction receipt: the fee for creating a gift card."
+  },
+  "activityReceiptCheckingPrivately": "Checking privately",
+  "@activityReceiptCheckingPrivately": {
+    "description": "Value of the Details row on a receipt, and the title of its help sheet, while Private queries is still checking the transaction. Short."
+  },
+  "activityReceiptCheckingPrivatelyHelp": "A transaction can also involve your transparent funds. Vizor is still checking this one privately, and the check finishes on its own. The amount shown may change.",
+  "@activityReceiptCheckingPrivatelyHelp": {
+    "description": "Explains a receipt whose Details row says Private queries is still checking it."
   },
   "activityReceiptConfirmations": "Confirmations",
   "@activityReceiptConfirmations": {
@@ -643,6 +655,10 @@
   "activityReceiptUnattributedFeeHelp": "Total fee for this transaction. Your account's share of this fee is unknown.",
   "@activityReceiptUnattributedFeeHelp": {
     "description": "Tooltip explaining a network fee when the account's share of it is not known."
+  },
+  "activityRowCheckingPrivately": "Checking privately",
+  "@activityRowCheckingPrivately": {
+    "description": "Short label under the amount of an Activity row, in place of its date, while Private queries is still checking that transaction. Keep it as short as the date."
   },
   "activityRowToday": "Today, {time}",
   "@activityRowToday": {

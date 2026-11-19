@@ -28,6 +28,8 @@ void main() {
     int? giftCardBatchCount,
     bool giftCardClaimInFlight = false,
     bool privateQueriesEnabled = false,
+    bool privateCheckNoticeShown = false,
+    bool privateCheckStopped = false,
     String? giftCardDisplayPool,
     String? pendingLabel,
     bool showPendingEstimate = true,
@@ -43,6 +45,8 @@ void main() {
                 context: context,
                 transaction: transaction,
                 privateQueriesEnabled: privateQueriesEnabled,
+                privateCheckNoticeShown: privateCheckNoticeShown,
+                privateCheckStopped: privateCheckStopped,
                 pendingEta: _etaFor(pendingLabel),
                 pendingFallbackLabel: _etaFor(pendingLabel) == null
                     ? pendingLabel
@@ -311,7 +315,7 @@ void main() {
     expect(row.subtitleIconName, isNull);
     expect(row.amountText, '-0.00215 ZEC');
     expect(row.statusText, 'Completed');
-    expect(row.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
+    expect(row.amountSubtitle, testL10n.activityRowCheckingPrivately);
     expect(transaction.displayPool, 'unknown');
     expect(transaction.provisional, isTrue);
     expect(transaction.detailsComplete, isFalse);
@@ -600,10 +604,7 @@ void main() {
       ),
       privateQueriesEnabled: true,
     );
-    expect(
-      provisional.amountSubtitle,
-      testL10n.activityReceiptDetailsIncomplete,
-    );
+    expect(provisional.amountSubtitle, testL10n.activityRowCheckingPrivately);
 
     final undiscoveredSelfReceipt = await mapRow(
       tester,
@@ -612,7 +613,7 @@ void main() {
     );
     expect(
       undiscoveredSelfReceipt.amountSubtitle,
-      testL10n.activityReceiptDetailsIncomplete,
+      testL10n.activityRowCheckingPrivately,
     );
 
     // A receive with every effect known can still lack a memo.
@@ -628,6 +629,71 @@ void main() {
       _transaction(txKind: 'sent', detailsComplete: false, provisional: true),
     );
     expect(publicIncomplete.amountSubtitle, isNull);
+  });
+
+  testWidgets('a row awaiting the private check says so until it stops', (
+    tester,
+  ) async {
+    final waiting = _transaction(txKind: 'received', provisional: true);
+    final checking = await mapRow(tester, waiting, privateQueriesEnabled: true);
+    expect(checking.amountSubtitle, testL10n.activityRowCheckingPrivately);
+
+    final stopped = await mapRow(
+      tester,
+      waiting,
+      privateQueriesEnabled: true,
+      privateCheckStopped: true,
+    );
+    expect(stopped.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
+
+    // An expired entry is never mined into coverage.
+    final expired = await mapRow(
+      tester,
+      _transaction(txKind: 'received', provisional: true, expiredUnmined: true),
+      privateQueriesEnabled: true,
+    );
+    expect(
+      expired.amountSubtitle,
+      isNot(testL10n.activityRowCheckingPrivately),
+    );
+  });
+
+  testWidgets('a list notice replaces the label on provisional rows only', (
+    tester,
+  ) async {
+    final waiting = await mapRow(
+      tester,
+      _transaction(txKind: 'received', provisional: true),
+      privateQueriesEnabled: true,
+      privateCheckNoticeShown: true,
+    );
+    expect(waiting.amountSubtitle, isNull);
+
+    // The list covers the summary; missing payment details stay with the
+    // receipt, which still says Incomplete.
+    final waitingWithoutMemo = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'received',
+        provisional: true,
+        detailsComplete: false,
+      ),
+      privateQueriesEnabled: true,
+      privateCheckNoticeShown: true,
+    );
+    expect(waitingWithoutMemo.amountSubtitle, isNull);
+
+    // An unknown role or pool is not the private check's to resolve.
+    final unknownPool = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', displayPool: 'unknown'),
+      privateQueriesEnabled: true,
+      privateCheckNoticeShown: true,
+    );
+    expect(
+      unknownPool.amountSubtitle,
+      testL10n.activityReceiptDetailsIncomplete,
+    );
   });
 
   testWidgets('a recovered exact send keeps the public activity summary', (
@@ -745,7 +811,7 @@ void main() {
     );
     expect(movement.title, testL10n.activityReceiptNetChange);
     expect(movement.amountText, activityAmountTextForFormFactor('-0.0002 ZEC'));
-    expect(movement.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
+    expect(movement.amountSubtitle, testL10n.activityRowCheckingPrivately);
 
     // A net change keeps its sent row and its whole amount: a row has no fee
     // line to repeat the fee in.

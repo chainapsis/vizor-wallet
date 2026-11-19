@@ -30,6 +30,7 @@ import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/zcash/spendable_wait.dart';
+import '../../../../providers/sync_provider.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
@@ -785,6 +786,14 @@ class _MobileTransactionStatusScreenState
                                     privacyModeEnabled: privacyModeEnabled,
                                   ),
                             detailsIncomplete: _showIncompleteDetails(tx),
+                            detailsAwaitPrivateCheck: receiptAwaitsPrivateCheck(
+                              tx,
+                              recoveryStopped: ref.watch(
+                                syncProvider.select(
+                                  (sync) => sync.value?.transparentStop != null,
+                                ),
+                              ),
+                            ),
                           ),
                           if (giftCard == null &&
                               detail?.transparentDetailsState != null)
@@ -1121,6 +1130,7 @@ class _DetailCard extends StatelessWidget {
     this.isCardCreation = false,
     this.showsNetworkFee = false,
     this.detailsIncomplete = false,
+    this.detailsAwaitPrivateCheck = false,
   });
 
   /// The From / To row, when the transaction has a counterparty to name.
@@ -1138,6 +1148,10 @@ class _DetailCard extends StatelessWidget {
   final bool isCardCreation;
   final bool showsNetworkFee;
   final bool detailsIncomplete;
+
+  /// Whether the incomplete details wait only on the private check, which
+  /// finishes on its own; see `receiptAwaitsPrivateCheck`.
+  final bool detailsAwaitPrivateCheck;
 
   @override
   Widget build(BuildContext context) {
@@ -1213,15 +1227,20 @@ class _DetailCard extends StatelessWidget {
                   key: const ValueKey('mobile_tx_status_details_incomplete'),
                   label: context.l10n.activityReceiptDetails,
                   value: _ValueWithIcon(
-                    text: context.l10n.activityReceiptIncomplete,
+                    text: detailsAwaitPrivateCheck
+                        ? context.l10n.activityReceiptCheckingPrivately
+                        : context.l10n.activityReceiptIncomplete,
                     iconName: AppIcons.help,
                     iconColor: context.colors.icon.muted,
                     onTap: () => unawaited(
                       showMobileTxFeeInfoSheet(
                         context,
-                        title: context.l10n.activityReceiptDetailsIncomplete,
-                        description:
-                            context.l10n.activityReceiptDetailsIncompleteHelp,
+                        title: detailsAwaitPrivateCheck
+                            ? context.l10n.activityReceiptCheckingPrivately
+                            : context.l10n.activityReceiptDetailsIncomplete,
+                        description: detailsAwaitPrivateCheck
+                            ? context.l10n.activityReceiptCheckingPrivatelyHelp
+                            : context.l10n.activityReceiptDetailsIncompleteHelp,
                       ),
                     ),
                   ),

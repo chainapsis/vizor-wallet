@@ -75,6 +75,34 @@ bool receiptDetailsComplete(rust_sync.TransactionDetail? detail) =>
     detail.transparentDetailsState ==
         rust_sync.TransparentDetailsState.available;
 
+/// Whether an entry's summary waits on private recovery checking its
+/// transparent side: it is provisional and can still be mined into the range
+/// recovery covers. An expired transaction never is, so it never settles.
+bool entryAwaitsPrivateCheck(rust_sync.TransactionInfo tx) =>
+    tx.provisional && !tx.expiredUnmined;
+
+/// Whether a list shows one `PrivateCheckNotice` in place of the incomplete
+/// label on each row awaiting the private check: more than one does, and the
+/// check has not stopped. Right after Private queries is turned on every row
+/// the wallet did not build waits; later, usually only a new receive does, and
+/// it keeps its own label so the list does not shift.
+bool showsPrivateCheckNotice(
+  Iterable<rust_sync.TransactionInfo> transactions, {
+  required bool privateQueriesEnabled,
+  required bool recoveryStopped,
+}) =>
+    privateQueriesEnabled &&
+    !recoveryStopped &&
+    transactions.where(entryAwaitsPrivateCheck).length > 1;
+
+/// Whether a receipt's details wait only on the private check, which finishes
+/// on its own: the entry awaits it, its payment details (memos included) are
+/// known, and recovery has not stopped.
+bool receiptAwaitsPrivateCheck(
+  rust_sync.TransactionInfo tx, {
+  required bool recoveryStopped,
+}) => entryAwaitsPrivateCheck(tx) && tx.detailsComplete && !recoveryStopped;
+
 /// Activity needs an established amount, role, and pool. Missing recipients or
 /// memos belong to the expanded receipt and do not make that summary uncertain.
 bool transactionActivitySummaryIncomplete(rust_sync.TransactionInfo tx) =>

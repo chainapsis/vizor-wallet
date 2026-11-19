@@ -694,10 +694,15 @@ Classification follows the facts it has:
   `shielded`. A receipt follows a changed role only when that transaction has
   a single row, so separate self-send legs are not conflated.
 
-While Private queries is enabled, Activity rows mark an uncertain summary
-"Details incomplete"; established summaries keep their dates even when the
-payment details are missing. Receipts show a "Details: Incomplete" row and an
-"Unknown" fee when necessary. This is temporary integration feedback while
+While Private queries is enabled, Activity rows mark an uncertain summary:
+"Checking privately" while it waits on private recovery's transparent check,
+"Details incomplete" otherwise or once recovery has stopped. Established
+summaries keep their dates even when the payment details are missing. When
+more than one row in a list waits on the check (right after Private queries is
+turned on), the list shows one "Checking details privately" notice instead and
+those rows keep their dates. Receipts show a
+"Details" row and an "Unknown" fee when necessary: "Checking privately" when
+only that check is outstanding, otherwise "Incomplete". This is temporary integration feedback while
 private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and
 the previous placeholder or omitted fee row for an unrecorded fee. History

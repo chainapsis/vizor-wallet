@@ -32,6 +32,7 @@ import '../gift_card_activity_index.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
+import '../transaction_completeness.dart';
 import '../widgets/activity_feed.dart';
 import '../widgets/deferred_gift_card_recovery.dart';
 import 'activity_transaction_status_screen.dart';
@@ -368,6 +369,14 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         : SwapActivityLegAbsorption.empty;
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
+    final privateCheckStopped = ref.watch(
+      syncProvider.select((sync) => sync.value?.transparentStop != null),
+    );
+    final privateCheckNotice = showsPrivateCheckNotice(
+      transactions,
+      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      recoveryStopped: privateCheckStopped,
+    );
     final entries = <_ActivityEntry>[];
     var sourceOrder = 0;
     if (accountUuid != null) {
@@ -388,6 +397,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               context: context,
               transaction: tx,
               privateQueriesEnabled: ref.watch(enhancePirProvider),
+              privateCheckNoticeShown: privateCheckNotice,
+              privateCheckStopped: privateCheckStopped,
               showPendingEstimate: !ref
                   .watch(activityEtaExcludedTxidsProvider)
                   .contains(activityTxidKey(tx.txidHex)),
@@ -462,6 +473,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           slivers: [
             ActivityFeedSliver(
               sections: sections,
+              showPrivateCheckNotice: privateCheckNotice,
               rowKeyPrefix: 'activity_screen',
               scrollAnchor: _scrollAnchor,
               isLoadingMore:

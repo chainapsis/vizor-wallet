@@ -440,6 +440,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityPoolMixed => 'Mixed';
 
   @override
+  String get activityPrivateCheckNotice =>
+      'Checking details privately. Amounts may still change.';
+
+  @override
   String get activityPublicLookupBody =>
       'Vizor will ask the server for this one transaction to show what private lookups leave out.';
 
@@ -455,6 +459,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityReceiptCardFee => 'Card fee';
+
+  @override
+  String get activityReceiptCheckingPrivately => 'Checking privately';
+
+  @override
+  String get activityReceiptCheckingPrivatelyHelp =>
+      'A transaction can also involve your transparent funds. Vizor is still checking this one privately, and the check finishes on its own. The amount shown may change.';
 
   @override
   String get activityReceiptConfirmations => 'Confirmations';
@@ -508,6 +519,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityReceiptUnattributedFeeHelp =>
       'Total fee for this transaction. Your account\'s share of this fee is unknown.';
+
+  @override
+  String get activityRowCheckingPrivately => 'Checking privately';
 
   @override
   String activityRowToday(String time) {

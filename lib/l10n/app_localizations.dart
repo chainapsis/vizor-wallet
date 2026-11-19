@@ -825,6 +825,12 @@ abstract class AppLocalizations {
   /// **'Mixed'**
   String get activityPoolMixed;
 
+  /// Short notice above Activity lists (Home's recent activity and the Activity tab) while Private queries is still checking several entries; replaces the label on each of them. Avoid leaving one word alone on a second line.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking details privately. Amounts may still change.'**
+  String get activityPrivateCheckNotice;
+
   /// Body of the dialog that confirms loading one transaction's details from the server.
   ///
   /// In en, this message translates to:
@@ -854,6 +860,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Card fee'**
   String get activityReceiptCardFee;
+
+  /// Value of the Details row on a receipt, and the title of its help sheet, while Private queries is still checking the transaction. Short.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking privately'**
+  String get activityReceiptCheckingPrivately;
+
+  /// Explains a receipt whose Details row says Private queries is still checking it.
+  ///
+  /// In en, this message translates to:
+  /// **'A transaction can also involve your transparent funds. Vizor is still checking this one privately, and the check finishes on its own. The amount shown may change.'**
+  String get activityReceiptCheckingPrivatelyHelp;
 
   /// Label of a row on the receipt of a received transaction that cannot be spent yet: how many network confirmations it has.
   ///
@@ -950,6 +968,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Total fee for this transaction. Your account\'s share of this fee is unknown.'**
   String get activityReceiptUnattributedFeeHelp;
+
+  /// Short label under the amount of an Activity row, in place of its date, while Private queries is still checking that transaction. Keep it as short as the date.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking privately'**
+  String get activityRowCheckingPrivately;
 
   /// Timestamp of an activity row from today on desktop.
   ///

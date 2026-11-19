@@ -1428,7 +1428,10 @@ void main() {
     for (final enabled in [true, false]) {
       await container.read(enhancePirProvider.notifier).set(enabled);
       await tester.pump();
-      expect(find.text('Incomplete'), enabled ? findsOneWidget : findsNothing);
+      expect(
+        find.text(testL10n.activityReceiptCheckingPrivately),
+        enabled ? findsOneWidget : findsNothing,
+      );
       expect(
         find.text(testL10n.commonUnknown),
         enabled ? findsOneWidget : findsNothing,
@@ -1458,7 +1461,7 @@ void main() {
     expect(find.text('Incomplete'), findsOneWidget);
   });
 
-  testWidgets('known payment details still mark unsettled effects', (
+  testWidgets('known payment details wait on the private check', (
     tester,
   ) async {
     await _pumpScreen(
@@ -1473,7 +1476,30 @@ void main() {
     );
 
     expect(find.text('Details'), findsOneWidget);
+    expect(
+      find.text(testL10n.activityReceiptCheckingPrivately),
+      findsOneWidget,
+    );
+    expect(find.text('Incomplete'), findsNothing);
+  });
+
+  testWidgets('a stopped private recovery keeps the incomplete row', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      transparentStop: rust_sync.TransparentStopReason.stalled,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(txKind: 'sent', provisional: true),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
     expect(find.text('Incomplete'), findsOneWidget);
+    expect(find.text(testL10n.activityReceiptCheckingPrivately), findsNothing);
   });
 
   testWidgets('an exact recovered send still marks missing recipient details', (
@@ -1703,6 +1729,7 @@ Future<void> _pumpScreen(
   bool pricingEnabled = true,
   bool privacyEnabled = false,
   bool privateQueriesEnabled = false,
+  rust_sync.TransparentStopReason? transparentStop,
   Future<List<rust_sync.TransactionInfo>> Function(String, String)?
   historyLoader,
   Future<rust_sync.TransactionDetail?> Function(
@@ -1756,6 +1783,7 @@ Future<void> _pumpScreen(
               accountUuid: 'account-1',
               hasAccountScopedData: true,
               percentage: 1,
+              transparentStop: transparentStop,
             ),
           ),
         ),

@@ -22,6 +22,7 @@ import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../../core/zcash/spendable_wait.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -184,6 +185,14 @@ class _ActivityTransactionStatusScreenState
       ref.watch(enhancePirProvider) &&
       transactionDetailsIncomplete(tx) &&
       !receiptDetailsComplete(receiptDetail);
+
+  bool _detailsAwaitPrivateCheck(rust_sync.TransactionInfo tx) =>
+      receiptAwaitsPrivateCheck(
+        tx,
+        recoveryStopped: ref.watch(
+          syncProvider.select((sync) => sync.value?.transparentStop != null),
+        ),
+      );
 
   bool _showsNetworkFee(rust_sync.TransactionInfo tx) =>
       unattributedReceiptNetworkFee(tx, matchingReceiptDetailFor(tx)) != null;
@@ -690,13 +699,8 @@ class _ActivityTransactionStatusScreenState
                 onPressed: () => unawaited(_openTransactionExplorer()),
               ),
               if (_showIncompleteDetails(tx))
-                ReviewListRow(
-                  label: context.l10n.activityReceiptDetails,
-                  value: context.l10n.activityReceiptIncomplete,
-                  trailingIconName: AppIcons.help,
-                  trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip:
-                      context.l10n.activityReceiptDetailsIncompleteHelp,
+                _IncompleteDetailsRow(
+                  awaitsPrivateCheck: _detailsAwaitPrivateCheck(tx),
                 ),
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
@@ -801,7 +805,12 @@ class _ActivityTransactionStatusScreenState
       redesignedContent = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [redesignedContent, const _IncompleteDetailsNotice()],
+        children: [
+          redesignedContent,
+          _IncompleteDetailsNotice(
+            awaitsPrivateCheck: _detailsAwaitPrivateCheck(tx),
+          ),
+        ],
       );
     }
 
@@ -887,23 +896,41 @@ String _truncatedDisplayTxid(String protocolTxid) => truncatedTxid(
 
 /// Marks a dedicated receipt whose entry is incomplete.
 class _IncompleteDetailsNotice extends StatelessWidget {
-  const _IncompleteDetailsNotice();
+  const _IncompleteDetailsNotice({required this.awaitsPrivateCheck});
+
+  final bool awaitsPrivateCheck;
 
   @override
   Widget build(BuildContext context) {
     return _ReceiptContentColumn(
       child: ReviewWrapCard(
         children: [
-          ReviewListRow(
-            label: context.l10n.activityReceiptDetails,
-            value: context.l10n.activityReceiptIncomplete,
-            trailingIconName: AppIcons.help,
-            trailingIconColor: context.colors.text.secondary,
-            trailingIconTooltip:
-                context.l10n.activityReceiptDetailsIncompleteHelp,
-          ),
+          _IncompleteDetailsRow(awaitsPrivateCheck: awaitsPrivateCheck),
         ],
       ),
+    );
+  }
+}
+
+/// The Details row of a receipt whose entry is incomplete: still being
+/// checked privately (see `receiptAwaitsPrivateCheck`), or incomplete.
+class _IncompleteDetailsRow extends StatelessWidget {
+  const _IncompleteDetailsRow({required this.awaitsPrivateCheck});
+
+  final bool awaitsPrivateCheck;
+
+  @override
+  Widget build(BuildContext context) {
+    return ReviewListRow(
+      label: context.l10n.activityReceiptDetails,
+      value: awaitsPrivateCheck
+          ? context.l10n.activityReceiptCheckingPrivately
+          : context.l10n.activityReceiptIncomplete,
+      trailingIconName: AppIcons.help,
+      trailingIconColor: context.colors.text.secondary,
+      trailingIconTooltip: awaitsPrivateCheck
+          ? context.l10n.activityReceiptCheckingPrivatelyHelp
+          : context.l10n.activityReceiptDetailsIncompleteHelp,
     );
   }
 }
