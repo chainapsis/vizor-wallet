@@ -1241,7 +1241,10 @@ void main() {
       expect(harness.fullCalls, hasLength(1));
       expect(harness.fullCalls.single.urls, hasLength(13));
       expect(harness.fullCalls.single.maxConcurrency, 4);
-      expect(harness.fullCalls.single.totalTimeout, const Duration(seconds: 7));
+      expect(
+        harness.fullCalls.single.totalTimeout,
+        const Duration(seconds: 13),
+      );
       // The foreground operation is independent of the complete-pool future.
       expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
       const tail = 'https://sa.zec.rocks:443';
@@ -1266,7 +1269,7 @@ void main() {
     },
   );
 
-  test('Tor complete comparison reserves all four timeout waves', () async {
+  test('Tor complete comparison reserves all seven timeout waves', () async {
     final harness = _Harness(route: _torReady)
       ..respond = (_) async => [_sample(_eu, 1000), _sample(_kr, 1500)];
     await harness.notifier.ensureReady();
@@ -1274,7 +1277,7 @@ void main() {
     await _flush();
     expect(harness.fullCalls.single.maxConcurrency, 2);
     expect(harness.fullCalls.single.probeTimeout, const Duration(seconds: 8));
-    expect(harness.fullCalls.single.totalTimeout, const Duration(seconds: 33));
+    expect(harness.fullCalls.single.totalTimeout, const Duration(seconds: 57));
   });
 
   test('a restart reuses the completed comparison recommendation', () async {
