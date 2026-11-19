@@ -16,7 +16,13 @@ import 'payment_link_intake_provider.dart';
 
 enum GiftClaimPhase { checking, longSyncConfirmation, inspected, failed }
 
-enum GiftClaimFailure { network, otherNetwork, invalid, interrupted }
+enum GiftClaimFailure {
+  network,
+  otherNetwork,
+  invalid,
+  interrupted,
+  alreadyReceived,
+}
 
 /// The Gift Card a recipient is looking at on `/gift`.
 ///
@@ -29,6 +35,7 @@ class GiftClaimFlowState {
     required this.phase,
     this.inspection,
     this.failure,
+    this.receivedAccountUuid,
     this.setupPasscode,
     this.setupPersona,
     this.setupPasswordInputSource,
@@ -39,6 +46,10 @@ class GiftClaimFlowState {
   final GiftClaimPhase phase;
   final PaymentLinkClaimInspection? inspection;
   final GiftClaimFailure? failure;
+
+  /// The account that already received the Card, for
+  /// [GiftClaimFailure.alreadyReceived]. It may since have been removed.
+  final String? receivedAccountUuid;
   // Kept only until setup leaves the screen. Route refresh must not serialize it.
   final String? setupPasscode;
   final AccountPersona? setupPersona;
@@ -447,6 +458,13 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
       next = GiftClaimFlowState(
         link: link,
         phase: GiftClaimPhase.longSyncConfirmation,
+      );
+    } on PaymentLinkAlreadyReceivedException catch (error) {
+      next = GiftClaimFlowState(
+        link: link,
+        phase: GiftClaimPhase.failed,
+        failure: GiftClaimFailure.alreadyReceived,
+        receivedAccountUuid: error.destinationAccountUuid,
       );
     } on PaymentLinkNetworkMismatchException {
       next = GiftClaimFlowState(

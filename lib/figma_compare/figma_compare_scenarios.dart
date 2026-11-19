@@ -935,6 +935,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
+    id: 'desktop-gift-already-received',
+    description: 'Gift Card check for a card this wallet already received',
+    builder: buildDesktopGiftAlreadyReceivedUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-received-by-removed-account',
+    description: 'Gift Card check for a card a removed account received',
+    builder: buildDesktopGiftReceivedByRemovedAccountUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
     id: 'desktop-gift-long-scan',
     description: 'Gift Card long scan consent',
     builder: buildDesktopGiftLongScanUseCase,
@@ -1911,6 +1923,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'gift-card-claimed-elsewhere',
     description: 'Gift Card claimed elsewhere outcome',
     builder: buildClaimedElsewhereUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-already-received',
+    description: 'Gift Card another account in this wallet already received',
+    builder: buildClaimAlreadyReceivedUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-received-by-removed-account',
+    description: 'Gift Card a since-removed account already received',
+    builder: buildClaimReceivedByRemovedAccountUseCase,
     mobile: true,
   ),
   FigmaCompareScenario(

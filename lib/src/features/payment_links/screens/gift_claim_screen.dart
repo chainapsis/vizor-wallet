@@ -968,18 +968,29 @@ class _GiftArrivalHeading extends StatelessWidget {
 }
 
 /// What the check found, always as text rather than color alone.
-class _GiftClaimStatus extends StatelessWidget {
+class _GiftClaimStatus extends ConsumerWidget {
   const _GiftClaimStatus({required this.flow, required this.addingAccount});
 
   final GiftClaimFlowState flow;
   final bool addingAccount;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final receivedAccountUuid = flow.receivedAccountUuid;
+    final receivedAccountName = receivedAccountUuid == null
+        ? null
+        : ref
+              .watch(accountProvider)
+              .value
+              ?.accounts
+              .where((account) => account.uuid == receivedAccountUuid)
+              .firstOrNull
+              ?.name;
     final (title, detail, tone) = _describe(
       context.l10n,
       flow,
       addingAccount: addingAccount,
+      receivedAccountName: receivedAccountName,
     );
     final colors = context.colors;
     return Semantics(
@@ -1016,6 +1027,7 @@ class _GiftClaimStatus extends StatelessWidget {
     AppLocalizations l10n,
     GiftClaimFlowState flow, {
     required bool addingAccount,
+    String? receivedAccountName,
   }) {
     switch (flow.phase) {
       case GiftClaimPhase.checking:
@@ -1042,6 +1054,21 @@ class _GiftClaimStatus extends StatelessWidget {
             l10n.paymentLinkInvalidSubtitle,
             _Tone.problem,
           ),
+          // A removed account is no longer this wallet's, as any other claimer.
+          GiftClaimFailure.alreadyReceived =>
+            receivedAccountName == null
+                ? (
+                    l10n.paymentLinkClaimStatusAlreadyClaimed,
+                    null,
+                    _Tone.problem,
+                  )
+                : (
+                    l10n.paymentLinkAlreadyClaimedToAccount(
+                      receivedAccountName,
+                    ),
+                    null,
+                    _Tone.problem,
+                  ),
           _ => (
             l10n.paymentLinkClaimStatusNetworkUnreachable,
             l10n.paymentLinkClaimStatusCheckConnection,
