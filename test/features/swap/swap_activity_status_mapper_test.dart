@@ -268,7 +268,7 @@ void main() {
         );
         expect(presentation.steps.map((step) => step.kind), [
           SwapStatusStepKind.other,
-          SwapStatusStepKind.other,
+          SwapStatusStepKind.depositConfirmation,
           SwapStatusStepKind.swap,
           delivery,
         ], reason: '${l10n.localeName} $direction');
@@ -1596,6 +1596,11 @@ void main() {
       expect(
         sent.description,
         'Waiting for NEAR Intents to detect your deposit.',
+      );
+      // The step after it waits with an hourglass, not a check.
+      expect(
+        claimedPresentation.steps[1].kind,
+        SwapStatusStepKind.depositConfirmation,
       );
 
       // Only the provider seeing the deposit completes the step.

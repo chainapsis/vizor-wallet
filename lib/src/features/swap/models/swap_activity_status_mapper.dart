@@ -567,6 +567,7 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
     SwapStatusStepData(
       title: l10n.swapActivityStepDepositConfirmation,
       state: SwapStatusStepState.pending,
+      kind: SwapStatusStepKind.depositConfirmation,
       activeTitle: l10n.swapActivityStepDepositConfirmationActive,
       lastCheckedLabel: lastCheckedLabel,
       description: l10n.swapActivityStepDepositConfirmationDescription,

@@ -796,7 +796,7 @@ class _ProgressStepIcon extends StatelessWidget {
               // Mobile (mobile-ui-vibe-coding-polishing-2) shows the per-step
               // action glyph for completed steps; desktop shows a check.
               kAppFormFactor == AppFormFactor.mobile
-                  ? _pendingProgressIcon(step)
+                  ? _completedProgressIcon(step)
                   : AppIcons.check,
               size: 16,
               color: colors.icon.inverse,
@@ -814,9 +814,15 @@ String _pendingProgressIcon(SwapStatusStepData step) {
   return switch (step.kind) {
     SwapStatusStepKind.swap => AppIcons.swapArrows,
     SwapStatusStepKind.walletDelivery => AppIcons.arrowDownCircle,
+    SwapStatusStepKind.depositConfirmation => AppIcons.time,
     SwapStatusStepKind.other => AppIcons.check,
   };
 }
+
+String _completedProgressIcon(SwapStatusStepData step) =>
+    step.kind == SwapStatusStepKind.depositConfirmation
+    ? AppIcons.check
+    : _pendingProgressIcon(step);
 
 /// Detail-rows column for the non-terminal Transaction details tab. The fee
 /// row (the last row) is separated from the rows above by a hairline divider.
