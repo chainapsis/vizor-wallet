@@ -765,35 +765,11 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 more output} other{{count} more outputs}}'**
   String activityOmissionMoreOutputs(int count);
 
-  /// Item in the list of what private details leave out: further sender addresses.
-  ///
-  /// In en, this message translates to:
-  /// **'other sending addresses'**
-  String get activityOmissionOtherSenders;
-
   /// Item in the list of what private details leave out: an output address.
   ///
   /// In en, this message translates to:
   /// **'an output address'**
   String get activityOmissionOutputAddress;
-
-  /// Item in the list of what private details leave out: the sender address.
-  ///
-  /// In en, this message translates to:
-  /// **'the sending address'**
-  String get activityOmissionSender;
-
-  /// Item in the list of what private details leave out: inputs owned by other wallets.
-  ///
-  /// In en, this message translates to:
-  /// **'inputs from other wallets'**
-  String get activityOmissionSharedFunding;
-
-  /// Item in the list of what private details leave out: the shielded part of the funds.
-  ///
-  /// In en, this message translates to:
-  /// **'the shielded part of the funding'**
-  String get activityOmissionShieldedFunding;
 
   /// Subtitle of a Pay activity row: the payment was made from shielded ZEC.
   ///

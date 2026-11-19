@@ -389,19 +389,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get activityOmissionOtherSenders => '다‍른 보‍낸 주‍소';
-
-  @override
   String get activityOmissionOutputAddress => '출‍력 주‍소';
-
-  @override
-  String get activityOmissionSender => '보‍낸 주‍소';
-
-  @override
-  String get activityOmissionSharedFunding => '다‍른 지‍갑‍의 입‍력';
-
-  @override
-  String get activityOmissionShieldedFunding => '자‍금 중 비‍공‍개 부‍분';
 
   @override
   String get activityPayFromShielded => '비‍공‍개 ZEC‍에‍서';

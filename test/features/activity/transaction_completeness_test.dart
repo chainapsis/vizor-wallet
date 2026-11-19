@@ -239,6 +239,57 @@ void main() {
     );
   });
 
+  test('only the outputs a receipt lists get a "Not shown" line', () {
+    const everything = [
+      'multiple_source_scripts',
+      'shared_funding',
+      'shielded_and_transparent_funding',
+      'non_standard_sender',
+      'more_than_two_outputs',
+      'non_standard_output',
+    ];
+    rust_sync.TransactionDetail detail(String kind, {bool listed = true}) =>
+        rust_sync.TransactionDetail(
+          txidHex: 'aa',
+          txKind: kind,
+          outputs: const [],
+          detailsComplete: false,
+          provisional: false,
+          transparentDetailsState: rust_sync.TransparentDetailsState.available,
+          transparentRecipients: [
+            if (listed)
+              rust_sync.TransparentRecipient(
+                outputIndex: 0,
+                address: 't1other',
+                amountZatoshi: BigInt.from(1000),
+                isOwn: false,
+              ),
+          ],
+          transparentOutputCount: 4,
+          transparentOmissions: everything,
+        );
+
+    // A send lists its outputs: what that list leaves out is named, how the
+    // transaction was funded is not.
+    expect(transparentOmissionPhrases(testL10n, detail('sent')), [
+      testL10n.activityOmissionMoreOutputs(2),
+      testL10n.activityOmissionOutputAddress,
+    ]);
+    // A receive lists no outputs, so names nothing.
+    for (final kind in ['received', 'receiving']) {
+      expect(
+        transparentOmissionPhrases(testL10n, detail(kind)),
+        isEmpty,
+        reason: kind,
+      );
+    }
+    // Nor does a send whose receipt lists no outputs.
+    expect(
+      transparentOmissionPhrases(testL10n, detail('sent', listed: false)),
+      isEmpty,
+    );
+  });
+
   test('network fee is display-only and bound to the receipt identity', () {
     final tx = _transaction(
       'aa',

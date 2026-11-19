@@ -504,25 +504,9 @@
       }
     }
   },
-  "activityOmissionOtherSenders": "other sending addresses",
-  "@activityOmissionOtherSenders": {
-    "description": "Item in the list of what private details leave out: further sender addresses."
-  },
   "activityOmissionOutputAddress": "an output address",
   "@activityOmissionOutputAddress": {
     "description": "Item in the list of what private details leave out: an output address."
-  },
-  "activityOmissionSender": "the sending address",
-  "@activityOmissionSender": {
-    "description": "Item in the list of what private details leave out: the sender address."
-  },
-  "activityOmissionSharedFunding": "inputs from other wallets",
-  "@activityOmissionSharedFunding": {
-    "description": "Item in the list of what private details leave out: inputs owned by other wallets."
-  },
-  "activityOmissionShieldedFunding": "the shielded part of the funding",
-  "@activityOmissionShieldedFunding": {
-    "description": "Item in the list of what private details leave out: the shielded part of the funds."
   },
   "activityPayFromShielded": "from shielded ZEC",
   "@activityPayFromShielded": {

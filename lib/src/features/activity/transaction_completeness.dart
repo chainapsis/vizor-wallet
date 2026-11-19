@@ -183,8 +183,7 @@ String receiptIncompleteDetailsHelp(
     l10n.activityReceiptCheckStoppedHelp,
     transparentStopHint(l10n, stop),
   ].join('\n\n'),
-  (false, null) when effectsSettled =>
-    l10n.activityReceiptDetailsSettledHelp,
+  (false, null) when effectsSettled => l10n.activityReceiptDetailsSettledHelp,
   (false, null) => l10n.activityReceiptDetailsIncompleteHelp,
 };
 
@@ -214,33 +213,29 @@ rust_sync.TransactionInfo? provisionalRoleSuccessor(
   return rows.length == 1 ? rows.single : null;
 }
 
-/// Short phrases for what the private details leave out, by the names
-/// `TransactionDetail.transparentOmissions` uses.
-String? _omissionPhrase(AppLocalizations l10n, String omission) =>
-    switch (omission) {
-      'multiple_source_scripts' => l10n.activityOmissionOtherSenders,
-      'more_than_two_outputs' => l10n.activityOmissionLaterOutputs,
-      'shielded_and_transparent_funding' =>
-        l10n.activityOmissionShieldedFunding,
-      'non_standard_sender' => l10n.activityOmissionSender,
-      'non_standard_output' => l10n.activityOmissionOutputAddress,
-      'shared_funding' => l10n.activityOmissionSharedFunding,
-      _ => null,
-    };
-
-/// What [detail]'s transparent details leave out, in the order the wallet
-/// lists them; empty when nothing is left out.
+/// What the outputs a receipt lists leave out, in the order the wallet lists
+/// them; empty when the receipt lists no outputs or nothing is left out.
+///
+/// Only that list gets a "Not shown" line. How the transaction was funded
+/// (other sending addresses, inputs from other wallets, shielded funding, an
+/// unreadable sender) is never named: a payer's funding is nothing the account
+/// can act on, and on the account's own spend those appear only while private
+/// recovery has not linked its inputs, where they would call them someone
+/// else's.
 List<String> transparentOmissionPhrases(
   AppLocalizations l10n,
   rust_sync.TransactionDetail? detail,
 ) {
-  final count = detail?.transparentOutputCount;
+  if (listedTransactionOutputs(detail).isEmpty) return const [];
+  final count = detail!.transparentOutputCount;
   return [
-    for (final omission in detail?.transparentOmissions ?? const <String>[])
-      if (omission == 'more_than_two_outputs' && count != null && count > 2)
-        l10n.activityOmissionMoreOutputs(count - 2)
-      else
-        _omissionPhrase(l10n, omission) ?? omission.replaceAll('_', ' '),
+    for (final omission in detail.transparentOmissions)
+      if (omission == 'more_than_two_outputs')
+        count != null && count > 2
+            ? l10n.activityOmissionMoreOutputs(count - 2)
+            : l10n.activityOmissionLaterOutputs
+      else if (omission == 'non_standard_output')
+        l10n.activityOmissionOutputAddress,
   ];
 }
 

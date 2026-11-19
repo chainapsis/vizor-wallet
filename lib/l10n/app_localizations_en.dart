@@ -407,20 +407,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get activityOmissionOtherSenders => 'other sending addresses';
-
-  @override
   String get activityOmissionOutputAddress => 'an output address';
-
-  @override
-  String get activityOmissionSender => 'the sending address';
-
-  @override
-  String get activityOmissionSharedFunding => 'inputs from other wallets';
-
-  @override
-  String get activityOmissionShieldedFunding =>
-      'the shielded part of the funding';
 
   @override
   String get activityPayFromShielded => 'from shielded ZEC';

@@ -375,19 +375,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get activityOmissionOtherSenders => '其他发送地址';
-
-  @override
   String get activityOmissionOutputAddress => '输出地址';
-
-  @override
-  String get activityOmissionSender => '发送地址';
-
-  @override
-  String get activityOmissionSharedFunding => '来自其他钱包的输入';
-
-  @override
-  String get activityOmissionShieldedFunding => '资金中的隐私部分';
 
   @override
   String get activityPayFromShielded => '来自隐私 ZEC';

@@ -953,8 +953,9 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   exact fee, input and output counts, the first address-shaped source, the
   first two outputs (value and address) and flags naming what it omits
   (several source scripts, more than two outputs, transparent inputs with
-  net shielded funding). The wallet shows the omissions and offers a public
-  lookup of the whole transaction only when the user asks for one. One
+  net shielded funding). A receipt names only what its listed outputs leave
+  out, never how the transaction was funded, and offers a public lookup of the
+  whole transaction only when the user asks for one. One
   library `TxidDisplayService` per origin lives for the whole process, so the
   derived native profiles are built once. These are process statics: a
   restart starts with a fresh service, no map and no map check time. After a
