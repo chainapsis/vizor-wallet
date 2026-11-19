@@ -824,6 +824,9 @@ struct HistoryCompleteness {
     has_transparent_outputs: Option<bool>,
     details_complete: bool,
     provisional: bool,
+    /// Whether scanning has settled the account's effects in every shielded
+    /// pool: each of its shielded outputs and spends there is known.
+    shielded_effects_settled: bool,
     /// The library's classification of the account's side, once read. A net
     /// reconstruction (a privately recovered mixed shielding) has a final
     /// movement but no attributed fee or payment; see
@@ -855,6 +858,7 @@ impl HistoryCompleteness {
             has_transparent_outputs: None,
             details_complete: true,
             provisional: false,
+            shielded_effects_settled: true,
             classification: Some(HistoryClassification::Reconstructed),
             fee: match (base.total_spent > 0, base.fee) {
                 (false, _) => Fee::NotApplicable,
@@ -888,6 +892,11 @@ impl HistoryCompleteness {
                 | HistoryClassification::Reconstructed
                 | HistoryClassification::NetReconstructed => false,
             } || !effects_settled,
+            shielded_effects_settled: details
+                .effects
+                .iter()
+                .filter(|effect| matches!(effect.pool, PoolType::Shielded(_)))
+                .all(|effect| effect.completeness.is_settled()),
             fee: match details.fee {
                 FeeState::Known(fee) => Fee::Known(fee.into()),
                 FeeState::Unattributed { .. } | FeeState::Unknown => Fee::Unknown,
@@ -915,6 +924,7 @@ impl HistoryCompleteness {
             has_transparent_outputs: None,
             details_complete: false,
             provisional: true,
+            shielded_effects_settled: false,
             classification: None,
             fee: fee.map_or(Fee::Unknown, Fee::Known),
             unattributed_fee: None,
@@ -986,6 +996,9 @@ struct TxOutput {
     value: u64,
     memo: Option<Vec<u8>>,
     note_version: Option<i64>,
+    /// Whether the account's internal (change) key received this output,
+    /// whatever the address tables say.
+    received_by_internal_key: bool,
 }
 
 impl TxOutput {
@@ -1111,6 +1124,9 @@ impl ActivityAmounts {
 struct ActivitySummary {
     sent: ActivityAmounts,
     received: ActivityAmounts,
+    /// Whether any received output landed anywhere but a shielded internal
+    /// address of the account's.
+    received_outside_internal: bool,
     shielded: ActivityAmounts,
     internal_ironwood_transition: ActivityAmounts,
     own_transparent_output_amount: u64,
@@ -1991,7 +2007,27 @@ fn read_history_outputs<'a>(
                   AND orn.transaction_id = txo.transaction_id
                   AND orn.action_index = txo.output_index
                 LIMIT 1
-            ) AS note_version
+            ) AS note_version,
+            -- Whether the account's internal key received this output.
+            EXISTS (
+                SELECT 1 FROM sapling_received_notes n
+                WHERE txo.output_pool = 2
+                  AND n.transaction_id = txo.transaction_id
+                  AND n.output_index = txo.output_index
+                  AND n.recipient_key_scope = 1
+                UNION ALL
+                SELECT 1 FROM orchard_received_notes n
+                WHERE txo.output_pool = 3
+                  AND n.transaction_id = txo.transaction_id
+                  AND n.action_index = txo.output_index
+                  AND n.recipient_key_scope = 1
+                UNION ALL
+                SELECT 1 FROM ironwood_received_notes n
+                WHERE txo.output_pool = 4
+                  AND n.transaction_id = txo.transaction_id
+                  AND n.action_index = txo.output_index
+                  AND n.recipient_key_scope = 1
+            ) AS received_by_internal_key
         FROM v_tx_outputs txo
         JOIN rarray(?2) AS active_tx ON active_tx.value = txo.txid
         WHERE txo.from_account_uuid = ?1
@@ -2015,6 +2051,7 @@ fn read_history_outputs<'a>(
                 value: row.get::<_, i64>(9)?.unsigned_abs(),
                 memo: row.get(10)?,
                 note_version: row.get(11)?,
+                received_by_internal_key: row.get(12)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -2087,7 +2124,27 @@ fn read_outputs_for_tx(
                   AND orn.transaction_id = txo.transaction_id
                   AND orn.action_index = txo.output_index
                 LIMIT 1
-            ) AS note_version
+            ) AS note_version,
+            -- Whether the account's internal key received this output.
+            EXISTS (
+                SELECT 1 FROM sapling_received_notes n
+                WHERE txo.output_pool = 2
+                  AND n.transaction_id = txo.transaction_id
+                  AND n.output_index = txo.output_index
+                  AND n.recipient_key_scope = 1
+                UNION ALL
+                SELECT 1 FROM orchard_received_notes n
+                WHERE txo.output_pool = 3
+                  AND n.transaction_id = txo.transaction_id
+                  AND n.action_index = txo.output_index
+                  AND n.recipient_key_scope = 1
+                UNION ALL
+                SELECT 1 FROM ironwood_received_notes n
+                WHERE txo.output_pool = 4
+                  AND n.transaction_id = txo.transaction_id
+                  AND n.action_index = txo.output_index
+                  AND n.recipient_key_scope = 1
+            ) AS received_by_internal_key
         FROM v_tx_outputs txo
         WHERE txo.txid = ?2
           AND (
@@ -2113,6 +2170,7 @@ fn read_outputs_for_tx(
                 value: row.get::<_, i64>(9)?.unsigned_abs(),
                 memo: row.get(10)?,
                 note_version: row.get(11)?,
+                received_by_internal_key: row.get(12)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -2183,6 +2241,8 @@ fn summarize_activity_outputs(
         }
         if visible_received {
             summary.received.add_output(output);
+            summary.received_outside_internal |=
+                !is_shielded_pool(output.output_pool) || !output.received_by_internal_key;
         }
     }
 
@@ -2433,6 +2493,19 @@ fn classify_history_tx(
         return vec![row];
     }
 
+    if is_unrecovered_own_shielding(base, summary) {
+        let mut row = build_classified_tx(
+            base,
+            "shielded",
+            summary.received.amount,
+            "shielded",
+            false,
+            0,
+        );
+        row.outputs = summary.received.outputs.clone();
+        return vec![row];
+    }
+
     if is_internal_ironwood_transition(base, summary) {
         let mut row = build_classified_tx(
             base,
@@ -2584,6 +2657,23 @@ fn classify_history_tx(
     }
 
     rows
+}
+
+/// A provisional receipt only at the account's shielded internal addresses,
+/// where scanning has settled that the account spent no shielded note:
+/// transparent inputs funded it, and internal addresses are never given out,
+/// so it is the account's own shielding whose inputs recovery has not found
+/// yet (a restored wallet's, or one another device made). It reads as that
+/// shielding, still provisional, rather than as money someone sent; the
+/// history read settles it once the inputs are recovered. Blocks below it not
+/// scanned yet may hold the note a send's change came from, so it waits.
+fn is_unrecovered_own_shielding(base: &TxBase, summary: &ActivitySummary) -> bool {
+    base.history.provisional
+        && base.history.shielded_effects_settled
+        && base.total_spent == 0
+        && summary.sent.output_count == 0
+        && summary.received.output_count > 0
+        && !summary.received_outside_internal
 }
 
 /// Owned Ironwood outputs do not prove an internal migration when the library
@@ -3267,6 +3357,7 @@ mod tests {
                 details_complete: true,
                 classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
+                shielded_effects_settled: true,
                 fee: Fee::Known(20_000),
                 unattributed_fee: None,
                 network_fee: None,
@@ -3560,6 +3651,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: true,
+            shielded_effects_settled: false,
             fee: Fee::Unknown,
             unattributed_fee: None,
             network_fee: None,
@@ -3575,6 +3667,7 @@ mod tests {
             details_complete: true,
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
+            shielded_effects_settled: true,
             fee: Fee::Known(10_000),
             unattributed_fee: None,
             network_fee: None,
@@ -3735,6 +3828,7 @@ mod tests {
             value: 1_000_000,
             memo: None,
             note_version: None,
+            received_by_internal_key: false,
         };
         assert_eq!(
             transparent_received.detail_address("received"),
@@ -3759,6 +3853,7 @@ mod tests {
             value: 1_000_000,
             memo: None,
             note_version: None,
+            received_by_internal_key: false,
         };
         assert_eq!(shielded_received.detail_address("received"), Some(ua));
     }
@@ -3809,11 +3904,22 @@ mod tests {
                  value INTEGER NOT NULL,
                  memo BLOB
              );
+             CREATE TABLE sapling_received_notes (
+                 transaction_id INTEGER NOT NULL,
+                 output_index INTEGER NOT NULL,
+                 recipient_key_scope INTEGER
+             );
              CREATE TABLE orchard_received_notes (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  transaction_id INTEGER NOT NULL,
                  action_index INTEGER NOT NULL,
-                 note_version INTEGER NOT NULL
+                 note_version INTEGER NOT NULL,
+                 recipient_key_scope INTEGER
+             );
+             CREATE TABLE ironwood_received_notes (
+                 transaction_id INTEGER NOT NULL,
+                 action_index INTEGER NOT NULL,
+                 recipient_key_scope INTEGER
              );
              CREATE TABLE orchard_received_note_spends (
                  orchard_received_note_id INTEGER NOT NULL,
@@ -4989,7 +5095,27 @@ mod tests {
                       AND orn.transaction_id = txo.transaction_id
                       AND orn.action_index = txo.output_index
                     LIMIT 1
-                ) AS note_version
+                ) AS note_version,
+                -- Whether the account's internal key received this output.
+                EXISTS (
+                    SELECT 1 FROM sapling_received_notes n
+                    WHERE txo.output_pool = 2
+                      AND n.transaction_id = txo.transaction_id
+                      AND n.output_index = txo.output_index
+                      AND n.recipient_key_scope = 1
+                    UNION ALL
+                    SELECT 1 FROM orchard_received_notes n
+                    WHERE txo.output_pool = 3
+                      AND n.transaction_id = txo.transaction_id
+                      AND n.action_index = txo.output_index
+                      AND n.recipient_key_scope = 1
+                    UNION ALL
+                    SELECT 1 FROM ironwood_received_notes n
+                    WHERE txo.output_pool = 4
+                      AND n.transaction_id = txo.transaction_id
+                      AND n.action_index = txo.output_index
+                      AND n.recipient_key_scope = 1
+                ) AS received_by_internal_key
             FROM v_tx_outputs txo
             JOIN (
                 SELECT DISTINCT txid
@@ -5017,6 +5143,7 @@ mod tests {
                     value: row.get::<_, i64>(9)?.unsigned_abs(),
                     memo: row.get(10)?,
                     note_version: row.get(11)?,
+                    received_by_internal_key: row.get(12)?,
                 })
             })
             .map_err(|e| format!("Query error: {e}"))?;

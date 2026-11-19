@@ -671,3 +671,136 @@ fn absent_or_unknown_enhance_output_presence_keeps_activity_unclassified() {
         assert!(!row.details_complete);
     }
 }
+
+/// A wallet whose scan found an Ironwood receipt of 80,000 zatoshis at
+/// `address`, funded by transparent outputs private recovery has covered but
+/// whose spends it has not published, with the account activated or still a
+/// candidate. With `gap_below`, a block below the receipt is left unscanned.
+/// Returns a copy of the wallet, the account and the txid.
+fn receipt_before_its_inputs_are_recovered(
+    address: AddressType,
+    activate: bool,
+    gap_below: bool,
+) -> (tempfile::TempDir, String, AccountUuid, String) {
+    configure_regtest_nu6_3_activation_height(NU6_3).unwrap();
+    let mut st = TestBuilder::new()
+        .with_network(regtest())
+        .with_data_store_factory(TestDbFactory::default())
+        .with_block_cache(BlockCache::new())
+        .with_account_from_sapling_activation(BlockHash([0; 32]))
+        .build();
+    scan_unrelated_blocks(&mut st, 10);
+    set_policy(&mut st, TransparentLedgerMode::PrivateRequired);
+    let account = st.test_account().unwrap().id();
+    let ws = watch(&st, account);
+    let target = ws.target.unwrap().height;
+    let receives = [(0x51, 60_000, 4), (0x52, 40_000, 3)].map(|(tag, value, depth)| ReceiveEvent {
+        metadata: None,
+        outpoint: OutPoint::new([tag; 32], 0),
+        address: external(&ws),
+        value: zat(value),
+        coinbase: false,
+        mined_height: target - depth,
+    });
+    cover(&mut st, account, receives.to_vec());
+    if activate {
+        st.wallet_mut()
+            .db_mut()
+            .qualify_transparent_revision(&revision())
+            .unwrap();
+        set_policy(&mut st, TransparentLedgerMode::PrivateRequired);
+        st.wallet_mut()
+            .db_mut()
+            .activate_transparent_ledger(account)
+            .unwrap();
+    }
+    st.wallet_mut()
+        .db_mut()
+        .set_enhancement_mode(EnhancementMode::PrivateIronwood);
+    if gap_below {
+        let not_ours = sapling_crypto::zip32::ExtendedSpendingKey::master(&[])
+            .to_diversifiable_full_viewing_key();
+        st.generate_next_block(&not_ours, AddressType::DefaultExternal, zat(10_000));
+    }
+    let fvk = OrchardPoolTester::test_account_fvk(&st);
+    let (height, _, _) = st.generate_next_block(&IronwoodFvk(fvk), address, zat(80_000));
+    st.scan_cached_blocks(height, 1);
+    scan_unrelated_blocks(&mut st, 2);
+    let (tx_ref, txid): (i64, [u8; 32]) = st
+        .wallet()
+        .conn()
+        .query_row(
+            "SELECT id_tx, txid FROM transactions WHERE mined_height = ?1",
+            [u32::from(height)],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    // The fake block's only transaction occupies the coinbase position.
+    st.wallet()
+        .conn()
+        .execute(
+            "UPDATE transactions SET tx_index = 1 WHERE id_tx = ?1",
+            [tx_ref],
+        )
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    st.wallet()
+        .conn()
+        .execute("VACUUM INTO ?1", [&path])
+        .unwrap();
+    (dir, path, account, hex::encode(txid))
+}
+
+fn only_row(path: &str, account: AccountUuid, txid_hex: &str) -> TransactionInfo {
+    let mut rows = get_transaction_history(path, NETWORK, None, &account.expose_uuid().to_string())
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.txid_hex == txid_hex)
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 1, "one Activity row");
+    rows.remove(0)
+}
+
+#[test]
+fn a_shielding_whose_inputs_are_not_recovered_yet_reads_as_a_provisional_shielding() {
+    // A restored wallet's own shielding, before recovery activates and after.
+    for activate in [false, true] {
+        let (_dir, path, account, txid) =
+            receipt_before_its_inputs_are_recovered(AddressType::Internal, activate, false);
+        let row = only_row(&path, account, &txid);
+        assert_eq!(row.tx_kind, "shielded", "activated: {activate}");
+        assert_eq!(row.display_amount, 80_000, "activated: {activate}");
+        assert!(row.provisional, "the inputs are not recovered yet");
+
+        let detail = get_transaction_detail(
+            &path,
+            NETWORK,
+            &account.expose_uuid().to_string(),
+            &txid,
+            "shielded",
+        )
+        .unwrap();
+        assert_eq!(detail.tx_kind, "shielded", "activated: {activate}");
+    }
+}
+
+#[test]
+fn a_receipt_at_an_external_address_with_unknown_funding_stays_received() {
+    // Anyone can pay an external address: unknown funding is someone else's.
+    let (_dir, path, account, txid) =
+        receipt_before_its_inputs_are_recovered(AddressType::DefaultExternal, true, false);
+    let row = only_row(&path, account, &txid);
+    assert_eq!(row.tx_kind, "received");
+    assert_eq!(row.display_amount, 80_000);
+}
+
+#[test]
+fn a_receipt_above_unscanned_blocks_stays_received() {
+    // A send's change looks the same until the note it spent is scanned.
+    let (_dir, path, account, txid) =
+        receipt_before_its_inputs_are_recovered(AddressType::Internal, true, true);
+    let row = only_row(&path, account, &txid);
+    assert!(row.provisional, "blocks below are not scanned");
+    assert_eq!(row.tx_kind, "received");
+}
