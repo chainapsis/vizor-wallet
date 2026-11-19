@@ -184,6 +184,21 @@ void main() {
     await _close(tester);
   });
 
+  testWidgets('mobile receipt says a given-up lookup will not update and '
+      'stops waiting for it', (tester) async {
+    final details = ScriptedDetails([
+      transparentDetail(rust_sync.TransparentDetailsState.gaveUp),
+    ]);
+    final prioritized = await _pump(tester, details);
+    expect(find.text(testL10n.activityDetailsGaveUp), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
+    expect(prioritized, isEmpty, reason: 'no sync asks for it again');
+    final before = details.calls;
+    await tester.pump(kTransparentDetailsPollInterval * 3);
+    expect(details.calls, before, reason: 'nothing to wait for');
+    await _close(tester);
+  });
+
   testWidgets('mobile receipt says not covered in private mode', (
     tester,
   ) async {

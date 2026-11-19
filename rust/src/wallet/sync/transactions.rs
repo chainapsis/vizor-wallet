@@ -663,6 +663,11 @@ pub(crate) struct TransactionInfo {
     /// checking its transparent side; see
     /// [`HistoryCompleteness::awaits_private_check`].
     pub awaits_private_check: bool,
+    /// Whether every effect the account has in the transaction is settled:
+    /// no scan or private check still running can change the row. A
+    /// provisional row whose effects are settled stays provisional until the
+    /// wallet learns more another way.
+    pub effects_settled: bool,
     /// Whether `display_amount` is a balance movement that retains its fee,
     /// rather than an established payment. Show it as a net change, including
     /// when the account's fee share is unknown.
@@ -834,6 +839,9 @@ struct HistoryCompleteness {
     /// turned on). Shielded effects settle once scanned; missing payment
     /// details are not the check's to finish.
     awaits_private_check: bool,
+    /// Whether every owned effect is settled; false until the history read
+    /// reports.
+    effects_settled: bool,
     /// The library's classification of the account's side, once read. A net
     /// reconstruction (a privately recovered mixed shielding) has a final
     /// movement but no attributed fee or payment; see
@@ -866,6 +874,7 @@ impl HistoryCompleteness {
             details_complete: true,
             provisional: false,
             awaits_private_check: false,
+            effects_settled: true,
             classification: Some(HistoryClassification::Reconstructed),
             fee: match (base.total_spent > 0, base.fee) {
                 (false, _) => Fee::NotApplicable,
@@ -904,6 +913,7 @@ impl HistoryCompleteness {
                 | HistoryClassification::NetReconstructed => false,
             } || !effects_settled,
             awaits_private_check,
+            effects_settled,
             fee: match details.fee {
                 FeeState::Known(fee) => Fee::Known(fee.into()),
                 FeeState::Unattributed { .. } | FeeState::Unknown => Fee::Unknown,
@@ -932,6 +942,7 @@ impl HistoryCompleteness {
             details_complete: false,
             provisional: true,
             awaits_private_check: true,
+            effects_settled: false,
             classification: None,
             fee: fee.map_or(Fee::Unknown, Fee::Known),
             unattributed_fee: None,
@@ -2694,6 +2705,7 @@ fn build_classified_tx_with_fee(
             details_complete: base.history.details_complete,
             provisional: base.history.provisional,
             awaits_private_check: base.history.awaits_private_check,
+            effects_settled: base.history.effects_settled,
             amount_includes_fee: false,
         },
         sort_key: base.history_sort_key(),
@@ -3286,6 +3298,7 @@ mod tests {
                 classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
                 awaits_private_check: false,
+                effects_settled: true,
                 fee: Fee::Known(20_000),
                 unattributed_fee: None,
                 network_fee: None,
@@ -3535,12 +3548,14 @@ mod tests {
         let checking = HistoryCompleteness::of(&details);
         assert!(checking.provisional);
         assert!(checking.awaits_private_check);
+        assert!(!checking.effects_settled);
 
         // A shielded effect not scanned yet waits on scanning instead.
         details.effects[0].completeness = EffectCompleteness::Incomplete;
         let scanning = HistoryCompleteness::of(&details);
         assert!(scanning.provisional);
         assert!(!scanning.awaits_private_check);
+        assert!(!scanning.effects_settled);
 
         // Every effect settled, but the account's payment is not established:
         // its details are missing, which the check does not finish.
@@ -3551,6 +3566,8 @@ mod tests {
         let unestablished = HistoryCompleteness::of(&details);
         assert!(unestablished.provisional);
         assert!(!unestablished.awaits_private_check);
+        // Nothing running can settle it.
+        assert!(unestablished.effects_settled);
 
         // Settled through and through: nothing waits.
         details.classification = HistoryClassification::Reconstructed;
@@ -3558,6 +3575,7 @@ mod tests {
 
         // Not read yet, as right after Private queries is turned on.
         assert!(HistoryCompleteness::unread(None).awaits_private_check);
+        assert!(!HistoryCompleteness::unread(None).effects_settled);
     }
 
     #[test]
@@ -3646,6 +3664,7 @@ mod tests {
             classification: None,
             provisional: true,
             awaits_private_check: true,
+            effects_settled: false,
             fee: Fee::Unknown,
             unattributed_fee: None,
             network_fee: None,
@@ -3662,6 +3681,7 @@ mod tests {
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
             awaits_private_check: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             unattributed_fee: None,
             network_fee: None,

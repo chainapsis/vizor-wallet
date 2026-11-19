@@ -1366,6 +1366,14 @@ void main() {
       await pumpWith(tester, {5, 6});
       expect(find.text(testL10n.activityPrivateCheckNotice), findsOneWidget);
     });
+
+    testWidgets('one waiting row is noted too, since rows carry no label', (
+      tester,
+    ) async {
+      await pumpWith(tester, {6});
+      expect(find.text(testL10n.activityPrivateCheckNotice), findsOneWidget);
+      expect(find.text(testL10n.activityRowCheckingPrivately), findsNothing);
+    });
   });
 
   testWidgets('home recent activity labels Gift Card transactions', (

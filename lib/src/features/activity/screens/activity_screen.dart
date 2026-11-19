@@ -36,6 +36,7 @@ import '../transaction_completeness.dart';
 import '../widgets/activity_feed.dart';
 import '../widgets/deferred_gift_card_recovery.dart';
 import 'activity_transaction_status_screen.dart';
+import '../private_details_marked_provider.dart';
 
 /// Loads the full transaction history for one account; injectable so
 /// widget tests can avoid the Rust FFI.
@@ -376,7 +377,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }) => buildTransactionActivityRow(
       context: context,
       transaction: tx,
-      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      privateQueriesEnabled: ref.watch(privateDetailsMarkedProvider),
       privateCheckNoticeShown: privateCheckNoticeShown,
       showPendingEstimate: !ref
           .watch(activityEtaExcludedTxidsProvider)

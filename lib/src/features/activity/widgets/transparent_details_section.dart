@@ -65,6 +65,15 @@ class TransparentDetailsSection extends StatelessWidget {
           value: l10n.activityDetailsNotCovered,
           valueColor: colors.text.secondary,
         )
+      // No sync asks again, so nothing says it will update.
+      else if (notice == rust_sync.TransparentDetailsState.gaveUp)
+        ReviewListRow(
+          key: const ValueKey('transparent_details_gave_up'),
+          label: l10n.activityReceiptDetails,
+          value: l10n.activityDetailsGaveUp,
+          valueColor: colors.text.secondary,
+          scaleValueToFit: true,
+        )
       else if (notice != null)
         ReviewListRow(
           key: const ValueKey('transparent_details_unavailable'),

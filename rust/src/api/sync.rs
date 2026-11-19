@@ -3196,6 +3196,12 @@ pub struct TransactionInfo {
     /// that waits on scanning or lacks payment details.
     #[frb(default = false)]
     pub awaits_private_check: bool,
+    /// Whether every effect the account has in the entry is settled: no
+    /// scan or private check still running can change it. A provisional
+    /// entry whose effects are settled stays provisional until the wallet
+    /// learns more another way.
+    #[frb(default = false)]
+    pub effects_settled: bool,
     /// Whether `display_amount` is a balance movement that retains its fee,
     /// rather than an established payment. Show it as a net change, including
     /// when the account's fee share is unknown.
@@ -3453,6 +3459,7 @@ fn api_transaction_info(t: wallet_sync::TransactionInfo) -> TransactionInfo {
         provisional: t.provisional,
         // A row settled after its history was read is not waiting.
         awaits_private_check: t.provisional && t.awaits_private_check,
+        effects_settled: t.effects_settled,
         amount_includes_fee: t.amount_includes_fee,
     }
 }

@@ -114,12 +114,14 @@ PrivateCheckNoticeState? privateCheckNotice(
   Iterable<rust_sync.TransactionInfo> transactions, {
   required bool privateQueriesEnabled,
   required rust_sync.TransparentStopReason? stop,
+  bool rowsLabelled = true,
 }) {
   final waiting = transactions.where(entryAwaitsPrivateCheck).length;
   if (stop != null) {
     return waiting > 0 ? PrivateCheckNoticeState.stopped(stop) : null;
   }
-  return privateQueriesEnabled && waiting > 1
+  // Rows that carry their own label speak for a single waiting entry.
+  return privateQueriesEnabled && waiting > (rowsLabelled ? 1 : 0)
       ? const PrivateCheckNoticeState.checking()
       : null;
 }
@@ -168,17 +170,21 @@ rust_sync.TransparentStopReason? receiptPrivateCheckStop(
 }) => entryAwaitsPrivateCheck(tx) ? stop : null;
 
 /// What a receipt's incomplete Details row explains: the private check still
-/// running, or what is missing and, when recovery stopped, why.
+/// running; the check stopped, and why; details nothing running can fill in
+/// ([effectsSettled]); or details that may still arrive.
 String receiptIncompleteDetailsHelp(
   AppLocalizations l10n, {
   required bool awaitsPrivateCheck,
   required rust_sync.TransparentStopReason? stop,
+  bool effectsSettled = false,
 }) => switch ((awaitsPrivateCheck, stop)) {
   (true, _) => l10n.activityReceiptCheckingPrivatelyHelp,
   (false, final stop?) => [
-    l10n.activityReceiptDetailsIncompleteHelp,
+    l10n.activityReceiptCheckStoppedHelp,
     transparentStopHint(l10n, stop),
   ].join('\n\n'),
+  (false, null) when effectsSettled =>
+    l10n.activityReceiptDetailsSettledHelp,
   (false, null) => l10n.activityReceiptDetailsIncompleteHelp,
 };
 

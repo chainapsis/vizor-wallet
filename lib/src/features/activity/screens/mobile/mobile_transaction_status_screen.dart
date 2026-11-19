@@ -32,7 +32,6 @@ import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/zcash/spendable_wait.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -61,6 +60,7 @@ import '../../transaction_completeness.dart';
 import '../../widgets/mobile/transaction_type_hero.dart';
 import '../../widgets/transparent_details_section.dart';
 import '../transaction_receipt_loading.dart';
+import '../../private_details_marked_provider.dart';
 
 /// Route arguments for [MobileTransactionStatusScreen]. The row that
 /// was tapped passes its [initialTransaction] so the screen renders
@@ -797,6 +797,7 @@ class _MobileTransactionStatusScreenState
                               tx,
                               stop: transparentStop,
                             ),
+                            detailsEffectsSettled: tx.effectsSettled,
                           ),
                           if (giftCard == null &&
                               detail?.transparentDetailsState != null)
@@ -866,12 +867,12 @@ class _MobileTransactionStatusScreenState
 
   // Temporary integration feedback is scoped to the Private queries setting.
   bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
+      ref.watch(privateDetailsMarkedProvider) && transactionFeeIsUnknown(tx);
 
   /// The receipt's own detail, once read, can complete what the activity
   /// entry could not: private transparent details that establish every payee.
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) &&
+      ref.watch(privateDetailsMarkedProvider) &&
       transactionDetailsIncomplete(tx) &&
       !receiptDetailsComplete(receiptDetail);
 
@@ -1135,6 +1136,7 @@ class _DetailCard extends StatelessWidget {
     this.detailsIncomplete = false,
     this.detailsAwaitPrivateCheck = false,
     this.detailsStop,
+    this.detailsEffectsSettled = false,
   });
 
   /// The From / To row, when the transaction has a counterparty to name.
@@ -1160,6 +1162,9 @@ class _DetailCard extends StatelessWidget {
   /// Why private recovery stopped checking these details; see
   /// `receiptPrivateCheckStop`.
   final rust_sync.TransparentStopReason? detailsStop;
+
+  /// Whether nothing still running can fill in the missing details.
+  final bool detailsEffectsSettled;
 
   @override
   Widget build(BuildContext context) {
@@ -1250,6 +1255,7 @@ class _DetailCard extends StatelessWidget {
                           context.l10n,
                           awaitsPrivateCheck: detailsAwaitPrivateCheck,
                           stop: detailsStop,
+                          effectsSettled: detailsEffectsSettled,
                         ),
                       ),
                     ),

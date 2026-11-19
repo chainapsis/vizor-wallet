@@ -199,13 +199,14 @@ void main() {
     });
   }
 
-  testWidgets('desktop receipt shows a given-up lookup as unavailable and '
+  testWidgets('desktop receipt says a given-up lookup will not update and '
       'stops waiting for it', (tester) async {
     final details = ScriptedDetails([
       transparentDetail(rust_sync.TransparentDetailsState.gaveUp),
     ]);
     final prioritized = await _pump(tester, details);
-    expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsGaveUp), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
     expect(prioritized, isEmpty, reason: 'no sync asks for it again');
     final before = details.calls;
     await tester.pump(kTransparentDetailsPollInterval * 3);

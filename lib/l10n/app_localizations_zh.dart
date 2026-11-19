@@ -246,6 +246,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityBalanceTransparent => '公开余额';
 
   @override
+  String get activityDetailsGaveUp => '隐私查询未能查到';
+
+  @override
   String get activityDetailsLoadFailed => '失败，请重试';
 
   @override
@@ -435,6 +438,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityReceiptCardFee => '卡片手续费';
 
   @override
+  String get activityReceiptCheckStoppedHelp =>
+      'Vizor 以隐私方式核对此交易时中途停止。显示的金额可能会变化。';
+
+  @override
   String get activityReceiptCheckingPrivately => '正在以隐私方式核对';
 
   @override
@@ -458,6 +465,10 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get activityReceiptDetailsIncompleteHelp =>
       '此交易的部分详情（如收款方、备注或手续费）尚不明确，显示的金额可能会变化。';
+
+  @override
+  String get activityReceiptDetailsSettledHelp =>
+      '隐私查询无法得知此交易的全部详情，部分信息将保持未知。显示的金额是此账户余额的变化。';
 
   @override
   String get activityReceiptEstimatedNetworkFee => '预估网络手续费';

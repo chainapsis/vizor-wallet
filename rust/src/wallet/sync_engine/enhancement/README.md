@@ -703,13 +703,20 @@ for an entry that waits on scanning or lacks payment details. Established summar
 when the payment details are missing. When more than one row in a list waits
 on the check (right after Private queries is turned on), the list shows one
 "Checking details privately" notice instead and those rows keep their dates.
+Desktop Home rows carry no label, so there the notice shows for one waiting
+row too.
 Once recovery stops, any row it left keeps its date and the same notice says
 why: in Home's words for a stop Vizor retries, or in one sentence with a
 button to the Private queries setting for the stops only turning it off
 clears, whose turn-off prompt says what that does. It shows with the setting
-off too, where turning it off did not finish. Receipts show a "Details" row and an "Unknown"
-fee when necessary: "Checking privately" while the entry awaits that check,
-otherwise "Incomplete", whose help adds why recovery stopped. This is
+off too, where turning it off did not finish; rows and receipts then keep
+their marks, so a provisional amount does not read as final. Receipts show a
+"Details" row and an "Unknown" fee when necessary: "Checking privately" while
+the entry awaits that check, otherwise "Incomplete". Its help says why
+recovery stopped when it did, and, when `TransactionInfo::effects_settled`
+says nothing still scanning or checking can change the entry, that the
+missing details stay unknown. A transparent details lookup the wallet gave up
+on says so, without promising an update. This is
 temporary integration feedback while
 private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and

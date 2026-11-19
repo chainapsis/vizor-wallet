@@ -752,6 +752,37 @@ void main() {
       expect(find.text(testL10n.homeTransparentStopStalled), findsNothing);
     });
 
+    testWidgets('an unfinished opt-out keeps rows marked', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          (_) async => [
+            // Settled, but its amount is still a provisional movement.
+            _tx(
+              txidHex: 'opt-out-provisional',
+              blockTime: BigInt.from(1800000000),
+              provisional: true,
+            ),
+          ],
+          // Turning Private queries off did not finish: the setting reads
+          // off, but privately recovered rows are still provisional.
+          privateQueriesEnabled: false,
+          syncNotifier: FakeSyncNotifier(
+            SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+              transparentStop: rust_sync.TransparentStopReason.optOutUnfinished,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(testL10n.activityReceiptDetailsIncomplete),
+        findsOneWidget,
+      );
+    });
+
     for (final waiting in [1, 3]) {
       testWidgets('a stopped recovery says why over $waiting waiting', (
         tester,

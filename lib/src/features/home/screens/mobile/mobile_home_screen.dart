@@ -79,6 +79,7 @@ import '../../providers/backup_reminder_provider.dart';
 import '../../providers/nu7_announcement_provider.dart';
 import '../../widgets/nu7_announcement.dart';
 import '../../widgets/mobile_home_carousel.dart';
+import '../../../activity/private_details_marked_provider.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// up to ten recent activity rows — Figma `HOME` section frames
@@ -987,7 +988,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
-        privateQueriesEnabled: ref.watch(enhancePirProvider),
+        privateQueriesEnabled: ref.watch(privateDetailsMarkedProvider),
         privateCheckNoticeShown: privateCheckNoticeShown,
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)

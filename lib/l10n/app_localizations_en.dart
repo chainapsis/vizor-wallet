@@ -275,6 +275,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityBalanceTransparent => 'Transparent balance';
 
   @override
+  String get activityDetailsGaveUp => 'Couldn\'t be looked up privately';
+
+  @override
   String get activityDetailsLoadFailed => 'Failed — try again';
 
   @override
@@ -473,6 +476,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptCardFee => 'Card fee';
 
   @override
+  String get activityReceiptCheckStoppedHelp =>
+      'Vizor stopped checking this transaction privately before it finished. The amount shown may change.';
+
+  @override
   String get activityReceiptCheckingPrivately => 'Checking privately';
 
   @override
@@ -496,6 +503,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityReceiptDetailsIncompleteHelp =>
       'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.';
+
+  @override
+  String get activityReceiptDetailsSettledHelp =>
+      'Private queries can\'t work out every detail of this transaction, so some stay unknown. The amount shown is how much this account\'s balance changed.';
 
   @override
   String get activityReceiptEstimatedNetworkFee => 'Estimated network fee';

@@ -66,6 +66,7 @@ import '../widgets/keystone_shield_signing_overlay.dart';
 import '../widgets/ledger_shield_signing_overlay.dart';
 import '../providers/nu7_announcement_provider.dart';
 import '../widgets/nu7_announcement.dart';
+import '../../activity/private_details_marked_provider.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -644,6 +645,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
             [for (final entry in shownActivity) ?entry.transaction],
             privateQueriesEnabled: ref.watch(enhancePirProvider),
             stop: widget.sync.transparentStop,
+            rowsLabelled: false,
           )
         : null;
     final accountState = ref.watch(accountProvider).value;
@@ -840,7 +842,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       row: () => buildTransactionActivityRow(
         context: context,
         transaction: transaction,
-        privateQueriesEnabled: ref.watch(enhancePirProvider),
+        privateQueriesEnabled: ref.watch(privateDetailsMarkedProvider),
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),

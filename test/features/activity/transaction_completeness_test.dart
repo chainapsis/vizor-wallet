@@ -32,6 +32,16 @@ void main() {
     expect(notice([waiting, expired]), isNull);
     // A single new receive keeps its own label.
     expect(notice([waiting, settled]), isNull);
+    // Rows without labels, as on desktop Home, leave even one to the notice.
+    expect(
+      privateCheckNotice(
+        [waiting, settled],
+        privateQueriesEnabled: true,
+        stop: null,
+        rowsLabelled: false,
+      ),
+      const PrivateCheckNoticeState.checking(),
+    );
     expect(
       notice([waiting, alsoWaiting], privateQueriesEnabled: false),
       isNull,
@@ -97,8 +107,26 @@ void main() {
         awaitsPrivateCheck: false,
         stop: stalled,
       ),
-      '${testL10n.activityReceiptDetailsIncompleteHelp}\n\n'
+      '${testL10n.activityReceiptCheckStoppedHelp}\n\n'
       '${testL10n.homeTransparentStopStalled}',
+    );
+    // Nothing running can fill in a settled entry's missing details.
+    expect(
+      receiptIncompleteDetailsHelp(
+        testL10n,
+        awaitsPrivateCheck: false,
+        stop: null,
+        effectsSettled: true,
+      ),
+      testL10n.activityReceiptDetailsSettledHelp,
+    );
+    expect(
+      receiptIncompleteDetailsHelp(
+        testL10n,
+        awaitsPrivateCheck: false,
+        stop: null,
+      ),
+      testL10n.activityReceiptDetailsIncompleteHelp,
     );
     expect(
       receiptIncompleteDetailsHelp(

@@ -538,6 +538,12 @@ abstract class AppLocalizations {
   /// **'Transparent balance'**
   String get activityBalanceTransparent;
 
+  /// Value of the Details row when the private lookup of a transaction's transparent outputs was given up; no later sync retries it.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t be looked up privately'**
+  String get activityDetailsGaveUp;
+
   /// Row value shown after a public load of the transaction details failed; the row stays tappable.
   ///
   /// In en, this message translates to:
@@ -879,6 +885,12 @@ abstract class AppLocalizations {
   /// **'Card fee'**
   String get activityReceiptCardFee;
 
+  /// Help for a receipt whose private check stopped before it finished; the reason follows as its own paragraph.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor stopped checking this transaction privately before it finished. The amount shown may change.'**
+  String get activityReceiptCheckStoppedHelp;
+
   /// Value of the Details row on a receipt, and the title of its help sheet, while Private queries is still checking the transaction. Short.
   ///
   /// In en, this message translates to:
@@ -920,6 +932,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.'**
   String get activityReceiptDetailsIncompleteHelp;
+
+  /// Help for a receipt whose details stay incomplete although nothing is still being scanned or checked privately.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries can\'t work out every detail of this transaction, so some stay unknown. The amount shown is how much this account\'s balance changed.'**
+  String get activityReceiptDetailsSettledHelp;
 
   /// Part of the gift card batch cost breakdown: the network fee while the batch is pending or failed.
   ///

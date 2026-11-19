@@ -24,7 +24,6 @@ import '../../../core/widgets/review_wrap_card.dart';
 import '../../../core/zcash/spendable_wait.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/spendable_wait_provider.dart';
@@ -45,6 +44,7 @@ import '../widgets/received_receipt_view.dart';
 import '../widgets/shielded_receipt_view.dart';
 import '../widgets/transparent_details_section.dart';
 import 'transaction_receipt_loading.dart';
+import '../private_details_marked_provider.dart';
 
 // Callers and tests name the receipt seams from here.
 export 'transaction_receipt_loading.dart'
@@ -177,12 +177,12 @@ class _ActivityTransactionStatusScreenState
 
   // Temporary integration feedback is scoped to the Private queries setting.
   bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
+      ref.watch(privateDetailsMarkedProvider) && transactionFeeIsUnknown(tx);
 
   /// The receipt's own detail, once read, can complete what the activity
   /// entry could not: private transparent details that establish every payee.
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) &&
+      ref.watch(privateDetailsMarkedProvider) &&
       transactionDetailsIncomplete(tx) &&
       !receiptDetailsComplete(receiptDetail);
 
@@ -196,6 +196,7 @@ class _ActivityTransactionStatusScreenState
         recoveryStopped: stop != null,
       ),
       stop: receiptPrivateCheckStop(tx, stop: stop),
+      effectsSettled: tx.effectsSettled,
     );
   }
 
@@ -910,10 +911,15 @@ class _IncompleteDetailsNotice extends StatelessWidget {
 /// checked privately (see `receiptAwaitsPrivateCheck`), or incomplete, and
 /// why when recovery stopped.
 class _IncompleteDetailsRow extends StatelessWidget {
-  const _IncompleteDetailsRow({required this.awaitsPrivateCheck, this.stop});
+  const _IncompleteDetailsRow({
+    required this.awaitsPrivateCheck,
+    this.stop,
+    this.effectsSettled = false,
+  });
 
   final bool awaitsPrivateCheck;
   final rust_sync.TransparentStopReason? stop;
+  final bool effectsSettled;
 
   @override
   Widget build(BuildContext context) {
@@ -928,6 +934,7 @@ class _IncompleteDetailsRow extends StatelessWidget {
         context.l10n,
         awaitsPrivateCheck: awaitsPrivateCheck,
         stop: stop,
+        effectsSettled: effectsSettled,
       ),
     );
   }
