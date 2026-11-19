@@ -152,29 +152,37 @@ class SwapConfidentialSetting extends StatelessWidget {
   }
 }
 
-/// Counts turns to confidential for [SwapConfidentialSeamReveal] and the
-/// mark. A turn made inside the settings waits for them to close, so the
-/// reveal plays where it can be seen; turning it back off first cancels it.
+/// Counts turns of the confidential route, on and off, for
+/// [SwapConfidentialSeamReveal] and the mark, which play the turn that matches
+/// the route's current state. A turn made inside the settings waits for them
+/// to close, so it plays where it can be seen; turning back before they close
+/// cancels it.
 class SwapConfidentialRevealCounter {
   int _value = 0;
-  bool _pending = false;
+
+  /// The route's net turn while the settings are open, if any.
+  bool? _pending;
 
   int get value => _value;
 
-  /// Returns whether [value] changed.
-  bool turnedOn({required bool settingsOpen}) {
-    if (settingsOpen) {
-      _pending = true;
-      return false;
+  /// Records a turn to [confidential]. Returns whether [value] changed.
+  bool changed({required bool confidential, required bool settingsOpen}) {
+    if (!settingsOpen) {
+      _value++;
+      return true;
     }
-    _value++;
-    return true;
+    if (_pending == null) {
+      _pending = confidential;
+    } else if (_pending != confidential) {
+      _pending = null;
+    }
+    return false;
   }
 
   /// Returns whether [value] changed.
   bool settingsClosed({required bool confidential}) {
-    final play = _pending && confidential;
-    _pending = false;
+    final play = _pending != null && _pending == confidential;
+    _pending = null;
     if (play) _value++;
     return play;
   }
@@ -184,9 +192,14 @@ class SwapConfidentialRevealCounter {
 /// lands beside the settings button.
 const kSwapConfidentialRevealDuration = Duration(milliseconds: 900);
 
+/// One play of turning confidential off, at the mark beside the settings
+/// button only: a grey halo draws in while the crimson drains. Shorter and
+/// quieter than the reveal; the seam stays as it is.
+const kSwapConfidentialConcealDuration = Duration(milliseconds: 400);
+
 /// The confidential mark: on the settings button, crimson while the mode is
 /// on and muted while it is off, and beside the setting itself.
-class SwapConfidentialIcon extends StatelessWidget {
+class SwapConfidentialIcon extends StatefulWidget {
   const SwapConfidentialIcon({
     this.on = true,
     this.alpha = 1,
@@ -200,37 +213,68 @@ class SwapConfidentialIcon extends StatelessWidget {
 
   final double alpha;
 
-  /// Raised each time confidential turns on, landing the mark once after the
-  /// seam flip. 0 shows it still.
+  /// Raised each time confidential turns on or off. While [on] it lands the
+  /// mark once after the seam flip; while off it lets the colour go with a
+  /// small dip. 0 shows it still.
   final int reveal;
 
   /// Names the mark for screen readers where no visible label sits beside it.
   final bool labeled;
 
   @override
-  Widget build(BuildContext context) {
-    final mark = _mark(context);
-    return labeled
-        ? Semantics(label: context.l10n.swapConfidentialLabel, child: mark)
-        : mark;
+  State<SwapConfidentialIcon> createState() => _SwapConfidentialIconState();
+}
+
+class _SwapConfidentialIconState extends State<SwapConfidentialIcon> {
+  /// [SwapConfidentialIcon.reveal] when this mark was built. A mark built
+  /// again after a turn off (a step or page returned to) shows still instead
+  /// of draining once more.
+  late final int _revealAtMount;
+
+  @override
+  void initState() {
+    super.initState();
+    _revealAtMount = widget.reveal;
   }
 
+  bool get on => widget.on;
+  double get alpha => widget.alpha;
+  int get reveal => widget.reveal;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    // Always present, so naming the mark as the route turns does not
+    // rebuild the play below it.
+    label: widget.labeled ? context.l10n.swapConfidentialLabel : null,
+    child: _mark(context),
+  );
+
   Widget _mark(BuildContext context) {
-    final color = on
-        ? context.colors.icon.brandCrimson
-        : context.colors.icon.muted;
+    final colors = context.colors;
+    final color = on ? colors.icon.brandCrimson : colors.icon.muted;
     final icon = AppIcon(
       AppIcons.incognito,
       size: 16,
       color: color.withValues(alpha: alpha),
     );
-    if (reveal == 0 || MediaQuery.disableAnimationsOf(context)) return icon;
+    if (reveal == 0) return icon;
+    final still = MediaQuery.disableAnimationsOf(context);
+    // One builder for both turns, keyed by the count: [on] changing before
+    // the count rises (a turn waiting for the settings to close) keeps the
+    // finished frame instead of starting a play.
     return TweenAnimationBuilder<double>(
       key: ValueKey(reveal),
       tween: Tween(begin: 0, end: 1),
-      duration: kSwapConfidentialRevealDuration,
+      duration: on
+          ? kSwapConfidentialRevealDuration
+          : kSwapConfidentialConcealDuration,
       child: icon,
       builder: (context, t, child) {
+        if (!on) {
+          final played = reveal == _revealAtMount ? 1.0 : t;
+          return _concealFrame(colors.icon.brandCrimson, color, played, still);
+        }
+        if (still) return child!;
         final land = const Interval(
           0.55,
           0.95,
@@ -249,14 +293,45 @@ class SwapConfidentialIcon extends StatelessWidget {
       },
     );
   }
+
+  /// Turning off: a grey halo draws in to the mark, the reveal's glow in
+  /// reverse, while the crimson drains to [to] and the mark dips to 85% and
+  /// settles back, with no overshoot. Reduce Motion keeps only the colour fade.
+  Widget _concealFrame(Color from, Color to, double t, bool still) {
+    final drain = const Interval(0.1, 0.8).transform(t);
+    final icon = AppIcon(
+      AppIcons.incognito,
+      size: 16,
+      color: Color.lerp(
+        from,
+        to,
+        Curves.easeOut.transform(drain),
+      )!.withValues(alpha: alpha),
+    );
+    if (still) return icon;
+    const move = Cubic(0.77, 0, 0.175, 1);
+    final dip = drain < 0.4
+        ? move.transform(drain / 0.4)
+        : 1 - move.transform((drain - 0.4) / 0.6);
+    return CustomPaint(
+      painter: _MarkGlowPainter(
+        color: to,
+        progress: const Interval(0, 0.7).transform(t),
+        closing: true,
+      ),
+      child: Transform.scale(scale: 1 - 0.15 * dip, child: icon),
+    );
+  }
 }
 
 /// Turns the swap direction button over to the confidential mark and back
-/// under a crimson ring, once each time [reveal] rises: the seam between pay
-/// and receive is what confidential hides. 0 shows [child] still.
+/// under a crimson ring, once each time [reveal] rises while [on]: the seam
+/// between pay and receive is what confidential hides. Turning off plays
+/// nothing here and ends a flip in progress. 0 shows [child] still.
 class SwapConfidentialSeamReveal extends StatelessWidget {
   const SwapConfidentialSeamReveal({
     required this.reveal,
+    required this.on,
     required this.size,
     required this.radius,
     required this.child,
@@ -265,6 +340,9 @@ class SwapConfidentialSeamReveal extends StatelessWidget {
   });
 
   final int reveal;
+
+  /// Whether the route is confidential now.
+  final bool on;
 
   /// The button's side, corner radius and any outer ring, which the mark face
   /// matches.
@@ -297,7 +375,10 @@ class SwapConfidentialSeamReveal extends StatelessWidget {
       tween: Tween(begin: 0, end: 1),
       duration: kSwapConfidentialRevealDuration,
       child: child,
-      builder: (context, t, child) {
+      builder: (context, progress, child) {
+        // Kept mounted across turns, like the mark. Off holds the finished
+        // frame, the button alone, so a flip in progress ends at once.
+        final t = on ? progress : 1.0;
         // Out, the mark in and held, out again, the button back.
         final showFace = t >= 0.15 && t < 0.75;
         final turn = t < 0.15
@@ -355,6 +436,7 @@ class _SeamRingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (progress <= 0 || progress >= 1) return;
     final spread = 14 * progress;
+    final alpha = 0.8 * (1 - progress);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         (Offset.zero & size).inflate(spread),
@@ -363,7 +445,7 @@ class _SeamRingPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = color.withValues(alpha: 0.8 * (1 - progress)),
+        ..color = color.withValues(alpha: alpha),
     );
   }
 
@@ -373,24 +455,37 @@ class _SeamRingPainter extends CustomPainter {
 }
 
 class _MarkGlowPainter extends CustomPainter {
-  const _MarkGlowPainter({required this.color, required this.progress});
+  const _MarkGlowPainter({
+    required this.color,
+    required this.progress,
+    this.closing = false,
+  });
 
   final Color color;
   final double progress;
+
+  /// Draws in from the glow's outer edge to the mark instead of spreading,
+  /// fading in and out on the way.
+  final bool closing;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (progress <= 0 || progress >= 1) return;
     canvas.drawCircle(
       size.center(Offset.zero),
-      8 + 8 * progress,
-      Paint()..color = color.withValues(alpha: 0.35 * (1 - progress)),
+      closing ? 16 - 8 * progress : 8 + 8 * progress,
+      Paint()
+        ..color = color.withValues(
+          alpha: closing
+              ? 0.35 * (1 - (2 * progress - 1).abs())
+              : 0.35 * (1 - progress),
+        ),
     );
   }
 
   @override
   bool shouldRepaint(_MarkGlowPainter old) =>
-      old.color != color || old.progress != progress;
+      old.color != color || old.progress != progress || old.closing != closing;
 }
 
 /// Whether a confidential route is moving funds: every status that still

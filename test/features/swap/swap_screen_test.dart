@@ -5293,6 +5293,74 @@ void main() {
     expect(swapProvider.requests.single.slippageBps, 200);
   });
 
+  testWidgets(
+    'turning confidential off in settings plays; other paths stay quiet',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _FakeSwapProvider(),
+          seedSwapActivityFixtures: false,
+          sessionStore: _FakeSwapPersistenceStore(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final settings = find.byKey(const ValueKey('swap_settings_button'));
+      final mark = find.descendant(
+        of: settings,
+        matching: find.byType(SwapConfidentialIcon),
+      );
+      // This harness runs with Reduce Motion, so the turn off is the colour
+      // fade alone.
+      Color? markColor() => tester
+          .widget<AppIcon>(
+            find.descendant(of: mark, matching: find.byType(AppIcon)),
+          )
+          .color;
+      Future<void> flip() async {
+        await tester.tap(settings);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('swap_confidential_switch')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('swap_slippage_update_button')),
+        );
+        await tester.pump();
+      }
+
+      await flip();
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwapConfidentialIcon>(mark).on, isTrue);
+
+      final crimson = markColor();
+      await flip();
+      await tester.pump(kSwapConfidentialConcealDuration * 0.4);
+      expect(tester.widget<SwapConfidentialIcon>(mark).on, isFalse);
+      final fading = markColor();
+      await tester.pumpAndSettle();
+      final muted = markColor();
+      expect(fading, isNot(anyOf(crimson, muted)));
+
+      // Leaving the surface resets the route without a play.
+      await flip();
+      await tester.pumpAndSettle();
+      ProviderScope.containerOf(
+        tester.element(settings),
+      ).read(swapStateProvider.notifier).resetComposerQuoteSettings();
+      await tester.pump();
+      await tester.pump(kSwapConfidentialConcealDuration * 0.4);
+      expect(tester.widget<SwapConfidentialIcon>(mark).on, isFalse);
+      expect(markColor(), muted);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('the confidential setting sends the confidential route', (
     tester,
   ) async {

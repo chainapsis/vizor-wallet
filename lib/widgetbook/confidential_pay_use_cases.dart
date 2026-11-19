@@ -150,8 +150,11 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
   /// Update applies slippage and confidential together, as in the app.
   void _saveSettings(int bps, bool confidential) {
     setState(() {
-      if (confidential && !_confidential) {
-        _confidentialReveal.turnedOn(settingsOpen: _settingsOpen);
+      if (confidential != _confidential) {
+        _confidentialReveal.changed(
+          confidential: confidential,
+          settingsOpen: _settingsOpen,
+        );
       }
       _confidential = confidential;
       _slippageBps = bps;

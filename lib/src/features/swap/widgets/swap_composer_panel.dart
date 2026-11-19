@@ -194,6 +194,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final ticket = _SwapTicketShell(
       key: const ValueKey('swap_compact_ticket'),
       confidentialReveal: widget.confidentialReveal,
+      confidential: widget.state.confidential,
       payCard: _SwapAmountCard(
         label: context.l10n.commonYouPay,
         active: payActive,
@@ -484,10 +485,12 @@ class _SwapTicketShell extends StatelessWidget {
     required this.targetDirection,
     required this.onToggleDirection,
     required this.confidentialReveal,
+    required this.confidential,
     super.key,
   });
 
   final int confidentialReveal;
+  final bool confidential;
   final Widget payCard;
   final Widget receiveCard;
   final SwapDirection targetDirection;
@@ -515,6 +518,7 @@ class _SwapTicketShell extends StatelessWidget {
             child: Center(
               child: SwapConfidentialSeamReveal(
                 reveal: confidentialReveal,
+                on: confidential,
                 size: 40,
                 radius: 12,
                 child: _SwapDirectionButton(
