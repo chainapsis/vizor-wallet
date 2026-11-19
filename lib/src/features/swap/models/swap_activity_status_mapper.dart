@@ -167,13 +167,14 @@ class SwapActivityStatusPresentation {
 SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   AppLocalizations l10n,
   SwapState state,
-  SwapIntent intent, {
+  SwapIntent storedIntent, {
   SwapActivityAccountDetail? accountDetail,
   Iterable<AddressBookContact> addressBookContacts = const [],
   BigInt? confirmedDepositFeeZatoshi,
   bool findingPayout = false,
   bool privacyModeEnabled = false,
 }) {
+  final intent = storedIntent.presented;
   final sellAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
   final receiveAsset = swapActivityReceiveAsset(intent) ?? SwapAsset.usdc;
   final sendsZec = intent.direction != SwapDirection.externalToZec;
@@ -566,9 +567,11 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
           ? l10n.swapActivityStepSend(sourceSymbol)
           : l10n.swapActivityStepDeposit(sourceSymbol),
       lastCheckedLabel: lastCheckedLabel,
-      description: awaitingDetection
-          ? l10n.swapActivityStepSentAwaitingDetection
-          : l10n.swapActivityStepSourceDescription,
+      description: !awaitingDetection
+          ? l10n.swapActivityStepSourceDescription
+          : intent.userDepositTxHash != null
+          ? l10n.swapActivityStepSentHashAdded
+          : l10n.swapActivityStepSentAwaitingDetection,
     ),
     SwapStatusStepData(
       title: l10n.swapActivityStepDepositConfirmation,

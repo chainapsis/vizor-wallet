@@ -151,6 +151,28 @@ void main() {
     expect(row!.leadingProgressValue, 0.25);
   });
 
+  test('a row shows NEAR knowing only an entered hash as still waiting', () {
+    final record = SwapIntentRecord.fromIntent(
+      SwapIntent(
+        id: 'swap-entered-hash',
+        pair: 'USDC -> ZEC',
+        sellAmount: '0.21 USDC',
+        receiveEstimate: '0.0030 ZEC',
+        provider: 'NEAR Intents',
+        status: SwapIntentStatus.depositObserved,
+        nextAction: 'Deposit detected',
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: '0xdeposit-address',
+        depositClaimedAt: DateTime.utc(2026, 5, 7, 10, 40),
+        userDepositTxHash: '0x${'ab' * 32}',
+      ),
+    );
+    final item = SwapActivityRowItem.fromRecord(record);
+    expect(item.status, SwapIntentStatus.awaitingExternalDeposit);
+    expect(item.hasConfirmedDepositEvidence, isFalse);
+  });
+
   testWidgets('maps pay records as payment activity rows', (tester) async {
     ActivityRowData? row;
 

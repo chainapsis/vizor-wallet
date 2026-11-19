@@ -10774,6 +10774,10 @@ class AppLocalizationsKo extends AppLocalizations {
       'NEAR Intents‍가 입‍금‍을 확‍인‍하‍기‍를 기‍다‍리‍고 있‍어‍요.';
 
   @override
+  String get swapActivityStepSentHashAdded =>
+      '거‍래 해‍시‍를 추‍가‍했‍어‍요. NEAR Intents‍가 입‍금‍을 확‍인‍하‍기‍를 기‍다‍리‍고 있‍어‍요.';
+
+  @override
   String get swapActivityStepSourceDescription =>
       '출‍발 체‍인‍과 제‍공‍자‍가 입‍금‍을 인‍식‍할 때‍까‍지 기‍다‍리‍고 있‍어‍요';
 
@@ -10979,6 +10983,28 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapDepositTitle => '토‍큰 입‍금';
+
+  @override
+  String swapDepositTxHashBody(String symbol) {
+    return '선‍택 사‍항‍이‍에‍요. $symbol 입‍금‍을 보‍낸 지‍갑‍에‍서 복‍사‍해 주‍세‍요. NEAR Intents‍가 입‍금‍을 더 빨‍리 찾‍는 데 쓰‍여‍요.';
+  }
+
+  @override
+  String swapDepositTxHashHint(String symbol) {
+    return '$symbol 거‍래 해‍시';
+  }
+
+  @override
+  String get swapDepositTxHashPaste => '거‍래 해‍시 붙‍여‍넣‍기';
+
+  @override
+  String get swapDepositTxHashPrompt => '거‍래 해‍시 추‍가 (선‍택)';
+
+  @override
+  String get swapDepositTxHashSubmit => '제‍출';
+
+  @override
+  String get swapDepositTxHashTitle => '거‍래 해‍시 추‍가';
 
   @override
   String get swapDepositWithin => '입‍금 기‍한';

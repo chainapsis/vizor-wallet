@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_intent_presentation_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
@@ -210,6 +211,31 @@ void main() {
     );
     expect(restoredNoClaim.single.depositClaimedAt, isNull);
   });
+
+  test(
+    'an entered deposit hash survives save and load apart from evidence',
+    () async {
+      final intent = _minimalIntent(
+        id: 'swap-entered-hash',
+        accountUuid: 'account-1',
+      ).copyWith(userDepositTxHash: 'entered-hash');
+
+      await activityStore.saveRecords(
+        accountUuid: 'account-1',
+        records: [SwapIntentRecord.fromIntent(intent)],
+      );
+
+      final restored = await activityStore.loadRecords(
+        accountUuid: 'account-1',
+      );
+      expect(restored.single.userDepositTxHash, 'entered-hash');
+      expect(restored.single.depositTxHash, intent.depositTxHash);
+      expect(
+        swapIntentsFromRecords(restored).single.userDepositTxHash,
+        'entered-hash',
+      );
+    },
+  );
 
   test('keeps persisted swap activity scoped to its account', () async {
     final accountOneIntent = _minimalIntent(

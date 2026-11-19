@@ -38,6 +38,9 @@ class MobileTextField extends StatefulWidget {
     this.height,
     this.radius,
     this.enabled = true,
+    this.enableSuggestions = true,
+    this.autocorrect = true,
+    this.enableIMEPersonalizedLearning = true,
     super.key,
   });
 
@@ -87,6 +90,12 @@ class MobileTextField extends StatefulWidget {
 
   /// Whether the field and its outer tap target accept input.
   final bool enabled;
+
+  /// Turn these off for values the keyboard should neither suggest nor learn,
+  /// such as a transaction hash.
+  final bool enableSuggestions;
+  final bool autocorrect;
+  final bool enableIMEPersonalizedLearning;
 
   @override
   State<MobileTextField> createState() => _MobileTextFieldState();
@@ -222,6 +231,10 @@ class _MobileTextFieldState extends State<MobileTextField> {
                     controller: widget.controller,
                     focusNode: widget.focusNode,
                     enabled: widget.enabled,
+                    enableSuggestions: widget.enableSuggestions,
+                    autocorrect: widget.autocorrect,
+                    enableIMEPersonalizedLearning:
+                        widget.enableIMEPersonalizedLearning,
                     onChanged: widget.onChanged,
                     onSubmitted: widget.onSubmitted,
                     textInputAction: widget.textInputAction,

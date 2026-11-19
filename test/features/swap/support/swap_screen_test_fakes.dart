@@ -480,6 +480,46 @@ BigInt _fakeBaseUnits(SwapAsset asset, double amount) {
   return whole * scale + fraction;
 }
 
+final _ltcAsset = SwapAsset.live(
+  assetId: 'nep141:ltc.omft.near',
+  symbol: 'LTC',
+  blockchain: 'ltc',
+  decimals: 8,
+);
+
+/// NEAR Intents has not seen a claimed LTC deposit and reports [nextStatus]
+/// for it. [submitDepositError] makes it refuse an entered hash.
+class _UndetectedDepositSwapProvider extends _FakeSwapProvider {
+  _UndetectedDepositSwapProvider({super.submitDepositError});
+
+  SwapIntentStatus nextStatus = SwapIntentStatus.awaitingExternalDeposit;
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(
+    String intentId, {
+    String? depositMemo,
+  }) async {
+    statusRequests.add(
+      _StatusRequest(depositAddress: intentId, depositMemo: depositMemo),
+    );
+    return SwapIntentSnapshot(
+      id: intentId,
+      providerLabel: providerLabel,
+      pairText: '',
+      sellAmountText: '',
+      receiveEstimateText: '',
+      status: nextStatus,
+      nextAction: 'Waiting for deposit',
+      depositInstruction: SwapDepositInstruction(
+        asset: _ltcAsset,
+        address: intentId,
+        deadline: DateTime.now().toUtc().add(const Duration(hours: 1)),
+      ),
+      statusOnly: true,
+    );
+  }
+}
+
 class _PendingExternalDepositSwapProvider extends _FakeSwapProvider {
   _PendingExternalDepositSwapProvider({Completer<void>? statusGate})
     : _statusGate = statusGate;

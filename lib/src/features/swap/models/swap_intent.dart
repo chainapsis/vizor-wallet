@@ -47,6 +47,7 @@ class SwapIntentRecord {
     this.updatedAt,
     this.completedAt,
     this.depositClaimedAt,
+    this.userDepositTxHash,
   });
 
   factory SwapIntentRecord.fromIntent(SwapIntent intent) {
@@ -94,6 +95,7 @@ class SwapIntentRecord {
       updatedAt: intent.updatedAt,
       completedAt: intent.completedAt,
       depositClaimedAt: intent.depositClaimedAt,
+      userDepositTxHash: intent.userDepositTxHash,
     );
   }
 
@@ -151,6 +153,7 @@ class SwapIntentRecord {
   final DateTime? updatedAt;
   final DateTime? completedAt;
   final DateTime? depositClaimedAt;
+  final String? userDepositTxHash;
 
   DateTime? get activityTimestamp =>
       createdAt ?? updatedAt ?? lastStatusCheckedAt;
@@ -199,6 +202,7 @@ class SwapIntentRecord {
     DateTime? updatedAt,
     DateTime? completedAt,
     DateTime? depositClaimedAt,
+    String? userDepositTxHash,
     bool clearStatusError = false,
     bool clearBroadcastNotice = false,
     bool clearBroadcastStatus = false,
@@ -254,6 +258,7 @@ class SwapIntentRecord {
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: completedAt ?? this.completedAt,
       depositClaimedAt: depositClaimedAt ?? this.depositClaimedAt,
+      userDepositTxHash: userDepositTxHash ?? this.userDepositTxHash,
     );
   }
 }
@@ -303,6 +308,7 @@ class SwapIntent {
     this.broadcastNotice,
     this.broadcastStatus,
     this.depositClaimedAt,
+    this.userDepositTxHash,
   });
 
   final String id;
@@ -366,6 +372,34 @@ class SwapIntent {
   final String? broadcastStatus;
   final DateTime? depositClaimedAt;
 
+  /// The deposit transaction hash the user entered for an external deposit.
+  /// Nothing checked it, so it is never deposit evidence; it only tells NEAR
+  /// Intents where to look (see [presentedStatus]).
+  final String? userDepositTxHash;
+
+  /// The status the screens show. NEAR's `KNOWN_DEPOSIT_TX` may come from
+  /// [userDepositTxHash] alone, so such a swap shows as still waiting for its
+  /// deposit until NEAR reports it processing.
+  SwapIntentStatus get presentedStatus =>
+      swapPresentedStatus(status: status, userDepositTxHash: userDepositTxHash);
+
+  /// Whether the user can add the hash of an external deposit they said they
+  /// sent and NEAR Intents has not seen yet. One hash per swap.
+  bool get canAddUserDepositTxHash =>
+      direction == SwapDirection.externalToZec &&
+      status == SwapIntentStatus.awaitingExternalDeposit &&
+      depositClaimedAt != null &&
+      userDepositTxHash == null &&
+      !startPending &&
+      externalAsset != null &&
+      (depositAddress?.isNotEmpty ?? false);
+
+  /// This swap as the screens show it (see [presentedStatus]).
+  SwapIntent get presented {
+    final shown = presentedStatus;
+    return shown == status ? this : copyWith(status: shown);
+  }
+
   /// On-chain evidence that funds genuinely moved, used by the account-removal
   /// gate and the deadline-expiry carve-out.
   bool get hasConfirmedDepositEvidence => swapHasConfirmedDepositEvidence(
@@ -425,6 +459,7 @@ class SwapIntent {
     SwapMessage? broadcastNotice,
     String? broadcastStatus,
     DateTime? depositClaimedAt,
+    String? userDepositTxHash,
     bool clearStatusError = false,
     bool clearBroadcastNotice = false,
     bool clearBroadcastStatus = false,
@@ -480,6 +515,7 @@ class SwapIntent {
           ? null
           : broadcastStatus ?? this.broadcastStatus,
       depositClaimedAt: depositClaimedAt ?? this.depositClaimedAt,
+      userDepositTxHash: userDepositTxHash ?? this.userDepositTxHash,
     );
   }
 }
@@ -535,6 +571,19 @@ bool swapHasConfirmedDepositEvidence({
   final notOnNetwork =
       broadcastStatus == SwapDepositBroadcastStatus.pendingBroadcast;
   return has(originChainTxHash) || (has(depositTxHash) && !notOnNetwork);
+}
+
+/// The status shown for a swap. NEAR's `KNOWN_DEPOSIT_TX` may come from a
+/// hash the user entered, which nothing checked, so it counts as a deposit
+/// only once NEAR reports the swap processing.
+SwapIntentStatus swapPresentedStatus({
+  required SwapIntentStatus status,
+  String? userDepositTxHash,
+}) {
+  final enteredHash = userDepositTxHash?.trim().isNotEmpty ?? false;
+  return status == SwapIntentStatus.depositObserved && enteredHash
+      ? SwapIntentStatus.awaitingExternalDeposit
+      : status;
 }
 
 /// Provider evidence that a source-chain deposit exists even when the status

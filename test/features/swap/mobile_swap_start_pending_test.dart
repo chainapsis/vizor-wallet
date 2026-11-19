@@ -190,8 +190,6 @@ Future<_DrivenSwapNotifier> _pumpDetail(
               depositCheckWarning: null,
               onRefreshStatus: () {},
               onMarkDeposited: () {},
-              onDepositTxHashChanged: (_) {},
-              onSubmitDepositTransaction: () {},
               onReviewFreshQuote: () {},
               onSignZecDeposit: (_) {},
               intentIsHardware: false,

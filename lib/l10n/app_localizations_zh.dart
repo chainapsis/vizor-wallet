@@ -10104,6 +10104,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '正在等待 NEAR Intents 检测到这笔入金。';
 
   @override
+  String get swapActivityStepSentHashAdded =>
+      '已添加交易哈希。正在等待 NEAR Intents 检测到这笔入金。';
+
+  @override
   String get swapActivityStepSourceDescription => '等待源链和服务商确认存入';
 
   @override
@@ -10303,6 +10307,28 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapDepositTitle => '存入代币';
+
+  @override
+  String swapDepositTxHashBody(String symbol) {
+    return '可选。请从发送 $symbol 的钱包中复制。NEAR Intents 会用它更快地查找这笔入金。';
+  }
+
+  @override
+  String swapDepositTxHashHint(String symbol) {
+    return '$symbol 交易哈希';
+  }
+
+  @override
+  String get swapDepositTxHashPaste => '粘贴交易哈希';
+
+  @override
+  String get swapDepositTxHashPrompt => '添加交易哈希（可选）';
+
+  @override
+  String get swapDepositTxHashSubmit => '提交';
+
+  @override
+  String get swapDepositTxHashTitle => '添加交易哈希';
 
   @override
   String get swapDepositWithin => '存入时限';

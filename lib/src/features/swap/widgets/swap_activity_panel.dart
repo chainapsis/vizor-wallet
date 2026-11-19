@@ -33,6 +33,7 @@ import '../providers/swap_state_provider.dart';
 import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../screens/mobile/mobile_swap_ledger_sign_screen.dart';
 import 'swap_deposit_tokens_page_content.dart';
+import 'swap_deposit_tx_hash_entry.dart';
 import 'swap_support_notice.dart';
 import 'swap_keystone_signing_overlay.dart';
 import 'swap_ledger_signing_overlay.dart';
@@ -103,6 +104,7 @@ class _SwapActivityDetailSurfaceState
   String? _depositCheckingIntentId;
   var _initialIntentApplied = false;
   bool _supportOverlayVisible = false;
+  String? _txHashEntryIntentId;
 
   @override
   void initState() {
@@ -120,6 +122,7 @@ class _SwapActivityDetailSurfaceState
         oldWidget.autoSignZecDeposit != widget.autoSignZecDeposit) {
       _initialIntentApplied = false;
       _supportOverlayVisible = false;
+      _txHashEntryIntentId = null;
       _payRecipientOverlayRequest = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -139,6 +142,23 @@ class _SwapActivityDetailSurfaceState
       return;
     }
     setState(() => _supportOverlayVisible = true);
+  }
+
+  void _showDepositTxHashEntry(SwapIntent intent) {
+    if (widget.layout == SwapActivityDetailLayout.mobile) {
+      unawaited(
+        showAppMobileSheet<void>(
+          context: context,
+          builder: (_) => SwapDepositTxHashEntry(intent: intent),
+        ),
+      );
+      return;
+    }
+    setState(() => _txHashEntryIntentId = intent.id);
+  }
+
+  void _closeDepositTxHashEntry() {
+    setState(() => _txHashEntryIntentId = null);
   }
 
   void _applyInitialIntent() {
@@ -252,12 +272,6 @@ class _SwapActivityDetailSurfaceState
     setState(() {
       _depositCheckingIntentId = null;
     });
-  }
-
-  void _submitDepositTransaction() {
-    unawaited(
-      ref.read(swapStateProvider.notifier).submitSelectedDepositTransaction(),
-    );
   }
 
   void _reviewFreshQuote() {
@@ -488,10 +502,8 @@ class _SwapActivityDetailSurfaceState
             depositCheckWarning: null,
             onRefreshStatus: _refreshStatus,
             onMarkDeposited: _markDepositClaimed,
-            onDepositTxHashChanged: ref
-                .read(swapStateProvider.notifier)
-                .updateDepositTxHash,
-            onSubmitDepositTransaction: _submitDepositTransaction,
+            onAddDepositTxHash: () =>
+                _showDepositTxHashEntry(activityDetailIntent),
             onReviewFreshQuote: _reviewFreshQuote,
             onSignZecDeposit: _signZecDeposit,
             intentIsHardware: _isHardwareIntent(activityDetailIntent),
@@ -553,6 +565,15 @@ class _SwapActivityDetailSurfaceState
               contactName: request.contact?.label,
               contactProfilePictureId: request.contact?.profilePictureId,
               onClose: _closePayRecipientAddress,
+            ),
+          ),
+        if (activityDetailIntent != null &&
+            _txHashEntryIntentId == activityDetailIntent.id)
+          AppPaneModalOverlay(
+            onDismiss: _closeDepositTxHashEntry,
+            child: SwapDepositTxHashEntry(
+              intent: activityDetailIntent,
+              onClose: _closeDepositTxHashEntry,
             ),
           ),
         if (_supportOverlayVisible &&
@@ -642,8 +663,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.depositCheckWarning,
     required this.onRefreshStatus,
     required this.onMarkDeposited,
-    required this.onDepositTxHashChanged,
-    required this.onSubmitDepositTransaction,
+    this.onAddDepositTxHash,
     required this.onReviewFreshQuote,
     required this.onSignZecDeposit,
     required this.intentIsHardware,
@@ -661,8 +681,10 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   final String? depositCheckWarning;
   final VoidCallback onRefreshStatus;
   final VoidCallback onMarkDeposited;
-  final ValueChanged<String> onDepositTxHashChanged;
-  final VoidCallback onSubmitDepositTransaction;
+
+  /// Opens the transaction hash entry (see
+  /// [SwapIntent.canAddUserDepositTxHash]).
+  final VoidCallback? onAddDepositTxHash;
   final VoidCallback onReviewFreshQuote;
   final ValueChanged<SwapIntent> onSignZecDeposit;
   final bool intentIsHardware;
@@ -684,8 +706,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       depositCheckWarning: depositCheckWarning,
       onRefreshStatus: onRefreshStatus,
       onMarkDeposited: onMarkDeposited,
-      onDepositTxHashChanged: onDepositTxHashChanged,
-      onSubmitDepositTransaction: onSubmitDepositTransaction,
+      onAddDepositTxHash: onAddDepositTxHash,
       onReviewFreshQuote: onReviewFreshQuote,
       onSignZecDeposit: onSignZecDeposit,
       intentIsHardware: intentIsHardware,
@@ -745,8 +766,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.depositCheckWarning,
     required this.onRefreshStatus,
     required this.onMarkDeposited,
-    required this.onDepositTxHashChanged,
-    required this.onSubmitDepositTransaction,
+    this.onAddDepositTxHash,
     required this.onReviewFreshQuote,
     required this.onSignZecDeposit,
     required this.intentIsHardware,
@@ -763,8 +783,10 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final String? depositCheckWarning;
   final VoidCallback onRefreshStatus;
   final VoidCallback onMarkDeposited;
-  final ValueChanged<String> onDepositTxHashChanged;
-  final VoidCallback onSubmitDepositTransaction;
+
+  /// Opens the transaction hash entry (see
+  /// [SwapIntent.canAddUserDepositTxHash]).
+  final VoidCallback? onAddDepositTxHash;
   final VoidCallback onReviewFreshQuote;
   final ValueChanged<SwapIntent> onSignZecDeposit;
   final bool intentIsHardware;
@@ -871,6 +893,13 @@ class _SwapActivityFlowContent extends StatelessWidget {
           : CrossAxisAlignment.center,
       children: [
         primaryContent,
+        if (onAddDepositTxHash != null && intent.canAddUserDepositTxHash)
+          Padding(
+            padding: EdgeInsets.only(
+              top: mobile ? AppSpacing.s : AppSpacing.sm,
+            ),
+            child: SwapDepositTxHashPrompt(onTap: onAddDepositTxHash!),
+          ),
         if (showStatusError) ...[
           const SizedBox(height: AppSpacing.md),
           if (mobile)

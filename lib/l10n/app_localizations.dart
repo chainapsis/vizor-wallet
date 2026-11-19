@@ -17910,6 +17910,12 @@ abstract class AppLocalizations {
   /// **'Waiting for NEAR Intents to detect your deposit.'**
   String get swapActivityStepSentAwaitingDetection;
 
+  /// Description of the first swap progress step after the user added the transaction hash of an external deposit that NEAR Intents has not detected yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction hash added. Waiting for NEAR Intents to detect your deposit.'**
+  String get swapActivityStepSentHashAdded;
+
   /// Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit.
   ///
   /// In en, this message translates to:
@@ -18251,6 +18257,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Deposit tokens'**
   String get swapDepositTitle;
+
+  /// Explanation in the transaction hash entry. {symbol} is the deposited asset, such as LTC.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional. Copy it from the wallet you sent {symbol} from. NEAR Intents uses it to look for your deposit sooner.'**
+  String swapDepositTxHashBody(String symbol);
+
+  /// Placeholder of the transaction hash field. {symbol} is the deposited asset, such as LTC.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} transaction hash'**
+  String swapDepositTxHashHint(String symbol);
+
+  /// Screen reader label of the button that pastes a transaction hash into the field.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste transaction hash'**
+  String get swapDepositTxHashPaste;
+
+  /// Link under the progress of a swap whose external deposit the user said they sent and NEAR Intents has not detected yet. Opens the transaction hash entry.
+  ///
+  /// In en, this message translates to:
+  /// **'Add transaction hash (optional)'**
+  String get swapDepositTxHashPrompt;
+
+  /// Button that sends the entered transaction hash to NEAR Intents.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit'**
+  String get swapDepositTxHashSubmit;
+
+  /// Title of the sheet (mobile) or modal (desktop) where the user enters the transaction hash of the deposit they sent from another wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Add transaction hash'**
+  String get swapDepositTxHashTitle;
 
   /// Label before the countdown showing how long the user has to deposit.
   ///

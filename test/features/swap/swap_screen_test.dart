@@ -1078,6 +1078,121 @@ void main() {
     );
   });
 
+  testWidgets('a claimed deposit takes its transaction hash apart from '
+      'deposit evidence', (tester) async {
+    await _setViewport(tester, const Size(1080, 720));
+    final provider = _UndetectedDepositSwapProvider();
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [_claimedLtcIntent()],
+    );
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/claimed-ltc?from=swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: provider,
+        sessionStore: sessionStore,
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_deposit_tx_hash_prompt')),
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('swap_deposit_tx_hash_prompt')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_deposit_tx_hash_prompt')));
+    await tester.pumpAndSettle();
+    expect(find.text('LTC transaction hash'), findsOneWidget);
+
+    // Text that can't be an LTC transaction hash never leaves the device.
+    await tester.enterText(_txHashInput(), 'abandon ability able about above');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('swap_deposit_tx_hash_submit')));
+    await tester.pumpAndSettle();
+    expect(provider.submittedDeposits, isEmpty);
+    expect(_txHashError(), findsOneWidget);
+
+    await tester.enterText(_txHashInput(), ' $_ltcTxHash ');
+    await tester.pump();
+    expect(_txHashError(), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('swap_deposit_tx_hash_submit')));
+    await tester.pumpAndSettle();
+
+    expect(provider.submittedDeposits.single.depositAddress, 'claimed-ltc');
+    expect(provider.submittedDeposits.single.txHash, _ltcTxHash);
+    expect(
+      find.byKey(const ValueKey('swap_deposit_tx_hash_entry')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_deposit_tx_hash_prompt')),
+      findsNothing,
+    );
+    final saved = sessionStore.intentsFor('account-1').single;
+    expect(saved.userDepositTxHash, _ltcTxHash);
+    expect(saved.depositTxHash, isNull);
+    expect(
+      find.text(
+        'Transaction hash added. Waiting for NEAR Intents to detect your '
+        'deposit.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a transaction hash NEAR refuses is not saved', (tester) async {
+    await _setViewport(tester, const Size(1080, 720));
+    final provider = _UndetectedDepositSwapProvider(
+      submitDepositError: const OneClickApiException(
+        'Invalid input data',
+        statusCode: 400,
+      ),
+    );
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [_claimedLtcIntent()],
+    );
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/claimed-ltc?from=swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: provider,
+        sessionStore: sessionStore,
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_deposit_tx_hash_prompt')),
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('swap_deposit_tx_hash_prompt')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_deposit_tx_hash_prompt')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_txHashInput(), _ltcTxHash);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('swap_deposit_tx_hash_submit')));
+    await tester.pumpAndSettle();
+
+    expect(provider.submittedDeposits, hasLength(1));
+    expect(_txHashError(), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_deposit_tx_hash_entry')),
+      findsOneWidget,
+    );
+    expect(
+      sessionStore.intentsFor('account-1').single.userDepositTxHash,
+      isNull,
+    );
+  });
+
   testWidgets(
     'expired deposit timeout content stays centered in activity detail',
     (tester) async {
@@ -12081,7 +12196,7 @@ void main() {
   });
 
   testWidgets(
-    'only a transaction hash the user enters reports a failed submit',
+    'a failed submit of a deposit the wallet broadcast shows no error',
     (tester) async {
       await _setDesktopViewport(tester);
       final swapProvider = _FakeSwapProvider(
@@ -12154,16 +12269,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(swapProvider.submittedDeposits, hasLength(3));
       expect(shownErrors, isEmpty);
-
-      notifier.updateDepositTxHash('typed-txid');
-      await notifier.submitSelectedDepositTransaction();
-      await tester.pumpAndSettle();
-      expect(shownErrors, [
-        const SwapFailureMessage(
-          SwapFailureOperation.submitDeposit,
-          SwapFailureCategory.serviceUnavailable,
-        ),
-      ]);
     },
   );
 
@@ -14721,3 +14826,39 @@ String _fieldText(WidgetTester tester, String keyValue) {
 RpcEndpointConfig _fixedRpcEndpoint() => defaultRpcEndpointConfig(
   'main',
 ).copyWith(presetId: kManualUsRpcEndpointPresetId);
+
+const _ltcTxHash =
+    '4f2c9a1e7b3d5f8a0c6e2b9d4f1a7c3e5b8d0f2a6c9e1b4d7f0a3c5e8b2d6f9a';
+
+/// An LTC deposit the user said they sent 10 minutes ago, which NEAR has not
+/// seen, before its deadline.
+SwapIntent _claimedLtcIntent() {
+  final now = DateTime.now().toUtc();
+  return SwapIntent(
+    id: 'claimed-ltc',
+    pair: 'LTC -> ZEC',
+    sellAmount: '11.31900656 LTC',
+    receiveEstimate: '0.55495667 ZEC',
+    provider: 'NEAR Intents',
+    status: SwapIntentStatus.awaitingExternalDeposit,
+    nextAction: 'Deposit LTC',
+    direction: SwapDirection.externalToZec,
+    externalAsset: _ltcAsset,
+    depositAddress: 'claimed-ltc',
+    providerQuoteId: 'quote-ltc',
+    oneClickRecipient: 'u1claimedrecipient',
+    oneClickRefundTo: 'ltc1qclaimedrefund',
+    accountUuid: 'account-1',
+    depositDeadline: now.add(const Duration(hours: 1)),
+    createdAt: now.subtract(const Duration(minutes: 20)),
+    depositClaimedAt: now.subtract(const Duration(minutes: 10)),
+  );
+}
+
+Finder _txHashInput() => find.descendant(
+  of: find.byKey(const ValueKey('swap_deposit_tx_hash_field')),
+  matching: find.byType(EditableText),
+);
+
+Finder _txHashError() =>
+    find.byKey(const ValueKey('swap_deposit_tx_hash_error'));
