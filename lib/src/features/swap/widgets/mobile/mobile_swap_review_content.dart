@@ -14,6 +14,7 @@ import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_detail_tooltips.dart';
 import '../../models/swap_quote_text.dart';
+import '../../models/swap_token_amount_formatting.dart';
 import '../swap_review_page_content.dart'
     show swapReviewMinimumReceiveText, swapReviewSlippageToleranceText;
 import '../swap_amount_text.dart' show compactSwapAmountText;
@@ -87,25 +88,33 @@ class MobileSwapReviewContent extends StatelessWidget {
     final externalBottom = sendsZec
         ? context.l10n.swapReviewToAddress(externalAddressText)
         : context.l10n.swapReviewFromAddress(externalAddressText);
+    final payFiat = payFiatTextOverride;
+    final receiveFiat = receiveFiatTextOverride;
 
     final payRow = MobileSwapReviewHeaderRow(
       label: context.l10n.commonYourePaying,
-      amountText: trimSwapAmountText(
-        compactSwapAmountText(quote.sellAmountText),
+      amountText: groupSwapAmountText(
+        trimSwapAmountText(compactSwapAmountText(quote.sellAmountText)),
       ),
       asset: quote.sellAsset,
-      bottomText: sendsZec ? payFiatTextOverride : null,
+      bottomText: sendsZec && payFiat != null
+          ? groupSwapAmountText(payFiat)
+          : null,
       oneTimeAddress: sendsZec && addressPlan.oneTimeZecAddress
           ? OneTimeAddressRole.refund
           : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
       label: context.l10n.commonYoureReceiving,
-      amountText: trimSwapAmountText(
-        compactSwapAmountText(quote.receiveEstimateText),
+      amountText: groupSwapAmountText(
+        trimSwapAmountText(compactSwapAmountText(quote.receiveEstimateText)),
       ),
       asset: quote.receiveAsset,
-      bottomText: sendsZec ? externalBottom : receiveFiatTextOverride,
+      bottomText: sendsZec
+          ? externalBottom
+          : receiveFiat == null
+          ? null
+          : groupSwapAmountText(receiveFiat),
       fullAddress: sendsZec ? externalAddress : null,
       oneTimeAddress: !sendsZec && addressPlan.oneTimeZecAddress
           ? OneTimeAddressRole.payout
@@ -194,7 +203,9 @@ class _ReviewCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           _ReviewRow(
             label: context.l10n.commonSwapFee,
-            value: swapDetailValueText(context.l10n, quote.feeLabel),
+            value: groupSwapAmountText(
+              swapDetailValueText(context.l10n, quote.feeLabel),
+            ),
             helpTooltip: swapFeeTooltip(context.l10n),
           ),
         ],

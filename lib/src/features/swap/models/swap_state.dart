@@ -5,6 +5,7 @@ import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_intent.dart';
 import 'swap_message.dart';
+import 'swap_token_amount_formatting.dart';
 
 const defaultSwapSlippageBps = 200;
 const swapSlippagePresetBps = <int>[50, 100, 200];
@@ -354,8 +355,8 @@ class SwapState {
         final liveText = sellAsset.formatAmount(liveQuote.sellAmount);
         final estimateText = sellAsset.formatAmount(estimate.sellAmount);
         return l10n.swapActivityStateQuoteUsesDifferentSell(
-          liveText,
-          estimateText,
+          payMode ? liveText : groupSwapAmountText(liveText),
+          payMode ? estimateText : groupSwapAmountText(estimateText),
           sellAsset.symbol,
         );
       }

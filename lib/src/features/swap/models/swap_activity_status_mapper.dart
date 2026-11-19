@@ -254,13 +254,15 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     receiveAsset: receiveAsset,
     payFiatText: payFiatText,
     receiveFiatText: receiveFiatText,
-    payAmountText: swapAmountTextForPrivacy(
+    payAmountText: _activityAmountText(
       intent.sellAmount,
       privacyModeEnabled: privacyModeEnabled,
+      group: !payMode,
     ),
-    receiveAmountText: swapAmountTextForPrivacy(
+    receiveAmountText: _activityAmountText(
       intent.receiveEstimate,
       privacyModeEnabled: privacyModeEnabled,
+      group: !payMode,
     ),
     payLabel: payMode
         ? _payIntentShowsPaidCopy(intent)
@@ -600,7 +602,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   required bool privacyModeEnabled,
 }) {
   String amount(String text) =>
-      swapAmountTextForPrivacy(text, privacyModeEnabled: privacyModeEnabled);
+      _activityAmountText(text, privacyModeEnabled: privacyModeEnabled);
   final sourceSymbol = swapActivityPairSymbol(l10n, intent.pair, 0);
   final receiveSymbol = swapActivityPairSymbol(l10n, intent.pair, 1);
   final sourceAsset = swapActivitySellAsset(intent);
@@ -660,7 +662,10 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       if (!failed && !payMode)
         SwapStatusDetailRowData(
           label: l10n.swapActivityDetailRealizedSlippage,
-          value: intent.realisedSlippageText ?? l10n.swapActivityNotReported,
+          value: _activitySlippageText(
+            intent.realisedSlippageText ?? l10n.swapActivityNotReported,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
         ),
       if (timestamp != null)
         SwapStatusDetailRowData(
@@ -812,8 +817,11 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         kind: SwapStatusDetailKind.slippageTolerance,
         value: swapDetailValueText(
           l10n,
-          intent.slippageToleranceText ??
-              l10n.swapActivityDetailConfiguredQuote,
+          _activitySlippageText(
+            intent.slippageToleranceText ??
+                l10n.swapActivityDetailConfiguredQuote,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
         ),
       ),
     if (!payMode)
@@ -1023,7 +1031,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   required bool privacyModeEnabled,
 }) {
   String amount(String text) =>
-      swapAmountTextForPrivacy(text, privacyModeEnabled: privacyModeEnabled);
+      _activityAmountText(text, privacyModeEnabled: privacyModeEnabled);
   final sourceAsset = swapActivitySellAsset(intent);
   final receiveAsset = swapActivityReceiveAsset(intent);
   final providerInfo = intent.providerRefundInfo;
@@ -1421,6 +1429,31 @@ String? _firstNonEmpty(Iterable<String?> values) {
     if (trimmed != null && trimmed.isNotEmpty) return trimmed;
   }
   return null;
+}
+
+String _activityAmountText(
+  String text, {
+  required bool privacyModeEnabled,
+  bool group = true,
+}) {
+  final visible = swapAmountTextForPrivacy(
+    text,
+    privacyModeEnabled: privacyModeEnabled,
+  );
+  return group ? groupSwapAmountText(visible) : visible;
+}
+
+final _slippageWithAmount = RegExp(r'^(.+) (\([^()]+%\))$');
+
+String _activitySlippageText(String text, {required bool privacyModeEnabled}) {
+  if (!privacyModeEnabled) return groupSwapAmountText(text);
+  final match = _slippageWithAmount.firstMatch(text);
+  if (match == null) return text;
+  final maskedAmount = swapAmountTextForPrivacy(
+    match[1]!,
+    privacyModeEnabled: true,
+  );
+  return '$maskedAmount ${match[2]}';
 }
 
 double? _numericAmount(String amountText) {
