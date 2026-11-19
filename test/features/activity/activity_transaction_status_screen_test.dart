@@ -1429,10 +1429,7 @@ void main() {
     for (final enabled in [true, false]) {
       await container.read(enhancePirProvider.notifier).set(enabled);
       await tester.pump();
-      expect(
-        find.text(testL10n.activityReceiptCheckingPrivately),
-        enabled ? findsOneWidget : findsNothing,
-      );
+      expect(find.text('Incomplete'), enabled ? findsOneWidget : findsNothing);
       expect(
         find.text(testL10n.commonUnknown),
         enabled ? findsOneWidget : findsNothing,
@@ -1462,7 +1459,7 @@ void main() {
     expect(find.text('Incomplete'), findsOneWidget);
   });
 
-  testWidgets('known payment details wait on the private check', (
+  testWidgets('known payment details still mark unsettled effects', (
     tester,
   ) async {
     await _pumpScreen(
@@ -1473,6 +1470,30 @@ void main() {
         txKind: 'sent',
         initialTransaction: _transaction(txKind: 'sent', provisional: true),
         initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('Incomplete'), findsOneWidget);
+  });
+
+  testWidgets('a receipt waiting on the private check says so', (tester) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        // Not read again yet: nothing known, as right after Private queries
+        // is turned on.
+        initialTransaction: _transaction(
+          txKind: 'received',
+          provisional: true,
+          awaitsPrivateCheck: true,
+          detailsComplete: false,
+          feeState: rust_sync.TransactionFeeState.unknown,
+        ),
+        initialDetail: _detail(txKind: 'received'),
       ),
     );
 
@@ -1494,7 +1515,11 @@ void main() {
       args: ActivityTransactionStatusArgs(
         txidHex: _txidHex,
         txKind: 'sent',
-        initialTransaction: _transaction(txKind: 'sent', provisional: true),
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          provisional: true,
+          awaitsPrivateCheck: true,
+        ),
         initialDetail: _detail(txKind: 'sent'),
       ),
     );
@@ -1658,6 +1683,7 @@ rust_sync.TransactionInfo _transaction({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
+  bool awaitsPrivateCheck = false,
   bool amountIncludesFee = false,
   BigInt? displayAmount,
   int accountBalanceDelta = 0,
@@ -1672,6 +1698,7 @@ rust_sync.TransactionInfo _transaction({
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    awaitsPrivateCheck: awaitsPrivateCheck,
     amountIncludesFee: amountIncludesFee,
     blockTime: _blockTime,
     isTransparent: displayPool == 'transparent',

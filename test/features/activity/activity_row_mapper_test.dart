@@ -313,7 +313,7 @@ void main() {
     expect(row.subtitleIconName, isNull);
     expect(row.amountText, '-0.00215 ZEC');
     expect(row.statusText, 'Completed');
-    expect(row.amountSubtitle, testL10n.activityRowCheckingPrivately);
+    expect(row.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
     expect(transaction.displayPool, 'unknown');
     expect(transaction.provisional, isTrue);
     expect(transaction.detailsComplete, isFalse);
@@ -602,7 +602,10 @@ void main() {
       ),
       privateQueriesEnabled: true,
     );
-    expect(provisional.amountSubtitle, testL10n.activityRowCheckingPrivately);
+    expect(
+      provisional.amountSubtitle,
+      testL10n.activityReceiptDetailsIncomplete,
+    );
 
     final undiscoveredSelfReceipt = await mapRow(
       tester,
@@ -611,7 +614,7 @@ void main() {
     );
     expect(
       undiscoveredSelfReceipt.amountSubtitle,
-      testL10n.activityRowCheckingPrivately,
+      testL10n.activityReceiptDetailsIncomplete,
     );
 
     // A receive with every effect known can still lack a memo.
@@ -630,14 +633,23 @@ void main() {
   });
 
   testWidgets('a row awaiting the private check says so', (tester) async {
-    final waiting = _transaction(txKind: 'received', provisional: true);
+    final waiting = _transaction(
+      txKind: 'received',
+      provisional: true,
+      awaitsPrivateCheck: true,
+    );
     final checking = await mapRow(tester, waiting, privateQueriesEnabled: true);
     expect(checking.amountSubtitle, testL10n.activityRowCheckingPrivately);
 
     // An expired entry is never mined into coverage.
     final expired = await mapRow(
       tester,
-      _transaction(txKind: 'received', provisional: true, expiredUnmined: true),
+      _transaction(
+        txKind: 'received',
+        provisional: true,
+        awaitsPrivateCheck: true,
+        expiredUnmined: true,
+      ),
       privateQueriesEnabled: true,
     );
     expect(
@@ -645,7 +657,8 @@ void main() {
       isNot(testL10n.activityRowCheckingPrivately),
     );
 
-    // A send the wallet just built waits on scanning, not the check.
+    // A send the wallet just built waits on scanning, not the check, and the
+    // wallet does not report it as waiting on the check.
     final justSent = await mapRow(
       tester,
       _transaction(txKind: 'sent', provisional: true, minedHeight: BigInt.zero),
@@ -659,7 +672,11 @@ void main() {
   ) async {
     final waiting = await mapRow(
       tester,
-      _transaction(txKind: 'received', provisional: true),
+      _transaction(
+        txKind: 'received',
+        provisional: true,
+        awaitsPrivateCheck: true,
+      ),
       privateQueriesEnabled: true,
       privateCheckNoticeShown: true,
     );
@@ -672,6 +689,7 @@ void main() {
       _transaction(
         txKind: 'received',
         provisional: true,
+        awaitsPrivateCheck: true,
         detailsComplete: false,
       ),
       privateQueriesEnabled: true,
@@ -807,7 +825,7 @@ void main() {
     );
     expect(movement.title, testL10n.activityReceiptNetChange);
     expect(movement.amountText, activityAmountTextForFormFactor('-0.0002 ZEC'));
-    expect(movement.amountSubtitle, testL10n.activityRowCheckingPrivately);
+    expect(movement.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
 
     // A net change keeps its sent row and its whole amount: a row has no fee
     // line to repeat the fee in.
@@ -900,6 +918,7 @@ rust_sync.TransactionInfo _transaction({
   String displayPool = 'shielded',
   bool detailsComplete = true,
   bool provisional = false,
+  bool awaitsPrivateCheck = false,
   String? activityPool,
   BigInt? fee,
   bool amountIncludesFee = false,
@@ -916,6 +935,7 @@ rust_sync.TransactionInfo _transaction({
         : rust_sync.TransactionFeeState.known,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    awaitsPrivateCheck: awaitsPrivateCheck,
     amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',

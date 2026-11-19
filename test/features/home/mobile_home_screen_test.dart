@@ -627,6 +627,7 @@ rust_sync.TransactionInfo _tx(int index, {bool provisional = false}) {
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: provisional,
+    awaitsPrivateCheck: provisional,
     amountIncludesFee: false,
     blockTime: seconds,
     isTransparent: false,

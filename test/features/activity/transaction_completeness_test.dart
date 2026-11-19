@@ -125,10 +125,31 @@ void main() {
       ),
       isFalse,
     );
-    // Missing payment details are not the private check's to finish.
+    // A history not read again yet, right after Private queries is turned
+    // on, knows nothing; its receipt says it is being checked, as its row does.
     expect(
       receiptAwaitsPrivateCheck(
-        _transaction('aa', 'sent', provisional: true, detailsComplete: false),
+        _transaction(
+          'aa',
+          'received',
+          provisional: true,
+          detailsComplete: false,
+        ),
+        recoveryStopped: false,
+      ),
+      isTrue,
+    );
+    // A debit whose payment is not established lacks details; the wallet does
+    // not report that as the check's to finish.
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction(
+          'aa',
+          'sent',
+          provisional: true,
+          detailsComplete: false,
+          awaitsPrivateCheck: false,
+        ),
         recoveryStopped: false,
       ),
       isFalse,
@@ -150,12 +171,14 @@ void main() {
   });
 
   test('a send the wallet just built waits on scanning, not the check', () {
-    // Unmined: its shielded side is still unsettled too.
+    // Its shielded side is still unsettled, so the wallet does not report it
+    // as waiting on the check.
     final justSent = _transaction(
       'aa',
       'sent',
       provisional: true,
       mined: false,
+      awaitsPrivateCheck: false,
     );
     expect(entryAwaitsPrivateCheck(justSent), isFalse);
     expect(
@@ -164,7 +187,16 @@ void main() {
     );
     expect(
       privateCheckNotice(
-        [justSent, _transaction('bb', 'sent', provisional: true, mined: false)],
+        [
+          justSent,
+          _transaction(
+            'bb',
+            'sent',
+            provisional: true,
+            mined: false,
+            awaitsPrivateCheck: false,
+          ),
+        ],
         privateQueriesEnabled: true,
         stop: null,
       ),
@@ -494,6 +526,7 @@ rust_sync.TransactionInfo _transaction(
   String displayPool = 'shielded',
   bool expiredUnmined = false,
   bool mined = true,
+  bool? awaitsPrivateCheck,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
@@ -504,6 +537,9 @@ rust_sync.TransactionInfo _transaction(
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    // The wallet reports a mined provisional entry here as waiting on the
+    // check unless a test says otherwise.
+    awaitsPrivateCheck: awaitsPrivateCheck ?? (provisional && mined),
     amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',

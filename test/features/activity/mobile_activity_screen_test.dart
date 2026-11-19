@@ -73,6 +73,7 @@ rust_sync.TransactionInfo _tx({
   int accountBalanceDelta = 0,
   bool isTransparent = false,
   bool? provisional,
+  bool awaitsPrivateCheck = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -85,6 +86,7 @@ rust_sync.TransactionInfo _tx({
         : rust_sync.TransactionFeeState.known,
     detailsComplete: !amountIncludesFee,
     provisional: provisional ?? amountIncludesFee,
+    awaitsPrivateCheck: awaitsPrivateCheck,
     amountIncludesFee: amountIncludesFee,
     blockTime: blockTime,
     isTransparent: isTransparent,
@@ -679,6 +681,7 @@ void main() {
           txidHex: 'private-check-$i',
           blockTime: BigInt.from(1800000000 - i),
           provisional: i < waiting,
+          awaitsPrivateCheck: i < waiting,
         ),
     ];
 

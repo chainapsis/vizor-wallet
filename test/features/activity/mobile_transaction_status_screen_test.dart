@@ -99,6 +99,7 @@ rust_sync.TransactionInfo _tx({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
+  bool awaitsPrivateCheck = false,
   bool amountIncludesFee = false,
   BigInt? displayAmount,
   int accountBalanceDelta = 0,
@@ -112,6 +113,7 @@ rust_sync.TransactionInfo _tx({
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    awaitsPrivateCheck: awaitsPrivateCheck,
     amountIncludesFee: amountIncludesFee,
     blockTime: blockTime ?? BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',
@@ -1147,11 +1149,32 @@ void main() {
     );
   });
 
-  testWidgets('known payment details wait on the private check', (
+  testWidgets('known payment details still mark unsettled effects', (
     tester,
   ) async {
     await tester.pumpWidget(
       _app(_tx(provisional: true), privateQueriesEnabled: true),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a receipt waiting on the private check says so', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        // Not read again yet: nothing known, as right after Private queries
+        // is turned on.
+        _tx(
+          provisional: true,
+          awaitsPrivateCheck: true,
+          detailsComplete: false,
+        ),
+        privateQueriesEnabled: true,
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -1177,7 +1200,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _app(
-        _tx(provisional: true),
+        _tx(provisional: true, awaitsPrivateCheck: true),
         privateQueriesEnabled: true,
         transparentStop: rust_sync.TransparentStopReason.stalled,
       ),

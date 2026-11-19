@@ -16795,6 +16795,7 @@ impl SseDecode for crate::api::sync::TransactionInfo {
         let mut var_createdTime = <u64>::sse_decode(deserializer);
         let mut var_detailsComplete = <bool>::sse_decode(deserializer);
         let mut var_provisional = <bool>::sse_decode(deserializer);
+        let mut var_awaitsPrivateCheck = <bool>::sse_decode(deserializer);
         let mut var_amountIncludesFee = <bool>::sse_decode(deserializer);
         return crate::api::sync::TransactionInfo {
             txid_hex: var_txidHex,
@@ -16815,6 +16816,7 @@ impl SseDecode for crate::api::sync::TransactionInfo {
             created_time: var_createdTime,
             details_complete: var_detailsComplete,
             provisional: var_provisional,
+            awaits_private_check: var_awaitsPrivateCheck,
             amount_includes_fee: var_amountIncludesFee,
         };
     }
@@ -22475,6 +22477,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionInfo {
             self.created_time.into_into_dart().into_dart(),
             self.details_complete.into_into_dart().into_dart(),
             self.provisional.into_into_dart().into_dart(),
+            self.awaits_private_check.into_into_dart().into_dart(),
             self.amount_includes_fee.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -26934,6 +26937,7 @@ impl SseEncode for crate::api::sync::TransactionInfo {
         <u64>::sse_encode(self.created_time, serializer);
         <bool>::sse_encode(self.details_complete, serializer);
         <bool>::sse_encode(self.provisional, serializer);
+        <bool>::sse_encode(self.awaits_private_check, serializer);
         <bool>::sse_encode(self.amount_includes_fee, serializer);
     }
 }

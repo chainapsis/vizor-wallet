@@ -2205,6 +2205,7 @@ rust_sync.TransactionInfo _receivedZecTx({
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: provisional,
+    awaitsPrivateCheck: provisional,
     amountIncludesFee: false,
     blockTime: BigInt.from(blockTime),
     isTransparent: false,

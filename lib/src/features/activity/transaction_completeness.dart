@@ -76,12 +76,12 @@ bool receiptDetailsComplete(rust_sync.TransactionDetail? detail) =>
         rust_sync.TransparentDetailsState.available;
 
 /// Whether an entry's summary waits on private recovery checking its
-/// transparent side: it is provisional and mined. Scanning has settled the
-/// shielded side of a mined transaction, so what is left is the private
-/// check of its transparent side. An unmined one, such as a send the wallet
-/// just built, still waits on scanning, and an expired one never settles.
+/// transparent side, as the wallet reports (`awaitsPrivateCheck`): only its
+/// transparent side is unsettled, or its history has not been read again
+/// since Private queries was turned on. An entry that waits on scanning or
+/// lacks payment details does not, and an expired one never settles.
 bool entryAwaitsPrivateCheck(rust_sync.TransactionInfo tx) =>
-    tx.provisional && !tx.expiredUnmined && tx.minedHeight > BigInt.zero;
+    tx.awaitsPrivateCheck && !tx.expiredUnmined;
 
 /// The `PrivateCheckNotice` a list shows above its rows: the check is still
 /// running, or it stopped for [stop].
@@ -151,13 +151,14 @@ bool transparentStopNeedsSettings(rust_sync.TransparentStopReason stop) =>
       rust_sync.TransparentStopReason.stalled => false,
     };
 
-/// Whether a receipt's details wait only on the private check, which finishes
-/// on its own: the entry awaits it, its payment details (memos included) are
-/// known, and recovery has not stopped.
+/// Whether a receipt says its details are still being checked privately, as
+/// its Activity row does: the entry awaits the check and recovery has not
+/// stopped. An entry that settles with details still missing reads
+/// "Incomplete" from then on.
 bool receiptAwaitsPrivateCheck(
   rust_sync.TransactionInfo tx, {
   required bool recoveryStopped,
-}) => entryAwaitsPrivateCheck(tx) && tx.detailsComplete && !recoveryStopped;
+}) => entryAwaitsPrivateCheck(tx) && !recoveryStopped;
 
 /// Why a receipt's entry is left incomplete, when it awaits the private
 /// check and recovery stopped for [stop].

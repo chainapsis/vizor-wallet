@@ -3159,6 +3159,8 @@ pub fn set_transaction_status(
 
 // ======================== Transaction History ========================
 
+// Lets the fields carry `#[frb(...)]` attributes.
+#[frb]
 pub struct TransactionInfo {
     pub txid_hex: String,
     pub mined_height: u64,
@@ -3188,6 +3190,12 @@ pub struct TransactionInfo {
     /// Whether later discovery or enhancement can still change this entry.
     /// A provisional debit is a net amount, not a payment amount.
     pub provisional: bool,
+    /// Whether the entry is provisional only because private recovery is
+    /// still checking its transparent side, or its history has not been read
+    /// yet (as right after Private queries is turned on). False for an entry
+    /// that waits on scanning or lacks payment details.
+    #[frb(default = false)]
+    pub awaits_private_check: bool,
     /// Whether `display_amount` is a balance movement that retains its fee,
     /// rather than an established payment. Show it as a net change, including
     /// when the account's fee share is unknown.
@@ -3443,6 +3451,8 @@ fn api_transaction_info(t: wallet_sync::TransactionInfo) -> TransactionInfo {
         created_time: t.created_time,
         details_complete: t.details_complete,
         provisional: t.provisional,
+        // A row settled after its history was read is not waiting.
+        awaits_private_check: t.provisional && t.awaits_private_check,
         amount_includes_fee: t.amount_includes_fee,
     }
 }
