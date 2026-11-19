@@ -58,8 +58,6 @@ void swapUpdateRequiredNoticeTests(SwapActivityDetailLayout layout) {
                 depositCheckWarning: null,
                 onRefreshStatus: () {},
                 onMarkDeposited: () {},
-                onDepositTxHashChanged: (_) {},
-                onSubmitDepositTransaction: () {},
                 onReviewFreshQuote: () {},
                 onSignZecDeposit: (_) {},
                 intentIsHardware: false,

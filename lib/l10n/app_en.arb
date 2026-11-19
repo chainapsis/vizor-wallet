@@ -13964,6 +13964,10 @@
   "@swapActivityStepSentAwaitingDetection": {
     "description": "Description of the first swap progress step after the user says they sent an external deposit that NEAR Intents has not seen yet."
   },
+  "swapActivityStepSentHashAdded": "Transaction hash added. Waiting for NEAR Intents to detect your deposit.",
+  "@swapActivityStepSentHashAdded": {
+    "description": "Description of the first swap progress step after the user added the transaction hash of an external deposit that NEAR Intents has not detected yet."
+  },
   "swapActivityStepSourceDescription": "Confirm waiting for the source chain and provider to recognise the deposit",
   "@swapActivityStepSourceDescription": {
     "description": "Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit."
@@ -14244,6 +14248,42 @@
   "swapDepositTitle": "Deposit tokens",
   "@swapDepositTitle": {
     "description": "Title of the desktop screen showing the one-time deposit address for a swap."
+  },
+  "swapDepositTxHashBody": "Optional. Copy it from the wallet you sent {symbol} from. NEAR Intents uses it to look for your deposit sooner.",
+  "@swapDepositTxHashBody": {
+    "description": "Explanation in the transaction hash entry. {symbol} is the deposited asset, such as LTC.",
+    "placeholders": {
+      "symbol": {
+        "type": "String",
+        "example": "LTC"
+      }
+    }
+  },
+  "swapDepositTxHashHint": "{symbol} transaction hash",
+  "@swapDepositTxHashHint": {
+    "description": "Placeholder of the transaction hash field. {symbol} is the deposited asset, such as LTC.",
+    "placeholders": {
+      "symbol": {
+        "type": "String",
+        "example": "LTC"
+      }
+    }
+  },
+  "swapDepositTxHashPaste": "Paste transaction hash",
+  "@swapDepositTxHashPaste": {
+    "description": "Screen reader label of the button that pastes a transaction hash into the field."
+  },
+  "swapDepositTxHashPrompt": "Add transaction hash (optional)",
+  "@swapDepositTxHashPrompt": {
+    "description": "Link under the progress of a swap whose external deposit the user said they sent and NEAR Intents has not detected yet. Opens the transaction hash entry."
+  },
+  "swapDepositTxHashSubmit": "Submit",
+  "@swapDepositTxHashSubmit": {
+    "description": "Button that sends the entered transaction hash to NEAR Intents."
+  },
+  "swapDepositTxHashTitle": "Add transaction hash",
+  "@swapDepositTxHashTitle": {
+    "description": "Title of the sheet (mobile) or modal (desktop) where the user enters the transaction hash of the deposit they sent from another wallet."
   },
   "swapDepositWithin": "Deposit within",
   "@swapDepositWithin": {

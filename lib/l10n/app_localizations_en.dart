@@ -10941,6 +10941,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Waiting for NEAR Intents to detect your deposit.';
 
   @override
+  String get swapActivityStepSentHashAdded =>
+      'Transaction hash added. Waiting for NEAR Intents to detect your deposit.';
+
+  @override
   String get swapActivityStepSourceDescription =>
       'Confirm waiting for the source chain and provider to recognise the deposit';
 
@@ -11141,6 +11145,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapDepositTitle => 'Deposit tokens';
+
+  @override
+  String swapDepositTxHashBody(String symbol) {
+    return 'Optional. Copy it from the wallet you sent $symbol from. NEAR Intents uses it to look for your deposit sooner.';
+  }
+
+  @override
+  String swapDepositTxHashHint(String symbol) {
+    return '$symbol transaction hash';
+  }
+
+  @override
+  String get swapDepositTxHashPaste => 'Paste transaction hash';
+
+  @override
+  String get swapDepositTxHashPrompt => 'Add transaction hash (optional)';
+
+  @override
+  String get swapDepositTxHashSubmit => 'Submit';
+
+  @override
+  String get swapDepositTxHashTitle => 'Add transaction hash';
 
   @override
   String get swapDepositWithin => 'Deposit within';

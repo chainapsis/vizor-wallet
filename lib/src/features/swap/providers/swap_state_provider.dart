@@ -1454,10 +1454,6 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
-  void updateDepositTxHash(String value) {
-    state = state.copyWith(depositTxHashText: value, clearStatusError: true);
-  }
-
   Future<void> markSelectedDepositClaimed() async {
     final selected = state.selectedIntentOrNull;
     if (selected == null) return;
@@ -1478,6 +1474,75 @@ class SwapNotifier extends Notifier<SwapState> {
       showBusy: true,
       includeTerminal: true,
     );
+  }
+
+  /// Sends NEAR Intents the deposit hash the user entered for an external
+  /// deposit they said they sent, and keeps it apart from deposit evidence
+  /// (see [SwapIntent.userDepositTxHash]). The submit's reply is not applied:
+  /// it may describe that unchecked hash, so the status check that follows
+  /// reports what NEAR found.
+  Future<SwapUserDepositTxHashResult> submitUserDepositTxHash({
+    required String intentId,
+    required String txHash,
+  }) async {
+    final intent = state.intents.swapIntentById(intentId);
+    final asset = intent?.externalAsset;
+    if (intent == null || asset == null || !intent.canAddUserDepositTxHash) {
+      return SwapUserDepositTxHashResult.failed;
+    }
+    final hash = swapDepositTxHashOrNull(asset.chainTicker, txHash);
+    if (hash == null) return SwapUserDepositTxHashResult.invalid;
+    final accountUuid = _activeAccountUuidOrNull;
+    try {
+      await ref
+          .read(swapIntentProvider)
+          .submitDepositTransaction(
+            depositAddress: _providerDepositAddress(intent),
+            txHash: hash,
+            depositMemo: intent.depositMemo,
+          );
+    } catch (e) {
+      log(
+        'Swap: entered deposit hash not submitted '
+        'intent=${_shortSwapValue(intentId)} error=$e',
+      );
+      return SwapUserDepositTxHashResult.failed;
+    }
+    if (!_isAccountActive(accountUuid)) {
+      final stored = await ref
+          .read(swapActivityTrackerProvider)
+          .loadIntents(accountUuid: accountUuid);
+      final storedIntent = stored.swapIntentById(intentId);
+      if (storedIntent != null) {
+        await _persistIntentsForAccount(
+          accountUuid,
+          stored.replaceSwapIntent(
+            intentId,
+            storedIntent.copyWith(userDepositTxHash: hash),
+          ),
+        );
+      }
+      return SwapUserDepositTxHashResult.submitted;
+    }
+    final current = state.intents.swapIntentById(intentId);
+    if (current == null) return SwapUserDepositTxHashResult.submitted;
+    state = state.copyWith(
+      intents: state.intents.replaceSwapIntent(
+        intentId,
+        current.copyWith(userDepositTxHash: hash),
+      ),
+    );
+    await _persistCurrentIntents();
+    if (_isAccountActive(accountUuid)) {
+      unawaited(
+        _refreshIntentStatuses(
+          intentIds: [intentId],
+          showBusy: false,
+          includeTerminal: true,
+        ),
+      );
+    }
+    return SwapUserDepositTxHashResult.submitted;
   }
 
   void selectIntent(String intentId) {
@@ -1601,14 +1666,6 @@ class SwapNotifier extends Notifier<SwapState> {
       quoteLoading: false,
       quoteExpired: true,
       clearQuoteError: true,
-    );
-  }
-
-  Future<void> submitSelectedDepositTransaction() async {
-    if (!state.canSubmitDepositTx || state.intents.isEmpty) return;
-    await _submitDepositTransaction(
-      state.selectedIntent,
-      state.depositTxHashText.trim(),
     );
   }
 

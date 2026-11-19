@@ -1617,6 +1617,48 @@ void main() {
     },
   );
 
+  test('an entered hash is no deposit until NEAR reports it processing', () {
+    final claimed = _intent(
+      status: SwapIntentStatus.awaitingExternalDeposit,
+      direction: SwapDirection.externalToZec,
+      externalAsset: SwapAsset.usdc,
+      pair: 'USDC -> ZEC',
+      depositAddress: '0xdeposit-address',
+    ).copyWith(depositClaimedAt: DateTime.utc(2026, 5, 29, 12));
+    expect(claimed.canAddUserDepositTxHash, isTrue);
+    final added = claimed.copyWith(userDepositTxHash: '0x${'ab' * 32}');
+    expect(added.canAddUserDepositTxHash, isFalse);
+
+    final waiting = swapActivityStatusPresentationForIntent(
+      testL10n,
+      _state(),
+      added,
+    );
+    expect(waiting.progressIndex, 0);
+    expect(
+      waiting.steps.first.description,
+      'Transaction hash added. Waiting for NEAR Intents to detect your '
+      'deposit.',
+    );
+
+    // KNOWN_DEPOSIT_TX may describe only the hash the user entered.
+    final known = swapActivityStatusPresentationForIntent(
+      testL10n,
+      _state(),
+      added.copyWith(status: SwapIntentStatus.depositObserved),
+    );
+    expect(known.progressIndex, 0);
+    expect(known.statusLabel, waiting.statusLabel);
+    expect(known.steps.first.description, waiting.steps.first.description);
+
+    final processing = swapActivityStatusPresentationForIntent(
+      testL10n,
+      _state(),
+      added.copyWith(status: SwapIntentStatus.processing),
+    );
+    expect(processing.progressIndex, 2);
+  });
+
   test('status details keep the deposit memo reachable after a claim', () {
     final claimed = _intent(
       status: SwapIntentStatus.awaitingExternalDeposit,

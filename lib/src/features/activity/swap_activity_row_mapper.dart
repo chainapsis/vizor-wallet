@@ -40,9 +40,13 @@ class SwapActivityRowItem {
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
+    final status = swapPresentedStatus(
+      status: record.status,
+      userDepositTxHash: record.userDepositTxHash,
+    );
     final depositedAmountText = record.providerRefundInfo?.depositedAmountText;
     final hasProviderDepositEvidence = swapHasProviderObservedDepositEvidence(
-      status: record.status,
+      status: status,
       originChainTxHash: record.originChainTxHash,
       depositedAmountText: depositedAmountText,
     );
@@ -54,7 +58,7 @@ class SwapActivityRowItem {
       providerLabel: record.providerLabel,
       sellAmountText: record.sellAmountText,
       receiveEstimateText: record.receiveEstimateText,
-      status: record.status,
+      status: status,
       direction: record.direction,
       externalAsset: record.externalAsset,
       depositTxHash: record.depositTxHash,

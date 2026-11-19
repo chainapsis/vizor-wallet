@@ -58,6 +58,7 @@ SwapIntent _swapIntentFromRecord(SwapIntentRecord record, {DateTime? now}) {
         record.completedAt ??
         (status.isTerminal && record.status != status ? timestamp : null),
     depositClaimedAt: record.depositClaimedAt,
+    userDepositTxHash: record.userDepositTxHash,
   );
 }
 

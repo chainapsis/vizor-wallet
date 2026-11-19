@@ -319,9 +319,6 @@ class SwapState {
       externalAssetIsAvailable &&
       !quoteLoading;
 
-  bool get canSubmitDepositTx =>
-      depositTxHashText.trim().isNotEmpty && !depositSubmitting;
-
   SwapQuote? get quote => reviewQuote ?? draftQuote;
 
   SwapQuote? get draftQuote {

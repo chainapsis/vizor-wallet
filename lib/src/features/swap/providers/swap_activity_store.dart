@@ -331,6 +331,7 @@ Map<String, Object?> _recordToJson(SwapIntentRecord record) {
     'updatedAt': record.updatedAt?.toUtc().toIso8601String(),
     'completedAt': record.completedAt?.toUtc().toIso8601String(),
     'depositClaimedAt': record.depositClaimedAt?.toUtc().toIso8601String(),
+    'userDepositTxHash': record.userDepositTxHash,
   };
 }
 
@@ -389,6 +390,7 @@ SwapIntentRecord _recordFromJson(Map<String, dynamic> json) {
     updatedAt: _optionalDateTime(json['updatedAt']),
     completedAt: _optionalDateTime(json['completedAt']),
     depositClaimedAt: _optionalDateTime(json['depositClaimedAt']),
+    userDepositTxHash: _optionalString(json['userDepositTxHash']),
   );
 }
 
