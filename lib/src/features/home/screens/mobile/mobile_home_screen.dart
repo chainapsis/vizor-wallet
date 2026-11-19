@@ -1205,41 +1205,64 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 awaitingTxid: item.payoutAwaitingDiscovery,
               ),
         );
-    final listedTransactions = sync.recentTransactions.where(
-      (tx) => !absorption.absorbs(tx),
+    ActivityEntry transactionEntry(
+      ({rust_sync.TransactionInfo tx, GiftCardActivityMetadata? giftCard})
+      listed, {
+      bool privateCheckNoticeShown = false,
+    }) => _transactionEntry(
+      context,
+      ref,
+      listed.tx,
+      listed.giftCard,
+      privacyModeEnabled: privacyModeEnabled,
+      privateCheckNoticeShown: privateCheckNoticeShown,
     );
-    final notice = privateCheckNotice(
-      listedTransactions,
-      privateQueriesEnabled: ref.watch(enhancePirProvider),
-      stop: sync.transparentStop,
-    );
-    final entries = <ActivityEntry>[
+    final listedTransactions = [
       for (final tx in giftCardActivityIndex.withPendingClaims(
         sync.recentTransactions,
       ))
         if (!absorption.absorbs(tx))
-          _transactionEntry(
-            context,
-            ref,
-            tx,
-            giftCardActivityIndex.metadataFor(
+          (
+            tx: tx,
+            giftCard: giftCardActivityIndex.metadataFor(
               tx,
               transactions: sync.recentTransactions,
             ),
-            privacyModeEnabled: privacyModeEnabled,
-            privateCheckNoticeShown: notice != null,
           ),
+    ];
+    final transactionEntries = {
+      for (final item in listedTransactions) transactionEntry(item): item,
+    };
+    final entries = <ActivityEntry>[
+      ...transactionEntries.keys,
       for (final item in swapItems)
         ActivityEntry(timestamp: item.activityTimestamp, row: swapRow(item)),
     ]..sort(compareActivityEntries);
+    final shownEntries = entries
+        .take(MobileHomeScreen._recentActivityLimit)
+        .toList();
+    // The notice speaks only for the rows Home shows.
+    final notice = privateCheckNotice(
+      [for (final entry in shownEntries) ?transactionEntries[entry]?.tx],
+      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      stop: sync.transparentStop,
+    );
     final swapItemsByRowId = {
       for (final item in swapItems) item.stableId: item,
     };
     final recentRows = [
-      for (final entry in entries.take(MobileHomeScreen._recentActivityLimit))
-        switch (swapItemsByRowId[entry.row.stableId]) {
-          final item? => swapRow(item, shown: true),
-          null => entry.row,
+      for (final entry in shownEntries)
+        switch ((
+          swapItemsByRowId[entry.row.stableId],
+          transactionEntries[entry],
+        )) {
+          (final item?, _) => swapRow(item, shown: true),
+          // A row the notice covers drops its own label.
+          (_, final listed?) when notice != null => transactionEntry(
+            listed,
+            privateCheckNoticeShown: true,
+          ).row,
+          _ => entry.row,
         },
     ];
 

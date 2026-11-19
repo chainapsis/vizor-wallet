@@ -635,11 +635,13 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     });
 
     final notice = _noticeData();
-    final rows = _activityRows(context);
+    final shownActivity = _recentActivity(context);
+    final rows = [for (final entry in shownActivity) entry.row()];
     // Home's rows never label incomplete details, so only the notice shows.
+    // It speaks only for the rows Home shows.
     final privateCheck = widget.hasActivitySyncData
         ? privateCheckNotice(
-            widget.sync.recentTransactions,
+            [for (final entry in shownActivity) ?entry.transaction],
             privateQueriesEnabled: ref.watch(enhancePirProvider),
             stop: widget.sync.transparentStop,
           )
@@ -770,7 +772,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     return null;
   }
 
-  List<ActivityRowData> _activityRows(BuildContext context) {
+  /// The newest entries, which Home shows, before their rows are built.
+  List<_HomeActivityEntry> _recentActivity(BuildContext context) {
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final giftCardActivityIndex = accountUuid == null
         ? GiftCardActivityIndex.empty
@@ -821,10 +824,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
           ),
         ),
     ]..sort(_compareHomeActivityEntries);
-    return entries
-        .take(_recentActivityLimit)
-        .map((entry) => entry.row())
-        .toList(growable: false);
+    return entries.take(_recentActivityLimit).toList(growable: false);
   }
 
   _HomeActivityEntry _homeTransactionActivityEntry(
@@ -833,6 +833,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     GiftCardActivityMetadata? giftCard,
   ) {
     return _HomeActivityEntry(
+      transaction: transaction,
       timestamp:
           giftCard?.activityTimestamp ??
           transactionActivityTimestamp(transaction),
@@ -903,9 +904,16 @@ class _HomePaneState extends ConsumerState<_HomePane> {
 }
 
 class _HomeActivityEntry {
-  const _HomeActivityEntry({required this.timestamp, required this.row});
+  const _HomeActivityEntry({
+    required this.timestamp,
+    required this.row,
+    this.transaction,
+  });
 
   final DateTime? timestamp;
+
+  /// The transaction a row shows, if it shows one.
+  final rust_sync.TransactionInfo? transaction;
 
   /// Builds the row, which Home does only for the entries it shows, so a swap
   /// it doesn't show starts no payout check.

@@ -369,8 +369,11 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         : SwapActivityLegAbsorption.empty;
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
+    // Only the rows the list shows: a swap leg shows in its swap's row.
     final notice = privateCheckNotice(
-      transactions,
+      giftCardActivityIndex
+          .withPendingClaims(transactions)
+          .where((tx) => !absorption.absorbs(tx)),
       privateQueriesEnabled: ref.watch(enhancePirProvider),
       stop: ref.watch(
         syncProvider.select((sync) => sync.value?.transparentStop),
