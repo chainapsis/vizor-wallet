@@ -11136,6 +11136,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This deposit address is no longer valid.\nPlease, start another swap transaction.';
 
   @override
+  String get swapDepositTimeoutClaimedBody =>
+      'Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may try to refund it to your refund address.';
+
+  @override
   String get swapDepositTitle => 'Deposit tokens';
 
   @override
@@ -11719,6 +11723,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapTimeoutBody => 'Please, start another swap transaction.';
+
+  @override
+  String get swapTimeoutClaimedBody =>
+      'If it arrives late, NEAR may try to refund it to your refund address.';
+
+  @override
+  String get swapTimeoutClaimedHeadline =>
+      'Your deposit wasn’t detected in time';
+
+  @override
+  String get swapTimeoutGetHelp => 'Get help';
 
   @override
   String get swapTimeoutHeadline => 'This deposit address is no longer valid';

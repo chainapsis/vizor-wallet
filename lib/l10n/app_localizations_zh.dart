@@ -10289,6 +10289,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapDepositTimeoutBody => '此存入地址已失效。\n请重新发起一笔兑换。';
 
   @override
+  String get swapDepositTimeoutClaimedBody =>
+      '未及时检测到入金。\n如果入金延迟到账，NEAR 可能会尝试将资金退回退款地址。';
+
+  @override
   String get swapDepositTitle => '存入代币';
 
   @override
@@ -10816,6 +10820,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapTimeoutBody => '请重新发起一笔兑换。';
+
+  @override
+  String get swapTimeoutClaimedBody => '如果入金延迟到账，NEAR 可能会尝试将资金退回退款地址。';
+
+  @override
+  String get swapTimeoutClaimedHeadline => '未及时检测到入金';
+
+  @override
+  String get swapTimeoutGetHelp => '获取帮助';
 
   @override
   String get swapTimeoutHeadline => '此存入地址已失效';

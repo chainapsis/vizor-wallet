@@ -10966,6 +10966,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 입‍금 주‍소‍는 더 이‍상 유‍효‍하‍지 않‍아‍요.\n새 스‍왑‍을 시‍작‍해 주‍세‍요.';
 
   @override
+  String get swapDepositTimeoutClaimedBody =>
+      '입‍금‍이 제‍때 확‍인‍되‍지 않‍았‍어‍요.\n입‍금‍이 늦‍게 도‍착‍했‍다‍면 NEAR‍에‍서 환‍불 주‍소‍로 반‍환‍을 시‍도‍할 수 있‍어‍요.';
+
+  @override
   String get swapDepositTitle => '토‍큰 입‍금';
 
   @override
@@ -11543,6 +11547,16 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapTimeoutBody => '새 스‍왑‍을 시‍작‍해 주‍세‍요.';
+
+  @override
+  String get swapTimeoutClaimedBody =>
+      '입‍금‍이 늦‍게 도‍착‍했‍다‍면 NEAR‍에‍서 환‍불 주‍소‍로 반‍환‍을 시‍도‍할 수 있‍어‍요.';
+
+  @override
+  String get swapTimeoutClaimedHeadline => '입‍금‍이 제‍때 확‍인‍되‍지 않‍았‍어‍요';
+
+  @override
+  String get swapTimeoutGetHelp => '도‍움 받‍기';
 
   @override
   String get swapTimeoutHeadline => '이 입‍금 주‍소‍는 더 이‍상 유‍효‍하‍지 않‍아‍요';

@@ -1425,6 +1425,21 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
+  /// Checks the selected swap once if it expired. Nothing polls an expired
+  /// swap, and the provider may still have seen its deposit after the
+  /// deadline. A failure leaves the timeout as it was.
+  Future<void> recheckSelectedExpiredIntent() async {
+    final selected = state.selectedIntentOrNull;
+    if (selected == null || selected.status != SwapIntentStatus.expired) {
+      return;
+    }
+    await _refreshIntentStatuses(
+      intentIds: [selected.id],
+      showBusy: false,
+      includeTerminal: true,
+    );
+  }
+
   Future<void> refreshOpenIntentStatuses() async {
     await _refreshIntentStatuses(
       intentIds: [for (final intent in state.intents) intent.id],

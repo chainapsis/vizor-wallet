@@ -14237,6 +14237,10 @@
   "@swapDepositTimeoutBody": {
     "description": "[security] Body on the desktop deposit screen after the deposit window ended; the deposit address must not be used any more. Contains a line break."
   },
+  "swapDepositTimeoutClaimedBody": "Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may try to refund it to your refund address.",
+  "@swapDepositTimeoutClaimedBody": {
+    "description": "Body on the desktop deposit screen after the deposit window ended, when the user said they sent the deposit but NEAR Intents never detected it. Contains a line break."
+  },
   "swapDepositTitle": "Deposit tokens",
   "@swapDepositTitle": {
     "description": "Title of the desktop screen showing the one-time deposit address for a swap."
@@ -14951,6 +14955,18 @@
   "swapTimeoutBody": "Please, start another swap transaction.",
   "@swapTimeoutBody": {
     "description": "Body text on the swap timeout screen asking the user to start a new swap."
+  },
+  "swapTimeoutClaimedBody": "If it arrives late, NEAR may try to refund it to your refund address.",
+  "@swapTimeoutClaimedBody": {
+    "description": "Body on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it."
+  },
+  "swapTimeoutClaimedHeadline": "Your deposit wasn’t detected in time",
+  "@swapTimeoutClaimedHeadline": {
+    "description": "Serif headline on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it. Two lines at most."
+  },
+  "swapTimeoutGetHelp": "Get help",
+  "@swapTimeoutGetHelp": {
+    "description": "Link under the restart button on the swap timeout screen when the user said they sent the deposit; opens the support sheet with the deposit details and the support email."
   },
   "swapTimeoutHeadline": "This deposit address is no longer valid",
   "@swapTimeoutHeadline": {

@@ -18228,6 +18228,12 @@ abstract class AppLocalizations {
   /// **'This deposit address is no longer valid.\nPlease, start another swap transaction.'**
   String get swapDepositTimeoutBody;
 
+  /// Body on the desktop deposit screen after the deposit window ended, when the user said they sent the deposit but NEAR Intents never detected it. Contains a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may try to refund it to your refund address.'**
+  String get swapDepositTimeoutClaimedBody;
+
   /// Title of the desktop screen showing the one-time deposit address for a swap.
   ///
   /// In en, this message translates to:
@@ -19198,6 +19204,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Please, start another swap transaction.'**
   String get swapTimeoutBody;
+
+  /// Body on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it.
+  ///
+  /// In en, this message translates to:
+  /// **'If it arrives late, NEAR may try to refund it to your refund address.'**
+  String get swapTimeoutClaimedBody;
+
+  /// Serif headline on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it. Two lines at most.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit wasn’t detected in time'**
+  String get swapTimeoutClaimedHeadline;
+
+  /// Link under the restart button on the swap timeout screen when the user said they sent the deposit; opens the support sheet with the deposit details and the support email.
+  ///
+  /// In en, this message translates to:
+  /// **'Get help'**
+  String get swapTimeoutGetHelp;
 
   /// Headline on the swap timeout screen explaining the one-time deposit address has expired.
   ///

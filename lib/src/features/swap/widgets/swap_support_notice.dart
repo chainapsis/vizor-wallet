@@ -24,9 +24,16 @@ class SwapSupportPrompt extends StatelessWidget {
     required this.onTap,
     required this.failedSwap,
     super.key,
-  });
+  }) : depositClaimed = false;
+
+  /// The prompt on a timeout whose deposit the user says they sent.
+  const SwapSupportPrompt.depositClaimed({required this.onTap, super.key})
+    : failedSwap = false,
+      depositClaimed = true;
+
   final VoidCallback onTap;
   final bool failedSwap;
+  final bool depositClaimed;
 
   @override
   Widget build(BuildContext context) => Align(
@@ -52,7 +59,9 @@ class SwapSupportPrompt extends StatelessWidget {
             size: AppIconSize.medium,
           ),
           child: Text(
-            failedSwap
+            depositClaimed
+                ? context.l10n.swapTimeoutGetHelp
+                : failedSwap
                 ? context.l10n.swapSupportFailedPrompt
                 : context.l10n.swapSupportExpiredPrompt,
           ),

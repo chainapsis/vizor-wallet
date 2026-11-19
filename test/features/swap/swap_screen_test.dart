@@ -873,6 +873,166 @@ void main() {
     );
   });
 
+  testWidgets('a timeout whose deposit the user says they sent explains it '
+      'went undetected', (tester) async {
+    await tester.pumpWidget(
+      _themeHarnessWithTheme(
+        AppThemeData.light,
+        SwapDepositTimeoutPageContent(
+          onRestart: () {},
+          onLateDeposit: () {},
+          depositClaimed: true,
+        ),
+      ),
+    );
+
+    expect(find.text('Swap failed'), findsOneWidget);
+    expect(
+      find.text(
+        'Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may '
+        'try to refund it to your refund address.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Sent a deposit?'), findsNothing);
+    final check = find.byKey(const ValueKey('swap_support_prompt'));
+    final restart = find.byKey(const ValueKey('swap_deposit_restart_button'));
+    expect(
+      find.descendant(of: check, matching: find.text('Get help')),
+      findsOneWidget,
+    );
+    // The same layout as any timeout: restart first, the help link under it.
+    expect(
+      tester.widget<AppButton>(restart).variant,
+      AppButtonVariant.secondary,
+    );
+    expect(tester.widget<AppButton>(check).variant, AppButtonVariant.ghost);
+    expect(tester.getRect(restart).bottom, lessThan(tester.getRect(check).top));
+
+    // Without a support sheet to open, the usual timeout stays.
+    await tester.pumpWidget(
+      _themeHarnessWithTheme(
+        AppThemeData.light,
+        SwapDepositTimeoutPageContent(onRestart: () {}, depositClaimed: true),
+      ),
+    );
+    expect(find.text('Get help'), findsNothing);
+    expect(
+      find.text(
+        'This deposit address is no longer valid.\nPlease, start '
+        'another swap transaction.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an expired swap the user marked as sent shows the claimed '
+      'timeout in activity detail', (tester) async {
+    await _setViewport(tester, const Size(1080, 720));
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'claimed-deposit',
+          txHash: '',
+          status: SwapIntentStatus.expired,
+          nextAction: 'Start a fresh quote',
+        ).copyWith(depositClaimedAt: DateTime.utc(2026, 5, 7, 10)),
+      ],
+    );
+    final router = GoRouter(
+      initialLocation: '/activity/swap/claimed-deposit?from=swap',
+      routes: [_swapRoute(), _swapActivityRoute()],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        seedSwapActivityFixtures: false,
+        sessionStore: sessionStore,
+        swapProvider: _FakeSwapProvider()
+          ..unpaidDepositAddresses.add('claimed-deposit'),
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Get help'), findsOneWidget);
+    expect(find.text('Sent a deposit?'), findsNothing);
+  });
+
+  testWidgets('opening an expired swap checks its status once', (tester) async {
+    await _setViewport(tester, const Size(1080, 720));
+    final unpaid = _FakeSwapProvider()..unpaidDepositAddresses.add('unpaid');
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/unpaid?from=swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: unpaid,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialIntents: [
+            _persistedIntent(
+              id: 'unpaid',
+              txHash: '',
+              status: SwapIntentStatus.expired,
+              nextAction: 'Start a fresh quote',
+            ),
+          ],
+        ),
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+    );
+    await tester.pumpAndSettle();
+    // Still unpaid: one check, and the timeout stays.
+    expect(unpaid.statusRequests.map((r) => r.depositAddress), ['unpaid']);
+    expect(
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+      findsOneWidget,
+    );
+
+    // The provider saw the deposit after the deadline: the swap moves on.
+    final detected = _FakeSwapProvider();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/late?from=swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: detected,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialIntents: [
+            _persistedIntent(
+              id: 'late',
+              txHash: '',
+              status: SwapIntentStatus.expired,
+              nextAction: 'Start a fresh quote',
+            ),
+          ],
+        ),
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_activity_detail_page')),
+    );
+    await tester.pumpAndSettle();
+    expect(detected.statusRequests.map((r) => r.depositAddress), ['late']);
+    expect(
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'expired deposit timeout content stays centered in activity detail',
     (tester) async {
@@ -897,6 +1057,8 @@ void main() {
           router,
           seedSwapActivityFixtures: false,
           sessionStore: sessionStore,
+          swapProvider: _FakeSwapProvider()
+            ..unpaidDepositAddresses.add('expired-deposit'),
         ),
       );
       await _pumpUntilPresent(
@@ -966,6 +1128,8 @@ void main() {
         router,
         seedSwapActivityFixtures: false,
         sessionStore: sessionStore,
+        swapProvider: _FakeSwapProvider()
+          ..unpaidDepositAddresses.add('expired-pay'),
         priceRefreshInterval: const Duration(seconds: 1),
       ),
     );
@@ -1223,7 +1387,8 @@ void main() {
       blockchain: 'base',
       decimals: 6,
     );
-    final swapProvider = _DeferredSupportedAssetsSwapProvider();
+    final swapProvider = _DeferredSupportedAssetsSwapProvider()
+      ..unpaidDepositAddresses.add('dynamic-pay');
     final router = GoRouter(
       initialLocation: '/activity/swap/dynamic-pay?from=pay',
       routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
@@ -1314,7 +1479,8 @@ void main() {
       blockchain: 'base',
       decimals: 6,
     );
-    final swapProvider = _DeferredSupportedAssetsSwapProvider();
+    final swapProvider = _DeferredSupportedAssetsSwapProvider()
+      ..unpaidDepositAddresses.add('removed-pay');
     final router = GoRouter(
       initialLocation: '/activity/swap/removed-pay?from=pay',
       routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
