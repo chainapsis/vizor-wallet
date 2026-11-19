@@ -563,6 +563,19 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
       expect(mark, findsOneWidget);
+
+      // Turning it off ticks once, as the row flips; Update adds none.
+      feedback.clear();
+      await tester.tap(settings);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(mark, findsNothing);
+      expect(feedback, ['HapticFeedbackType.selectionClick']);
     },
   );
 

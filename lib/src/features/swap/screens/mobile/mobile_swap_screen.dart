@@ -350,8 +350,9 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       // surface, switching accounts or Swap/Pay sessions, or retrying a
       // standard swap turns it off quietly.
       if (!next && !settingsOpen) return;
-      // Turning on is the heavier tick; turning off only confirms it.
-      unawaited(next ? AppHaptics.privacyToggle() : AppHaptics.selection());
+      // The settings row ticked as it flipped; turning on adds the heavier
+      // tick when it applies, turning off adds none.
+      if (next) unawaited(AppHaptics.privacyToggle());
       final changed = _confidentialReveal.changed(
         confidential: next,
         settingsOpen: settingsOpen,
