@@ -186,13 +186,18 @@ class _ActivityTransactionStatusScreenState
       transactionDetailsIncomplete(tx) &&
       !receiptDetailsComplete(receiptDetail);
 
-  bool _detailsAwaitPrivateCheck(rust_sync.TransactionInfo tx) =>
-      receiptAwaitsPrivateCheck(
+  _IncompleteDetailsRow _incompleteDetailsRow(rust_sync.TransactionInfo tx) {
+    final stop = ref.watch(
+      syncProvider.select((sync) => sync.value?.transparentStop),
+    );
+    return _IncompleteDetailsRow(
+      awaitsPrivateCheck: receiptAwaitsPrivateCheck(
         tx,
-        recoveryStopped: ref.watch(
-          syncProvider.select((sync) => sync.value?.transparentStop != null),
-        ),
-      );
+        recoveryStopped: stop != null,
+      ),
+      stop: receiptPrivateCheckStop(tx, stop: stop),
+    );
+  }
 
   bool _showsNetworkFee(rust_sync.TransactionInfo tx) =>
       unattributedReceiptNetworkFee(tx, matchingReceiptDetailFor(tx)) != null;
@@ -698,10 +703,7 @@ class _ActivityTransactionStatusScreenState
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),
               ),
-              if (_showIncompleteDetails(tx))
-                _IncompleteDetailsRow(
-                  awaitsPrivateCheck: _detailsAwaitPrivateCheck(tx),
-                ),
+              if (_showIncompleteDetails(tx)) _incompleteDetailsRow(tx),
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
                 ReviewListRow(
@@ -807,9 +809,7 @@ class _ActivityTransactionStatusScreenState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           redesignedContent,
-          _IncompleteDetailsNotice(
-            awaitsPrivateCheck: _detailsAwaitPrivateCheck(tx),
-          ),
+          _IncompleteDetailsNotice(row: _incompleteDetailsRow(tx)),
         ],
       );
     }
@@ -896,28 +896,24 @@ String _truncatedDisplayTxid(String protocolTxid) => truncatedTxid(
 
 /// Marks a dedicated receipt whose entry is incomplete.
 class _IncompleteDetailsNotice extends StatelessWidget {
-  const _IncompleteDetailsNotice({required this.awaitsPrivateCheck});
+  const _IncompleteDetailsNotice({required this.row});
 
-  final bool awaitsPrivateCheck;
+  final _IncompleteDetailsRow row;
 
   @override
   Widget build(BuildContext context) {
-    return _ReceiptContentColumn(
-      child: ReviewWrapCard(
-        children: [
-          _IncompleteDetailsRow(awaitsPrivateCheck: awaitsPrivateCheck),
-        ],
-      ),
-    );
+    return _ReceiptContentColumn(child: ReviewWrapCard(children: [row]));
   }
 }
 
 /// The Details row of a receipt whose entry is incomplete: still being
-/// checked privately (see `receiptAwaitsPrivateCheck`), or incomplete.
+/// checked privately (see `receiptAwaitsPrivateCheck`), or incomplete, and
+/// why when recovery stopped.
 class _IncompleteDetailsRow extends StatelessWidget {
-  const _IncompleteDetailsRow({required this.awaitsPrivateCheck});
+  const _IncompleteDetailsRow({required this.awaitsPrivateCheck, this.stop});
 
   final bool awaitsPrivateCheck;
+  final rust_sync.TransparentStopReason? stop;
 
   @override
   Widget build(BuildContext context) {
@@ -928,9 +924,11 @@ class _IncompleteDetailsRow extends StatelessWidget {
           : context.l10n.activityReceiptIncomplete,
       trailingIconName: AppIcons.help,
       trailingIconColor: context.colors.text.secondary,
-      trailingIconTooltip: awaitsPrivateCheck
-          ? context.l10n.activityReceiptCheckingPrivatelyHelp
-          : context.l10n.activityReceiptDetailsIncompleteHelp,
+      trailingIconTooltip: receiptIncompleteDetailsHelp(
+        context.l10n,
+        awaitsPrivateCheck: awaitsPrivateCheck,
+        stop: stop,
+      ),
     );
   }
 }

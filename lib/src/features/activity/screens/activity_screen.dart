@@ -369,13 +369,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         : SwapActivityLegAbsorption.empty;
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
-    final privateCheckStopped = ref.watch(
-      syncProvider.select((sync) => sync.value?.transparentStop != null),
-    );
-    final privateCheckNotice = showsPrivateCheckNotice(
+    final notice = privateCheckNotice(
       transactions,
       privateQueriesEnabled: ref.watch(enhancePirProvider),
-      recoveryStopped: privateCheckStopped,
+      stop: ref.watch(
+        syncProvider.select((sync) => sync.value?.transparentStop),
+      ),
     );
     final entries = <_ActivityEntry>[];
     var sourceOrder = 0;
@@ -397,8 +396,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               context: context,
               transaction: tx,
               privateQueriesEnabled: ref.watch(enhancePirProvider),
-              privateCheckNoticeShown: privateCheckNotice,
-              privateCheckStopped: privateCheckStopped,
+              privateCheckNoticeShown: notice != null,
               showPendingEstimate: !ref
                   .watch(activityEtaExcludedTxidsProvider)
                   .contains(activityTxidKey(tx.txidHex)),
@@ -473,7 +471,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           slivers: [
             ActivityFeedSliver(
               sections: sections,
-              showPrivateCheckNotice: privateCheckNotice,
+              privateCheckNotice: notice,
               rowKeyPrefix: 'activity_screen',
               scrollAnchor: _scrollAnchor,
               isLoadingMore:

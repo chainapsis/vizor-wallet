@@ -831,6 +831,24 @@ abstract class AppLocalizations {
   /// **'Checking details privately. Amounts may still change.'**
   String get activityPrivateCheckNotice;
 
+  /// Short notice above Activity lists when private recovery stopped because earlier public records don't match it; a button to the Private queries setting follows. Home's homeTransparentStopLegacyDiscrepancy says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier public records don\'t match private recovery.'**
+  String get activityPrivateCheckStopLegacyDiscrepancy;
+
+  /// Short notice above Activity lists when turning off Private queries did not finish; a button to the Private queries setting follows. Home's homeTransparentStopOptOutUnfinished says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Turning off Private queries didn\'t finish.'**
+  String get activityPrivateCheckStopOptOutUnfinished;
+
+  /// Short notice above Activity lists when private recovery stopped on conflicting records; a button to the Private queries setting follows. Home's homeTransparentStopQuarantined says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Private recovery found conflicting records for this account.'**
+  String get activityPrivateCheckStopQuarantined;
+
   /// Body of the dialog that confirms loading one transaction's details from the server.
   ///
   /// In en, this message translates to:

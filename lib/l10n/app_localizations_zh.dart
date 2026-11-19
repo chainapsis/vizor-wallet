@@ -410,6 +410,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityPrivateCheckNotice => '正在以隐私方式核对详情，金额可能仍会变化。';
 
   @override
+  String get activityPrivateCheckStopLegacyDiscrepancy => '之前的公开记录与私密恢复结果不一致。';
+
+  @override
+  String get activityPrivateCheckStopOptOutUnfinished => '关闭隐私查询未完成。';
+
+  @override
+  String get activityPrivateCheckStopQuarantined => '私密恢复发现此账户的记录相互冲突。';
+
+  @override
   String get activityPublicLookupBody => 'Vizor 会向服务器请求这一笔交易，以显示隐私查询未包含的信息。';
 
   @override

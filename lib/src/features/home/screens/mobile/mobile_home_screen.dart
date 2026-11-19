@@ -979,7 +979,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     GiftCardActivityMetadata? giftCard, {
     required bool privacyModeEnabled,
     required bool privateCheckNoticeShown,
-    required bool privateCheckStopped,
   }) {
     return ActivityEntry(
       timestamp:
@@ -990,7 +989,6 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         transaction: transaction,
         privateQueriesEnabled: ref.watch(enhancePirProvider),
         privateCheckNoticeShown: privateCheckNoticeShown,
-        privateCheckStopped: privateCheckStopped,
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
@@ -1210,10 +1208,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final listedTransactions = sync.recentTransactions.where(
       (tx) => !absorption.absorbs(tx),
     );
-    final privateCheckNotice = showsPrivateCheckNotice(
+    final notice = privateCheckNotice(
       listedTransactions,
       privateQueriesEnabled: ref.watch(enhancePirProvider),
-      recoveryStopped: sync.transparentStop != null,
+      stop: sync.transparentStop,
     );
     final entries = <ActivityEntry>[
       for (final tx in giftCardActivityIndex.withPendingClaims(
@@ -1229,8 +1227,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               transactions: sync.recentTransactions,
             ),
             privacyModeEnabled: privacyModeEnabled,
-            privateCheckNoticeShown: privateCheckNotice,
-            privateCheckStopped: sync.transparentStop != null,
+            privateCheckNoticeShown: notice != null,
           ),
       for (final item in swapItems)
         ActivityEntry(timestamp: item.activityTimestamp, row: swapRow(item)),
@@ -1458,7 +1455,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 // Mounted with the rows, so it never slides in on load.
                 if (!activityLoading)
                   PrivateCheckNoticeSlot(
-                    checking: privateCheckNotice,
+                    notice: notice,
                     padding: const EdgeInsets.only(top: AppSpacing.xs),
                   ),
                 const SizedBox(height: AppSpacing.md),

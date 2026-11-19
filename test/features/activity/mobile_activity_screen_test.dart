@@ -709,27 +709,33 @@ void main() {
       expect(find.text(testL10n.activityRowCheckingPrivately), findsOneWidget);
     });
 
-    testWidgets('a stopped recovery labels each row', (tester) async {
-      await tester.pumpWidget(
-        _app(
-          (_) async => history(3),
-          privateQueriesEnabled: true,
-          syncNotifier: FakeSyncNotifier(
-            SyncState(
-              accountUuid: 'account-1',
-              hasAccountScopedData: true,
-              transparentStop: rust_sync.TransparentStopReason.stalled,
+    for (final waiting in [1, 3]) {
+      testWidgets('a stopped recovery says why over $waiting waiting', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _app(
+            (_) async => history(waiting),
+            privateQueriesEnabled: true,
+            syncNotifier: FakeSyncNotifier(
+              SyncState(
+                accountUuid: 'account-1',
+                hasAccountScopedData: true,
+                transparentStop: rust_sync.TransparentStopReason.stalled,
+              ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text(testL10n.activityPrivateCheckNotice), findsNothing);
-      expect(
-        find.text(testL10n.activityReceiptDetailsIncomplete),
-        findsNWidgets(3),
-      );
-    });
+        expect(find.text(testL10n.activityPrivateCheckNotice), findsNothing);
+        expect(find.text(testL10n.homeTransparentStopStalled), findsOneWidget);
+        expect(
+          find.text(testL10n.activityReceiptDetailsIncomplete),
+          findsNothing,
+        );
+        expect(find.text(testL10n.activityRowCheckingPrivately), findsNothing);
+      });
+    }
   });
 }

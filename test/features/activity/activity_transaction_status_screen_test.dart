@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -1500,6 +1501,17 @@ void main() {
 
     expect(find.text('Incomplete'), findsOneWidget);
     expect(find.text(testL10n.activityReceiptCheckingPrivately), findsNothing);
+    // Its help says why.
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppTooltip &&
+            (widget.message ?? '').endsWith(
+              testL10n.homeTransparentStopStalled,
+            ),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('an exact recovered send still marks missing recipient details', (

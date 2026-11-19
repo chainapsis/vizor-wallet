@@ -8,17 +8,20 @@ void main() {
     final waiting = _transaction('aa', 'received', provisional: true);
     final alsoWaiting = _transaction('bb', 'received', provisional: true);
     final settled = _transaction('cc', 'received');
-    bool shows(
+    PrivateCheckNoticeState? notice(
       List<rust_sync.TransactionInfo> txs, {
       bool privateQueriesEnabled = true,
-      bool recoveryStopped = false,
-    }) => showsPrivateCheckNotice(
+      rust_sync.TransparentStopReason? stop,
+    }) => privateCheckNotice(
       txs,
       privateQueriesEnabled: privateQueriesEnabled,
-      recoveryStopped: recoveryStopped,
+      stop: stop,
     );
 
-    expect(shows([waiting, alsoWaiting, settled]), isTrue);
+    expect(
+      notice([waiting, alsoWaiting, settled]),
+      const PrivateCheckNoticeState.checking(),
+    );
     // An expired transaction is never mined into coverage.
     final expired = _transaction(
       'dd',
@@ -26,13 +29,84 @@ void main() {
       provisional: true,
       expiredUnmined: true,
     );
-    expect(shows([waiting, expired]), isFalse);
+    expect(notice([waiting, expired]), isNull);
     // A single new receive keeps its own label.
-    expect(shows([waiting, settled]), isFalse);
-    expect(shows([waiting, alsoWaiting], recoveryStopped: true), isFalse);
+    expect(notice([waiting, settled]), isNull);
     expect(
-      shows([waiting, alsoWaiting], privateQueriesEnabled: false),
-      isFalse,
+      notice([waiting, alsoWaiting], privateQueriesEnabled: false),
+      isNull,
+    );
+  });
+
+  test('a stopped check shows why on any row it left', () {
+    final waiting = _transaction('aa', 'received', provisional: true);
+    final settled = _transaction('cc', 'received');
+    const stalled = rust_sync.TransparentStopReason.stalled;
+
+    expect(
+      privateCheckNotice(
+        [waiting, settled],
+        privateQueriesEnabled: true,
+        stop: stalled,
+      ),
+      const PrivateCheckNoticeState.stopped(stalled),
+    );
+    // Turning Private queries off did not finish, so the setting reads off.
+    expect(
+      privateCheckNotice(
+        [waiting],
+        privateQueriesEnabled: false,
+        stop: rust_sync.TransparentStopReason.optOutUnfinished,
+      ),
+      const PrivateCheckNoticeState.stopped(
+        rust_sync.TransparentStopReason.optOutUnfinished,
+      ),
+    );
+    // Nothing waits, so the list has nothing to explain.
+    expect(
+      privateCheckNotice([settled], privateQueriesEnabled: true, stop: stalled),
+      isNull,
+    );
+  });
+
+  test('only the stops the user clears point to Settings', () {
+    expect(
+      [
+        for (final stop in rust_sync.TransparentStopReason.values)
+          if (transparentStopNeedsSettings(stop)) stop,
+      ],
+      unorderedEquals([
+        rust_sync.TransparentStopReason.quarantined,
+        rust_sync.TransparentStopReason.legacyDiscrepancy,
+        rust_sync.TransparentStopReason.optOutUnfinished,
+      ]),
+    );
+  });
+
+  test('a stopped receipt explains why its details are incomplete', () {
+    const stalled = rust_sync.TransparentStopReason.stalled;
+    final waiting = _transaction('aa', 'received', provisional: true);
+    expect(receiptPrivateCheckStop(waiting, stop: stalled), stalled);
+    expect(
+      receiptPrivateCheckStop(_transaction('cc', 'received'), stop: stalled),
+      isNull,
+    );
+    expect(
+      receiptIncompleteDetailsHelp(
+        testL10n,
+        awaitsPrivateCheck: false,
+        stop: stalled,
+      ),
+      '${testL10n.activityReceiptDetailsIncompleteHelp}\n\n'
+      '${testL10n.homeTransparentStopStalled}',
+    );
+    expect(
+      receiptIncompleteDetailsHelp(
+        testL10n,
+        awaitsPrivateCheck: true,
+        stop: null,
+      ),
+      testL10n.activityReceiptCheckingPrivatelyHelp,
     );
   });
 

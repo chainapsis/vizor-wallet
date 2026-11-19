@@ -696,13 +696,18 @@ Classification follows the facts it has:
 
 While Private queries is enabled, Activity rows mark an uncertain summary:
 "Checking privately" while it waits on private recovery's transparent check,
-"Details incomplete" otherwise or once recovery has stopped. Established
-summaries keep their dates even when the payment details are missing. When
-more than one row in a list waits on the check (right after Private queries is
-turned on), the list shows one "Checking details privately" notice instead and
-those rows keep their dates. Receipts show a
-"Details" row and an "Unknown" fee when necessary: "Checking privately" when
-only that check is outstanding, otherwise "Incomplete". This is temporary integration feedback while
+"Details incomplete" otherwise. Established summaries keep their dates even
+when the payment details are missing. When more than one row in a list waits
+on the check (right after Private queries is turned on), the list shows one
+"Checking details privately" notice instead and those rows keep their dates.
+Once recovery stops, any row it left keeps its date and the same notice says
+why: in Home's words for a stop Vizor retries, or in one sentence with a
+button to the Private queries setting for the stops only turning it off
+clears, whose turn-off prompt says what that does. It shows with the setting
+off too, where turning it off did not finish. Receipts show a "Details" row and an "Unknown"
+fee when necessary: "Checking privately" when only that check is outstanding,
+otherwise "Incomplete", whose help adds why recovery stopped. This is
+temporary integration feedback while
 private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and
 the previous placeholder or omitted fee row for an unrecorded fee. History

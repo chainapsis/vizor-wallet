@@ -29,7 +29,6 @@ void main() {
     bool giftCardClaimInFlight = false,
     bool privateQueriesEnabled = false,
     bool privateCheckNoticeShown = false,
-    bool privateCheckStopped = false,
     String? giftCardDisplayPool,
     String? pendingLabel,
     bool showPendingEstimate = true,
@@ -46,7 +45,6 @@ void main() {
                 transaction: transaction,
                 privateQueriesEnabled: privateQueriesEnabled,
                 privateCheckNoticeShown: privateCheckNoticeShown,
-                privateCheckStopped: privateCheckStopped,
                 pendingEta: _etaFor(pendingLabel),
                 pendingFallbackLabel: _etaFor(pendingLabel) == null
                     ? pendingLabel
@@ -631,20 +629,10 @@ void main() {
     expect(publicIncomplete.amountSubtitle, isNull);
   });
 
-  testWidgets('a row awaiting the private check says so until it stops', (
-    tester,
-  ) async {
+  testWidgets('a row awaiting the private check says so', (tester) async {
     final waiting = _transaction(txKind: 'received', provisional: true);
     final checking = await mapRow(tester, waiting, privateQueriesEnabled: true);
     expect(checking.amountSubtitle, testL10n.activityRowCheckingPrivately);
-
-    final stopped = await mapRow(
-      tester,
-      waiting,
-      privateQueriesEnabled: true,
-      privateCheckStopped: true,
-    );
-    expect(stopped.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
 
     // An expired entry is never mined into coverage.
     final expired = await mapRow(

@@ -1186,6 +1186,14 @@ void main() {
 
     expect(find.text('Incomplete'), findsOneWidget);
     expect(find.text(testL10n.activityReceiptCheckingPrivately), findsNothing);
+
+    // Its help says why.
+    await tester.tap(find.text('Incomplete'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(testL10n.homeTransparentStopStalled),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a complete receipt has no incomplete-details row', (

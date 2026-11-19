@@ -306,6 +306,9 @@ class _MobileTransactionStatusScreenState
     final colors = context.colors;
     final l10n = context.l10n;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final transparentStop = ref.watch(
+      syncProvider.select((sync) => sync.value?.transparentStop),
+    );
     final tx = receiptTransaction;
     final detail = matchingReceiptDetailFor(tx);
     final activeAccountUuid =
@@ -788,11 +791,11 @@ class _MobileTransactionStatusScreenState
                             detailsIncomplete: _showIncompleteDetails(tx),
                             detailsAwaitPrivateCheck: receiptAwaitsPrivateCheck(
                               tx,
-                              recoveryStopped: ref.watch(
-                                syncProvider.select(
-                                  (sync) => sync.value?.transparentStop != null,
-                                ),
-                              ),
+                              recoveryStopped: transparentStop != null,
+                            ),
+                            detailsStop: receiptPrivateCheckStop(
+                              tx,
+                              stop: transparentStop,
                             ),
                           ),
                           if (giftCard == null &&
@@ -1131,6 +1134,7 @@ class _DetailCard extends StatelessWidget {
     this.showsNetworkFee = false,
     this.detailsIncomplete = false,
     this.detailsAwaitPrivateCheck = false,
+    this.detailsStop,
   });
 
   /// The From / To row, when the transaction has a counterparty to name.
@@ -1152,6 +1156,10 @@ class _DetailCard extends StatelessWidget {
   /// Whether the incomplete details wait only on the private check, which
   /// finishes on its own; see `receiptAwaitsPrivateCheck`.
   final bool detailsAwaitPrivateCheck;
+
+  /// Why private recovery stopped checking these details; see
+  /// `receiptPrivateCheckStop`.
+  final rust_sync.TransparentStopReason? detailsStop;
 
   @override
   Widget build(BuildContext context) {
@@ -1238,9 +1246,11 @@ class _DetailCard extends StatelessWidget {
                         title: detailsAwaitPrivateCheck
                             ? context.l10n.activityReceiptCheckingPrivately
                             : context.l10n.activityReceiptDetailsIncomplete,
-                        description: detailsAwaitPrivateCheck
-                            ? context.l10n.activityReceiptCheckingPrivatelyHelp
-                            : context.l10n.activityReceiptDetailsIncompleteHelp,
+                        description: receiptIncompleteDetailsHelp(
+                          context.l10n,
+                          awaitsPrivateCheck: detailsAwaitPrivateCheck,
+                          stop: detailsStop,
+                        ),
                       ),
                     ),
                   ),

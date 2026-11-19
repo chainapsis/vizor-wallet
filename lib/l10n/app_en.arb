@@ -554,6 +554,18 @@
   "@activityPrivateCheckNotice": {
     "description": "Short notice above Activity lists (Home's recent activity and the Activity tab) while Private queries is still checking several entries; replaces the label on each of them. Avoid leaving one word alone on a second line."
   },
+  "activityPrivateCheckStopLegacyDiscrepancy": "Earlier public records don't match private recovery.",
+  "@activityPrivateCheckStopLegacyDiscrepancy": {
+    "description": "Short notice above Activity lists when private recovery stopped because earlier public records don't match it; a button to the Private queries setting follows. Home's homeTransparentStopLegacyDiscrepancy says the same at length."
+  },
+  "activityPrivateCheckStopOptOutUnfinished": "Turning off Private queries didn't finish.",
+  "@activityPrivateCheckStopOptOutUnfinished": {
+    "description": "Short notice above Activity lists when turning off Private queries did not finish; a button to the Private queries setting follows. Home's homeTransparentStopOptOutUnfinished says the same at length."
+  },
+  "activityPrivateCheckStopQuarantined": "Private recovery found conflicting records for this account.",
+  "@activityPrivateCheckStopQuarantined": {
+    "description": "Short notice above Activity lists when private recovery stopped on conflicting records; a button to the Private queries setting follows. Home's homeTransparentStopQuarantined says the same at length."
+  },
   "activityPublicLookupBody": "Vizor will ask the server for this one transaction to show what private lookups leave out.",
   "@activityPublicLookupBody": {
     "description": "Body of the dialog that confirms loading one transaction's details from the server."

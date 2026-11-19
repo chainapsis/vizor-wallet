@@ -444,6 +444,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'Checking details privately. Amounts may still change.';
 
   @override
+  String get activityPrivateCheckStopLegacyDiscrepancy =>
+      'Earlier public records don\'t match private recovery.';
+
+  @override
+  String get activityPrivateCheckStopOptOutUnfinished =>
+      'Turning off Private queries didn\'t finish.';
+
+  @override
+  String get activityPrivateCheckStopQuarantined =>
+      'Private recovery found conflicting records for this account.';
+
+  @override
   String get activityPublicLookupBody =>
       'Vizor will ask the server for this one transaction to show what private lookups leave out.';
 

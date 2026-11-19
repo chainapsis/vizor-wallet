@@ -243,7 +243,6 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     required bool privacyModeEnabled,
     required DateTime activityNow,
     required bool privateCheckNoticeShown,
-    required bool privateCheckStopped,
   }) {
     return ActivityEntry(
       timestamp:
@@ -254,7 +253,6 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         transaction: transaction,
         privateQueriesEnabled: ref.watch(enhancePirProvider),
         privateCheckNoticeShown: privateCheckNoticeShown,
-        privateCheckStopped: privateCheckStopped,
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
@@ -379,13 +377,12 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
           );
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
-    final privateCheckStopped = ref.watch(
-      syncProvider.select((sync) => sync.value?.transparentStop != null),
-    );
-    final privateCheckNotice = showsPrivateCheckNotice(
+    final notice = privateCheckNotice(
       transactions,
       privateQueriesEnabled: ref.watch(enhancePirProvider),
-      recoveryStopped: privateCheckStopped,
+      stop: ref.watch(
+        syncProvider.select((sync) => sync.value?.transparentStop),
+      ),
     );
     final activityNow = DateTime.now();
     final entries = <ActivityEntry>[
@@ -397,8 +394,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             giftCardActivityIndex.metadataFor(tx, transactions: transactions),
             privacyModeEnabled: privacyModeEnabled,
             activityNow: activityNow,
-            privateCheckNoticeShown: privateCheckNotice,
-            privateCheckStopped: privateCheckStopped,
+            privateCheckNoticeShown: notice != null,
           ),
       for (final item in swapItems)
         ActivityEntry(
@@ -470,7 +466,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
                         key: const ValueKey('mobile_activity_feed'),
                         sections: sections,
                         showHeader: false,
-                        showPrivateCheckNotice: privateCheckNotice,
+                        privateCheckNotice: notice,
                         cardWidth: null,
                         rowKeyPrefix: 'mobile_activity',
                         scrollAnchor: _scrollAnchor,

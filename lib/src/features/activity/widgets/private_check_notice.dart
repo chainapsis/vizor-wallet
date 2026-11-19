@@ -1,39 +1,66 @@
 import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../rust/api/sync.dart' as rust_sync;
+import '../transaction_completeness.dart';
 
-/// A short notice above a list of activity while Private queries is still
-/// checking several of its rows, in place of a label on each (see
-/// `showsPrivateCheckNotice`).
+/// A short notice above a list of activity about the private check of its
+/// rows, in place of a label on each (see `privateCheckNotice`): still
+/// checking, or stopped and why, with a way to the Private queries setting
+/// when only the user can clear the stop.
 class PrivateCheckNotice extends StatelessWidget {
-  const PrivateCheckNotice({this.centered = false, super.key});
+  const PrivateCheckNotice({required this.state, super.key});
 
-  /// Centres the notice under a centred page title.
-  final bool centered;
+  final PrivateCheckNoticeState state;
+
+  /// The Settings button under a stop's reason, with the gap above it.
+  static const settingsHeight = AppSpacing.xxs + 32.0;
 
   static const _iconSize = kAppFormFactor == AppFormFactor.mobile ? 20.0 : 16.0;
 
   @override
   Widget build(BuildContext context) {
-    final color = context.colors.text.secondary;
-    final style = AppTypography.bodyMedium.copyWith(color: color);
+    final colors = context.colors;
+    final l10n = context.l10n;
+    final stop = state.stop;
+    final style = AppTypography.bodyMedium.copyWith(
+      color: colors.text.secondary,
+    );
     final lineHeight = MediaQuery.textScalerOf(
       context,
     ).scale((style.fontSize ?? 14) * (style.height ?? 1.4));
-    final text = Text(
-      context.l10n.activityPrivateCheckNotice,
-      style: style,
-      textAlign: centered ? TextAlign.center : TextAlign.start,
-    );
-    return Row(
+    final message = switch (stop) {
+      null => l10n.activityPrivateCheckNotice,
+      // What happened; the setting's own turn-off prompt says what turning
+      // it off does, as Home's longer hint does here.
+      rust_sync.TransparentStopReason.quarantined =>
+        l10n.activityPrivateCheckStopQuarantined,
+      rust_sync.TransparentStopReason.legacyDiscrepancy =>
+        l10n.activityPrivateCheckStopLegacyDiscrepancy,
+      rust_sync.TransparentStopReason.optOutUnfinished =>
+        l10n.activityPrivateCheckStopOptOutUnfinished,
+      rust_sync.TransparentStopReason.withdrawn ||
+      rust_sync.TransparentStopReason.stalled => transparentStopHint(
+        l10n,
+        stop,
+      ),
+    };
+    final icon = stop == null
+        // The loader in the line's own tone.
+        ? AppIcon(AppIcons.loader, size: _iconSize, color: style.color)
+        // As Home warns about Private queries.
+        : AppIcon(
+            AppIcons.warning,
+            size: _iconSize,
+            color: colors.text.warning,
+          );
+    final line = Row(
       key: const ValueKey('private_check_notice'),
-      mainAxisSize: centered ? MainAxisSize.min : MainAxisSize.max,
-      mainAxisAlignment: centered
-          ? MainAxisAlignment.center
-          : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
@@ -41,35 +68,64 @@ class PrivateCheckNotice extends StatelessWidget {
           padding: EdgeInsets.only(
             top: ((lineHeight - _iconSize) / 2).clamp(0.0, double.infinity),
           ),
-          // The loader in the line's own tone.
-          child: AppIcon(AppIcons.loader, size: _iconSize, color: color),
+          child: icon,
         ),
         const SizedBox(width: AppSpacing.xs),
-        if (centered) Flexible(child: text) else Expanded(child: text),
+        Expanded(child: Text(message, style: style)),
+      ],
+    );
+    if (stop == null || !transparentStopNeedsSettings(stop)) return line;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        line,
+        const SizedBox(height: AppSpacing.xxs),
+        Padding(
+          // Under the text, past the icon.
+          padding: const EdgeInsetsDirectional.only(
+            start: _iconSize + AppSpacing.xs,
+          ),
+          child: AppButton(
+            key: const ValueKey('private_check_notice_settings'),
+            variant: AppButtonVariant.ghost,
+            size: AppButtonSize.small,
+            height: settingsHeight - AppSpacing.xxs,
+            contentPadding: EdgeInsets.zero,
+            iconGap: AppSpacing.xxs,
+            // As Home's "See all".
+            trailing: const AppIcon(AppIcons.chevronForward, size: 16),
+            onPressed: () => context.go('/settings'),
+            // Named for the setting it leads to.
+            child: Text(
+              l10n.settingsPrivateQueriesLabel,
+              style: AppTypography.labelLarge,
+            ),
+          ),
+        ),
       ],
     );
   }
 }
 
 /// Holds a [PrivateCheckNotice] in place so it eases in and out with its
-/// spacing instead of moving the list below it in one jump. Shown from the
-/// first frame without an entrance, and switched without moving under
-/// reduced motion.
+/// spacing instead of moving the list below it in one jump, and cross-fades
+/// between checking and stopped in place, so only finishing folds it away.
+/// Shown from the first frame without an entrance, and switched without
+/// moving under reduced motion.
 class PrivateCheckNoticeSlot extends StatefulWidget {
   const PrivateCheckNoticeSlot({
-    required this.checking,
+    required this.notice,
     this.padding = EdgeInsets.zero,
-    this.centered = false,
     this.snapWhenScrolled = false,
     super.key,
   });
 
-  /// Whether several rows await the private check.
-  final bool checking;
+  /// The notice to show, or null for none.
+  final PrivateCheckNoticeState? notice;
 
   /// The notice's spacing, which appears and goes with it.
   final EdgeInsets padding;
-  final bool centered;
 
   /// Switches at once when the list has scrolled, for a list whose scroll
   /// anchor keeps the visible rows still instead.
@@ -77,6 +133,10 @@ class PrivateCheckNoticeSlot extends StatefulWidget {
 
   static const enterDuration = Duration(milliseconds: 240);
   static const exitDuration = Duration(milliseconds: 200);
+
+  /// A switch between checking and stopped fades through: the old notice
+  /// fades out in the first half, the new one in over the second.
+  static const swapDuration = Duration(milliseconds: 240);
 
   /// The app's entrance curve; the exit runs it backwards, so it slows to a
   /// stop as well.
@@ -92,7 +152,7 @@ class _PrivateCheckNoticeSlotState extends State<PrivateCheckNoticeSlot>
     vsync: this,
     duration: PrivateCheckNoticeSlot.enterDuration,
     reverseDuration: PrivateCheckNoticeSlot.exitDuration,
-    value: widget.checking ? 1 : 0,
+    value: widget.notice != null ? 1 : 0,
   );
   late final _curve = CurvedAnimation(
     parent: _controller,
@@ -100,16 +160,34 @@ class _PrivateCheckNoticeSlotState extends State<PrivateCheckNoticeSlot>
     reverseCurve: PrivateCheckNoticeSlot.curve.flipped,
   );
 
+  /// The last notice shown, which stays while the slot eases out.
+  late PrivateCheckNoticeState? _shown = widget.notice;
+
+  /// A switch that happened at once, for the frame it lands in.
+  bool _snapped = false;
+
   @override
   void didUpdateWidget(PrivateCheckNoticeSlot oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.checking == widget.checking) return;
+    final notice = widget.notice;
+    if (oldWidget.notice == notice) return;
     final scrolled =
         widget.snapWhenScrolled &&
         (Scrollable.maybeOf(context)?.position.pixels ?? 0) > 0;
-    if (MediaQuery.disableAnimationsOf(context) || scrolled) {
-      _controller.value = widget.checking ? 1 : 0;
-    } else if (widget.checking) {
+    final snap = MediaQuery.disableAnimationsOf(context) || scrolled;
+    if (notice != null) {
+      _shown = notice;
+      if (snap && !_snapped) {
+        _snapped = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _snapped = false);
+        });
+      }
+    }
+    if ((oldWidget.notice != null) == (notice != null)) return;
+    if (snap) {
+      _controller.value = notice != null ? 1 : 0;
+    } else if (notice != null) {
       _controller.forward();
     } else {
       _controller.reverse();
@@ -125,6 +203,45 @@ class _PrivateCheckNoticeSlotState extends State<PrivateCheckNoticeSlot>
 
   @override
   Widget build(BuildContext context) {
+    final shown = _shown;
+    Widget content = shown == null
+        ? const SizedBox(width: double.infinity)
+        : PrivateCheckNotice(key: ValueKey(shown), state: shown);
+    if (!_snapped && !MediaQuery.disableAnimationsOf(context)) {
+      content = AnimatedSize(
+        duration: PrivateCheckNoticeSlot.swapDuration,
+        curve: PrivateCheckNoticeSlot.curve,
+        alignment: Alignment.topCenter,
+        child: AnimatedSwitcher(
+          duration: PrivateCheckNoticeSlot.swapDuration,
+          switchInCurve: const Interval(
+            0.5,
+            1,
+            curve: PrivateCheckNoticeSlot.curve,
+          ),
+          // Runs backwards, so it covers the first half.
+          switchOutCurve: Interval(
+            0.5,
+            1,
+            curve: PrivateCheckNoticeSlot.curve.flipped,
+          ),
+          // Sized by the incoming notice; the outgoing one fades over it.
+          layoutBuilder: (current, previous) => SizedBox(
+            width: double.infinity,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.topCenter,
+              children: [
+                for (final child in previous)
+                  Positioned(top: 0, left: 0, right: 0, child: child),
+                ?current,
+              ],
+            ),
+          ),
+          child: content,
+        ),
+      );
+    }
     return AnimatedBuilder(
       animation: _controller,
       // Nothing is built while hidden, so its loader does not keep ticking.
@@ -136,10 +253,7 @@ class _PrivateCheckNoticeSlotState extends State<PrivateCheckNoticeSlot>
         alignment: Alignment.topCenter,
         child: FadeTransition(
           opacity: _curve,
-          child: Padding(
-            padding: widget.padding,
-            child: PrivateCheckNotice(centered: widget.centered),
-          ),
+          child: Padding(padding: widget.padding, child: content),
         ),
       ),
     );
