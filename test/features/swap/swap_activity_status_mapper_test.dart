@@ -138,6 +138,67 @@ void main() {
     }
   });
 
+  test('groups both swap legs in every amount-bearing status', () {
+    for (final status in [
+      SwapIntentStatus.processing,
+      SwapIntentStatus.complete,
+      SwapIntentStatus.failed,
+      SwapIntentStatus.refunded,
+      SwapIntentStatus.incompleteDeposit,
+    ]) {
+      final intent =
+          _intent(
+            status: status,
+            direction: SwapDirection.zecToExternal,
+            externalAsset: SwapAsset.usdc,
+          ).copyWith(
+            sellAmount: '12450.25 ZEC',
+            receiveEstimate: '113000.000001 USDC',
+          );
+      final visible = swapActivityStatusPresentationForIntent(
+        testL10n,
+        _state(),
+        intent,
+      );
+      expect(visible.payAmountText, '12,450.25 ZEC', reason: status.name);
+      expect(
+        visible.receiveAmountText,
+        '113,000.000001 USDC',
+        reason: status.name,
+      );
+
+      final hidden = swapActivityStatusPresentationForIntent(
+        testL10n,
+        _state(),
+        intent,
+        privacyModeEnabled: true,
+      );
+      expect(hidden.payAmountText, '•••••• ZEC', reason: status.name);
+      expect(hidden.receiveAmountText, '•••••• USDC', reason: status.name);
+    }
+  });
+
+  test('groups realised slippage amounts and keeps the percentage visible', () {
+    final intent = _intent(
+      status: SwapIntentStatus.complete,
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+    ).copyWith(realisedSlippageText: '1500.250001 USDC (1.5%)');
+
+    String slippage({required bool hidden}) => _detailValue(
+      swapActivityStatusPresentationForIntent(
+        testL10n,
+        _state(),
+        intent,
+        privacyModeEnabled: hidden,
+      ).details,
+      'Realized slippage',
+    );
+
+    expect(slippage(hidden: false), '1,500.250001 USDC (1.5%)');
+    expect(slippage(hidden: true), '•••••• USDC (1.5%)');
+  });
+
   test('a private swap names the one-time address on its ZEC side', () {
     SwapIntent intent(SwapDirection direction, {required bool private}) =>
         _intent(

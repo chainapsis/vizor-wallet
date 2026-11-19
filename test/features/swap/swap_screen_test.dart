@@ -661,7 +661,7 @@ void main() {
           child: Center(
             child: SwapDepositTokensPageContent(
               asset: SwapAsset.usdc,
-              amountText: '999.99 USDC',
+              amountText: '113000.125 USDC',
               depositAddress: depositAddress,
               expiresInLabel: '16mins',
               onDeposited: () {},
@@ -716,7 +716,7 @@ void main() {
           .getRect(
             find.descendant(
               of: find.byKey(const ValueKey('swap_deposit_amount_right_item')),
-              matching: find.text('999.99 USDC'),
+              matching: find.text('113,000.125 USDC'),
             ),
           )
           .right,
@@ -754,7 +754,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_amount')));
     await tester.pump();
 
-    expect(clipboardWrites.last, '999.99');
+    expect(find.text('113,000.125 USDC'), findsNWidgets(2));
+    expect(clipboardWrites.last, '113000.125');
 
     await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_address')));
     await tester.pump();
@@ -5208,9 +5209,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
     await tester.pumpAndSettle();
 
-    final description = find.byKey(
-      const ValueKey('swap_slippage_description'),
-    );
+    final description = find.byKey(const ValueKey('swap_slippage_description'));
     final explainerTop = tester.getBottomLeft(description).dy;
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))

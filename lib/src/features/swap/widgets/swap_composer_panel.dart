@@ -11,6 +11,7 @@ import '../../address_book/widgets/contact_name_inline.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
+import '../models/swap_token_amount_formatting.dart';
 import 'one_time_address_label.dart';
 import 'swap_asset_icon.dart';
 import 'swap_quote_error_text.dart';
@@ -173,7 +174,9 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final receiveInputIsFiat =
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final targetDirection = state.direction.toggled;
-    final rateText = widget.rateText ?? _rateTextForState(context.l10n, state);
+    final rateText = groupSwapRateText(
+      widget.rateText ?? _rateTextForState(context.l10n, state),
+    );
     final quoteError =
         state.quoteAmountPrecisionError(context.l10n) ??
         state.externalAssetSupportError(context.l10n) ??

@@ -193,11 +193,12 @@ void main() {
       );
     });
 
-    await tester.pumpWidget(_harness(_content()));
+    await tester.pumpWidget(_harness(_content(amountText: '113000.125 USDC')));
+    expect(find.text('113,000.125 USDC'), findsNWidgets(2));
     await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_amount')));
     await tester.pump();
 
-    expect(clipboardWrites, ['999.99']);
+    expect(clipboardWrites, ['113000.125']);
   });
 
   testWidgets('mobile deposit detail rows reserve the Figma value area', (
@@ -290,10 +291,10 @@ void main() {
   });
 }
 
-SwapDepositTokensPageContent _content() {
+SwapDepositTokensPageContent _content({String amountText = '999.99 USDC'}) {
   return SwapDepositTokensPageContent(
     asset: SwapAsset.usdc,
-    amountText: '999.99 USDC',
+    amountText: amountText,
     depositAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
     expiresInLabel: '2hrs',
     onDeposited: () {},
