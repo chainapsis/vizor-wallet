@@ -71,62 +71,83 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountNameTooLong => '名称最多 20 个字符。';
 
   @override
-  String get accountVisibilityAccountChoice => '请选择使用此数字密码解锁时要显示的账户。';
-
-  @override
-  String get accountVisibilityAccounts => '使用此数字密码解锁时显示的账户';
+  String get accountVisibilityAccountChoice => '设置专用数字密码后，所选账户将从常规列表中隐藏。';
 
   @override
   String get accountVisibilityBiometricRequired => '需要生物识别验证。请重试。';
 
   @override
-  String get accountVisibilityChange => '更改独立数字密码';
+  String get accountVisibilityChange => '更改数字密码';
 
   @override
-  String get accountVisibilityCreate => '创建独立数字密码';
+  String get accountVisibilityConfirmPasscode => '确认账户专用数字密码';
 
   @override
-  String get accountVisibilityDelete => '移除独立数字密码';
+  String get accountVisibilityCreate => '创建账户专用数字密码';
 
   @override
-  String get accountVisibilityDeleteBody => '关联账户将重新出现在常规账户列表中。';
+  String get accountVisibilityCreatedBody =>
+      '在锁定界面输入新的账户专用数字密码。验证通过后，只会显示这个账户。';
+
+  @override
+  String get accountVisibilityCreatedTitle => '数字密码已设置';
+
+  @override
+  String get accountVisibilityDelete => '解除关联';
+
+  @override
+  String get accountVisibilityDeleteBody => '该账户将重新出现在常规列表中。此账户专用数字密码将失效。';
 
   @override
   String get accountVisibilityDescription =>
-      '在锁定界面输入独立数字密码，即可显示与其关联的账户。关联账户会从常规账户列表中隐藏。';
+      '如果想单独查看某个账户，可以为它设置专用数字密码。用平时的钱包数字密码打开 Vizor 时，该账户会隐藏。在锁定界面输入账户专用数字密码并完成验证后，只会显示该账户。';
 
   @override
   String get accountVisibilityDifferentPasscode => '请选择其他数字密码。';
 
   @override
-  String get accountVisibilityEditAccounts => '更改要显示的账户';
+  String get accountVisibilityEnterSeparatePasscode => '输入账户专用数字密码';
 
   @override
-  String get accountVisibilityEnterSeparatePasscode => '请输入独立数字密码。';
+  String get accountVisibilityEnterWalletPasscode => '输入钱包数字密码';
 
   @override
-  String get accountVisibilityEnterWalletPasscode => '请输入钱包数字密码。';
+  String get accountVisibilityKeepOrdinary =>
+      '常规列表中须保留至少一个账户。请先添加一个常规账户，再继续设置。';
 
   @override
-  String get accountVisibilityKeepOrdinary => '请在常规账户列表中至少保留一个账户。';
+  String get accountVisibilityLegacyLink =>
+      '此数字密码关联了多个账户。如需为每个账户设置专用数字密码，请先解除关联。';
 
   @override
-  String get accountVisibilityManage => '使用独立数字密码管理';
+  String get accountVisibilityLegacyUnlink => '这些账户将重新出现在常规列表中。它们共用的数字密码将失效。';
 
   @override
-  String get accountVisibilityManageTitle => '管理独立数字密码';
+  String get accountVisibilityManage => '管理账户专用数字密码';
 
   @override
-  String get accountVisibilityNewPasscode => '请输入新的独立数字密码。';
+  String get accountVisibilityManageTitle => '账户专用数字密码';
 
   @override
-  String get accountVisibilitySelectAccount => '请至少选择一个账户。';
+  String get accountVisibilityNewPasscode => '设置新的账户专用数字密码';
+
+  @override
+  String get accountVisibilityNextWalletPasscode => '接下来请输入钱包数字密码';
+
+  @override
+  String get accountVisibilitySelectAccount => '请重新选择一个账户。';
+
+  @override
+  String get accountVisibilitySelectTitle => '选择账户';
+
+  @override
+  String get accountVisibilitySixDigits => '使用 6 位数字';
 
   @override
   String get accountVisibilityTitle => '按数字密码显示账户';
 
   @override
-  String get accountVisibilityUpdateFailed => '无法更新账户显示设置。请重试。';
+  String get accountVisibilityUpdateFailed => '无法保存账户专用数字密码设置。请重试。';
 
   @override
   String get accountsActionsLabel => '账户操作';

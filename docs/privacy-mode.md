@@ -92,15 +92,17 @@ flow. Legacy installs with no marker keep their saved Boolean preference.
 
 ## Accounts by passcode (mobile)
 
-Settings > Account > Accounts by passcode always shows both actions. Creating a
-separate passcode lists the ordinary accounts available for assignment. To
-manage a previous assignment, enter its separate passcode and complete wallet
-authentication. The ordinary screen and failed lookups do not display whether
-a separate passcode is configured.
+Settings > Account > Accounts by passcode always shows both actions. After
+wallet authentication, choose one regular account and set its own passcode.
+At least one account stays in the regular list. To manage an assignment, enter
+its account passcode and complete wallet authentication. The linked account
+card offers passcode changes and unlinking. Unlinking returns the account to
+the regular list and retires that code. The overview and failed lookups keep
+the same presentation regardless of existing assignments.
 
 The startup keypad always asks for a passcode first. The wallet passcode opens
-the ordinary account list. A separate passcode selects only the accounts
-assigned to that code and then requires the wallet passcode, or a biometric
+the ordinary account list. An account passcode selects its linked account
+and then requires the wallet passcode, or a biometric
 prompt that supplies the wallet passcode if biometric unlock is enabled.
 Biometrics are also required for the ordinary entry when enabled. A cancelled,
 unavailable or invalidated prompt keeps the wallet locked. Biometric settings
@@ -112,6 +114,10 @@ memory and is set before the wallet publishes unlocked state. Re-entering
 with the wallet passcode cannot restore a previously active hidden account.
 Sync and reset still cover all accounts. Resetting Vizor is an explicit
 whole-wallet action, including when only one ordinary account is shown.
+
+An earlier build could link several accounts to one code. Existing links
+retain their account list and can be unlinked after authentication. New and
+replacement codes are limited to one account.
 
 A background trip or keep-awake idle lock ends a separate account view or an
 authenticated account management view. The native app switcher cover applies

@@ -73,69 +73,91 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get accountVisibilityAccountChoice =>
-      'Choose the accounts to show when opening with this passcode.';
-
-  @override
-  String get accountVisibilityAccounts => 'Accounts shown with this passcode';
+      'The selected account will be hidden from the regular list after you set its passcode.';
 
   @override
   String get accountVisibilityBiometricRequired =>
       'Biometric verification is required. Try again.';
 
   @override
-  String get accountVisibilityChange => 'Change separate passcode';
+  String get accountVisibilityChange => 'Change passcode';
 
   @override
-  String get accountVisibilityCreate => 'Create separate passcode';
+  String get accountVisibilityConfirmPasscode => 'Confirm the account passcode';
 
   @override
-  String get accountVisibilityDelete => 'Remove separate passcode';
+  String get accountVisibilityCreate => 'Create an account passcode';
+
+  @override
+  String get accountVisibilityCreatedBody =>
+      'On the lock screen, enter the new account passcode to see just this account after you verify.';
+
+  @override
+  String get accountVisibilityCreatedTitle => 'Passcode set';
+
+  @override
+  String get accountVisibilityDelete => 'Unlink';
 
   @override
   String get accountVisibilityDeleteBody =>
-      'The linked accounts will appear in the regular account list again.';
+      'The account will appear in your regular list again. Its account passcode will stop working.';
 
   @override
   String get accountVisibilityDescription =>
-      'Enter a separate passcode on the lock screen to show the accounts linked to it. Linked accounts are hidden from the regular account list.';
+      'Set a different passcode for an account you want to view separately. When you open Vizor with your usual wallet passcode, that account is hidden. Enter the account passcode on the lock screen and finish verification to see just that account.';
 
   @override
   String get accountVisibilityDifferentPasscode =>
       'Choose a different passcode.';
 
   @override
-  String get accountVisibilityEditAccounts => 'Change which accounts are shown';
-
-  @override
   String get accountVisibilityEnterSeparatePasscode =>
-      'Enter your separate passcode.';
+      'Enter the account passcode';
 
   @override
   String get accountVisibilityEnterWalletPasscode =>
-      'Enter your wallet passcode.';
+      'Enter your wallet passcode';
 
   @override
   String get accountVisibilityKeepOrdinary =>
-      'Leave at least one account in the regular account list.';
+      'Keep at least one account in your regular list. Add another regular account to continue.';
 
   @override
-  String get accountVisibilityManage => 'Manage with separate passcode';
+  String get accountVisibilityLegacyLink =>
+      'This passcode is linked to multiple accounts. Unlink it to set up one passcode per account.';
 
   @override
-  String get accountVisibilityManageTitle => 'Manage separate passcode';
+  String get accountVisibilityLegacyUnlink =>
+      'These accounts will appear in your regular list again. Their shared passcode will stop working.';
 
   @override
-  String get accountVisibilityNewPasscode => 'Enter a new separate passcode.';
+  String get accountVisibilityManage => 'Manage an account passcode';
 
   @override
-  String get accountVisibilitySelectAccount => 'Select at least one account.';
+  String get accountVisibilityManageTitle => 'Account passcode';
+
+  @override
+  String get accountVisibilityNewPasscode => 'Choose a new account passcode';
+
+  @override
+  String get accountVisibilityNextWalletPasscode =>
+      'Now enter your wallet passcode';
+
+  @override
+  String get accountVisibilitySelectAccount => 'Choose an account to continue.';
+
+  @override
+  String get accountVisibilitySelectTitle => 'Choose an account';
+
+  @override
+  String get accountVisibilitySixDigits => 'Use 6 digits';
 
   @override
   String get accountVisibilityTitle => 'Accounts by passcode';
 
   @override
   String get accountVisibilityUpdateFailed =>
-      'Couldn’t update account visibility. Try again.';
+      'Couldn’t save the account passcode settings. Try again.';
 
   @override
   String get accountsActionsLabel => 'Account actions';

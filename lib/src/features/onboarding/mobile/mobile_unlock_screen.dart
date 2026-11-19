@@ -379,7 +379,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     final subtitle = _submitting
         ? context.l10n.onboardingUnlockOpening
         : _selectedRule != null
-        ? context.l10n.accountVisibilityEnterWalletPasscode
+        ? context.l10n.accountVisibilityNextWalletPasscode
         : context.l10n.onboardingUnlockEnterPasscode;
     return Scaffold(
       backgroundColor: colors.background.window,

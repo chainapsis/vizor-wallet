@@ -9,7 +9,10 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
+import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/mobile_account_visibility_provider.dart';
@@ -24,11 +27,11 @@ enum _Step {
   createAuth,
   manageAuth,
   manageWallet,
-  selectAccounts,
+  selectAccount,
   newPasscode,
   confirmPasscode,
+  created,
   manage,
-  editAccounts,
   remove,
   confirmBiometricChange,
 }
@@ -54,7 +57,7 @@ class _MobileAccountVisibilityScreenState
   late final MobileAccountManagementSession _management;
   final _managementOwner = Object();
   late final AppLifecycleListener _lifecycle;
-  final _selected = <String>{};
+  String? _selectedAccountId;
   String _entry = '';
   String? _firstCode;
   String? _ruleId;
@@ -96,11 +99,11 @@ class _MobileAccountVisibilityScreenState
   }
 
   bool get _isAuthenticatedStep => switch (_step) {
-    _Step.selectAccounts ||
+    _Step.selectAccount ||
     _Step.newPasscode ||
     _Step.confirmPasscode ||
+    _Step.created ||
     _Step.manage ||
-    _Step.editAccounts ||
     _Step.remove => true,
     _ => false,
   };
@@ -137,14 +140,13 @@ class _MobileAccountVisibilityScreenState
       case _Step.newPasscode:
       case _Step.confirmPasscode:
         _firstCode = null;
-        _show(_ruleId == null ? _Step.selectAccounts : _Step.manage);
-      case _Step.editAccounts:
+        _show(_ruleId == null ? _Step.selectAccount : _Step.manage);
       case _Step.remove:
         _show(_Step.manage);
       default:
         _ruleId = null;
         _firstCode = null;
-        _selected.clear();
+        _selectedAccountId = null;
         _show(_Step.overview);
     }
   }
@@ -178,10 +180,7 @@ class _MobileAccountVisibilityScreenState
         return;
       }
       _firstCode = null;
-      await _save(
-        newPasscode: code,
-        accountIds: _ruleId == null ? _selected : null,
-      );
+      await _save(newPasscode: code);
       return;
     }
 
@@ -213,8 +212,8 @@ class _MobileAccountVisibilityScreenState
       }
       if (step == _Step.createAuth) {
         _ruleId = null;
-        _selected.clear();
-        _show(_Step.selectAccounts);
+        _selectedAccountId = null;
+        _show(_Step.selectAccount);
         return;
       }
       _ruleId = proof.ruleId;
@@ -239,13 +238,10 @@ class _MobileAccountVisibilityScreenState
     });
   }
 
-  Future<void> _save({
-    String? newPasscode,
-    Set<String>? accountIds,
-    bool remove = false,
-  }) async {
+  Future<void> _save({String? newPasscode, bool remove = false}) async {
     final revision = ++_revision;
     bool current() => mounted && revision == _revision;
+    final creating = _ruleId == null;
     final before = ref.read(accountProvider).value?.activeAccountUuid;
     setState(() => _busy = true);
     try {
@@ -254,7 +250,7 @@ class _MobileAccountVisibilityScreenState
           .change(
             isCurrent: current,
             ruleId: _ruleId,
-            accountIds: accountIds == null ? null : Set.of(accountIds),
+            accountId: creating ? _selectedAccountId : null,
             newPasscode: newPasscode,
             remove: remove,
           );
@@ -264,16 +260,28 @@ class _MobileAccountVisibilityScreenState
         unawaited(_refreshSelection());
       }
       _ruleId = rule?.id;
-      _show(remove ? _Step.overview : _Step.manage);
+      _selectedAccountId = null;
+      _show(switch ((remove, creating)) {
+        (true, _) => _Step.overview,
+        (false, true) => _Step.created,
+        (false, false) => _Step.manage,
+      });
     } on MobileAccountVisibilityEditException catch (error) {
       if (!current()) return;
-      if (newPasscode != null) _show(_Step.newPasscode);
+      if (creating &&
+          error.failure !=
+              MobileAccountVisibilityEditFailure.differentPasscode) {
+        _selectedAccountId = null;
+        _show(_Step.selectAccount);
+      } else if (newPasscode != null) {
+        _show(_Step.newPasscode);
+      }
       _fail(switch (error.failure) {
         MobileAccountVisibilityEditFailure.differentPasscode =>
           (l10n) => l10n.accountVisibilityDifferentPasscode,
         MobileAccountVisibilityEditFailure.keepOrdinary =>
           (l10n) => l10n.accountVisibilityKeepOrdinary,
-        MobileAccountVisibilityEditFailure.selectAccounts =>
+        MobileAccountVisibilityEditFailure.selectAccount =>
           (l10n) => l10n.accountVisibilitySelectAccount,
       });
     } catch (_) {
@@ -298,8 +306,9 @@ class _MobileAccountVisibilityScreenState
     final l10n = context.l10n;
     final title = switch (_step) {
       _Step.manageAuth => l10n.accountVisibilityEnterSeparatePasscode,
+      _Step.manageWallet => l10n.accountVisibilityNextWalletPasscode,
       _Step.newPasscode => l10n.accountVisibilityNewPasscode,
-      _Step.confirmPasscode => l10n.passcodeConfirmTitle,
+      _Step.confirmPasscode => l10n.accountVisibilityConfirmPasscode,
       _ => l10n.accountVisibilityEnterWalletPasscode,
     };
     final prompt = PasscodePromptField(
@@ -316,7 +325,7 @@ class _MobileAccountVisibilityScreenState
     const padding = EdgeInsets.symmetric(horizontal: kMobilePageMargin);
     return AdaptivePasscodeLayout(
       title: title,
-      subtitle: l10n.passcodeSixDigits,
+      subtitle: l10n.accountVisibilitySixDigits,
       prompt: prompt,
       keypad: keypad,
       legacyPadding: padding,
@@ -337,7 +346,7 @@ class _MobileAccountVisibilityScreenState
                     ),
                     const SizedBox(height: AppSpacing.s),
                     Text(
-                      l10n.passcodeSixDigits,
+                      l10n.accountVisibilitySixDigits,
                       style: AppTypography.bodyMedium,
                     ),
                     const SizedBox(height: AppSpacing.md),
@@ -364,12 +373,102 @@ class _MobileAccountVisibilityScreenState
     onTap: _busy ? null : action,
   );
 
-  Widget _content() {
+  Widget _accountChoices(List<AccountInfo> choices) {
     final l10n = context.l10n;
-    final config = ref.watch(mobileAccountVisibilityProvider);
-    final accounts =
-        ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[];
-    final rule = config.rule(_ruleId);
+    final canChoose = choices.length > 1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          canChoose
+              ? l10n.accountVisibilityAccountChoice
+              : l10n.accountVisibilityKeepOrdinary,
+          style: AppTypography.bodyMedium,
+        ),
+        if (canChoose) ...[
+          const SizedBox(height: AppSpacing.s),
+          RadioGroup<String>(
+            groupValue: _selectedAccountId,
+            onChanged: (id) => setState(() {
+              _selectedAccountId = id;
+              _error = null;
+            }),
+            child: Column(
+              children: [
+                for (final account in choices)
+                  RadioListTile<String>(
+                    key: ValueKey('account_visibility_choice_${account.uuid}'),
+                    value: account.uuid,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(account.name, style: AppTypography.labelLarge),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _linkedAccountActions() {
+    final l10n = context.l10n;
+    final rule = ref.watch(mobileAccountVisibilityProvider).rule(_ruleId);
+    if (rule == null) return const SizedBox.shrink();
+    final accounts = ref.watch(accountProvider).value?.accounts ?? const [];
+    final linked = accounts
+        .where((account) => rule.accountIds.contains(account.uuid))
+        .toList();
+    final legacy = rule.accountIds.length > 1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final account in linked)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.s),
+            child: MobileSurfaceCard(
+              child: Row(
+                children: [
+                  MobileAccountAvatar(
+                    profilePictureId: account.profilePictureId,
+                    hardwareSignerKind: account.hardwareSignerKind,
+                    size: AppProfilePictureSize.navLarge,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(account.name, style: AppTypography.labelLarge),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (_step == _Step.created || legacy)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.s),
+            child: Text(
+              legacy
+                  ? l10n.accountVisibilityLegacyLink
+                  : l10n.accountVisibilityCreatedBody,
+              style: AppTypography.bodyMedium,
+            ),
+          ),
+        const SizedBox(height: AppSpacing.md),
+        if (!legacy && linked.isNotEmpty)
+          _row(
+            l10n.accountVisibilityChange,
+            AppIcons.lock,
+            () => _show(_Step.newPasscode),
+          ),
+        _row(
+          l10n.accountVisibilityDelete,
+          AppIcons.trash,
+          () => _show(_Step.remove),
+        ),
+      ],
+    );
+  }
+
+  Widget _content(List<AccountInfo> choices) {
+    final l10n = context.l10n;
     return switch (_step) {
       _Step.overview => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -391,108 +490,54 @@ class _MobileAccountVisibilityScreenState
           ),
         ],
       ),
-      _Step.manage when rule != null => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(l10n.accountVisibilityAccounts, style: AppTypography.labelLarge),
-          for (final account in accounts)
-            if (rule.accountIds.contains(account.uuid))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-                child: Text(account.name, style: AppTypography.bodyLarge),
-              ),
-          const SizedBox(height: AppSpacing.md),
-          _row(l10n.accountVisibilityEditAccounts, AppIcons.users, () {
-            _selected
-              ..clear()
-              ..addAll(rule.accountIds);
-            _show(_Step.editAccounts);
-          }),
-          _row(
-            l10n.accountVisibilityChange,
-            AppIcons.lock,
-            () => _show(_Step.newPasscode),
-          ),
-          _row(
-            l10n.accountVisibilityDelete,
-            AppIcons.trash,
-            () => _show(_Step.remove),
-          ),
-        ],
-      ),
-      _Step.selectAccounts || _Step.editAccounts => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            l10n.accountVisibilityAccountChoice,
-            style: AppTypography.bodyMedium,
-          ),
-          const SizedBox(height: AppSpacing.s),
-          for (final account in accounts)
-            if (config.allows(account.uuid, null) ||
-                (rule?.accountIds.contains(account.uuid) ?? false))
-              CheckboxListTile(
-                key: ValueKey('account_visibility_choice_${account.uuid}'),
-                contentPadding: EdgeInsets.zero,
-                title: Text(account.name, style: AppTypography.labelLarge),
-                value: _selected.contains(account.uuid),
-                onChanged: _busy
-                    ? null
-                    : (selected) {
-                        setState(() {
-                          if (selected == true) {
-                            _selected.add(account.uuid);
-                          } else {
-                            _selected.remove(account.uuid);
-                          }
-                          _error = null;
-                        });
-                      },
-              ),
-        ],
-      ),
+      _Step.created || _Step.manage => _linkedAccountActions(),
+      _Step.selectAccount => _accountChoices(choices),
       _Step.remove => Text(
-        l10n.accountVisibilityDeleteBody,
+        (ref
+                        .watch(mobileAccountVisibilityProvider)
+                        .rule(_ruleId)
+                        ?.accountIds
+                        .length ??
+                    0) >
+                1
+            ? l10n.accountVisibilityLegacyUnlink
+            : l10n.accountVisibilityDeleteBody,
         style: AppTypography.bodyMedium,
       ),
       _ => const SizedBox.shrink(),
     };
   }
 
-  VoidCallback? _footerAction() => switch (_step) {
-    _Step.selectAccounts => () {
-      final ordinaryCount = ref
-          .read(accountProvider)
-          .requireValue
-          .accounts
-          .where(
-            (account) => ref
-                .read(mobileAccountVisibilityProvider)
-                .allows(account.uuid, null),
-          )
-          .length;
-      if (_selected.isEmpty) {
-        _fail((l10n) => l10n.accountVisibilitySelectAccount);
-      } else if (_selected.length == ordinaryCount) {
-        _fail((l10n) => l10n.accountVisibilityKeepOrdinary);
-      } else {
-        _show(_Step.newPasscode);
-      }
-    },
-    _Step.editAccounts => () => unawaited(_save(accountIds: _selected)),
-    _Step.remove => () => unawaited(_save(remove: true)),
-    _ => null,
-  };
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final colors = context.colors;
-    final action = _footerAction();
+    var choices = const <AccountInfo>[];
+    if (_step == _Step.selectAccount) {
+      final config = ref.watch(mobileAccountVisibilityProvider);
+      final accounts = ref.watch(accountProvider).value?.accounts ?? const [];
+      choices = accounts
+          .where((account) => config.allows(account.uuid, null))
+          .toList();
+    }
+    final canContinue =
+        choices.length > 1 &&
+        choices.any((account) => account.uuid == _selectedAccountId);
+    final (String? label, VoidCallback? action) = switch (_step) {
+      _Step.selectAccount => (
+        l10n.commonContinue,
+        canContinue ? () => _show(_Step.newPasscode) : null,
+      ),
+      _Step.remove => (
+        l10n.accountVisibilityDelete,
+        () => unawaited(_save(remove: true)),
+      ),
+      _ => (null, null),
+    };
     final title = switch (_step) {
-      _Step.selectAccounts => l10n.accountVisibilityCreate,
+      _Step.selectAccount => l10n.accountVisibilitySelectTitle,
+      _Step.created => l10n.accountVisibilityCreatedTitle,
       _Step.manage => l10n.accountVisibilityManageTitle,
-      _Step.editAccounts => l10n.accountVisibilityEditAccounts,
       _Step.remove => l10n.accountVisibilityDelete,
       _Step.confirmBiometricChange => l10n.settingsSectionSystem,
       _ => l10n.accountVisibilityTitle,
@@ -516,13 +561,13 @@ class _MobileAccountVisibilityScreenState
                     : ListView(
                         padding: const EdgeInsets.all(kMobilePageMargin),
                         children: [
-                          _content(),
+                          _content(choices),
                           if (_error case final error?)
                             Text(error(l10n), style: AppTypography.bodyMedium),
                         ],
                       ),
               ),
-              if (action != null)
+              if (label != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
                     kMobilePageMargin,
@@ -533,11 +578,7 @@ class _MobileAccountVisibilityScreenState
                   child: AppButton(
                     expand: true,
                     onPressed: _busy ? null : action,
-                    child: Text(switch (_step) {
-                      _Step.selectAccounts => l10n.commonContinue,
-                      _Step.remove => l10n.accountVisibilityDelete,
-                      _ => l10n.commonSave,
-                    }),
+                    child: Text(label),
                   ),
                 ),
             ],

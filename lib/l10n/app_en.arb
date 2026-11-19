@@ -82,81 +82,105 @@
   "@accountNameTooLong": {
     "description": "Validation message when an account name is longer than 20 characters."
   },
-  "accountVisibilityAccountChoice": "Choose the accounts to show when opening with this passcode.",
+  "accountVisibilityAccountChoice": "The selected account will be hidden from the regular list after you set its passcode.",
   "@accountVisibilityAccountChoice": {
-    "description": "[security] Mobile Settings > Accounts by passcode. AccountChoice label or guidance."
-  },
-  "accountVisibilityAccounts": "Accounts shown with this passcode",
-  "@accountVisibilityAccounts": {
-    "description": "[security] Mobile Settings > Accounts by passcode. Accounts label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Body of the account picker after the user verifies their wallet."
   },
   "accountVisibilityBiometricRequired": "Biometric verification is required. Try again.",
   "@accountVisibilityBiometricRequired": {
-    "description": "[security] Mobile Settings > Accounts by passcode. BiometricRequired label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Error after a required biometric prompt fails or is canceled."
   },
-  "accountVisibilityChange": "Change separate passcode",
+  "accountVisibilityChange": "Change passcode",
   "@accountVisibilityChange": {
-    "description": "[security] Mobile Settings > Accounts by passcode. Change label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Row that changes the linked account’s passcode."
   },
-  "accountVisibilityCreate": "Create separate passcode",
+  "accountVisibilityConfirmPasscode": "Confirm the account passcode",
+  "@accountVisibilityConfirmPasscode": {
+    "description": "[security] Accounts by passcode on mobile. Keypad heading when the user repeats the new account passcode."
+  },
+  "accountVisibilityCreate": "Create an account passcode",
   "@accountVisibilityCreate": {
-    "description": "[security] Mobile Settings > Accounts by passcode. Create label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Overview row that starts setup. Shown regardless of configured passcodes."
   },
-  "accountVisibilityDelete": "Remove separate passcode",
+  "accountVisibilityCreatedBody": "On the lock screen, enter the new account passcode to see just this account after you verify.",
+  "@accountVisibilityCreatedBody": {
+    "description": "[security] Accounts by passcode on mobile. Guidance below the linked account card after saving the new passcode."
+  },
+  "accountVisibilityCreatedTitle": "Passcode set",
+  "@accountVisibilityCreatedTitle": {
+    "description": "[security] Accounts by passcode on mobile. Page title above the linked account card after creating a passcode."
+  },
+  "accountVisibilityDelete": "Unlink",
   "@accountVisibilityDelete": {
-    "description": "[security] Mobile Settings > Accounts by passcode. Delete label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Management row, confirmation title and confirmation button for unlinking an account passcode."
   },
-  "accountVisibilityDeleteBody": "The linked accounts will appear in the regular account list again.",
+  "accountVisibilityDeleteBody": "The account will appear in your regular list again. Its account passcode will stop working.",
   "@accountVisibilityDeleteBody": {
-    "description": "[security] Mobile Settings > Accounts by passcode. DeleteBody label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Unlink confirmation describing what happens to the account and its passcode."
   },
-  "accountVisibilityDescription": "Enter a separate passcode on the lock screen to show the accounts linked to it. Linked accounts are hidden from the regular account list.",
+  "accountVisibilityDescription": "Set a different passcode for an account you want to view separately. When you open Vizor with your usual wallet passcode, that account is hidden. Enter the account passcode on the lock screen and finish verification to see just that account.",
   "@accountVisibilityDescription": {
-    "description": "[security] Mobile Settings > Accounts by passcode. Description label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Overview introduction shown identically before and after setup."
   },
   "accountVisibilityDifferentPasscode": "Choose a different passcode.",
   "@accountVisibilityDifferentPasscode": {
-    "description": "[security] Mobile Settings > Accounts by passcode. DifferentPasscode label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Error when entering an account passcode that is already in use."
   },
-  "accountVisibilityEditAccounts": "Change which accounts are shown",
-  "@accountVisibilityEditAccounts": {
-    "description": "[security] Mobile Settings > Accounts by passcode. EditAccounts label or guidance."
-  },
-  "accountVisibilityEnterSeparatePasscode": "Enter your separate passcode.",
+  "accountVisibilityEnterSeparatePasscode": "Enter the account passcode",
   "@accountVisibilityEnterSeparatePasscode": {
-    "description": "[security] Mobile Settings > Accounts by passcode. EnterSeparatePasscode label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Keypad heading when looking up an existing account passcode to manage."
   },
-  "accountVisibilityEnterWalletPasscode": "Enter your wallet passcode.",
+  "accountVisibilityEnterWalletPasscode": "Enter your wallet passcode",
   "@accountVisibilityEnterWalletPasscode": {
-    "description": "[security] Mobile Settings > Accounts by passcode. EnterWalletPasscode label or guidance."
+    "description": "[security] Accounts by passcode on mobile. First wallet authentication keypad in account passcode setup or before disabling biometrics."
   },
-  "accountVisibilityKeepOrdinary": "Leave at least one account in the regular account list.",
+  "accountVisibilityKeepOrdinary": "Keep at least one account in your regular list. Add another regular account to continue.",
   "@accountVisibilityKeepOrdinary": {
-    "description": "[security] Mobile Settings > Accounts by passcode. KeepOrdinary label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Shown after authenticating for setup when the last regular account cannot be linked."
   },
-  "accountVisibilityManage": "Manage with separate passcode",
+  "accountVisibilityLegacyLink": "This passcode is linked to multiple accounts. Unlink it to set up one passcode per account.",
+  "@accountVisibilityLegacyLink": {
+    "description": "[security] Accounts by passcode on mobile. Guidance after authenticating a passcode linked to several accounts by an earlier build."
+  },
+  "accountVisibilityLegacyUnlink": "These accounts will appear in your regular list again. Their shared passcode will stop working.",
+  "@accountVisibilityLegacyUnlink": {
+    "description": "[security] Accounts by passcode on mobile. Unlink confirmation for a previously configured multi-account passcode."
+  },
+  "accountVisibilityManage": "Manage an account passcode",
   "@accountVisibilityManage": {
-    "description": "[security] Mobile Settings > Accounts by passcode. Manage label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Overview row that opens management authentication. Shown regardless of configured passcodes."
   },
-  "accountVisibilityManageTitle": "Manage separate passcode",
+  "accountVisibilityManageTitle": "Account passcode",
   "@accountVisibilityManageTitle": {
-    "description": "[security] Mobile Settings > Accounts by passcode. ManageTitle label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Management page title above the linked account card."
   },
-  "accountVisibilityNewPasscode": "Enter a new separate passcode.",
+  "accountVisibilityNewPasscode": "Choose a new account passcode",
   "@accountVisibilityNewPasscode": {
-    "description": "[security] Mobile Settings > Accounts by passcode. NewPasscode label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Keypad heading when choosing or replacing an account passcode."
   },
-  "accountVisibilitySelectAccount": "Select at least one account.",
+  "accountVisibilityNextWalletPasscode": "Now enter your wallet passcode",
+  "@accountVisibilityNextWalletPasscode": {
+    "description": "[security] Accounts by passcode on mobile. Shown after a valid account passcode when biometrics are off, in unlock and management."
+  },
+  "accountVisibilitySelectAccount": "Choose an account to continue.",
   "@accountVisibilitySelectAccount": {
-    "description": "[security] Mobile Settings > Accounts by passcode. SelectAccount label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Error when the selected account becomes unavailable before saving."
+  },
+  "accountVisibilitySelectTitle": "Choose an account",
+  "@accountVisibilitySelectTitle": {
+    "description": "[security] Accounts by passcode on mobile. Single-selection page title in the account passcode setup flow."
+  },
+  "accountVisibilitySixDigits": "Use 6 digits",
+  "@accountVisibilitySixDigits": {
+    "description": "[security] Accounts by passcode on mobile. Short subtitle on the account passcode keypads."
   },
   "accountVisibilityTitle": "Accounts by passcode",
   "@accountVisibilityTitle": {
-    "description": "[security] Mobile Settings > Accounts by passcode. Title label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Account settings row and overview page title."
   },
-  "accountVisibilityUpdateFailed": "Couldn’t update account visibility. Try again.",
+  "accountVisibilityUpdateFailed": "Couldn’t save the account passcode settings. Try again.",
   "@accountVisibilityUpdateFailed": {
-    "description": "[security] Mobile Settings > Accounts by passcode. UpdateFailed label or guidance."
+    "description": "[security] Accounts by passcode on mobile. Error when saving, changing or unlinking an account passcode fails."
   },
   "accountsActionsLabel": "Account actions",
   "@accountsActionsLabel": {

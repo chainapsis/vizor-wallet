@@ -38,7 +38,7 @@ class MobileAccountVisibilityNotifier
   Future<MobileAccountVisibilityRule?> change({
     required bool Function() isCurrent,
     required String? ruleId,
-    Set<String>? accountIds,
+    String? accountId,
     String? newPasscode,
     bool remove = false,
   }) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
@@ -56,14 +56,17 @@ class MobileAccountVisibilityNotifier
         .where((rule) => rule.id != ruleId)
         .toList();
     final otherIds = {for (final rule in otherRules) ...rule.accountIds};
-    final ids = accountIds ?? existing?.accountIds ?? const <String>{};
+    final ids = existing?.accountIds ?? {?accountId};
     final validIds = accounts.map((account) => account.uuid).toSet();
+    // Older builds could assign several accounts to one passcode. Keep those
+    // accounts accessible and let the owner unlink them after authentication.
+    // A new or replacement passcode always covers exactly one account.
     if (!remove &&
-        (ids.isEmpty ||
+        (ids.length != 1 ||
             !validIds.containsAll(ids) ||
             ids.any(otherIds.contains))) {
       throw const MobileAccountVisibilityEditException(
-        MobileAccountVisibilityEditFailure.selectAccounts,
+        MobileAccountVisibilityEditFailure.selectAccount,
       );
     }
     if (!remove &&
@@ -73,9 +76,10 @@ class MobileAccountVisibilityNotifier
       );
     }
     final salt = current.salt ?? MobileAccountVisibilityStore.randomToken(32);
-    String? verifier = existing?.verifier;
-    if (newPasscode != null && !remove) {
-      if (!MobileAccountVisibilityStore.validCode(newPasscode)) {
+    MobileAccountVisibilityRule? rule;
+    if (!remove) {
+      if (newPasscode == null ||
+          !MobileAccountVisibilityStore.validCode(newPasscode)) {
         throw const MobileAccountVisibilityEditException(
           MobileAccountVisibilityEditFailure.differentPasscode,
         );
@@ -83,23 +87,21 @@ class MobileAccountVisibilityNotifier
       final matchesWallet = await ref
           .read(appSecurityProvider.notifier)
           .confirmPassword(newPasscode);
-      verifier = await ref
+      final verifier = await ref
           .read(mobileAccountVisibilityStoreProvider)
           .verifier(newPasscode, salt);
       if (matchesWallet ||
-          otherRules.any((rule) => rule.verifier == verifier)) {
+          current.rules.any((rule) => rule.verifier == verifier)) {
         throw const MobileAccountVisibilityEditException(
           MobileAccountVisibilityEditFailure.differentPasscode,
         );
       }
+      rule = MobileAccountVisibilityRule(
+        id: ruleId ?? MobileAccountVisibilityStore.randomToken(16),
+        verifier: verifier,
+        accountIds: Set<String>.unmodifiable(ids),
+      );
     }
-    final rule = remove
-        ? null
-        : MobileAccountVisibilityRule(
-            id: ruleId ?? MobileAccountVisibilityStore.randomToken(16),
-            verifier: verifier!,
-            accountIds: Set<String>.unmodifiable(ids),
-          );
     final next = MobileAccountVisibilityConfig(
       salt: salt,
       rules: List.unmodifiable([...otherRules, ?rule]),
@@ -148,7 +150,7 @@ class MobileAccountVisibilityNotifier
 enum MobileAccountVisibilityEditFailure {
   differentPasscode,
   keepOrdinary,
-  selectAccounts,
+  selectAccount,
 }
 
 class MobileAccountVisibilityEditException implements Exception {

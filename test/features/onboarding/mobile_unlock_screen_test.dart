@@ -1051,12 +1051,12 @@ void main() {
         expect(routed.router.state.uri.path, '/unlock');
         expect(container.read(appSecurityProvider).isUnlocked, isFalse);
         expect(container.read(visibleAccountsProvider), [ordinary]);
-        expect(find.text('Enter your wallet passcode.'), findsOneWidget);
+        expect(find.text('Now enter your wallet passcode'), findsOneWidget);
         await tester.tap(
           find.byKey(const ValueKey('mobile_unlock_cancel_separate_passcode')),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Enter your wallet passcode.'), findsNothing);
+        expect(find.text('Now enter your wallet passcode'), findsNothing);
         expect(container.read(appSecurityProvider).isUnlocked, isFalse);
         await _enterPasscode(tester, '246810');
         await _enterPasscode(tester, '123456');
