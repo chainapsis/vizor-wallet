@@ -195,6 +195,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       Color? textColor,
       Color? iconColor,
       bool wrap = false,
+      double minHeight = 26,
     }) {
       final itemTextColor = textColor ?? colors.text.inverse;
       final itemIconColor = iconColor ?? colors.icon.inverse;
@@ -207,7 +208,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           behavior: HitTestBehavior.opaque,
           onTap: () => select(action),
           child: Container(
-            constraints: BoxConstraints(minHeight: wrap ? 44 : 26),
+            constraints: BoxConstraints(minHeight: minHeight),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.xs,
               vertical: AppSpacing.xxs,
@@ -272,6 +273,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         label: context.l10n.accountsEdit,
         action: _AccountAction.edit,
       ),
+      if (scope == null || linked)
+        const AppContextMenuDivider(
+          key: ValueKey('mobile_account_menu_passcode_divider'),
+        ),
       if (scope == null)
         item(
           key: const ValueKey('mobile_account_menu_create_passcode'),
@@ -279,6 +284,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           label: context.l10n.accountVisibilityViewSeparately,
           action: _AccountAction.createPasscode,
           wrap: true,
+          minHeight: 44,
         ),
       if (linked) ...[
         if (rule!.accountIds.length == 1)
@@ -288,6 +294,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
             label: context.l10n.accountVisibilityChange,
             action: _AccountAction.changePasscode,
             wrap: true,
+            minHeight: 44,
           ),
         item(
           key: const ValueKey('mobile_account_menu_unlink_passcode'),
@@ -295,6 +302,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           label: context.l10n.accountVisibilityDelete,
           action: _AccountAction.unlinkPasscode,
           wrap: true,
+          minHeight: 44,
         ),
       ],
       if (canRemove) ...[
@@ -308,6 +316,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           action: _AccountAction.remove,
           textColor: colors.text.destructiveLight,
           iconColor: colors.icon.destructiveLight,
+          wrap: true,
         ),
       ],
     ];

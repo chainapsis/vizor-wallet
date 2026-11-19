@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -21,6 +22,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/mobile_account_visibility_provider.dart';
+
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _everyday = AccountInfo(uuid: 'a', name: 'Everyday', order: 0);
 const _travel = AccountInfo(uuid: 'b', name: 'Travel', order: 1);
@@ -297,7 +300,17 @@ void main() {
     final container = _container(store, includeTravel: false);
     addTearDown(container.dispose);
     await _pump(tester, container);
-    await _chooseAction(tester, _everyday.uuid, 'create');
+    await tester.tap(
+      find.byKey(ValueKey('mobile_accounts_menu_${_everyday.uuid}')),
+    );
+    await tester.pumpAndSettle();
+    final setup = find.text('View this account separately');
+    expect(
+      tester.getTopLeft(find.text('Reset Vizor')).dy,
+      greaterThan(tester.getBottomLeft(setup).dy),
+    );
+    await tester.tap(setup);
+    await tester.pumpAndSettle();
     expect(find.textContaining('Keep at least one account'), findsNothing);
     await tester.tap(find.text('Create a dedicated passcode'));
     await tester.pumpAndSettle();
@@ -316,7 +329,29 @@ void main() {
     await _openLinkedView(container);
     final router = await _pump(tester, container);
 
-    await _chooseAction(tester, _private.uuid, 'change');
+    await tester.tap(
+      find.byKey(ValueKey('mobile_accounts_menu_${_private.uuid}')),
+    );
+    await tester.pumpAndSettle();
+    final divider = find.byKey(
+      const ValueKey('mobile_account_menu_passcode_divider'),
+    );
+    final change = find.text('Change dedicated passcode');
+    final unlink = find.text('Stop viewing separately');
+    expect(
+      tester.getTopLeft(divider).dy,
+      greaterThan(tester.getBottomLeft(find.text('Edit account')).dy),
+    );
+    expect(
+      tester.getTopLeft(change).dy,
+      greaterThan(tester.getBottomLeft(divider).dy),
+    );
+    expect(
+      tester.getTopLeft(unlink).dy,
+      greaterThan(tester.getBottomLeft(change).dy),
+    );
+    await tester.tap(change);
+    await tester.pumpAndSettle();
     expect(find.text('Choose a dedicated passcode'), findsOneWidget);
     expect(find.text('Enter your wallet passcode'), findsNothing);
     await _enter(tester, '246810');
@@ -454,7 +489,19 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Change dedicated passcode'), findsNothing);
-    await tester.tap(find.text('Stop viewing separately'));
+    final divider = find.byKey(
+      const ValueKey('mobile_account_menu_passcode_divider'),
+    );
+    final unlink = find.text('Stop viewing separately');
+    expect(
+      tester.getTopLeft(unlink).dy,
+      greaterThan(tester.getBottomLeft(divider).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Remove account')).dy,
+      greaterThan(tester.getBottomLeft(unlink).dy),
+    );
+    await tester.tap(unlink);
     await tester.pumpAndSettle();
     expect(find.textContaining('These accounts will appear'), findsOneWidget);
     await tester.tap(find.widgetWithText(AppButton, 'Stop viewing separately'));
@@ -465,5 +512,38 @@ void main() {
       _travel,
       _private,
     ]);
+  });
+
+  testWidgets('the last account action stays readable at 200% text', (
+    tester,
+  ) async {
+    await loadFigmaCompareFonts();
+    final container = _container(_Store(), legacy: true);
+    addTearDown(container.dispose);
+    await _openLinkedView(container);
+    await _pump(tester, container);
+    tester.view.physicalSize = const Size(320, 336);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(ValueKey('mobile_accounts_menu_${_travel.uuid}')),
+    );
+    await tester.pumpAndSettle();
+
+    final remove = find.text('Remove account');
+    await tester.ensureVisible(remove);
+    await tester.pumpAndSettle();
+    expect(remove.hitTestable(), findsOneWidget);
+    expect(
+      tester.renderObject<RenderParagraph>(remove).didExceedMaxLines,
+      isFalse,
+    );
+    expect(
+      tester.getTopLeft(remove).dy,
+      greaterThan(
+        tester.getBottomLeft(find.text('Stop viewing separately')).dy,
+      ),
+    );
   });
 }

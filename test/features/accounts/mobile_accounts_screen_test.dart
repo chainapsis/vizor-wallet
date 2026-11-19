@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/storage/account_visibility_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_context_menu.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_account_avatar.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
@@ -503,10 +504,36 @@ void main() {
     final setup = find.byKey(
       const ValueKey('mobile_account_menu_create_passcode'),
     );
+    final remove = find.byKey(const ValueKey('mobile_account_menu_remove'));
+    final dividers = find.descendant(
+      of: menu,
+      matching: find.byType(AppContextMenuDivider),
+    );
+    expect(dividers, findsNWidgets(2));
+    expect(
+      tester.getTopLeft(dividers.first).dy,
+      greaterThan(tester.getBottomLeft(find.text('Edit account')).dy),
+    );
+    expect(
+      tester.getTopLeft(setup).dy,
+      greaterThan(tester.getBottomLeft(dividers.first).dy),
+    );
+    expect(
+      tester.getTopLeft(dividers.last).dy,
+      greaterThan(tester.getBottomLeft(setup).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Remove account')).dy,
+      greaterThan(tester.getBottomLeft(dividers.last).dy),
+    );
+    final passcodeGroupHeight =
+        tester.getSize(setup).height +
+        tester.getSize(dividers.first).height +
+        AppSpacing.xs * 2;
     final otherMenu = tester.getSize(menu);
     expect(
       otherMenu,
-      Size(208, 241 + AppSpacing.xs + tester.getSize(setup).height),
+      Size(208, 241 - 26 + passcodeGroupHeight + tester.getSize(remove).height),
     );
     expect(setup.hitTestable(), findsOneWidget);
     expect(
@@ -524,7 +551,7 @@ void main() {
     expect(find.text('Remove account'), findsOneWidget);
     expect(
       tester.getSize(menu),
-      Size(208, 207 + AppSpacing.xs + tester.getSize(setup).height),
+      Size(208, 207 - 26 + passcodeGroupHeight + tester.getSize(remove).height),
     );
   });
 
