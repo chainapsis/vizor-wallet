@@ -627,6 +627,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
   const SwapDepositTimeoutPageContent({
     required this.onRestart,
     this.onLateDeposit,
+    this.depositClaimed = false,
     super.key,
   });
 
@@ -636,9 +637,16 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
   final VoidCallback onRestart;
   final VoidCallback? onLateDeposit;
 
+  /// Whether the user said they sent the deposit. Such a timeout explains
+  /// that it went undetected and offers help instead of asking whether they
+  /// sent one.
+  final bool depositClaimed;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final lateDeposit = onLateDeposit;
+    final claimed = depositClaimed && lateDeposit != null;
     return SizedBox(
       key: const ValueKey('swap_deposit_timeout_panel'),
       width: 340,
@@ -691,9 +699,11 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  context.l10n.swapDepositTimeoutBody,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  claimed
+                      ? context.l10n.swapDepositTimeoutClaimedBody
+                      : context.l10n.swapDepositTimeoutBody,
+                  maxLines: claimed ? null : 2,
+                  overflow: claimed ? null : TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.accent,
@@ -712,9 +722,11 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
             leading: const AppIcon(AppIcons.renew, size: 16),
             child: Text(context.l10n.swapTimeoutRestart),
           ),
-          if (onLateDeposit != null) ...[
+          if (lateDeposit != null) ...[
             const SizedBox(height: AppSpacing.xs),
-            SwapSupportPrompt(onTap: onLateDeposit!, failedSwap: false),
+            claimed
+                ? SwapSupportPrompt.depositClaimed(onTap: lateDeposit)
+                : SwapSupportPrompt(onTap: lateDeposit, failedSwap: false),
           ],
         ],
       ),

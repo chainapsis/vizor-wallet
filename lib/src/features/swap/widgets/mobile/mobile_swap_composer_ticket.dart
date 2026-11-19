@@ -348,6 +348,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             child: Center(
               child: SwapConfidentialSeamReveal(
                 reveal: widget.confidentialReveal,
+                on: widget.state.confidential,
                 size: _switchButtonSize,
                 radius: 18,
                 faceBorder: Border.all(

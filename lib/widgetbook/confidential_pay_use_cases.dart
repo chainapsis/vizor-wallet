@@ -150,8 +150,11 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
   /// Update applies slippage and confidential together, as in the app.
   void _saveSettings(int bps, bool confidential) {
     setState(() {
-      if (confidential && !_confidential) {
-        _confidentialReveal.turnedOn(settingsOpen: _settingsOpen);
+      if (confidential != _confidential) {
+        _confidentialReveal.changed(
+          confidential: confidential,
+          settingsOpen: _settingsOpen,
+        );
       }
       _confidential = confidential;
       _slippageBps = bps;
@@ -346,6 +349,12 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
           amountText: '990 USDC',
           amountFiatText: r'$990.12',
           recipientAddress: _newRecipientAddress,
+          // The progress tab, as the app shows it while the payment runs.
+          progressPresentation: _confidentialPayPresentation(
+            context.l10n,
+            completed: widget.completed,
+            sellAmount: '$_estimatedZec ZEC',
+          ),
           onShowFullAddress: () {},
           flowConnector: _route(review: false),
         ),

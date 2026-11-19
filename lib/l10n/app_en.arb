@@ -13960,6 +13960,10 @@
       }
     }
   },
+  "swapActivityStepSentAwaitingDetection": "Waiting for NEAR Intents to detect your deposit.",
+  "@swapActivityStepSentAwaitingDetection": {
+    "description": "Description of the first swap progress step after the user says they sent an external deposit that NEAR Intents has not seen yet."
+  },
   "swapActivityStepSourceDescription": "Confirm waiting for the source chain and provider to recognise the deposit",
   "@swapActivityStepSourceDescription": {
     "description": "Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit."
@@ -14135,13 +14139,21 @@
   "@swapConfidentialLabel": {
     "description": "Name of the NEAR Intents confidential route: the settings toggle label and the badge on swap and Pay review and status screens."
   },
+  "swapConfidentialNoExplorerPay": "Confidential payments hide the link between deposit and payout, so NEAR Intents explorer links aren't available.",
+  "@swapConfidentialNoExplorerPay": {
+    "description": "Note at the bottom of a confidential payment's progress card, where a standard payment shows its View on NEAR Intents link: why NEAR Intents explorer links aren't offered. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite. Up to three lines."
+  },
+  "swapConfidentialNoExplorerSwap": "Confidential swaps hide the link between deposit and payout, so NEAR Intents explorer links aren't available.",
+  "@swapConfidentialNoExplorerSwap": {
+    "description": "Note at the bottom of a confidential swap's progress card, where a standard swap shows its View on NEAR Intents link: why NEAR Intents explorer links aren't offered. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite. Up to three lines."
+  },
   "swapConfidentialRouteTooltip": "Your deposit and payout can't be matched on NEAR Intents or found in its explorer. Both still show on their own chains.",
   "@swapConfidentialRouteTooltip": {
     "description": "Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen."
   },
-  "swapConfidentialSettingDescription": "Your deposit and payout can't be tracked to each other.",
+  "swapConfidentialSettingDescription": "Hides the link between your deposit and payout on NEAR Intents.",
   "@swapConfidentialSettingDescription": {
-    "description": "Description under the Confidential toggle in the swap and Pay settings modal."
+    "description": "Description under the Confidential toggle in the swap and Pay settings modal: what the route hides, limited to NEAR Intents, since the deposit and payout still show on their own chains. The progress card explains the missing explorer link."
   },
   "swapContactAlreadyInAddressBook": "Already in your address book",
   "@swapContactAlreadyInAddressBook": {
@@ -14233,6 +14245,10 @@
   "@swapDepositTimeoutBody": {
     "description": "[security] Body on the desktop deposit screen after the deposit window ended; the deposit address must not be used any more. Contains a line break."
   },
+  "swapDepositTimeoutClaimedBody": "Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may try to refund it to your refund address.",
+  "@swapDepositTimeoutClaimedBody": {
+    "description": "Body on the desktop deposit screen after the deposit window ended, when the user said they sent the deposit but NEAR Intents never detected it. Contains a line break."
+  },
   "swapDepositTitle": "Deposit tokens",
   "@swapDepositTitle": {
     "description": "Title of the desktop screen showing the one-time deposit address for a swap."
@@ -14265,9 +14281,9 @@
   "@swapFailureDepositNotIndexed": {
     "description": "Swap status panel: the provider has not seen the deposit transaction yet."
   },
-  "swapFailureDepositRejected": "Deposit transaction was rejected.\nCheck the address, memo, and tx hash.",
+  "swapFailureDepositRejected": "Couldn’t submit this transaction hash.\nCheck it and try again.",
   "@swapFailureDepositRejected": {
-    "description": "[security] Swap status panel: the provider rejected the submitted deposit transaction. Tells the user which deposit details to check."
+    "description": "[security] Swap status: the provider did not accept a deposit transaction hash (HTTP 400, invalid input). Asks the user to check the hash and try again."
   },
   "swapFailureDepositSubmitFailed": "Deposit status could not be submitted.\nTry again later.",
   "@swapFailureDepositSubmitFailed": {
@@ -14871,7 +14887,7 @@
   },
   "swapSupportCopyFailed": "Couldn’t copy the details. Try again.",
   "@swapSupportCopyFailed": {
-    "description": "Persistent inline message when copying support details fails."
+    "description": "Error when copying the deposit details from the swap support sheet fails: a toast on mobile, an inline line on desktop."
   },
   "swapSupportDetails": "Could you check this transaction and its refund status?\n\nProvider status: {status}\nDeposit address: {address}\nDeposit transaction: {txHash}\n{routeDetails}",
   "@swapSupportDetails": {
@@ -14891,9 +14907,21 @@
       }
     }
   },
+  "swapSupportDetailsCopied": "Deposit details copied",
+  "@swapSupportDetailsCopied": {
+    "description": "Toast after the swap support sheet copies the deposit details for an email."
+  },
   "swapSupportDirectHelp": "If you still need help, copy the deposit details and paste them into an email to the address below.",
   "@swapSupportDirectHelp": {
     "description": "Instructions for copying deposit details into a support email the user writes."
+  },
+  "swapSupportEmailCopied": "Support email copied",
+  "@swapSupportEmailCopied": {
+    "description": "Toast after the swap support sheet copies the support email address."
+  },
+  "swapSupportEmailCopyFailed": "Couldn’t copy the email address. Try again.",
+  "@swapSupportEmailCopyFailed": {
+    "description": "Error toast when copying the support email address from the swap support sheet fails."
   },
   "swapSupportExpiredBody": "Check the transaction in the wallet you sent from. If your deposit arrived late, NEAR may try to refund it to your refund address.",
   "@swapSupportExpiredBody": {
@@ -14935,6 +14963,18 @@
   "swapTimeoutBody": "Please, start another swap transaction.",
   "@swapTimeoutBody": {
     "description": "Body text on the swap timeout screen asking the user to start a new swap."
+  },
+  "swapTimeoutClaimedBody": "If it arrives late, NEAR may try to refund it to your refund address.",
+  "@swapTimeoutClaimedBody": {
+    "description": "Body on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it."
+  },
+  "swapTimeoutClaimedHeadline": "Your deposit wasn’t detected in time",
+  "@swapTimeoutClaimedHeadline": {
+    "description": "Serif headline on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it. Two lines at most."
+  },
+  "swapTimeoutGetHelp": "Get help",
+  "@swapTimeoutGetHelp": {
+    "description": "Link under the restart button on the swap timeout screen when the user said they sent the deposit; opens the support sheet with the deposit details and the support email."
   },
   "swapTimeoutHeadline": "This deposit address is no longer valid",
   "@swapTimeoutHeadline": {

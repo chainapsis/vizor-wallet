@@ -15,6 +15,10 @@ enum SwapStatusStepKind {
 
   /// The provider sends the swapped asset to this wallet.
   walletDelivery,
+
+  /// The provider confirms the deposit. Waits with an hourglass, so a step
+  /// that has not started never shows a check.
+  depositConfirmation,
   other,
 }
 

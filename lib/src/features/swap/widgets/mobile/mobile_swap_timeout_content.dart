@@ -14,6 +14,7 @@ class MobileSwapTimeoutContent extends StatelessWidget {
   const MobileSwapTimeoutContent({
     required this.onRestart,
     this.onLateDeposit,
+    this.depositClaimed = false,
     super.key,
   });
 
@@ -38,9 +39,16 @@ class MobileSwapTimeoutContent extends StatelessWidget {
   final VoidCallback onRestart;
   final VoidCallback? onLateDeposit;
 
+  /// Whether the user said they sent the deposit. Such a timeout explains
+  /// that it went undetected and offers help instead of asking whether they
+  /// sent one.
+  final bool depositClaimed;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final lateDeposit = onLateDeposit;
+    final claimed = depositClaimed && lateDeposit != null;
     return Center(
       child: SizedBox(
         key: const ValueKey('mobile_swap_timeout_content'),
@@ -84,15 +92,18 @@ class MobileSwapTimeoutContent extends StatelessWidget {
                   SizedBox(
                     width: _headlineWidth,
                     child: Text(
-                      context.l10n.swapTimeoutHeadline,
-                      maxLines: 2,
+                      claimed
+                          ? context.l10n.swapTimeoutClaimedHeadline
+                          : context.l10n.swapTimeoutHeadline,
                       textAlign: TextAlign.center,
                       style: _headlineStyle.copyWith(color: colors.text.accent),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    context.l10n.swapTimeoutBody,
+                    claimed
+                        ? context.l10n.swapTimeoutClaimedBody
+                        : context.l10n.swapTimeoutBody,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
@@ -111,9 +122,11 @@ class MobileSwapTimeoutContent extends StatelessWidget {
               leading: const AppIcon(AppIcons.renew, size: 20),
               child: Text(context.l10n.swapTimeoutRestart),
             ),
-            if (onLateDeposit != null) ...[
+            if (lateDeposit != null) ...[
               const SizedBox(height: AppSpacing.xs),
-              SwapSupportPrompt(onTap: onLateDeposit!, failedSwap: false),
+              claimed
+                  ? SwapSupportPrompt.depositClaimed(onTap: lateDeposit)
+                  : SwapSupportPrompt(onTap: lateDeposit, failedSwap: false),
             ],
           ],
         ),

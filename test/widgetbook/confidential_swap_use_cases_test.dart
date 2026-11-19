@@ -81,7 +81,7 @@ void main() {
       lessThanOrEqualTo(tester.getRect(find.text('Slippage')).top),
     );
     expect(
-      find.textContaining("can't be tracked to each other"),
+      find.textContaining('Hides the link between your deposit and payout'),
       findsOneWidget,
     );
     expect(_switchOn(tester), isFalse);
@@ -112,6 +112,66 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('turning confidential off draws the mark in, seam untouched', (
+    tester,
+  ) async {
+    final mark = find.descendant(
+      of: _settings,
+      matching: find.byType(SwapConfidentialIcon),
+    );
+    final seamFace = find.descendant(
+      of: find.byKey(const ValueKey('swap_compact_ticket')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.incognito,
+      ),
+    );
+    double markScale() => tester
+        .widgetList<Transform>(
+          find.descendant(of: mark, matching: find.byType(Transform)),
+        )
+        .map((transform) => transform.transform.entry(0, 0))
+        .fold(1.0, (a, b) => a < b ? a : b);
+    Future<void> flip() async {
+      await tester.tap(_settings);
+      await tester.pumpAndSettle();
+      await tester.tap(_switch);
+      await tester.pumpAndSettle();
+      await tester.tap(_update);
+      await tester.pump();
+    }
+
+    for (final animate in [true, false]) {
+      await _pump(
+        tester,
+        buildConfidentialSwapStandardUseCase,
+        animate: animate,
+      );
+      await flip();
+      await tester.pumpAndSettle();
+      expect(_confidential(tester), isTrue);
+
+      await flip();
+      expect(_confidential(tester), isFalse);
+      // The swap direction button stays as it is; only the mark beside
+      // settings dips as it drains (Reduce Motion keeps only the drain).
+      await tester.pump(kSwapConfidentialConcealDuration * 0.38);
+      expect(seamFace, findsNothing);
+      expect(markScale(), animate ? lessThan(0.9) : 1.0);
+      await tester.pump(kSwapConfidentialConcealDuration);
+      expect(seamFace, findsNothing);
+      expect(markScale(), 1.0);
+      expect(
+        tester
+            .widget<AppIcon>(
+              find.descendant(of: mark, matching: find.byType(AppIcon)),
+            )
+            .color,
+        AppThemeData.dark.colors.icon.muted,
+      );
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets(
@@ -219,8 +279,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(seamMark, findsNothing);
     expect(_confidential(tester), isTrue);
-    // Turning it off again plays nothing, nor does off-then-on, which leaves
-    // nothing to update.
+    // Turning it off plays nothing at the seam, nor does off-then-on,
+    // which leaves nothing to update.
     for (final flips in [1, 2]) {
       await tester.tap(_settings);
       await tester.pumpAndSettle();

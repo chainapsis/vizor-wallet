@@ -112,6 +112,7 @@ class SwapActivityStatusPresentation {
     this.paymentMode = false,
     this.payStatus,
     this.explorerUri,
+    this.confidential = false,
     required this.showTabs,
     this.oneTimeAddress,
   });
@@ -152,6 +153,10 @@ class SwapActivityStatusPresentation {
   final bool paymentMode;
   final PayActivityStatusPresentation? payStatus;
   final Uri? explorerUri;
+
+  /// The swap took the confidential route, so its progress card explains the
+  /// missing explorer link instead of offering one.
+  final bool confidential;
   final bool showTabs;
 
   /// Set when the swap's ZEC side uses a one-time address: the payout when
@@ -313,6 +318,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     paymentMode: payMode,
     payStatus: payStatus,
     explorerUri: swapActivityExplorerUri(intent),
+    confidential: intent.confidential,
     // Mobile keeps the shared progress tabs while reading its detail values
     // from [payStatus]; desktop renders its dedicated Pay status content.
     // A payout still being found keeps its steps, like any swap in progress.
@@ -464,8 +470,9 @@ SwapStatusBadgeKind _swapActivityStatusBadgeKind(SwapIntentStatus status) {
 }
 
 int _swapActivityStatusProgressIndex(SwapIntent intent) {
-  final hasDepositTx = intent.depositTxHash?.trim().isNotEmpty ?? false;
-  final depositSent = hasDepositTx || intent.depositClaimedAt != null;
+  // The user's "I've sent it" tap alone is not a deposit: the first step stays
+  // active until the provider sees one.
+  final depositSent = intent.depositTxHash?.trim().isNotEmpty ?? false;
   return switch (intent.status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit => depositSent ? 1 : 0,
@@ -526,8 +533,13 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
     ];
   }
   final sendsZecToExternal = intent.direction == SwapDirection.zecToExternal;
+  final awaitingDetection =
+      intent.status == SwapIntentStatus.awaitingExternalDeposit &&
+      intent.depositClaimedAt != null;
   final sourceActive = sendsZecToExternal
       ? l10n.swapActivityStepSending(sourceSymbol)
+      : awaitingDetection
+      ? l10n.swapActivityStepSent(sourceSymbol)
       : l10n.swapActivityStepDepositing(sourceSymbol);
   final sourceDone = sendsZecToExternal
       ? l10n.swapActivityStepSent(sourceSymbol)
@@ -554,11 +566,14 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
           ? l10n.swapActivityStepSend(sourceSymbol)
           : l10n.swapActivityStepDeposit(sourceSymbol),
       lastCheckedLabel: lastCheckedLabel,
-      description: l10n.swapActivityStepSourceDescription,
+      description: awaitingDetection
+          ? l10n.swapActivityStepSentAwaitingDetection
+          : l10n.swapActivityStepSourceDescription,
     ),
     SwapStatusStepData(
       title: l10n.swapActivityStepDepositConfirmation,
       state: SwapStatusStepState.pending,
+      kind: SwapStatusStepKind.depositConfirmation,
       activeTitle: l10n.swapActivityStepDepositConfirmationActive,
       lastCheckedLabel: lastCheckedLabel,
       description: l10n.swapActivityStepDepositConfirmationDescription,

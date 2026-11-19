@@ -1530,7 +1530,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonPausedForNetworkUpgrade => '因网络升级已暂停';
 
   @override
-  String get commonPayInsufficientZec => '你的 ZEC 不足以完成此支付。请尝试较小的金额。';
+  String get commonPayInsufficientZec => 'ZEC 不足以完成此支付。请尝试较小的金额。';
 
   @override
   String get commonPayingButton => '支付中';
@@ -6581,7 +6581,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payNewAddressDetected => '检测到新地址。';
 
   @override
-  String get payNewAddressWarning => '你之前未向此地址转账。';
+  String get payNewAddressWarning => '之前未向此地址转账。';
 
   @override
   String payRecentDaysAgo(int days) {
@@ -6674,7 +6674,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paySubmittedStatusUncertainNotice => '支付状态不确定。重试之前请先查看活动记录。';
 
   @override
-  String get paySubmittedSubmittingBody => '正在将你的支付提交到网络...';
+  String get paySubmittedSubmittingBody => '正在将支付提交到网络…';
 
   @override
   String get paySubmittedSubmittingTitle => '正在提交支付...';
@@ -10100,6 +10100,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepSentAwaitingDetection =>
+      '正在等待 NEAR Intents 检测到这笔入金。';
+
+  @override
   String get swapActivityStepSourceDescription => '等待源链和服务商确认存入';
 
   @override
@@ -10140,12 +10144,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String swapActivityTooltipMinimumReceive(String symbol) {
-    return '滑点后你最少会收到的 $symbol 数量。可能更多，但不会更少。';
+    return '滑点后最少会收到的 $symbol 数量。可能更多，但不会更少。';
   }
 
   @override
   String get swapActivityTooltipMinimumReceiveGeneric =>
-      '滑点后你最少会收到的数量。可能更多，但不会更少。';
+      '滑点后最少会收到的数量。可能更多，但不会更少。';
 
   @override
   String get swapActivityTooltipPriceProtection =>
@@ -10162,7 +10166,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String swapAddressRecipientDescription(String symbol) {
-    return '你的 $symbol 将发送到此地址。';
+    return '$symbol 将发送到此地址。';
   }
 
   @override
@@ -10217,17 +10221,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapConfidentialLabel => '保密';
 
   @override
+  String get swapConfidentialNoExplorerPay =>
+      '保密支付会隐藏存入与收款之间的关联，因此不提供 NEAR Intents 区块浏览器链接。';
+
+  @override
+  String get swapConfidentialNoExplorerSwap =>
+      '保密兑换会隐藏存入与收款之间的关联，因此不提供 NEAR Intents 区块浏览器链接。';
+
+  @override
   String get swapConfidentialRouteTooltip =>
-      '在 NEAR Intents 上无法将你的存入与收款对应起来，也无法在其区块浏览器中查到。两笔交易仍会显示在各自的链上。';
+      '在 NEAR Intents 上无法将存入与收款对应起来，也无法在其区块浏览器中查到。两笔交易仍会显示在各自的链上。';
 
   @override
-  String get swapConfidentialSettingDescription => '无法将你的存入与收款相互关联追踪。';
+  String get swapConfidentialSettingDescription =>
+      '在 NEAR Intents 上隐藏存入与收款之间的关联。';
 
   @override
-  String get swapContactAlreadyInAddressBook => '已在你的地址簿中';
+  String get swapContactAlreadyInAddressBook => '已在地址簿中';
 
   @override
-  String get swapContactAlreadySaved => '已在你的联系人中';
+  String get swapContactAlreadySaved => '已在联系人中';
 
   @override
   String get swapDepositAmountCopiedDesktop => '已复制金额';
@@ -10285,6 +10298,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapDepositTimeoutBody => '此存入地址已失效。\n请重新发起一笔兑换。';
 
   @override
+  String get swapDepositTimeoutClaimedBody =>
+      '未及时检测到入金。\n如果入金延迟到账，NEAR 可能会尝试将资金退回退款地址。';
+
+  @override
   String get swapDepositTitle => '存入代币';
 
   @override
@@ -10309,7 +10326,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapFailureDepositNotIndexed => '暂未查询到这笔存入交易。\n请几分钟后再查看。';
 
   @override
-  String get swapFailureDepositRejected => '存入交易被拒绝。\n请检查地址、备注和交易哈希。';
+  String get swapFailureDepositRejected => '无法提交此交易哈希。\n请检查后重试。';
 
   @override
   String get swapFailureDepositSubmitFailed => '无法提交存入状态。\n请稍后重试。';
@@ -10425,7 +10442,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapLedgerBroadcastFailed => '无法广播 ZEC 存入。';
 
   @override
-  String get swapLedgerDeclined => 'ZEC 存入已在你的 Ledger 上被拒绝。';
+  String get swapLedgerDeclined => 'ZEC 存入已在 Ledger 上被拒绝。';
 
   @override
   String get swapLedgerMessageBackground => 'Vizor 正在后台完成此交易。';
@@ -10557,7 +10574,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapNoticeStartNotFinished =>
-      'Vizor 无法确认此兑换已开始。开始新的兑换前，请检查你是否已发送其存款。';
+      'Vizor 无法确认此兑换已开始。开始新的兑换前，请检查是否已完成存入。';
 
   @override
   String get swapNoticeStatusPage => 'NEAR Intents 状态页面';
@@ -10619,7 +10636,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapPayStatusSourceAmount => '原始金额';
 
   @override
-  String get swapPayoutUpdateRequired => '请更新 Vizor 以继续检查此兑换的收款。你的资金是安全的。';
+  String get swapPayoutUpdateRequired => '请更新 Vizor 以继续检查此兑换的收款。资金是安全的。';
 
   @override
   String get swapPoweredByLabel => '由以下提供支持';
@@ -10642,7 +10659,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapRecoveryUpdateRequired => '请更新 Vizor 以继续使用隐私兑换。';
 
   @override
-  String get swapRefundUpdateRequired => '请更新 Vizor 以继续检查此兑换的退款。你的资金是安全的。';
+  String get swapRefundUpdateRequired => '请更新 Vizor 以继续检查此兑换的退款。资金是安全的。';
 
   @override
   String get swapReviewBackPay => '支付';
@@ -10662,7 +10679,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get swapReviewInsufficientZecSwap => '你的 ZEC 不足以完成此次兑换。请尝试较小的金额。';
+  String get swapReviewInsufficientZecSwap => 'ZEC 不足以完成此次兑换。请尝试较小的金额。';
 
   @override
   String swapReviewPayAmount(String amount) {
@@ -10721,7 +10738,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '报价波动时最多可多付的 ZEC 数量，超出则执行失败。网络手续费另计。';
 
   @override
-  String get swapSlippageDescriptionSwap => '设置你可接受的最大汇率变动。网络手续费另计。';
+  String get swapSlippageDescriptionSwap => '设置可接受的最大汇率变动。网络手续费另计。';
 
   @override
   String get swapSlippageIncrease => '提高滑点';
@@ -10772,7 +10789,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get swapSupportDetailsCopied => '已复制入金详情';
+
+  @override
   String get swapSupportDirectHelp => '如仍需帮助，请复制入金详情，粘贴到发往下方地址的邮件中。';
+
+  @override
+  String get swapSupportEmailCopied => '已复制支持邮箱';
+
+  @override
+  String get swapSupportEmailCopyFailed => '无法复制邮箱地址。请重试。';
 
   @override
   String get swapSupportExpiredBody =>
@@ -10803,6 +10829,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapTimeoutBody => '请重新发起一笔兑换。';
+
+  @override
+  String get swapTimeoutClaimedBody => '如果入金延迟到账，NEAR 可能会尝试将资金退回退款地址。';
+
+  @override
+  String get swapTimeoutClaimedHeadline => '未及时检测到入金';
+
+  @override
+  String get swapTimeoutGetHelp => '获取帮助';
 
   @override
   String get swapTimeoutHeadline => '此存入地址已失效';

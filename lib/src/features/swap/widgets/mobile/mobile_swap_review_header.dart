@@ -79,6 +79,8 @@ class MobileSwapReviewHeader extends StatelessWidget {
     return ReviewInfoRow(
       label: row.label,
       value: row.amountText,
+      // A long amount shrinks to fit rather than losing digits to an ellipsis.
+      valueFit: BoxFit.scaleDown,
       leading: SwapAssetIcon(
         asset: row.asset,
         size: 32,
