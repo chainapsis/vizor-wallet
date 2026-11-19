@@ -18108,16 +18108,16 @@ abstract class AppLocalizations {
   /// **'Confidential'**
   String get swapConfidentialLabel;
 
-  /// Note at the bottom of a confidential payment's progress card, where a standard payment shows its View on NEAR Intents link: why there is no explorer link, and where to follow progress instead. Up to four lines.
+  /// Note at the bottom of a confidential payment's progress card, where a standard payment shows its View on NEAR Intents link: why NEAR Intents explorer links aren't offered. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite. Up to three lines.
   ///
   /// In en, this message translates to:
-  /// **'NEAR Intents doesn\'t connect this payment\'s deposit to its payout, so there\'s no explorer link. Follow progress here.'**
+  /// **'Confidential payments hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.'**
   String get swapConfidentialNoExplorerPay;
 
-  /// Note at the bottom of a confidential swap's progress card, where a standard swap shows its View on NEAR Intents link: why there is no explorer link, and where to follow progress instead. Up to four lines.
+  /// Note at the bottom of a confidential swap's progress card, where a standard swap shows its View on NEAR Intents link: why NEAR Intents explorer links aren't offered. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite. Up to three lines.
   ///
   /// In en, this message translates to:
-  /// **'NEAR Intents doesn\'t connect this swap\'s deposit to its payout, so there\'s no explorer link. Follow progress here.'**
+  /// **'Confidential swaps hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.'**
   String get swapConfidentialNoExplorerSwap;
 
   /// Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen.
@@ -18126,10 +18126,10 @@ abstract class AppLocalizations {
   /// **'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.'**
   String get swapConfidentialRouteTooltip;
 
-  /// Description under the Confidential toggle in the swap and Pay settings modal: what the route hides, and that progress shows in Vizor rather than in the NEAR Intents explorer.
+  /// Description under the Confidential toggle in the swap and Pay settings modal: what the route hides, then that NEAR Intents explorer links aren't offered for it. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite, as a feature left out on purpose.
   ///
   /// In en, this message translates to:
-  /// **'Your deposit and payout aren\'t linked on NEAR Intents. Follow progress in Vizor.'**
+  /// **'Hides the link between your deposit and payout on NEAR Intents. NEAR Intents explorer links aren\'t available.'**
   String get swapConfidentialSettingDescription;
 
   /// Toast on mobile after the user tries to save a swap address that is already in the address book.

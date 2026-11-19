@@ -545,7 +545,9 @@ void main() {
         ),
       );
       // The whole row flips it, its text included, with a selection tick.
-      await tester.tap(find.textContaining("aren't linked on NEAR Intents"));
+      await tester.tap(
+        find.textContaining('Hides the link between your deposit and payout'),
+      );
       await tester.pumpAndSettle();
       expect(update().onPressed, isNotNull);
       expect(feedback, ['HapticFeedbackType.selectionClick']);

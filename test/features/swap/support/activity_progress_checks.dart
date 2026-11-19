@@ -140,10 +140,10 @@ void runActivityProgressChecks({required bool mobile}) {
           of: note,
           matching: find.text(
             pay
-                ? "NEAR Intents doesn't connect this payment's deposit to its "
-                      "payout, so there's no explorer link. Follow progress here."
-                : "NEAR Intents doesn't connect this swap's deposit to its "
-                      "payout, so there's no explorer link. Follow progress here.",
+                ? 'Confidential payments hide the link between deposit and '
+                      "payout, so NEAR Intents explorer links aren't available."
+                : 'Confidential swaps hide the link between deposit and '
+                      "payout, so NEAR Intents explorer links aren't available.",
           ),
         ),
         findsOneWidget,

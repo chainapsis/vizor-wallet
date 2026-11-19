@@ -10896,11 +10896,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapConfidentialNoExplorerPay =>
-      'NEAR Intents‍에‍서 이 결‍제‍의 입‍금‍과 수‍령‍이 연‍결‍되‍지 않‍아 탐‍색‍기 링‍크‍가 없‍어‍요. 진‍행 상‍황‍은 여‍기‍서 확‍인‍해‍요.';
+      '기‍밀 결‍제‍는 입‍금‍과 수‍령‍의 연‍결‍을 숨‍겨‍서 NEAR Intents 탐‍색‍기 링‍크‍가 제‍공‍되‍지 않‍아‍요.';
 
   @override
   String get swapConfidentialNoExplorerSwap =>
-      'NEAR Intents‍에‍서 이 스‍왑‍의 입‍금‍과 수‍령‍이 연‍결‍되‍지 않‍아 탐‍색‍기 링‍크‍가 없‍어‍요. 진‍행 상‍황‍은 여‍기‍서 확‍인‍해‍요.';
+      '기‍밀 스‍왑‍은 입‍금‍과 수‍령‍의 연‍결‍을 숨‍겨‍서 NEAR Intents 탐‍색‍기 링‍크‍가 제‍공‍되‍지 않‍아‍요.';
 
   @override
   String get swapConfidentialRouteTooltip =>
@@ -10908,7 +10908,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      'NEAR Intents‍에‍서 입‍금‍과 수‍령‍이 서‍로 연‍결‍되‍지 않‍아‍요. 진‍행 상‍황‍은 Vizor‍에‍서 확‍인‍해‍요.';
+      'NEAR Intents‍에‍서 입‍금‍과 수‍령‍의 연‍결‍을 숨‍겨‍요. 대‍신 NEAR Intents 탐‍색‍기 링‍크‍는 제‍공‍되‍지 않‍아‍요.';
 
   @override
   String get swapContactAlreadyInAddressBook => '이‍미 주‍소‍록‍에 있‍어‍요';

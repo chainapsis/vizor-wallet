@@ -10222,11 +10222,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapConfidentialNoExplorerPay =>
-      'NEAR Intents 不会将此支付的存入与收款关联，因此没有区块浏览器链接。请在这里查看进度。';
+      '保密支付会隐藏存入与收款之间的关联，因此不提供 NEAR Intents 区块浏览器链接。';
 
   @override
   String get swapConfidentialNoExplorerSwap =>
-      'NEAR Intents 不会将此兑换的存入与收款关联，因此没有区块浏览器链接。请在这里查看进度。';
+      '保密兑换会隐藏存入与收款之间的关联，因此不提供 NEAR Intents 区块浏览器链接。';
 
   @override
   String get swapConfidentialRouteTooltip =>
@@ -10234,7 +10234,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      '在 NEAR Intents 上，你的存入与收款不会被关联。请在 Vizor 中查看进度。';
+      '在 NEAR Intents 上隐藏你的存入与收款之间的关联。因此不提供 NEAR Intents 区块浏览器链接。';
 
   @override
   String get swapContactAlreadyInAddressBook => '已在你的地址簿中';

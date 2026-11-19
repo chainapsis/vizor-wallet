@@ -11066,11 +11066,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapConfidentialNoExplorerPay =>
-      'NEAR Intents doesn\'t connect this payment\'s deposit to its payout, so there\'s no explorer link. Follow progress here.';
+      'Confidential payments hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.';
 
   @override
   String get swapConfidentialNoExplorerSwap =>
-      'NEAR Intents doesn\'t connect this swap\'s deposit to its payout, so there\'s no explorer link. Follow progress here.';
+      'Confidential swaps hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.';
 
   @override
   String get swapConfidentialRouteTooltip =>
@@ -11078,7 +11078,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      'Your deposit and payout aren\'t linked on NEAR Intents. Follow progress in Vizor.';
+      'Hides the link between your deposit and payout on NEAR Intents. NEAR Intents explorer links aren\'t available.';
 
   @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';

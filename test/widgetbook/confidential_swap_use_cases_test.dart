@@ -81,7 +81,7 @@ void main() {
       lessThanOrEqualTo(tester.getRect(find.text('Slippage')).top),
     );
     expect(
-      find.textContaining("aren't linked on NEAR Intents"),
+      find.textContaining('Hides the link between your deposit and payout'),
       findsOneWidget,
     );
     expect(_switchOn(tester), isFalse);
