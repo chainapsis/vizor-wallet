@@ -6719,6 +6719,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkAlmostReadyReceivedHeading => '你的礼品卡\n即将准备好！';
 
   @override
+  String paymentLinkAlreadyClaimedToAccount(String accountName) {
+    return '此礼品卡已领取到“$accountName”。';
+  }
+
+  @override
   String paymentLinkAmountCurrencyDisabledSemantic(
     String currency,
     String reason,

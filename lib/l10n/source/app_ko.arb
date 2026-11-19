@@ -1961,6 +1961,7 @@
   "paymentLinkActiveAccountChangedReviewAmount": "선택한 계정이 바뀌었어요. 금액을 확인하고 다시 시도해 주세요.",
   "paymentLinkAlmostReadyHeading": "기프트 카드가\n거의 준비됐어요!",
   "paymentLinkAlmostReadyReceivedHeading": "기프트 카드가\n거의 준비됐어요!",
+  "paymentLinkAlreadyClaimedToAccount": "{accountName} 계정으로 이미 받은 기프트 카드예요.",
   "paymentLinkAmountCurrencyDisabledSemantic": "{currency}로 금액 입력. {reason}",
   "paymentLinkAmountEnterDollars": "달러를 입력하세요",
   "paymentLinkAmountInputSemantic": "기프트 카드 금액 입력",

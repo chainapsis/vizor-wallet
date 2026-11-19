@@ -1961,6 +1961,7 @@
   "paymentLinkActiveAccountChangedReviewAmount": "当前账户已更改。请检查金额后重试。",
   "paymentLinkAlmostReadyHeading": "礼品卡\n即将准备好！",
   "paymentLinkAlmostReadyReceivedHeading": "你的礼品卡\n即将准备好！",
+  "paymentLinkAlreadyClaimedToAccount": "此礼品卡已领取到“{accountName}”。",
   "paymentLinkAmountCurrencyDisabledSemantic": "以 {currency} 输入金额。{reason}",
   "paymentLinkAmountEnterDollars": "输入美元金额",
   "paymentLinkAmountInputSemantic": "礼品卡金额输入",

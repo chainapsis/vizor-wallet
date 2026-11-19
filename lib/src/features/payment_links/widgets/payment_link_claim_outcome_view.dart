@@ -46,9 +46,14 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
     this.archived = false,
     this.busy = false,
     this.embedded = false,
+    this.receivedAccountName,
     super.key,
   });
   final PaymentLinkAvailability availability;
+
+  /// The account in this wallet that already received the Card, which
+  /// replaces [availability] as the outcome.
+  final String? receivedAccountName;
   final VoidCallback onBack;
   final VoidCallback? onCheck;
   final VoidCallback? onArchive;
@@ -63,12 +68,15 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isError = switch (availability) {
-      PaymentLinkAvailability.noBalance ||
-      PaymentLinkAvailability.claimedElsewhere ||
-      PaymentLinkAvailability.failed => true,
-      _ => false,
-    };
+    final receivedAccountName = this.receivedAccountName;
+    final isError =
+        receivedAccountName == null &&
+        switch (availability) {
+          PaymentLinkAvailability.noBalance ||
+          PaymentLinkAvailability.claimedElsewhere ||
+          PaymentLinkAvailability.failed => true,
+          _ => false,
+        };
     final details = Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       child: Column(
@@ -76,7 +84,9 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            availability.label(context.l10n),
+            receivedAccountName == null
+                ? availability.label(context.l10n)
+                : context.l10n.commonReceived,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: isError
@@ -86,7 +96,11 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            availability.description(context.l10n),
+            receivedAccountName == null
+                ? availability.description(context.l10n)
+                : context.l10n.paymentLinkAlreadyClaimedToAccount(
+                    receivedAccountName,
+                  ),
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
