@@ -92,6 +92,8 @@ class SwapNotifier extends Notifier<SwapState> {
   Set<String> _deprecatedAssetIdentityKeys = const {};
   Set<(String, String, int)> _deprecatedAssetMarkets = const {};
   var _statusRefreshInFlight = false;
+  // Completes when the refresh in flight ends.
+  var _statusRefreshEnded = Completer<void>()..complete();
   var _quoteSettings = const SwapQuoteSettingsSessions();
   SwapAsset? _payRetryAsset;
   String? _restoredPayAssetAccountUuid;
@@ -1429,12 +1431,16 @@ class SwapNotifier extends Notifier<SwapState> {
   /// swap, and the provider may still have seen its deposit after the
   /// deadline. A failure leaves the timeout as it was.
   Future<void> recheckSelectedExpiredIntent() async {
-    final selected = state.selectedIntentOrNull;
-    if (selected == null || selected.status != SwapIntentStatus.expired) {
-      return;
+    final intentId = state.selectedIntentOrNull?.id;
+    if (intentId == null) return;
+    // A refresh in flight skips expired swaps, so wait for it to end.
+    while (_statusRefreshInFlight) {
+      await _statusRefreshEnded.future;
     }
+    final intent = state.intents.swapIntentById(intentId);
+    if (intent?.status != SwapIntentStatus.expired) return;
     await _refreshIntentStatuses(
-      intentIds: [selected.id],
+      intentIds: [intentId],
       showBusy: false,
       includeTerminal: true,
     );
@@ -2346,6 +2352,7 @@ class SwapNotifier extends Notifier<SwapState> {
       return;
     }
     _statusRefreshInFlight = true;
+    final ended = _statusRefreshEnded = Completer<void>();
     if (showBusy) {
       state = state.copyWith(statusRefreshing: true, clearStatusError: true);
     }
@@ -2398,6 +2405,7 @@ class SwapNotifier extends Notifier<SwapState> {
       }
     } finally {
       _statusRefreshInFlight = false;
+      ended.complete();
     }
   }
 

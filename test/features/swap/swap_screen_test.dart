@@ -1033,6 +1033,51 @@ void main() {
     );
   });
 
+  testWidgets('an expired swap opened during a refresh is checked after it', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(1080, 720));
+    final gate = Completer<void>();
+    final provider = _PendingExternalDepositSwapProvider(statusGate: gate);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/late?from=swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: provider,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialIntents: [
+            _persistedIntent(id: 'open', txHash: 'open-tx'),
+            _persistedIntent(
+              id: 'late',
+              txHash: '',
+              status: SwapIntentStatus.expired,
+              nextAction: 'Start a fresh quote',
+            ),
+          ],
+        ),
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+    );
+    await tester.pump();
+    // The refresh of the open swap is still in flight.
+    final requested = provider.statusRequests.map((r) => r.depositAddress);
+    expect(requested, contains('open'));
+    expect(requested, isNot(contains('late')));
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(
+      provider.statusRequests.where((r) => r.depositAddress == 'late'),
+      hasLength(1),
+    );
+  });
+
   testWidgets(
     'expired deposit timeout content stays centered in activity detail',
     (tester) async {
