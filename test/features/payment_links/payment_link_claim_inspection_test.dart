@@ -278,8 +278,8 @@ void main() {
           await service.inspectClaim(_link());
           expect(api.checkUrls.single, selected);
           final urls = api.checkFallbackUrls.single;
-          expect(urls, hasLength(7));
-          expect(urls.toSet(), hasLength(7));
+          expect(urls, hasLength(12));
+          expect(urls.toSet(), hasLength(12));
           expect(urls, isNot(contains(selected)));
           expect(
             urls.toSet(),
