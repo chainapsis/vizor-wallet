@@ -18126,10 +18126,10 @@ abstract class AppLocalizations {
   /// **'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.'**
   String get swapConfidentialRouteTooltip;
 
-  /// Description under the Confidential toggle in the swap and Pay settings modal: what the route hides, then that NEAR Intents explorer links aren't offered for it. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite, as a feature left out on purpose.
+  /// Description under the Confidential toggle in the swap and Pay settings modal: what the route hides, limited to NEAR Intents, since the deposit and payout still show on their own chains. The progress card explains the missing explorer link.
   ///
   /// In en, this message translates to:
-  /// **'Hides the link between your deposit and payout on NEAR Intents. NEAR Intents explorer links aren\'t available.'**
+  /// **'Hides the link between your deposit and payout on NEAR Intents.'**
   String get swapConfidentialSettingDescription;
 
   /// Toast on mobile after the user tries to save a swap address that is already in the address book.

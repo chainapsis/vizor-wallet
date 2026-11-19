@@ -10234,7 +10234,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      '在 NEAR Intents 上隐藏你的存入与收款之间的关联。因此不提供 NEAR Intents 区块浏览器链接。';
+      '在 NEAR Intents 上隐藏你的存入与收款之间的关联。';
 
   @override
   String get swapContactAlreadyInAddressBook => '已在你的地址簿中';

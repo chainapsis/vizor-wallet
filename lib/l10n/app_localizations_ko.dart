@@ -10908,7 +10908,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      'NEAR Intents‍에‍서 입‍금‍과 수‍령‍의 연‍결‍을 숨‍겨‍요. 대‍신 NEAR Intents 탐‍색‍기 링‍크‍는 제‍공‍되‍지 않‍아‍요.';
+      'NEAR Intents‍에‍서 입‍금‍과 수‍령‍의 연‍결‍을 숨‍겨‍요.';
 
   @override
   String get swapContactAlreadyInAddressBook => '이‍미 주‍소‍록‍에 있‍어‍요';

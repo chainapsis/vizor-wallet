@@ -11078,7 +11078,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapConfidentialSettingDescription =>
-      'Hides the link between your deposit and payout on NEAR Intents. NEAR Intents explorer links aren\'t available.';
+      'Hides the link between your deposit and payout on NEAR Intents.';
 
   @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';
