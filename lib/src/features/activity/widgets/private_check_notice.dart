@@ -135,8 +135,10 @@ class PrivateCheckNoticeSlot extends StatefulWidget {
   static const exitDuration = Duration(milliseconds: 200);
 
   /// A switch between checking and stopped fades through: the old notice
-  /// fades out in the first half, the new one in over the second.
-  static const swapDuration = Duration(milliseconds: 240);
+  /// fades out over the first [_swapOutEnd] of it, and the new one eases in
+  /// over the rest, so neither overlaps the other nor pops in.
+  static const swapDuration = Duration(milliseconds: 300);
+  static const _swapOutEnd = 0.35;
 
   /// The app's entrance curve; the exit runs it backwards, so it slows to a
   /// stop as well.
@@ -214,16 +216,16 @@ class _PrivateCheckNoticeSlotState extends State<PrivateCheckNoticeSlot>
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
           duration: PrivateCheckNoticeSlot.swapDuration,
+          // A gentle ease: the entrance curve would pop text in.
           switchInCurve: const Interval(
-            0.5,
+            PrivateCheckNoticeSlot._swapOutEnd,
             1,
-            curve: PrivateCheckNoticeSlot.curve,
+            curve: Curves.easeOut,
           ),
-          // Runs backwards, so it covers the first half.
-          switchOutCurve: Interval(
-            0.5,
+          // Runs backwards, so it covers the start.
+          switchOutCurve: const Interval(
+            1 - PrivateCheckNoticeSlot._swapOutEnd,
             1,
-            curve: PrivateCheckNoticeSlot.curve.flipped,
           ),
           // Sized by the incoming notice; the outgoing one fades over it.
           layoutBuilder: (current, previous) => SizedBox(
