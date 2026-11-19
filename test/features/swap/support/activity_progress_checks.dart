@@ -20,6 +20,7 @@ import '../../../figma_compare/figma_compare_font_loader.dart';
 const _address = 't1provider-deposit';
 const _uri = 'https://explorer.near-intents.org/transactions/$_address';
 const _footer = ValueKey('swap_progress_explorer_link');
+const _confidentialNote = ValueKey('swap_progress_confidential_note');
 
 void runActivityProgressChecks({required bool mobile}) {
   for (final pay in [false, true]) {
@@ -123,6 +124,39 @@ void runActivityProgressChecks({required bool mobile}) {
       expect(find.byKey(_footer), findsOneWidget);
     });
 
+    testWidgets('$flow confidential progress explains the missing link', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        mobile: mobile,
+        intent: _intent(pay: pay, confidential: true),
+      );
+      expect(find.byKey(_footer), findsNothing);
+      final note = find.byKey(_confidentialNote);
+      expect(note, findsOneWidget);
+      expect(
+        find.descendant(
+          of: note,
+          matching: find.text(
+            pay
+                ? "NEAR Intents doesn't connect this payment's deposit to its "
+                      "payout, so there's no explorer link. Follow progress here."
+                : "NEAR Intents doesn't connect this swap's deposit to its "
+                      "payout, so there's no explorer link. Follow progress here.",
+          ),
+        ),
+        findsOneWidget,
+      );
+      // It sits where the link would: last in the progress card, at the
+      // footer's height.
+      expect(
+        tester.getSize(note).height,
+        greaterThanOrEqualTo(AppButtonSizing.largeHeight),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('$flow progress footer fits a narrow viewport and large text', (
       tester,
     ) async {
@@ -205,6 +239,7 @@ SwapIntent _intent({
   required bool pay,
   String? address = _address,
   SwapIntentStatus status = SwapIntentStatus.processing,
+  bool confidential = false,
 }) => SwapIntent(
   id: 'progress-intent',
   pair: 'ZEC -> USDC',
@@ -218,6 +253,7 @@ SwapIntent _intent({
   depositAddress: address,
   oneClickRecipient: '0x52908400098527886E0F7030069857D2E4169EE7',
   payMode: pay,
+  confidential: confidential,
 );
 
 Future<ProviderContainer> _pump(

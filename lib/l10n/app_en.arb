@@ -14139,13 +14139,21 @@
   "@swapConfidentialLabel": {
     "description": "Name of the NEAR Intents confidential route: the settings toggle label and the badge on swap and Pay review and status screens."
   },
+  "swapConfidentialNoExplorerPay": "NEAR Intents doesn't connect this payment's deposit to its payout, so there's no explorer link. Follow progress here.",
+  "@swapConfidentialNoExplorerPay": {
+    "description": "Note at the bottom of a confidential payment's progress card, where a standard payment shows its View on NEAR Intents link: why there is no explorer link, and where to follow progress instead. Up to four lines."
+  },
+  "swapConfidentialNoExplorerSwap": "NEAR Intents doesn't connect this swap's deposit to its payout, so there's no explorer link. Follow progress here.",
+  "@swapConfidentialNoExplorerSwap": {
+    "description": "Note at the bottom of a confidential swap's progress card, where a standard swap shows its View on NEAR Intents link: why there is no explorer link, and where to follow progress instead. Up to four lines."
+  },
   "swapConfidentialRouteTooltip": "Your deposit and payout can't be matched on NEAR Intents or found in its explorer. Both still show on their own chains.",
   "@swapConfidentialRouteTooltip": {
     "description": "Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen."
   },
-  "swapConfidentialSettingDescription": "Your deposit and payout can't be tracked to each other.",
+  "swapConfidentialSettingDescription": "Your deposit and payout aren't linked on NEAR Intents. Follow progress in Vizor.",
   "@swapConfidentialSettingDescription": {
-    "description": "Description under the Confidential toggle in the swap and Pay settings modal."
+    "description": "Description under the Confidential toggle in the swap and Pay settings modal: what the route hides, and that progress shows in Vizor rather than in the NEAR Intents explorer."
   },
   "swapContactAlreadyInAddressBook": "Already in your address book",
   "@swapContactAlreadyInAddressBook": {

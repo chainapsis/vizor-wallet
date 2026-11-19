@@ -346,6 +346,12 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
           amountText: '990 USDC',
           amountFiatText: r'$990.12',
           recipientAddress: _newRecipientAddress,
+          // The progress tab, as the app shows it while the payment runs.
+          progressPresentation: _confidentialPayPresentation(
+            context.l10n,
+            completed: widget.completed,
+            sellAmount: '$_estimatedZec ZEC',
+          ),
           onShowFullAddress: () {},
           flowConnector: _route(review: false),
         ),

@@ -112,6 +112,7 @@ class SwapActivityStatusPresentation {
     this.paymentMode = false,
     this.payStatus,
     this.explorerUri,
+    this.confidential = false,
     required this.showTabs,
     this.oneTimeAddress,
   });
@@ -152,6 +153,10 @@ class SwapActivityStatusPresentation {
   final bool paymentMode;
   final PayActivityStatusPresentation? payStatus;
   final Uri? explorerUri;
+
+  /// The swap took the confidential route, so its progress card explains the
+  /// missing explorer link instead of offering one.
+  final bool confidential;
   final bool showTabs;
 
   /// Set when the swap's ZEC side uses a one-time address: the payout when
@@ -313,6 +318,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     paymentMode: payMode,
     payStatus: payStatus,
     explorerUri: swapActivityExplorerUri(intent),
+    confidential: intent.confidential,
     // Mobile keeps the shared progress tabs while reading its detail values
     // from [payStatus]; desktop renders its dedicated Pay status content.
     // A payout still being found keeps its steps, like any swap in progress.

@@ -81,7 +81,7 @@ void main() {
       lessThanOrEqualTo(tester.getRect(find.text('Slippage')).top),
     );
     expect(
-      find.textContaining("can't be tracked to each other"),
+      find.textContaining("aren't linked on NEAR Intents"),
       findsOneWidget,
     );
     expect(_switchOn(tester), isFalse);

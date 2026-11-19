@@ -11065,12 +11065,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapConfidentialLabel => 'Confidential';
 
   @override
+  String get swapConfidentialNoExplorerPay =>
+      'NEAR Intents doesn\'t connect this payment\'s deposit to its payout, so there\'s no explorer link. Follow progress here.';
+
+  @override
+  String get swapConfidentialNoExplorerSwap =>
+      'NEAR Intents doesn\'t connect this swap\'s deposit to its payout, so there\'s no explorer link. Follow progress here.';
+
+  @override
   String get swapConfidentialRouteTooltip =>
       'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.';
 
   @override
   String get swapConfidentialSettingDescription =>
-      'Your deposit and payout can\'t be tracked to each other.';
+      'Your deposit and payout aren\'t linked on NEAR Intents. Follow progress in Vizor.';
 
   @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';

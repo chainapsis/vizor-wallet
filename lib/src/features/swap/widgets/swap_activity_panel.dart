@@ -1186,6 +1186,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       showTabs: presentation.showTabs,
       oneTimeAddress: presentation.oneTimeAddress,
       explorerUri: presentation.explorerUri,
+      confidential: presentation.confidential,
       onTabChanged: (tab) {
         setState(() {
           _activeTab = tab;

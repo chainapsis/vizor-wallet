@@ -56,6 +56,7 @@ class SwapStatusPageContent extends StatefulWidget {
     this.onTabChanged,
     this.onCopy,
     this.explorerUri,
+    this.confidential = false,
     this.flowConnector,
     super.key,
   });
@@ -101,6 +102,9 @@ class SwapStatusPageContent extends StatefulWidget {
   /// Copy callback for the [SwapReviewInfo] address lines (clipboard + toast).
   final ValueChanged<String>? onCopy;
   final Uri? explorerUri;
+
+  /// A confidential swap: the progress card says why it has no explorer link.
+  final bool confidential;
 
   /// Optional replacement for the paying/receiving flow arrow row.
   final Widget? flowConnector;
@@ -302,14 +306,17 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             const SizedBox(height: AppSpacing.sm),
             if (widget.activeTab == SwapStatusTab.progress)
               _SwapDetailCard(
-                hasExplorerFooter: widget.explorerUri != null,
+                hasExplorerFooter:
+                    widget.explorerUri != null || widget.confidential,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _SwapProgressRoute(steps: _displayedSteps()),
                     if (widget.explorerUri case final uri?)
-                      SwapProgressExplorerFooter(uri: uri),
+                      SwapProgressExplorerFooter(uri: uri)
+                    else if (widget.confidential)
+                      SwapProgressConfidentialNote(payment: widget.paymentMode),
                   ],
                 ),
               )

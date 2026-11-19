@@ -1129,6 +1129,9 @@ void main() {
     final txRow = _detailRow(swap.details, 'USDC deposit tx');
     expect(txRow.copyText, '0xdeadbeefdeadbeefdeadbeef');
     expect(txRow.linkUri, isNull);
+    // The progress card explains the missing link from this flag.
+    expect(swap.explorerUri, isNull);
+    expect(swap.confidential, isTrue);
 
     final pay = swapActivityStatusPresentationForIntent(
       testL10n,

@@ -586,6 +586,7 @@ class _ConfidentialSwapPreviewState extends State<_ConfidentialSwapPreview> {
         progressIndex: 0,
         steps: steps,
         details: details,
+        confidential: _recordedMode,
         showTabs: !complete,
       );
       return Column(
@@ -641,6 +642,7 @@ class _ConfidentialSwapPreviewState extends State<_ConfidentialSwapPreview> {
           onTabChanged: (tab) => setState(() => _statusTab = tab),
           steps: steps,
           details: details,
+          confidential: _recordedMode,
           flowConnector: flowConnector,
         ),
       ],

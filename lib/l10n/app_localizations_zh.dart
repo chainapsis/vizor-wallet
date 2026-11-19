@@ -10221,11 +10221,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapConfidentialLabel => '保密';
 
   @override
+  String get swapConfidentialNoExplorerPay =>
+      'NEAR Intents 不会将此支付的存入与收款关联，因此没有区块浏览器链接。请在这里查看进度。';
+
+  @override
+  String get swapConfidentialNoExplorerSwap =>
+      'NEAR Intents 不会将此兑换的存入与收款关联，因此没有区块浏览器链接。请在这里查看进度。';
+
+  @override
   String get swapConfidentialRouteTooltip =>
       '在 NEAR Intents 上无法将你的存入与收款对应起来，也无法在其区块浏览器中查到。两笔交易仍会显示在各自的链上。';
 
   @override
-  String get swapConfidentialSettingDescription => '无法将你的存入与收款相互关联追踪。';
+  String get swapConfidentialSettingDescription =>
+      '在 NEAR Intents 上，你的存入与收款不会被关联。请在 Vizor 中查看进度。';
 
   @override
   String get swapContactAlreadyInAddressBook => '已在你的地址簿中';
