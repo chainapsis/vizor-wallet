@@ -104,6 +104,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('account menu passcode action resolves in Widgetbook', (
+    tester,
+  ) async {
+    await _pumpMobileAccountsUseCase(tester, buildMobileAccountsUseCase);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_accounts_menu_preview-account-1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_account_menu_create_passcode')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Navigated to /accounts/account-passcode'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mobile account menu use cases distinguish software and '
       'Keystone accounts', (tester) async {
     await _pumpMobileAccountsUseCase(

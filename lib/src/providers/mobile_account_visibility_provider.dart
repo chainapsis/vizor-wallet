@@ -43,7 +43,9 @@ class MobileAccountVisibilityNotifier
     bool remove = false,
   }) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
     final security = ref.read(appSecurityProvider);
-    if (!security.isUnlocked || !isCurrent()) {
+    if (!security.isUnlocked ||
+        ref.read(mobileAccountScopeProvider) != ruleId ||
+        !isCurrent()) {
       throw const SecureStorageSessionChangedException();
     }
     final current = state;
@@ -106,7 +108,9 @@ class MobileAccountVisibilityNotifier
       salt: salt,
       rules: List.unmodifiable([...otherRules, ?rule]),
     );
-    if (!isCurrent() || !identical(security, ref.read(appSecurityProvider))) {
+    if (!isCurrent() ||
+        !identical(security, ref.read(appSecurityProvider)) ||
+        ref.read(mobileAccountScopeProvider) != ruleId) {
       throw const SecureStorageSessionChangedException();
     }
     await ref.read(mobileAccountVisibilityStoreProvider).write(next);
@@ -204,7 +208,7 @@ final visibleAccountTargetProvider = Provider.autoDispose
           .firstOrNull;
     });
 
-/// A settings route showing authenticated assignments also needs to lock when
+/// A passcode route showing authenticated assignments also needs to lock when
 /// backgrounded, even if the wallet underneath is in its ordinary scope.
 final mobileAccountManagementOpenProvider =
     NotifierProvider<MobileAccountManagementSession, bool>(

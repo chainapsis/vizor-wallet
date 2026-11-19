@@ -36,7 +36,6 @@ class MobilePasscodeAuth {
     required String code,
     required String biometricReason,
     required bool Function() isCurrent,
-    bool management = false,
     bool walletOnly = false,
     String? selectedRule,
   }) async {
@@ -62,7 +61,7 @@ class MobilePasscodeAuth {
       throw const MobilePasscodeRejected(MobilePasscodeFailure.incorrect);
     }
 
-    final isWalletCode = !management && await security.confirmPassword(code);
+    final isWalletCode = await security.confirmPassword(code);
     checkCurrent();
     if (isWalletCode) {
       if (biometric.enabled) {

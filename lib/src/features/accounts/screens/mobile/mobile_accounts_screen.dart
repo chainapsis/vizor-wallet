@@ -24,6 +24,7 @@ import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../core/widgets/mobile/mobile_section.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../settings/screens/mobile/mobile_account_visibility_screen.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/mobile_account_visibility_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
@@ -120,6 +121,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     final accounts = ref.read(visibleAccountsProvider);
     final isCurrentAccount = accountState?.activeAccountUuid == account.uuid;
     final canRemove = _canRemoveOrReset(account, accounts);
+    final scope = ref.read(mobileAccountScopeProvider);
+    final rule = ref.read(mobileAccountVisibilityProvider).rule(scope);
+    final linked = rule?.accountIds.contains(account.uuid) ?? false;
 
     final overlay = Overlay.of(context, rootOverlay: true);
     final overlayRenderObject = overlay.context.findRenderObject();
@@ -133,48 +137,40 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       ancestor: overlayRenderObject,
     );
     final anchorRect = anchorTopLeft & anchorRenderObject.size;
-    final overlaySize = overlayRenderObject.size;
     const menuWidth = 208.0;
     const menuPadding = EdgeInsets.symmetric(
       horizontal: AppSpacing.xxs,
       vertical: AppSpacing.sm,
     );
-    final baseMenuHeight = switch ((isCurrentAccount, canRemove)) {
-      (true, true) => 139.0,
-      (true, false) => 92.0,
-      (false, true) => 173.0,
-      (false, false) => 126.0,
-    };
-    // The viewing-key row is always shown (unlike the secret-passphrase
-    // row, a UFVK never grants spend authority, so hardware accounts get
-    // it too); each extra row costs the same fixed 34 (26 item + 8 gap).
-    final menuHeight = baseMenuHeight + 34 + (account.isHardware ? 0 : 34);
-    // The screen covers the tab bar, so the menu only clears the home
-    // indicator.
     final bottomClearance =
         MediaQuery.paddingOf(context).bottom + AppSpacing.lg;
     final colors = context.colors;
     final appTheme = AppTheme.of(context);
-    final menuMaxTop = math.max(
-      AppSpacing.sm,
-      overlaySize.height - bottomClearance - menuHeight,
-    );
-    final menuTop = (anchorRect.top + 34).clamp(AppSpacing.sm, menuMaxTop);
-    final menuRight =
-        (overlaySize.width - anchorRect.right).clamp(
-              AppSpacing.sm,
-              math.max(
-                AppSpacing.sm,
-                overlaySize.width - menuWidth - AppSpacing.sm,
-              ),
-            )
-            as double;
 
     void select(_AccountAction action) {
       _hideRowMenu();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        if (scope != ref.read(mobileAccountScopeProvider) ||
+            !ref
+                .read(visibleAccountsProvider)
+                .any((a) => a.uuid == account.uuid)) {
+          return;
+        }
         switch (action) {
+          case _AccountAction.createPasscode:
+          case _AccountAction.changePasscode:
+          case _AccountAction.unlinkPasscode:
+            context.push(
+              mobileAccountPasscodePath,
+              extra: MobileAccountPasscodeEntry(account.uuid, switch (action) {
+                _AccountAction.createPasscode =>
+                  MobileAccountPasscodeAction.create,
+                _AccountAction.changePasscode =>
+                  MobileAccountPasscodeAction.change,
+                _ => MobileAccountPasscodeAction.unlink,
+              }),
+            );
           case _AccountAction.viewSecretPassphrase:
             context.push('/settings/seed-phrase', extra: account.uuid);
           case _AccountAction.viewViewingKey:
@@ -198,6 +194,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       required _AccountAction action,
       Color? textColor,
       Color? iconColor,
+      bool wrap = false,
     }) {
       final itemTextColor = textColor ?? colors.text.inverse;
       final itemIconColor = iconColor ?? colors.icon.inverse;
@@ -210,7 +207,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           behavior: HitTestBehavior.opaque,
           onTap: () => select(action),
           child: Container(
-            height: 26,
+            constraints: BoxConstraints(minHeight: wrap ? 44 : 26),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.xs,
               vertical: AppSpacing.xxs,
@@ -226,9 +223,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                 Expanded(
                   child: Text(
                     label,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: wrap ? null : 1,
+                    softWrap: wrap,
+                    overflow: wrap ? TextOverflow.clip : TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
                       color: itemTextColor,
                       fontWeight: FontWeight.w400,
@@ -275,6 +272,31 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         label: context.l10n.accountsEdit,
         action: _AccountAction.edit,
       ),
+      if (scope == null)
+        item(
+          key: const ValueKey('mobile_account_menu_create_passcode'),
+          iconName: AppIcons.lock,
+          label: context.l10n.accountVisibilityViewSeparately,
+          action: _AccountAction.createPasscode,
+          wrap: true,
+        ),
+      if (linked) ...[
+        if (rule!.accountIds.length == 1)
+          item(
+            key: const ValueKey('mobile_account_menu_change_passcode'),
+            iconName: AppIcons.lock,
+            label: context.l10n.accountVisibilityChange,
+            action: _AccountAction.changePasscode,
+            wrap: true,
+          ),
+        item(
+          key: const ValueKey('mobile_account_menu_unlink_passcode'),
+          iconName: AppIcons.linkOff,
+          label: context.l10n.accountVisibilityDelete,
+          action: _AccountAction.unlinkPasscode,
+          wrap: true,
+        ),
+      ],
       if (canRemove) ...[
         const AppContextMenuDivider(),
         item(
@@ -300,38 +322,47 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
               child: const SizedBox.expand(),
             ),
           ),
-          Positioned(
-            top: menuTop,
-            right: menuRight,
-            // Material ancestor: root overlays have none, and Text
-            // would otherwise fall back to the debug underline style.
-            child: AppTheme(
-              data: appTheme,
-              child: Material(
-                type: MaterialType.transparency,
-                child: DefaultTextStyle.merge(
-                  style: const TextStyle(decoration: TextDecoration.none),
-                  child: SizedBox(
-                    key: const ValueKey('mobile_account_menu_card'),
-                    width: menuWidth,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: colors.background.inverse,
-                        borderRadius: BorderRadius.circular(AppRadii.medium),
-                        border: Border.all(color: colors.border.inverseOpacity),
-                        boxShadow: appContextMenuShadow,
-                      ),
-                      child: Padding(
-                        padding: menuPadding,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            for (var i = 0; i < menuItems.length; i++) ...[
-                              if (i > 0) const SizedBox(height: AppSpacing.xs),
-                              menuItems[i],
+          Positioned.fill(
+            child: CustomSingleChildLayout(
+              delegate: _AccountMenuPosition(
+                anchor: anchorRect,
+                width: menuWidth,
+                bottomClearance: bottomClearance,
+              ),
+              // Material ancestor: root overlays have none, and Text
+              // would otherwise fall back to the debug underline style.
+              child: AppTheme(
+                data: appTheme,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: DefaultTextStyle.merge(
+                    style: const TextStyle(decoration: TextDecoration.none),
+                    child: SizedBox(
+                      key: const ValueKey('mobile_account_menu_card'),
+                      width: menuWidth,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.background.inverse,
+                          borderRadius: BorderRadius.circular(AppRadii.medium),
+                          border: Border.all(
+                            color: colors.border.inverseOpacity,
+                          ),
+                          boxShadow: appContextMenuShadow,
+                        ),
+                        child: SingleChildScrollView(
+                          primary: false,
+                          padding: menuPadding,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (var i = 0; i < menuItems.length; i++) ...[
+                                if (i > 0)
+                                  const SizedBox(height: AppSpacing.xs),
+                                menuItems[i],
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -567,6 +598,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      mobileAccountScopeProvider,
+      (_, _) => _hideRowMenu(updateState: false),
+    );
     final colors = context.colors;
     final state = ref.watch(accountProvider).value;
     final accounts = ref.watch(visibleAccountsProvider);
@@ -733,7 +768,54 @@ enum _AccountAction {
   copy,
   send,
   edit,
+  createPasscode,
+  changePasscode,
+  unlinkPasscode,
   remove,
+}
+
+class _AccountMenuPosition extends SingleChildLayoutDelegate {
+  const _AccountMenuPosition({
+    required this.anchor,
+    required this.width,
+    required this.bottomClearance,
+  });
+
+  final Rect anchor;
+  final double width;
+  final double bottomClearance;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints(
+        maxWidth: math.max(
+          0,
+          math.min(width, constraints.maxWidth - AppSpacing.sm * 2),
+        ),
+        maxHeight: math.max(
+          0,
+          constraints.maxHeight - bottomClearance - AppSpacing.sm,
+        ),
+      );
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final left = (anchor.right - childSize.width).clamp(
+      AppSpacing.sm,
+      math.max(AppSpacing.sm, size.width - childSize.width - AppSpacing.sm),
+    );
+    final top = (anchor.top + 34).clamp(
+      AppSpacing.sm,
+      math.max(AppSpacing.sm, size.height - bottomClearance - childSize.height),
+    );
+    return Offset(left.toDouble(), top.toDouble());
+  }
+
+  @override
+  bool shouldRelayout(_AccountMenuPosition oldDelegate) =>
+      anchor != oldDelegate.anchor ||
+      width != oldDelegate.width ||
+      bottomClearance != oldDelegate.bottomClearance;
 }
 
 /// Account rows match the Settings list rows.

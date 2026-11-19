@@ -62,6 +62,7 @@ import '../src/features/accounts/screens/accounts_screen.dart';
 import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
+import '../src/features/settings/screens/mobile/mobile_account_visibility_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
 import '../src/features/activity/gift_card_activity_index.dart';
@@ -4710,6 +4711,11 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
             initialSheet: widget.initialSheet,
             initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
           ),
+        ),
+        GoRoute(
+          path: mobileAccountPasscodePath,
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: mobileAccountPasscodePath),
         ),
         GoRoute(
           path: '/accounts/confirm-removal',

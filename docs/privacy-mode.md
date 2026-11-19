@@ -92,13 +92,12 @@ flow. Legacy installs with no marker keep their saved Boolean preference.
 
 ## Accounts by passcode (mobile)
 
-Settings > Account > Accounts by passcode always shows both actions. After
-wallet authentication, choose one regular account and set its own passcode.
-At least one account stays in the regular list. To manage an assignment, enter
-its account passcode and complete wallet authentication. The linked account
-card offers passcode changes and unlinking. Unlinking returns the account to
-the regular list and retires that code. The overview and failed lookups keep
-the same presentation regardless of existing assignments.
+Settings > Account > Accounts by passcode always shows the same instructions.
+Open the menu for a regular account and choose View this account separately.
+Wallet authentication precedes creating the account's dedicated passcode, and
+at least one account stays in the regular list. In an authenticated linked
+view, the account menu offers passcode changes and unlinking. Unlinking returns
+the account to the regular list and retires that code.
 
 The startup keypad always asks for a passcode first. The wallet passcode opens
 the ordinary account list. An account passcode selects its linked account
@@ -120,9 +119,9 @@ retain their account list and can be unlinked after authentication. New and
 replacement codes are limited to one account.
 
 A background trip or keep-awake idle lock ends a separate account view or an
-authenticated account management view. The native app switcher cover applies
-only to these views, and the app routes back to the keypad before the view
-can be used again.
+authenticated account passcode flow. The native app switcher cover applies to
+these views, and the app routes back to the keypad before the view can be used
+again.
 
 ## Which amounts to mask
 

@@ -72,47 +72,46 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountNameTooLong => 'Name can be up to 20 characters.';
 
   @override
-  String get accountVisibilityAccountChoice =>
-      'The selected account will be hidden from the regular list after you set its passcode.';
-
-  @override
   String get accountVisibilityBiometricRequired =>
       'Biometric verification is required. Try again.';
 
   @override
-  String get accountVisibilityChange => 'Change passcode';
+  String get accountVisibilityChange => 'Change dedicated passcode';
 
   @override
-  String get accountVisibilityConfirmPasscode => 'Confirm the account passcode';
+  String get accountVisibilityConfirmPasscode =>
+      'Confirm the dedicated passcode';
 
   @override
-  String get accountVisibilityCreate => 'Create an account passcode';
+  String get accountVisibilityCreate => 'Create a dedicated passcode';
 
   @override
   String get accountVisibilityCreatedBody =>
-      'On the lock screen, enter the new account passcode to see just this account after you verify.';
+      'Enter the new passcode on the lock screen to view this account.';
 
   @override
   String get accountVisibilityCreatedTitle => 'Passcode set';
 
   @override
-  String get accountVisibilityDelete => 'Unlink';
+  String accountVisibilityDedicatedCode(String account) {
+    return 'With this account’s dedicated passcode, only $account appears after verification.';
+  }
 
   @override
-  String get accountVisibilityDeleteBody =>
-      'The account will appear in your regular list again. Its account passcode will stop working.';
+  String get accountVisibilityDelete => 'Stop viewing separately';
+
+  @override
+  String accountVisibilityDeleteBody(String account) {
+    return '$account will appear in the regular account list again. Its dedicated passcode will stop working.';
+  }
 
   @override
   String get accountVisibilityDescription =>
-      'Set a different passcode for an account you want to view separately. When you open Vizor with your usual wallet passcode, that account is hidden. Enter the account passcode on the lock screen and finish verification to see just that account.';
+      'To set up a dedicated passcode, open Accounts, tap ⋯ next to the account, and choose View this account separately.';
 
   @override
   String get accountVisibilityDifferentPasscode =>
       'Choose a different passcode.';
-
-  @override
-  String get accountVisibilityEnterSeparatePasscode =>
-      'Enter the account passcode';
 
   @override
   String get accountVisibilityEnterWalletPasscode =>
@@ -123,31 +122,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'Keep at least one account in your regular list. Add another regular account to continue.';
 
   @override
-  String get accountVisibilityLegacyLink =>
-      'This passcode is linked to multiple accounts. Unlink it to set up one passcode per account.';
-
-  @override
   String get accountVisibilityLegacyUnlink =>
       'These accounts will appear in your regular list again. Their shared passcode will stop working.';
 
   @override
-  String get accountVisibilityManage => 'Manage an account passcode';
-
-  @override
-  String get accountVisibilityManageTitle => 'Account passcode';
-
-  @override
-  String get accountVisibilityNewPasscode => 'Choose a new account passcode';
+  String get accountVisibilityNewPasscode => 'Choose a dedicated passcode';
 
   @override
   String get accountVisibilityNextWalletPasscode =>
       'Now enter your wallet passcode';
-
-  @override
-  String get accountVisibilitySelectAccount => 'Choose an account to continue.';
-
-  @override
-  String get accountVisibilitySelectTitle => 'Choose an account';
 
   @override
   String get accountVisibilitySixDigits => 'Use 6 digits';
@@ -156,8 +139,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountVisibilityTitle => 'Accounts by passcode';
 
   @override
+  String get accountVisibilityUnlinkTitle => 'Stop viewing separately?';
+
+  @override
   String get accountVisibilityUpdateFailed =>
       'Couldn’t save the account passcode settings. Try again.';
+
+  @override
+  String accountVisibilityUsualCode(String account) {
+    return 'When you open Vizor with your usual wallet passcode, $account is hidden from the account list.';
+  }
+
+  @override
+  String get accountVisibilityViewSeparately => 'View this account separately';
 
   @override
   String get accountsActionsLabel => 'Account actions';

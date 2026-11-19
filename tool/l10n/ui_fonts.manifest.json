@@ -1,13 +1,13 @@
 {
-  "input_sha256": "96b0cbf8a4bace67812052bba3882e9434a3270d269dfb8b20a648fad7c092a9",
+  "input_sha256": "1c48e02afe5df06c8c7d1f6013fb445ffeb4b03a6bf632816c6bff795d05e603",
   "fonts": {
     "assets/fonts/VizorKoreanUI-VF.ttf": {
-      "input_sha256": "fec5b99b04051469f13926053ac7b2f06e0ec11fb6fbbe691ebdc2d70af980b1",
+      "input_sha256": "9226fe2231537ffd6622b4e6c9918a7123be7059f83571b3839ee2ce7d617802",
       "family": "Vizor Korean UI",
       "upstream": "Pretendard Variable v1.3.9",
       "source_sha256": "3090ccde0442bb347aa7685d9ba8b17436a60682df6e8f92a9a670de14056e22",
-      "sha256": "9e2689d1eaf77073013da489c5abb4d941d700722695ba6e95989446c9d23c39",
-      "bytes": 5738228,
+      "sha256": "861a4b97a6360fceee3fe83eb19fd6742d83eb4e064fa92347cfd1a22a31daf2",
+      "bytes": 5738524,
       "codepoints": [
         32,
         33,
@@ -110,12 +110,15 @@
         8204,
         8205,
         8211,
+        8216,
+        8217,
         8220,
         8221,
         8226,
         8230,
         8594,
         8734,
+        8943,
         12593,
         12594,
         12595,
@@ -11401,12 +11404,12 @@
       }
     },
     "assets/fonts/VizorChineseUI-VF.ttf": {
-      "input_sha256": "4bea554f7126d897b0f308370c0c7f3023bf135dda849843b2870aeba3400b10",
+      "input_sha256": "4d665f7a999b17c21d7a4fe1efa331b92d821b17ee8beff172380b4489de33dc",
       "family": "Vizor Chinese UI",
       "upstream": "Noto Sans SC, google/fonts fbe81817505e8aeadc53cc7a38a2b76fb57c333e",
       "source_sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
-      "sha256": "f6cd6465b520748b433f452526901762a063bd07c487a2165f93e875cc3b9964",
-      "bytes": 4555308,
+      "sha256": "6ab111ab83cbc37a3c5d20c4a9c77a7674225094eb64f933c17f89ac84e2cac6",
+      "bytes": 4555328,
       "codepoints": [
         32,
         33,
@@ -11514,6 +11517,7 @@
         8230,
         8594,
         8734,
+        8943,
         12289,
         12290,
         13383,

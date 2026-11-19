@@ -197,19 +197,28 @@ List<RouteBase> _walletRoutes() {
       ),
     ),
     GoRoute(
+      path: mobileAccountPasscodePath,
+      redirect: (_, state) =>
+          state.extra is MobileAccountPasscodeEntry ? null : '/accounts',
+      pageBuilder: (context, state) => _mobilePage(
+        key: state.pageKey,
+        child: MobileAccountVisibilityScreen(
+          entry: state.extra as MobileAccountPasscodeEntry,
+        ),
+      ),
+    ),
+    GoRoute(
       path: '/settings/account-visibility',
       pageBuilder: (context, state) => _mobilePage(
         key: state.pageKey,
-        child: const MobileAccountVisibilityScreen(),
+        child: const MobileAccountVisibilityGuideScreen(),
       ),
     ),
     GoRoute(
       path: '/settings/confirm-biometric-change',
       pageBuilder: (context, state) => _mobilePage(
         key: state.pageKey,
-        child: const MobileAccountVisibilityScreen(
-          confirmBiometricChange: true,
-        ),
+        child: const MobileAccountVisibilityScreen.confirmBiometricChange(),
       ),
     ),
     GoRoute(

@@ -499,10 +499,16 @@ void main() {
       (openMenuButton.decoration as BoxDecoration).color,
       AppThemeData.light.colors.state.hover,
     );
-    expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
-      const Size(208, 241),
+    final menu = find.byKey(const ValueKey('mobile_account_menu_card'));
+    final setup = find.byKey(
+      const ValueKey('mobile_account_menu_create_passcode'),
     );
+    final otherMenu = tester.getSize(menu);
+    expect(
+      otherMenu,
+      Size(208, 241 + AppSpacing.xs + tester.getSize(setup).height),
+    );
+    expect(setup.hitTestable(), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_copy'))),
       const Size(200, 26),
@@ -517,8 +523,8 @@ void main() {
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
-      const Size(208, 207),
+      tester.getSize(menu),
+      Size(208, 207 + AppSpacing.xs + tester.getSize(setup).height),
     );
   });
 

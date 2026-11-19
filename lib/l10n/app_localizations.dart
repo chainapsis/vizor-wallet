@@ -208,40 +208,34 @@ abstract class AppLocalizations {
   /// **'Name can be up to 20 characters.'**
   String get accountNameTooLong;
 
-  /// [security] Accounts by passcode on mobile. Body of the account picker after the user verifies their wallet.
-  ///
-  /// In en, this message translates to:
-  /// **'The selected account will be hidden from the regular list after you set its passcode.'**
-  String get accountVisibilityAccountChoice;
-
   /// [security] Accounts by passcode on mobile. Error after a required biometric prompt fails or is canceled.
   ///
   /// In en, this message translates to:
   /// **'Biometric verification is required. Try again.'**
   String get accountVisibilityBiometricRequired;
 
-  /// [security] Accounts by passcode on mobile. Row that changes the linked account’s passcode.
+  /// [security] Accounts by passcode on mobile. Account menu action inside an authenticated linked account view.
   ///
   /// In en, this message translates to:
-  /// **'Change passcode'**
+  /// **'Change dedicated passcode'**
   String get accountVisibilityChange;
 
-  /// [security] Accounts by passcode on mobile. Keypad heading when the user repeats the new account passcode.
+  /// [security] Accounts by passcode on mobile. Heading when repeating the new dedicated passcode.
   ///
   /// In en, this message translates to:
-  /// **'Confirm the account passcode'**
+  /// **'Confirm the dedicated passcode'**
   String get accountVisibilityConfirmPasscode;
 
-  /// [security] Accounts by passcode on mobile. Overview row that starts setup. Shown regardless of configured passcodes.
+  /// [security] Accounts by passcode on mobile. Primary button on the explanation for the chosen account.
   ///
   /// In en, this message translates to:
-  /// **'Create an account passcode'**
+  /// **'Create a dedicated passcode'**
   String get accountVisibilityCreate;
 
-  /// [security] Accounts by passcode on mobile. Guidance below the linked account card after saving the new passcode.
+  /// [security] Accounts by passcode on mobile. Guidance after creating or changing the passcode.
   ///
   /// In en, this message translates to:
-  /// **'On the lock screen, enter the new account passcode to see just this account after you verify.'**
+  /// **'Enter the new passcode on the lock screen to view this account.'**
   String get accountVisibilityCreatedBody;
 
   /// [security] Accounts by passcode on mobile. Page title above the linked account card after creating a passcode.
@@ -250,22 +244,28 @@ abstract class AppLocalizations {
   /// **'Passcode set'**
   String get accountVisibilityCreatedTitle;
 
-  /// [security] Accounts by passcode on mobile. Management row, confirmation title and confirmation button for unlinking an account passcode.
+  /// [security] Accounts by passcode on mobile. Explains what the dedicated passcode opens.
   ///
   /// In en, this message translates to:
-  /// **'Unlink'**
+  /// **'With this account’s dedicated passcode, only {account} appears after verification.'**
+  String accountVisibilityDedicatedCode(String account);
+
+  /// [security] Accounts by passcode on mobile. Account menu and confirmation button to unlink the dedicated passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop viewing separately'**
   String get accountVisibilityDelete;
 
-  /// [security] Accounts by passcode on mobile. Unlink confirmation describing what happens to the account and its passcode.
+  /// [security] Accounts by passcode on mobile. Unlink confirmation for a single account.
   ///
   /// In en, this message translates to:
-  /// **'The account will appear in your regular list again. Its account passcode will stop working.'**
-  String get accountVisibilityDeleteBody;
+  /// **'{account} will appear in the regular account list again. Its dedicated passcode will stop working.'**
+  String accountVisibilityDeleteBody(String account);
 
-  /// [security] Accounts by passcode on mobile. Overview introduction shown identically before and after setup.
+  /// [security] Accounts by passcode on mobile. Fixed Settings guidance shown in any account view.
   ///
   /// In en, this message translates to:
-  /// **'Set a different passcode for an account you want to view separately. When you open Vizor with your usual wallet passcode, that account is hidden. Enter the account passcode on the lock screen and finish verification to see just that account.'**
+  /// **'To set up a dedicated passcode, open Accounts, tap ⋯ next to the account, and choose View this account separately.'**
   String get accountVisibilityDescription;
 
   /// [security] Accounts by passcode on mobile. Error when entering an account passcode that is already in use.
@@ -273,12 +273,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose a different passcode.'**
   String get accountVisibilityDifferentPasscode;
-
-  /// [security] Accounts by passcode on mobile. Keypad heading when looking up an existing account passcode to manage.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter the account passcode'**
-  String get accountVisibilityEnterSeparatePasscode;
 
   /// [security] Accounts by passcode on mobile. First wallet authentication keypad in account passcode setup or before disabling biometrics.
   ///
@@ -292,34 +286,16 @@ abstract class AppLocalizations {
   /// **'Keep at least one account in your regular list. Add another regular account to continue.'**
   String get accountVisibilityKeepOrdinary;
 
-  /// [security] Accounts by passcode on mobile. Guidance after authenticating a passcode linked to several accounts by an earlier build.
-  ///
-  /// In en, this message translates to:
-  /// **'This passcode is linked to multiple accounts. Unlink it to set up one passcode per account.'**
-  String get accountVisibilityLegacyLink;
-
   /// [security] Accounts by passcode on mobile. Unlink confirmation for a previously configured multi-account passcode.
   ///
   /// In en, this message translates to:
   /// **'These accounts will appear in your regular list again. Their shared passcode will stop working.'**
   String get accountVisibilityLegacyUnlink;
 
-  /// [security] Accounts by passcode on mobile. Overview row that opens management authentication. Shown regardless of configured passcodes.
+  /// [security] Accounts by passcode on mobile. Keypad heading when setting or changing a dedicated passcode.
   ///
   /// In en, this message translates to:
-  /// **'Manage an account passcode'**
-  String get accountVisibilityManage;
-
-  /// [security] Accounts by passcode on mobile. Management page title above the linked account card.
-  ///
-  /// In en, this message translates to:
-  /// **'Account passcode'**
-  String get accountVisibilityManageTitle;
-
-  /// [security] Accounts by passcode on mobile. Keypad heading when choosing or replacing an account passcode.
-  ///
-  /// In en, this message translates to:
-  /// **'Choose a new account passcode'**
+  /// **'Choose a dedicated passcode'**
   String get accountVisibilityNewPasscode;
 
   /// [security] Accounts by passcode on mobile. Shown after a valid account passcode when biometrics are off, in unlock and management.
@@ -327,18 +303,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Now enter your wallet passcode'**
   String get accountVisibilityNextWalletPasscode;
-
-  /// [security] Accounts by passcode on mobile. Error when the selected account becomes unavailable before saving.
-  ///
-  /// In en, this message translates to:
-  /// **'Choose an account to continue.'**
-  String get accountVisibilitySelectAccount;
-
-  /// [security] Accounts by passcode on mobile. Single-selection page title in the account passcode setup flow.
-  ///
-  /// In en, this message translates to:
-  /// **'Choose an account'**
-  String get accountVisibilitySelectTitle;
 
   /// [security] Accounts by passcode on mobile. Short subtitle on the account passcode keypads.
   ///
@@ -352,11 +316,29 @@ abstract class AppLocalizations {
   /// **'Accounts by passcode'**
   String get accountVisibilityTitle;
 
+  /// [security] Accounts by passcode on mobile. Confirmation screen title before unlinking a dedicated passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop viewing separately?'**
+  String get accountVisibilityUnlinkTitle;
+
   /// [security] Accounts by passcode on mobile. Error when saving, changing or unlinking an account passcode fails.
   ///
   /// In en, this message translates to:
   /// **'Couldn’t save the account passcode settings. Try again.'**
   String get accountVisibilityUpdateFailed;
+
+  /// [security] Accounts by passcode on mobile. Explains what happens in the regular account view for the chosen account.
+  ///
+  /// In en, this message translates to:
+  /// **'When you open Vizor with your usual wallet passcode, {account} is hidden from the account list.'**
+  String accountVisibilityUsualCode(String account);
+
+  /// [security] Accounts by passcode on mobile. Regular account menu action and setup explanation title.
+  ///
+  /// In en, this message translates to:
+  /// **'View this account separately'**
+  String get accountVisibilityViewSeparately;
 
   /// Screen-reader label of the button that opens an account's action menu on desktop.
   ///
