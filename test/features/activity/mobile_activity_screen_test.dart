@@ -16,6 +16,8 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/activity/activity_history_pager.dart'
+    show activityPageSize;
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
@@ -710,6 +712,44 @@ void main() {
 
       expect(find.text(testL10n.activityPrivateCheckNotice), findsNothing);
       expect(find.text(testL10n.activityRowCheckingPrivately), findsOneWidget);
+    });
+
+    testWidgets('rows loaded past the page cut do not raise it', (
+      tester,
+    ) async {
+      // A page loads whole transactions, and the last one splits into two
+      // rows, so one loaded row falls below the cut. Only that row waits.
+      final loaded = [
+        for (var i = 0; i < activityPageSize - 1; i++)
+          _tx(txidHex: 'page-cut-$i', blockTime: BigInt.from(1800000000 - i)),
+        _tx(
+          txidHex: 'page-cut-split',
+          kind: 'sent',
+          blockTime: BigInt.from(1700000000),
+        ),
+        _tx(
+          txidHex: 'page-cut-split',
+          blockTime: BigInt.from(1700000000),
+          provisional: true,
+          awaitsPrivateCheck: true,
+        ),
+      ];
+      await tester.pumpWidget(
+        _app(
+          (_) async => loaded,
+          privateQueriesEnabled: true,
+          syncNotifier: FakeSyncNotifier(
+            SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+              transparentStop: rust_sync.TransparentStopReason.stalled,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(testL10n.homeTransparentStopStalled), findsNothing);
     });
 
     for (final waiting in [1, 3]) {

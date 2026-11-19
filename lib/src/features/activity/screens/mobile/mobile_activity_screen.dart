@@ -248,6 +248,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       timestamp:
           giftCard?.activityTimestamp ??
           transactionActivityTimestamp(transaction, now: activityNow),
+      transaction: transaction,
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
@@ -377,16 +378,6 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
           );
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
-    // Only the rows the list shows: a swap leg shows in its swap's row.
-    final notice = privateCheckNotice(
-      giftCardActivityIndex
-          .withPendingClaims(transactions)
-          .where((tx) => !absorption.absorbs(tx)),
-      privateQueriesEnabled: ref.watch(enhancePirProvider),
-      stop: ref.watch(
-        syncProvider.select((sync) => sync.value?.transparentStop),
-      ),
-    );
     final activityNow = DateTime.now();
     final entries = <ActivityEntry>[
       for (final tx in giftCardActivityIndex.withPendingClaims(transactions))
@@ -397,7 +388,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             giftCardActivityIndex.metadataFor(tx, transactions: transactions),
             privacyModeEnabled: privacyModeEnabled,
             activityNow: activityNow,
-            privateCheckNoticeShown: notice != null,
+            privateCheckNoticeShown: false,
           ),
       for (final item in swapItems)
         ActivityEntry(
@@ -431,11 +422,33 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
           ),
         ),
     ];
-    final sections = buildActivityFeedSections(
-      context.l10n,
+    final visible = visibleActivityEntries(
       entries,
       limit: _pager?.visibleCount ?? activityPageSize,
     );
+    // Only the rows the page shows: a swap leg shows in its swap's row, and
+    // loaded rows past the page cut are not on screen.
+    final notice = privateCheckNotice(
+      [for (final entry in visible) ?entry.transaction],
+      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      stop: ref.watch(
+        syncProvider.select((sync) => sync.value?.transparentStop),
+      ),
+    );
+    final sections = buildActivityFeedSections(context.l10n, [
+      for (final entry in visible)
+        switch (entry.transaction) {
+          final tx? when notice != null => _transactionEntry(
+            context,
+            tx,
+            giftCardActivityIndex.metadataFor(tx, transactions: transactions),
+            privacyModeEnabled: privacyModeEnabled,
+            activityNow: activityNow,
+            privateCheckNoticeShown: true,
+          ),
+          _ => entry,
+        },
+    ]);
 
     final content = SwapActivityStatusAutoRefresh(
       child: SafeArea(
