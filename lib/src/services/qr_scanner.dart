@@ -51,6 +51,37 @@ class QrScanner {
       height: side,
     );
   }
+
+  /// The QR codes in the image file at [path], read by the plugin the camera
+  /// scanners use.
+  ///
+  /// Through the platform interface, not a controller of its own: disposing a
+  /// controller disposes the plugin's one native scanner, which would stop the
+  /// camera of a scan sheet the user happens to have open. The plugin keeps a
+  /// single slot for an image analysis, so reads run one after another here,
+  /// whoever asks. No timeout, for the same reason: a read given up on here
+  /// would still own that slot and could hand its codes to the next read. A
+  /// reply that never comes would hold every later read until restart; the
+  /// pinned plugin always replies (its stop lets an analysis finish, and a
+  /// missing scanner answers with an error).
+  static Future<List<String>> readImage(String path) {
+    final read = _imageReads.then((_) => _analyzeImage(path));
+    _imageReads = read.then<void>((_) {}, onError: (_) {});
+    return read;
+  }
+
+  static Future<void> _imageReads = Future<void>.value();
+
+  static Future<List<String>> _analyzeImage(String path) async {
+    final capture = await MobileScannerPlatform.instance.analyzeImage(
+      path,
+      formats: formats,
+    );
+    return [
+      for (final barcode in capture?.barcodes ?? const <Barcode>[])
+        ?barcode.rawValue,
+    ];
+  }
 }
 
 class ScanResult {

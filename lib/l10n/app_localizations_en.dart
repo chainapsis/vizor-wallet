@@ -10593,6 +10593,22 @@ class AppLocalizationsEn extends AppLocalizations {
       'Software updates unavailable';
 
   @override
+  String get sharedPaymentImageNoCode =>
+      'The shared image doesn\'t contain a QR code.';
+
+  @override
+  String get sharedPaymentImageSeveralCodes =>
+      'The shared image contains more than one QR code.';
+
+  @override
+  String get sharedPaymentImageUnreadable =>
+      'Vizor couldn\'t read the shared image.';
+
+  @override
+  String get sharedPaymentNoPayment =>
+      'Shared content doesn\'t include a Zcash address or payment link.';
+
+  @override
   String get sidebarAccountNameFallback => 'Username';
 
   @override
