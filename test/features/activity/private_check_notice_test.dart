@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/private_check_notice.dart';
+import 'package:zcash_wallet/src/features/settings/settings_focus.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../support/localized_test_scope.dart';
@@ -116,7 +118,11 @@ void main() {
     expect(find.text(testL10n.activityPrivateCheckNotice), findsOneWidget);
   });
 
-  testWidgets('a stop only the user clears opens Settings', (tester) async {
+  testWidgets('a stop only the user clears opens Private queries settings', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
     final router = GoRouter(
       initialLocation: '/activity',
       routes: [
@@ -134,11 +140,14 @@ void main() {
     );
     addTearDown(router.dispose);
     await tester.pumpWidget(
-      AppTheme(
-        data: AppThemeData.light,
-        child: MaterialApp.router(
-          localizationsDelegates: appLocalizationsDelegates,
-          routerConfig: router,
+      UncontrolledProviderScope(
+        container: container,
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
+            routerConfig: router,
+          ),
         ),
       ),
     );
@@ -156,5 +165,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('settings page'), findsOneWidget);
+    // Settings scrolls to the setting (see settings_focus_test.dart).
+    expect(
+      container.read(settingsFocusRequestProvider),
+      SettingsFocus.privateQueries,
+    );
   });
 }

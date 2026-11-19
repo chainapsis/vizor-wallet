@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../settings/settings_focus.dart';
 import '../transaction_completeness.dart';
 
 /// A short notice above a list of activity about the private check of its
@@ -86,20 +87,23 @@ class PrivateCheckNotice extends StatelessWidget {
           padding: const EdgeInsetsDirectional.only(
             start: _iconSize + AppSpacing.xs,
           ),
-          child: AppButton(
-            key: const ValueKey('private_check_notice_settings'),
-            variant: AppButtonVariant.ghost,
-            size: AppButtonSize.small,
-            height: settingsHeight - AppSpacing.xxs,
-            contentPadding: EdgeInsets.zero,
-            iconGap: AppSpacing.xxs,
-            // As Home's "See all".
-            trailing: const AppIcon(AppIcons.chevronForward, size: 16),
-            onPressed: () => context.go('/settings'),
-            // Named for the setting it leads to.
-            child: Text(
-              l10n.settingsPrivateQueriesLabel,
-              style: AppTypography.labelLarge,
+          child: Consumer(
+            builder: (context, ref, _) => AppButton(
+              key: const ValueKey('private_check_notice_settings'),
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.small,
+              height: settingsHeight - AppSpacing.xxs,
+              contentPadding: EdgeInsets.zero,
+              iconGap: AppSpacing.xxs,
+              // As Home's "See all".
+              trailing: const AppIcon(AppIcons.chevronForward, size: 16),
+              onPressed: () =>
+                  openSettingsAt(context, ref, SettingsFocus.privateQueries),
+              // Named for the setting it leads to.
+              child: Text(
+                l10n.settingsPrivateQueriesLabel,
+                style: AppTypography.labelLarge,
+              ),
             ),
           ),
         ),

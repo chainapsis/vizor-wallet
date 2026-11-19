@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/settings/widgets/swap_history_check_co
 import 'package:zcash_wallet/src/providers/swap_history_check_provider.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
+import 'package:zcash_wallet/src/features/settings/settings_focus.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/hide_balance_on_unlock_provider.dart';
@@ -757,6 +758,49 @@ void main() {
     await tester.pump();
     expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsOneWidget);
     expect(find.text(testL10n.settingsNearSwapPrivacyOff), findsNothing);
+  });
+
+  group('opened at Private queries', () {
+    final row = find.byKey(
+      const ValueKey('settings_enhance_pir_toggle'),
+      skipOffstage: false,
+    );
+    void expectRowOnScreen(WidgetTester tester) {
+      final rect = tester.getRect(row);
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(rect.bottom, lessThanOrEqualTo(600));
+    }
+
+    testWidgets('scrolls there as Settings opens', (tester) async {
+      await tester.pumpWidget(
+        _settingsHarness(
+          enhancePirEnabled: true,
+          extraOverrides: [
+            settingsFocusRequestProvider.overrideWith(_PrivateQueriesFocus.new),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expectRowOnScreen(tester);
+    });
+
+    testWidgets('scrolls there when Settings is already open', (tester) async {
+      await tester.pumpWidget(_settingsHarness(enhancePirEnabled: true));
+      await tester.pump();
+      expect(tester.getRect(row).top, greaterThan(600));
+
+      ProviderScope.containerOf(tester.element(row))
+          .read(settingsFocusRequestProvider.notifier)
+          .request(SettingsFocus.privateQueries);
+      // The scroll starts after the next frame, then runs its course.
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(SettingsFocusTarget.duration);
+
+      expectRowOnScreen(tester);
+    });
   });
 
   testWidgets('NEAR swap privacy off describes regular addresses', (
@@ -2076,3 +2120,9 @@ const _idleRecovery = SwapRecoveryStatus(
   upgradeRequired: false,
   watching: true,
 );
+
+/// Settings opened at the Private queries row.
+class _PrivateQueriesFocus extends SettingsFocusRequest {
+  @override
+  SettingsFocus? build() => SettingsFocus.privateQueries;
+}

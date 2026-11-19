@@ -29,6 +29,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../core/l10n/app_language.dart';
 import '../../../providers/app_language_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
+import '../settings_focus.dart';
 import '../../../providers/zcash_explorer_provider.dart';
 import '../../../providers/windows_update_provider.dart';
 import '../../accounts/widgets/account_modal_card.dart';
@@ -691,12 +692,15 @@ class _SettingsList extends ConsumerWidget {
             ),
             if (enhancePirAvailable) ...[
               const SizedBox(height: AppSpacing.sm),
-              EnhancePirPrivacyControl(
-                enabled: enhancePirEnabled,
-                transition: recoveryTransition,
-                onToggle: changingRecovery
-                    ? null
-                    : () => unawaited(togglePrivateQueries(context, ref)),
+              SettingsFocusTarget(
+                focus: SettingsFocus.privateQueries,
+                child: EnhancePirPrivacyControl(
+                  enabled: enhancePirEnabled,
+                  transition: recoveryTransition,
+                  onToggle: changingRecovery
+                      ? null
+                      : () => unawaited(togglePrivateQueries(context, ref)),
+                ),
               ),
             ],
             if (nearSwapPrivacy != null) ...[
