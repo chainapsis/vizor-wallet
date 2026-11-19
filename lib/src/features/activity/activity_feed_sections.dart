@@ -13,10 +13,17 @@ import 'widgets/activity_feed.dart';
 /// One activity row paired with the timestamp used for sorting and
 /// section grouping.
 class ActivityEntry {
-  const ActivityEntry({required this.timestamp, required this.row});
+  const ActivityEntry({
+    required this.timestamp,
+    required this.row,
+    this.transaction,
+  });
 
   final DateTime? timestamp;
   final ActivityRowData row;
+
+  /// The transaction a transaction row shows; null for a swap row.
+  final rust_sync.TransactionInfo? transaction;
 }
 
 /// Newest first; entries without a timestamp sort last.
@@ -48,10 +55,9 @@ DateTime? transactionActivityTimestamp(
   return null;
 }
 
-/// Sorts [entries] newest-first and groups consecutive entries that
-/// share a section title.
-List<ActivityFeedSectionData> buildActivityFeedSections(
-  AppLocalizations l10n,
+/// [entries] newest-first, the first [limit] of them when given: the rows a
+/// feed shows.
+List<ActivityEntry> visibleActivityEntries(
   List<ActivityEntry> entries, {
   int? limit,
 }) {
@@ -63,11 +69,21 @@ List<ActivityFeedSectionData> buildActivityFeedSections(
       return order != 0 ? order : a.$1.compareTo(b.$1);
     });
   final visible = limit == null ? sorted : sorted.take(limit);
+  return [for (final (_, entry) in visible) entry];
+}
+
+/// Sorts [entries] newest-first and groups consecutive entries that
+/// share a section title.
+List<ActivityFeedSectionData> buildActivityFeedSections(
+  AppLocalizations l10n,
+  List<ActivityEntry> entries, {
+  int? limit,
+}) {
   final sections = <ActivityFeedSectionData>[];
   List<ActivityRowData>? currentRows;
   String? currentTitle;
 
-  for (final (_, entry) in visible) {
+  for (final entry in visibleActivityEntries(entries, limit: limit)) {
     final title = _activitySectionTitle(l10n, entry.timestamp);
     if (title != currentTitle) {
       currentTitle = title;

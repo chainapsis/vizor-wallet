@@ -320,6 +320,10 @@
   "@activityBalanceTransparent": {
     "description": "Value of the From row of a mobile shielding receipt: the transparent balance the funds came from."
   },
+  "activityDetailsGaveUp": "Couldn't be looked up privately",
+  "@activityDetailsGaveUp": {
+    "description": "Value of the Details row when the private lookup of a transaction's transparent outputs was given up; no later sync retries it."
+  },
   "activityDetailsLoadFailed": "Failed — try again",
   "@activityDetailsLoadFailed": {
     "description": "Row value shown after a public load of the transaction details failed; the row stays tappable."
@@ -500,25 +504,9 @@
       }
     }
   },
-  "activityOmissionOtherSenders": "other sending addresses",
-  "@activityOmissionOtherSenders": {
-    "description": "Item in the list of what private details leave out: further sender addresses."
-  },
   "activityOmissionOutputAddress": "an output address",
   "@activityOmissionOutputAddress": {
     "description": "Item in the list of what private details leave out: an output address."
-  },
-  "activityOmissionSender": "the sending address",
-  "@activityOmissionSender": {
-    "description": "Item in the list of what private details leave out: the sender address."
-  },
-  "activityOmissionSharedFunding": "inputs from other wallets",
-  "@activityOmissionSharedFunding": {
-    "description": "Item in the list of what private details leave out: inputs owned by other wallets."
-  },
-  "activityOmissionShieldedFunding": "the shielded part of the funding",
-  "@activityOmissionShieldedFunding": {
-    "description": "Item in the list of what private details leave out: the shielded part of the funds."
   },
   "activityPayFromShielded": "from shielded ZEC",
   "@activityPayFromShielded": {
@@ -550,6 +538,22 @@
   "@activityPoolMixed": {
     "description": "Badge on an activity row for a transaction that involves more than one pool."
   },
+  "activityPrivateCheckNotice": "Checking details privately. Amounts may still change.",
+  "@activityPrivateCheckNotice": {
+    "description": "Short notice above Activity lists (Home's recent activity and the Activity tab) while Private queries is still checking several entries; replaces the label on each of them. Avoid leaving one word alone on a second line."
+  },
+  "activityPrivateCheckStopLegacyDiscrepancy": "Earlier public records don't match private recovery.",
+  "@activityPrivateCheckStopLegacyDiscrepancy": {
+    "description": "Short notice above Activity lists when private recovery stopped because earlier public records don't match it; a button to the Private queries setting follows. Home's homeTransparentStopLegacyDiscrepancy says the same at length."
+  },
+  "activityPrivateCheckStopOptOutUnfinished": "Turning off Private queries didn't finish.",
+  "@activityPrivateCheckStopOptOutUnfinished": {
+    "description": "Short notice above Activity lists when turning off Private queries did not finish; a button to the Private queries setting follows. Home's homeTransparentStopOptOutUnfinished says the same at length."
+  },
+  "activityPrivateCheckStopQuarantined": "Private recovery found conflicting records for this account.",
+  "@activityPrivateCheckStopQuarantined": {
+    "description": "Short notice above Activity lists when private recovery stopped on conflicting records; a button to the Private queries setting follows. Home's homeTransparentStopQuarantined says the same at length."
+  },
   "activityPublicLookupBody": "Vizor will ask the server for this one transaction to show what private lookups leave out.",
   "@activityPublicLookupBody": {
     "description": "Body of the dialog that confirms loading one transaction's details from the server."
@@ -569,6 +573,18 @@
   "activityReceiptCardFee": "Card fee",
   "@activityReceiptCardFee": {
     "description": "Label of a row on a transaction receipt: the fee for creating a gift card."
+  },
+  "activityReceiptCheckStoppedHelp": "Vizor stopped checking this transaction privately before it finished. The amount shown may change.",
+  "@activityReceiptCheckStoppedHelp": {
+    "description": "Help for a receipt whose private check stopped before it finished; the reason follows as its own paragraph."
+  },
+  "activityReceiptCheckingPrivately": "Checking privately",
+  "@activityReceiptCheckingPrivately": {
+    "description": "Value of the Details row on a receipt, and the title of its help sheet, while Private queries is still checking the transaction. Short."
+  },
+  "activityReceiptCheckingPrivatelyHelp": "A transaction can also involve your transparent funds. Vizor is still checking this one privately, and the check finishes on its own. The amount shown may change.",
+  "@activityReceiptCheckingPrivatelyHelp": {
+    "description": "Explains a receipt whose Details row says Private queries is still checking it."
   },
   "activityReceiptConfirmations": "Confirmations",
   "@activityReceiptConfirmations": {
@@ -599,6 +615,10 @@
   "activityReceiptDetailsIncompleteHelp": "Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.",
   "@activityReceiptDetailsIncompleteHelp": {
     "description": "Explains why a receipt is marked as having incomplete details."
+  },
+  "activityReceiptDetailsSettledHelp": "Private queries can't work out every detail of this transaction, so some stay unknown. The amount shown is how much this account's balance changed.",
+  "@activityReceiptDetailsSettledHelp": {
+    "description": "Help for a receipt whose details stay incomplete although nothing is still being scanned or checked privately."
   },
   "activityReceiptEstimatedNetworkFee": "Estimated network fee",
   "@activityReceiptEstimatedNetworkFee": {
@@ -643,6 +663,10 @@
   "activityReceiptUnattributedFeeHelp": "Total fee for this transaction. Your account's share of this fee is unknown.",
   "@activityReceiptUnattributedFeeHelp": {
     "description": "Tooltip explaining a network fee when the account's share of it is not known."
+  },
+  "activityRowCheckingPrivately": "Checking privately",
+  "@activityRowCheckingPrivately": {
+    "description": "Short label under the amount of an Activity row, in place of its date, while Private queries is still checking that transaction. Keep it as short as the date."
   },
   "activityRowToday": "Today, {time}",
   "@activityRowToday": {

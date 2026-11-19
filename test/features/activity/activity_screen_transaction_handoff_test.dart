@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
+import 'package:zcash_wallet/src/features/activity/activity_history_pager.dart'
+    show activityPageSize;
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
@@ -18,6 +20,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 
@@ -154,6 +157,56 @@ void main() {
     });
   }
 
+  testWidgets('rows loaded past the page cut do not raise the notice', (
+    tester,
+  ) async {
+    rust_sync.TransactionInfo row(
+      String txid,
+      int time, {
+      String kind = 'received',
+      bool waiting = false,
+    }) => rust_sync.TransactionInfo(
+      detailsComplete: true,
+      feeState: rust_sync.TransactionFeeState.notApplicable,
+      provisional: waiting,
+      awaitsPrivateCheck: waiting,
+      txidHex: txid,
+      minedHeight: BigInt.from(3000000),
+      expiredUnmined: false,
+      accountBalanceDelta: 0,
+      fee: BigInt.zero,
+      amountIncludesFee: false,
+      blockTime: BigInt.from(time),
+      isTransparent: false,
+      txKind: kind,
+      displayAmount: BigInt.from(100000000),
+      displayPool: 'shielded',
+      createdTime: BigInt.from(time),
+    );
+    // A page loads whole transactions, and the last one splits into two
+    // rows, so one loaded row falls below the cut. Only that row waits.
+    final loaded = [
+      for (var i = 0; i < activityPageSize - 1; i++)
+        row('page-cut-$i', 1764150000 - i),
+      row('page-cut-split', 1700000000, kind: 'sent'),
+      row('page-cut-split', 1700000000, waiting: true),
+    ];
+    await _pumpActivityScreen(
+      tester,
+      historyLoader: (_) async => loaded,
+      syncNotifier: FakeSyncNotifier(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          transparentStop: rust_sync.TransparentStopReason.stalled,
+        ),
+      ),
+      expectSingleRow: false,
+    );
+
+    expect(find.text(testL10n.homeTransparentStopStalled), findsNothing);
+  });
+
   testWidgets('Activity replaces the pending pool with ETA', (tester) async {
     await _pumpActivityScreen(
       tester,
@@ -261,6 +314,7 @@ Future<_SwitchableAccountNotifier> _pumpActivityScreen(
   Map<String, ActivityEta>? etaLabels,
   ActivityHistoryLoader? historyLoader,
   FakeSyncNotifier? syncNotifier,
+  bool expectSingleRow = true,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1280, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -312,10 +366,12 @@ Future<_SwitchableAccountNotifier> _pumpActivityScreen(
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
   }
-  expect(
-    find.text(transaction == null ? 'Received' : 'Receiving ...'),
-    findsOneWidget,
-  );
+  if (expectSingleRow) {
+    expect(
+      find.text(transaction == null ? 'Received' : 'Receiving ...'),
+      findsOneWidget,
+    );
+  }
   return accountNotifier;
 }
 

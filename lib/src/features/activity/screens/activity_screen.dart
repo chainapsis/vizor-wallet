@@ -32,9 +32,11 @@ import '../gift_card_activity_index.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
+import '../transaction_completeness.dart';
 import '../widgets/activity_feed.dart';
 import '../widgets/deferred_gift_card_recovery.dart';
 import 'activity_transaction_status_screen.dart';
+import '../private_details_marked_provider.dart';
 
 /// Loads the full transaction history for one account; injectable so
 /// widget tests can avoid the Rust FFI.
@@ -368,6 +370,42 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         : SwapActivityLegAbsorption.empty;
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
+    ActivityRowData transactionRow(
+      rust_sync.TransactionInfo tx,
+      GiftCardActivityMetadata? giftCard, {
+      required bool privateCheckNoticeShown,
+    }) => buildTransactionActivityRow(
+      context: context,
+      transaction: tx,
+      privateQueriesEnabled: ref.watch(privateDetailsMarkedProvider),
+      privateCheckNoticeShown: privateCheckNoticeShown,
+      showPendingEstimate: !ref
+          .watch(activityEtaExcludedTxidsProvider)
+          .contains(activityTxidKey(tx.txidHex)),
+      pendingEta:
+          (_hasFreshTransactionHistory &&
+              _transactionsSnapshot ==
+                  activityHistorySnapshot(ref.watch(syncProvider).value)
+          ? activityEtaFor(
+              transaction: tx,
+              labels: ref.watch(activityEtaLabelsProvider),
+              giftCard: giftCard,
+            )
+          : null),
+      pendingFallbackLabel: ref
+          .watch(activityPendingFallbackLabelProvider)
+          .text(context.l10n),
+      giftCardKind: giftCard?.kind,
+      giftCardAmountZatoshi: giftCard?.amountZatoshi,
+      giftCardBatchCount: giftCard?.batchCount,
+      giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
+      giftCardStableId: giftCard?.stableId,
+      giftCardActivityTimestamp: giftCard?.activityTimestamp,
+      giftCardDisplayPool: giftCard?.displayPool,
+      privacyModeEnabled: privacyModeEnabled,
+      onTap: () => _openTransactionStatus(tx, giftCard: giftCard),
+    );
+
     final entries = <_ActivityEntry>[];
     var sourceOrder = 0;
     if (accountUuid != null) {
@@ -384,36 +422,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               sourceOrder: sourceOrder++,
               giftCard: giftCard,
             ),
-            row: buildTransactionActivityRow(
-              context: context,
-              transaction: tx,
-              privateQueriesEnabled: ref.watch(enhancePirProvider),
-              showPendingEstimate: !ref
-                  .watch(activityEtaExcludedTxidsProvider)
-                  .contains(activityTxidKey(tx.txidHex)),
-              pendingEta:
-                  (_hasFreshTransactionHistory &&
-                      _transactionsSnapshot ==
-                          activityHistorySnapshot(ref.watch(syncProvider).value)
-                  ? activityEtaFor(
-                      transaction: tx,
-                      labels: ref.watch(activityEtaLabelsProvider),
-                      giftCard: giftCard,
-                    )
-                  : null),
-              pendingFallbackLabel: ref
-                  .watch(activityPendingFallbackLabelProvider)
-                  .text(context.l10n),
-              giftCardKind: giftCard?.kind,
-              giftCardAmountZatoshi: giftCard?.amountZatoshi,
-              giftCardBatchCount: giftCard?.batchCount,
-              giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
-              giftCardStableId: giftCard?.stableId,
-              giftCardActivityTimestamp: giftCard?.activityTimestamp,
-              giftCardDisplayPool: giftCard?.displayPool,
-              privacyModeEnabled: privacyModeEnabled,
-              onTap: () => _openTransactionStatus(tx, giftCard: giftCard),
+            row: transactionRow(
+              tx,
+              giftCard,
+              privateCheckNoticeShown: false,
             ),
+            transaction: tx,
+            giftCard: giftCard,
           ),
         );
       }
@@ -446,10 +461,32 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       );
     }
     entries.sort(_compareActivityEntries);
-    final sections = _activityFeedSections(
-      context.l10n,
-      entries.take(_pager?.visibleCount ?? activityPageSize).toList(),
+    final visible = entries
+        .take(_pager?.visibleCount ?? activityPageSize)
+        .toList();
+    // Only the rows the page shows: a swap leg shows in its swap's row, and
+    // loaded rows past the page cut are not on screen.
+    final notice = privateCheckNotice(
+      [for (final entry in visible) ?entry.transaction],
+      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      stop: ref.watch(
+        syncProvider.select((sync) => sync.value?.transparentStop),
+      ),
     );
+    final sections = _activityFeedSections(context.l10n, [
+      for (final entry in visible)
+        switch (entry.transaction) {
+          final tx? when notice != null => _ActivityEntry(
+            sortKey: entry.sortKey,
+            row: transactionRow(
+              tx,
+              entry.giftCard,
+              privateCheckNoticeShown: true,
+            ),
+          ),
+          _ => entry,
+        },
+    ]);
 
     final content = AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -462,6 +499,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           slivers: [
             ActivityFeedSliver(
               sections: sections,
+              privateCheckNotice: notice,
               rowKeyPrefix: 'activity_screen',
               scrollAnchor: _scrollAnchor,
               isLoadingMore:
@@ -489,10 +527,19 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 }
 
 class _ActivityEntry {
-  const _ActivityEntry({required this.sortKey, required this.row});
+  const _ActivityEntry({
+    required this.sortKey,
+    required this.row,
+    this.transaction,
+    this.giftCard,
+  });
 
   final ActivityEntrySortKey sortKey;
   final ActivityRowData row;
+
+  /// The transaction a transaction row shows; null for a swap row.
+  final rust_sync.TransactionInfo? transaction;
+  final GiftCardActivityMetadata? giftCard;
 }
 
 int _compareActivityEntries(_ActivityEntry a, _ActivityEntry b) {

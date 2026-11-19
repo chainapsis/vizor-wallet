@@ -75,6 +75,118 @@ bool receiptDetailsComplete(rust_sync.TransactionDetail? detail) =>
     detail.transparentDetailsState ==
         rust_sync.TransparentDetailsState.available;
 
+/// Whether an entry's summary waits on private recovery checking its
+/// transparent side, as the wallet reports (`awaitsPrivateCheck`): only its
+/// transparent side is unsettled, or its history has not been read again
+/// since Private queries was turned on. An entry that waits on scanning or
+/// lacks payment details does not, and an expired one never settles.
+bool entryAwaitsPrivateCheck(rust_sync.TransactionInfo tx) =>
+    tx.awaitsPrivateCheck && !tx.expiredUnmined;
+
+/// The `PrivateCheckNotice` a list shows above its rows: the check is still
+/// running, or it stopped for [stop].
+class PrivateCheckNoticeState {
+  const PrivateCheckNoticeState.checking() : stop = null;
+  const PrivateCheckNoticeState.stopped(
+    rust_sync.TransparentStopReason this.stop,
+  );
+
+  final rust_sync.TransparentStopReason? stop;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PrivateCheckNoticeState && other.stop == stop;
+
+  @override
+  int get hashCode => stop.hashCode;
+}
+
+/// The notice a list shows in place of the label on each row awaiting the
+/// private check, or null for none.
+///
+/// While the check runs, more than one waiting row shows it. Right after
+/// Private queries is turned on every row the wallet did not build waits;
+/// later, usually only a new receive does, and it keeps its own label so the
+/// list does not shift. Once recovery stops, any waiting row shows why, which
+/// no row label can; that holds with the setting off too, where turning it
+/// off did not finish.
+PrivateCheckNoticeState? privateCheckNotice(
+  Iterable<rust_sync.TransactionInfo> transactions, {
+  required bool privateQueriesEnabled,
+  required rust_sync.TransparentStopReason? stop,
+  bool rowsLabelled = true,
+}) {
+  final waiting = transactions.where(entryAwaitsPrivateCheck).length;
+  if (stop != null) {
+    return waiting > 0 ? PrivateCheckNoticeState.stopped(stop) : null;
+  }
+  // Rows that carry their own label speak for a single waiting entry.
+  return privateQueriesEnabled && waiting > (rowsLabelled ? 1 : 0)
+      ? const PrivateCheckNoticeState.checking()
+      : null;
+}
+
+/// Why private recovery stopped and what the user can do about it.
+String transparentStopHint(
+  AppLocalizations l10n,
+  rust_sync.TransparentStopReason stop,
+) => switch (stop) {
+  rust_sync.TransparentStopReason.quarantined =>
+    l10n.homeTransparentStopQuarantined,
+  rust_sync.TransparentStopReason.legacyDiscrepancy =>
+    l10n.homeTransparentStopLegacyDiscrepancy,
+  rust_sync.TransparentStopReason.withdrawn =>
+    l10n.homeTransparentStopWithdrawn,
+  rust_sync.TransparentStopReason.stalled => l10n.homeTransparentStopStalled,
+  rust_sync.TransparentStopReason.optOutUnfinished =>
+    l10n.homeTransparentStopOptOutUnfinished,
+};
+
+/// Whether only the user clears [stop], in Settings, by turning Private
+/// queries off; Vizor retries the others itself.
+bool transparentStopNeedsSettings(rust_sync.TransparentStopReason stop) =>
+    switch (stop) {
+      rust_sync.TransparentStopReason.quarantined ||
+      rust_sync.TransparentStopReason.legacyDiscrepancy ||
+      rust_sync.TransparentStopReason.optOutUnfinished => true,
+      rust_sync.TransparentStopReason.withdrawn ||
+      rust_sync.TransparentStopReason.stalled => false,
+    };
+
+/// Whether a receipt says its details are still being checked privately, as
+/// its Activity row does: the entry awaits the check and recovery has not
+/// stopped. An entry that settles with details still missing reads
+/// "Incomplete" from then on.
+bool receiptAwaitsPrivateCheck(
+  rust_sync.TransactionInfo tx, {
+  required bool recoveryStopped,
+}) => entryAwaitsPrivateCheck(tx) && !recoveryStopped;
+
+/// Why a receipt's entry is left incomplete, when it awaits the private
+/// check and recovery stopped for [stop].
+rust_sync.TransparentStopReason? receiptPrivateCheckStop(
+  rust_sync.TransactionInfo tx, {
+  required rust_sync.TransparentStopReason? stop,
+}) => entryAwaitsPrivateCheck(tx) ? stop : null;
+
+/// What a receipt's incomplete Details row explains: the private check still
+/// running; the check stopped, and why; details nothing running can fill in
+/// ([effectsSettled]); or details that may still arrive.
+String receiptIncompleteDetailsHelp(
+  AppLocalizations l10n, {
+  required bool awaitsPrivateCheck,
+  required rust_sync.TransparentStopReason? stop,
+  bool effectsSettled = false,
+}) => switch ((awaitsPrivateCheck, stop)) {
+  (true, _) => l10n.activityReceiptCheckingPrivatelyHelp,
+  (false, final stop?) => [
+    l10n.activityReceiptCheckStoppedHelp,
+    transparentStopHint(l10n, stop),
+  ].join('\n\n'),
+  (false, null) when effectsSettled => l10n.activityReceiptDetailsSettledHelp,
+  (false, null) => l10n.activityReceiptDetailsIncompleteHelp,
+};
+
 /// Activity needs an established amount, role, and pool. Missing recipients or
 /// memos belong to the expanded receipt and do not make that summary uncertain.
 bool transactionActivitySummaryIncomplete(rust_sync.TransactionInfo tx) =>
@@ -101,33 +213,29 @@ rust_sync.TransactionInfo? provisionalRoleSuccessor(
   return rows.length == 1 ? rows.single : null;
 }
 
-/// Short phrases for what the private details leave out, by the names
-/// `TransactionDetail.transparentOmissions` uses.
-String? _omissionPhrase(AppLocalizations l10n, String omission) =>
-    switch (omission) {
-      'multiple_source_scripts' => l10n.activityOmissionOtherSenders,
-      'more_than_two_outputs' => l10n.activityOmissionLaterOutputs,
-      'shielded_and_transparent_funding' =>
-        l10n.activityOmissionShieldedFunding,
-      'non_standard_sender' => l10n.activityOmissionSender,
-      'non_standard_output' => l10n.activityOmissionOutputAddress,
-      'shared_funding' => l10n.activityOmissionSharedFunding,
-      _ => null,
-    };
-
-/// What [detail]'s transparent details leave out, in the order the wallet
-/// lists them; empty when nothing is left out.
+/// What the outputs a receipt lists leave out, in the order the wallet lists
+/// them; empty when the receipt lists no outputs or nothing is left out.
+///
+/// Only that list gets a "Not shown" line. How the transaction was funded
+/// (other sending addresses, inputs from other wallets, shielded funding, an
+/// unreadable sender) is never named: a payer's funding is nothing the account
+/// can act on, and on the account's own spend those appear only while private
+/// recovery has not linked its inputs, where they would call them someone
+/// else's.
 List<String> transparentOmissionPhrases(
   AppLocalizations l10n,
   rust_sync.TransactionDetail? detail,
 ) {
-  final count = detail?.transparentOutputCount;
+  if (listedTransactionOutputs(detail).isEmpty) return const [];
+  final count = detail!.transparentOutputCount;
   return [
-    for (final omission in detail?.transparentOmissions ?? const <String>[])
-      if (omission == 'more_than_two_outputs' && count != null && count > 2)
-        l10n.activityOmissionMoreOutputs(count - 2)
-      else
-        _omissionPhrase(l10n, omission) ?? omission.replaceAll('_', ' '),
+    for (final omission in detail.transparentOmissions)
+      if (omission == 'more_than_two_outputs')
+        count != null && count > 2
+            ? l10n.activityOmissionMoreOutputs(count - 2)
+            : l10n.activityOmissionLaterOutputs
+      else if (omission == 'non_standard_output')
+        l10n.activityOmissionOutputAddress,
   ];
 }
 

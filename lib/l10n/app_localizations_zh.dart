@@ -246,6 +246,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityBalanceTransparent => '公开余额';
 
   @override
+  String get activityDetailsGaveUp => '隐私查询未能查到';
+
+  @override
   String get activityDetailsLoadFailed => '失败，请重试';
 
   @override
@@ -372,19 +375,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get activityOmissionOtherSenders => '其他发送地址';
-
-  @override
   String get activityOmissionOutputAddress => '输出地址';
-
-  @override
-  String get activityOmissionSender => '发送地址';
-
-  @override
-  String get activityOmissionSharedFunding => '来自其他钱包的输入';
-
-  @override
-  String get activityOmissionShieldedFunding => '资金中的隐私部分';
 
   @override
   String get activityPayFromShielded => '来自隐私 ZEC';
@@ -407,6 +398,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityPoolMixed => '混合';
 
   @override
+  String get activityPrivateCheckNotice => '正在以隐私方式核对详情，金额可能仍会变化。';
+
+  @override
+  String get activityPrivateCheckStopLegacyDiscrepancy => '之前的公开记录与私密恢复结果不一致。';
+
+  @override
+  String get activityPrivateCheckStopOptOutUnfinished => '关闭隐私查询未完成。';
+
+  @override
+  String get activityPrivateCheckStopQuarantined => '私密恢复发现此账户的记录相互冲突。';
+
+  @override
   String get activityPublicLookupBody => 'Vizor 会向服务器请求这一笔交易，以显示隐私查询未包含的信息。';
 
   @override
@@ -421,6 +424,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityReceiptCardFee => '卡片手续费';
+
+  @override
+  String get activityReceiptCheckStoppedHelp =>
+      'Vizor 以隐私方式核对此交易时中途停止。显示的金额可能会变化。';
+
+  @override
+  String get activityReceiptCheckingPrivately => '正在以隐私方式核对';
+
+  @override
+  String get activityReceiptCheckingPrivatelyHelp =>
+      '一笔交易也可能涉及你的公开资金。Vizor 正在以隐私方式核对这笔交易，核对会自动完成。显示的金额可能会变化。';
 
   @override
   String get activityReceiptConfirmations => '确认数';
@@ -439,6 +453,10 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get activityReceiptDetailsIncompleteHelp =>
       '此交易的部分详情（如收款方、备注或手续费）尚不明确，显示的金额可能会变化。';
+
+  @override
+  String get activityReceiptDetailsSettledHelp =>
+      '隐私查询无法得知此交易的全部详情，部分信息将保持未知。显示的金额是此账户余额的变化。';
 
   @override
   String get activityReceiptEstimatedNetworkFee => '预估网络手续费';
@@ -472,6 +490,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityReceiptUnattributedFeeHelp => '此交易的总手续费。你的账户承担的部分未知。';
+
+  @override
+  String get activityRowCheckingPrivately => '正在以隐私方式核对';
 
   @override
   String activityRowToday(String time) {

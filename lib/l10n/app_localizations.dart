@@ -538,6 +538,12 @@ abstract class AppLocalizations {
   /// **'Transparent balance'**
   String get activityBalanceTransparent;
 
+  /// Value of the Details row when the private lookup of a transaction's transparent outputs was given up; no later sync retries it.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t be looked up privately'**
+  String get activityDetailsGaveUp;
+
   /// Row value shown after a public load of the transaction details failed; the row stays tappable.
   ///
   /// In en, this message translates to:
@@ -759,35 +765,11 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 more output} other{{count} more outputs}}'**
   String activityOmissionMoreOutputs(int count);
 
-  /// Item in the list of what private details leave out: further sender addresses.
-  ///
-  /// In en, this message translates to:
-  /// **'other sending addresses'**
-  String get activityOmissionOtherSenders;
-
   /// Item in the list of what private details leave out: an output address.
   ///
   /// In en, this message translates to:
   /// **'an output address'**
   String get activityOmissionOutputAddress;
-
-  /// Item in the list of what private details leave out: the sender address.
-  ///
-  /// In en, this message translates to:
-  /// **'the sending address'**
-  String get activityOmissionSender;
-
-  /// Item in the list of what private details leave out: inputs owned by other wallets.
-  ///
-  /// In en, this message translates to:
-  /// **'inputs from other wallets'**
-  String get activityOmissionSharedFunding;
-
-  /// Item in the list of what private details leave out: the shielded part of the funds.
-  ///
-  /// In en, this message translates to:
-  /// **'the shielded part of the funding'**
-  String get activityOmissionShieldedFunding;
 
   /// Subtitle of a Pay activity row: the payment was made from shielded ZEC.
   ///
@@ -825,6 +807,30 @@ abstract class AppLocalizations {
   /// **'Mixed'**
   String get activityPoolMixed;
 
+  /// Short notice above Activity lists (Home's recent activity and the Activity tab) while Private queries is still checking several entries; replaces the label on each of them. Avoid leaving one word alone on a second line.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking details privately. Amounts may still change.'**
+  String get activityPrivateCheckNotice;
+
+  /// Short notice above Activity lists when private recovery stopped because earlier public records don't match it; a button to the Private queries setting follows. Home's homeTransparentStopLegacyDiscrepancy says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier public records don\'t match private recovery.'**
+  String get activityPrivateCheckStopLegacyDiscrepancy;
+
+  /// Short notice above Activity lists when turning off Private queries did not finish; a button to the Private queries setting follows. Home's homeTransparentStopOptOutUnfinished says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Turning off Private queries didn\'t finish.'**
+  String get activityPrivateCheckStopOptOutUnfinished;
+
+  /// Short notice above Activity lists when private recovery stopped on conflicting records; a button to the Private queries setting follows. Home's homeTransparentStopQuarantined says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Private recovery found conflicting records for this account.'**
+  String get activityPrivateCheckStopQuarantined;
+
   /// Body of the dialog that confirms loading one transaction's details from the server.
   ///
   /// In en, this message translates to:
@@ -855,6 +861,24 @@ abstract class AppLocalizations {
   /// **'Card fee'**
   String get activityReceiptCardFee;
 
+  /// Help for a receipt whose private check stopped before it finished; the reason follows as its own paragraph.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor stopped checking this transaction privately before it finished. The amount shown may change.'**
+  String get activityReceiptCheckStoppedHelp;
+
+  /// Value of the Details row on a receipt, and the title of its help sheet, while Private queries is still checking the transaction. Short.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking privately'**
+  String get activityReceiptCheckingPrivately;
+
+  /// Explains a receipt whose Details row says Private queries is still checking it.
+  ///
+  /// In en, this message translates to:
+  /// **'A transaction can also involve your transparent funds. Vizor is still checking this one privately, and the check finishes on its own. The amount shown may change.'**
+  String get activityReceiptCheckingPrivatelyHelp;
+
   /// Label of a row on the receipt of a received transaction that cannot be spent yet: how many network confirmations it has.
   ///
   /// In en, this message translates to:
@@ -884,6 +908,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.'**
   String get activityReceiptDetailsIncompleteHelp;
+
+  /// Help for a receipt whose details stay incomplete although nothing is still being scanned or checked privately.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries can\'t work out every detail of this transaction, so some stay unknown. The amount shown is how much this account\'s balance changed.'**
+  String get activityReceiptDetailsSettledHelp;
 
   /// Part of the gift card batch cost breakdown: the network fee while the batch is pending or failed.
   ///
@@ -950,6 +980,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Total fee for this transaction. Your account\'s share of this fee is unknown.'**
   String get activityReceiptUnattributedFeeHelp;
+
+  /// Short label under the amount of an Activity row, in place of its date, while Private queries is still checking that transaction. Keep it as short as the date.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking privately'**
+  String get activityRowCheckingPrivately;
 
   /// Timestamp of an activity row from today on desktop.
   ///

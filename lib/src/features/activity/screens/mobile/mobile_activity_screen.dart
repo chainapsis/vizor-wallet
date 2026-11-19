@@ -31,9 +31,11 @@ import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
 import '../../swap_activity_row_mapper.dart';
+import '../../transaction_completeness.dart';
 import '../../widgets/activity_feed.dart';
 import '../../widgets/deferred_gift_card_recovery.dart';
 import 'mobile_transaction_status_screen.dart';
+import '../../private_details_marked_provider.dart';
 
 /// Loads the full transaction history for one account; injectable so
 /// widget tests can avoid the Rust FFI.
@@ -241,15 +243,18 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     GiftCardActivityMetadata? giftCard, {
     required bool privacyModeEnabled,
     required DateTime activityNow,
+    required bool privateCheckNoticeShown,
   }) {
     return ActivityEntry(
       timestamp:
           giftCard?.activityTimestamp ??
           transactionActivityTimestamp(transaction, now: activityNow),
+      transaction: transaction,
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
-        privateQueriesEnabled: ref.watch(enhancePirProvider),
+        privateQueriesEnabled: ref.watch(privateDetailsMarkedProvider),
+        privateCheckNoticeShown: privateCheckNoticeShown,
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
@@ -384,6 +389,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             giftCardActivityIndex.metadataFor(tx, transactions: transactions),
             privacyModeEnabled: privacyModeEnabled,
             activityNow: activityNow,
+            privateCheckNoticeShown: false,
           ),
       for (final item in swapItems)
         ActivityEntry(
@@ -417,11 +423,33 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
           ),
         ),
     ];
-    final sections = buildActivityFeedSections(
-      context.l10n,
+    final visible = visibleActivityEntries(
       entries,
       limit: _pager?.visibleCount ?? activityPageSize,
     );
+    // Only the rows the page shows: a swap leg shows in its swap's row, and
+    // loaded rows past the page cut are not on screen.
+    final notice = privateCheckNotice(
+      [for (final entry in visible) ?entry.transaction],
+      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      stop: ref.watch(
+        syncProvider.select((sync) => sync.value?.transparentStop),
+      ),
+    );
+    final sections = buildActivityFeedSections(context.l10n, [
+      for (final entry in visible)
+        switch (entry.transaction) {
+          final tx? when notice != null => _transactionEntry(
+            context,
+            tx,
+            giftCardActivityIndex.metadataFor(tx, transactions: transactions),
+            privacyModeEnabled: privacyModeEnabled,
+            activityNow: activityNow,
+            privateCheckNoticeShown: true,
+          ),
+          _ => entry,
+        },
+    ]);
 
     final content = SwapActivityStatusAutoRefresh(
       child: SafeArea(
@@ -455,6 +483,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
                         key: const ValueKey('mobile_activity_feed'),
                         sections: sections,
                         showHeader: false,
+                        privateCheckNotice: notice,
                         cardWidth: null,
                         rowKeyPrefix: 'mobile_activity',
                         scrollAnchor: _scrollAnchor,

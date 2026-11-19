@@ -28,6 +28,7 @@ void main() {
     int? giftCardBatchCount,
     bool giftCardClaimInFlight = false,
     bool privateQueriesEnabled = false,
+    bool privateCheckNoticeShown = false,
     String? giftCardDisplayPool,
     String? pendingLabel,
     bool showPendingEstimate = true,
@@ -43,6 +44,7 @@ void main() {
                 context: context,
                 transaction: transaction,
                 privateQueriesEnabled: privateQueriesEnabled,
+                privateCheckNoticeShown: privateCheckNoticeShown,
                 pendingEta: _etaFor(pendingLabel),
                 pendingFallbackLabel: _etaFor(pendingLabel) == null
                     ? pendingLabel
@@ -630,6 +632,84 @@ void main() {
     expect(publicIncomplete.amountSubtitle, isNull);
   });
 
+  testWidgets('a row awaiting the private check says so', (tester) async {
+    final waiting = _transaction(
+      txKind: 'received',
+      provisional: true,
+      awaitsPrivateCheck: true,
+    );
+    final checking = await mapRow(tester, waiting, privateQueriesEnabled: true);
+    expect(checking.amountSubtitle, testL10n.activityRowCheckingPrivately);
+
+    // An expired entry is never mined into coverage.
+    final expired = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'received',
+        provisional: true,
+        awaitsPrivateCheck: true,
+        expiredUnmined: true,
+      ),
+      privateQueriesEnabled: true,
+    );
+    expect(
+      expired.amountSubtitle,
+      isNot(testL10n.activityRowCheckingPrivately),
+    );
+
+    // A send the wallet just built waits on scanning, not the check, and the
+    // wallet does not report it as waiting on the check.
+    final justSent = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', provisional: true, minedHeight: BigInt.zero),
+      privateQueriesEnabled: true,
+    );
+    expect(justSent.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
+  });
+
+  testWidgets('a list notice replaces the label on provisional rows only', (
+    tester,
+  ) async {
+    final waiting = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'received',
+        provisional: true,
+        awaitsPrivateCheck: true,
+      ),
+      privateQueriesEnabled: true,
+      privateCheckNoticeShown: true,
+    );
+    expect(waiting.amountSubtitle, isNull);
+
+    // The list covers the summary; missing payment details stay with the
+    // receipt, which still says Incomplete.
+    final waitingWithoutMemo = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'received',
+        provisional: true,
+        awaitsPrivateCheck: true,
+        detailsComplete: false,
+      ),
+      privateQueriesEnabled: true,
+      privateCheckNoticeShown: true,
+    );
+    expect(waitingWithoutMemo.amountSubtitle, isNull);
+
+    // An unknown role or pool is not the private check's to resolve.
+    final unknownPool = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', displayPool: 'unknown'),
+      privateQueriesEnabled: true,
+      privateCheckNoticeShown: true,
+    );
+    expect(
+      unknownPool.amountSubtitle,
+      testL10n.activityReceiptDetailsIncomplete,
+    );
+  });
+
   testWidgets('a recovered exact send keeps the public activity summary', (
     tester,
   ) async {
@@ -838,6 +918,7 @@ rust_sync.TransactionInfo _transaction({
   String displayPool = 'shielded',
   bool detailsComplete = true,
   bool provisional = false,
+  bool awaitsPrivateCheck = false,
   String? activityPool,
   BigInt? fee,
   bool amountIncludesFee = false,
@@ -854,6 +935,7 @@ rust_sync.TransactionInfo _transaction({
         : rust_sync.TransactionFeeState.known,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    awaitsPrivateCheck: awaitsPrivateCheck,
     amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',

@@ -12,6 +12,8 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/receipt_loading_skeleton.dart';
 import 'activity_skeleton_row.dart';
+import '../transaction_completeness.dart';
+import 'private_check_notice.dart';
 import '../models/activity_row_data.dart';
 import '../activity_scroll_anchor.dart';
 
@@ -73,6 +75,21 @@ const _activityRowHorizontalPadding = kAppFormFactor == AppFormFactor.mobile
 
 /// Main row height. Mobile gives the circle room to breathe; desktop keeps 44px.
 const _activityRowHeight = kAppFormFactor == AppFormFactor.mobile ? 56.0 : 44.0;
+
+/// About how tall [notice] stands with its spacing; the scroll anchor only
+/// needs the change. It takes two lines on mobile; on desktop checking and a
+/// stop the user clears take one, a stop Vizor retries two. A stop the user
+/// clears adds its button.
+double _privateCheckNoticeHeight(PrivateCheckNoticeState? notice) {
+  if (notice == null) return 0;
+  const mobile = kAppFormFactor == AppFormFactor.mobile;
+  final stop = notice.stop;
+  final needsSettings = stop != null && transparentStopNeedsSettings(stop);
+  final lines = mobile || (stop != null && !needsSettings) ? 2 : 1;
+  return lines * (mobile ? 24.0 : 20.0) +
+      (mobile ? AppSpacing.md : AppSpacing.sm) +
+      (needsSettings ? PrivateCheckNotice.settingsHeight : 0);
+}
 
 /// Mobile lists months and rows straight on the page, as Home's recent
 /// activity does; desktop keeps each month on a card.
@@ -181,6 +198,7 @@ class ActivityFeedSliver extends StatelessWidget {
     this.rowKeyPrefix,
     this.cardWidth = 396,
     this.showHeader = true,
+    this.privateCheckNotice,
     super.key,
   });
 
@@ -196,6 +214,10 @@ class ActivityFeedSliver extends StatelessWidget {
   final double? cardWidth;
   final bool showHeader;
 
+  /// The [PrivateCheckNotice] above the rows, or null for none; see
+  /// `privateCheckNotice`.
+  final PrivateCheckNoticeState? privateCheckNotice;
+
   @override
   Widget build(BuildContext context) {
     final items = _activityFeedSliverItems(
@@ -206,6 +228,13 @@ class ActivityFeedSliver extends StatelessWidget {
       rowKeyPrefix: rowKeyPrefix,
     );
     if (!showHeader) items.removeRange(0, 2);
+    if (sections.isNotEmpty) {
+      // Kept in place so the notice eases in and out.
+      items.insert(
+        showHeader ? 1 : 0,
+        _ActivityFeedSliverItem.privateCheckNotice(privateCheckNotice),
+      );
+    }
     if (isLoadingMore && sections.isNotEmpty) {
       items.addAll(_skeletonItems(3, header: false));
     }
@@ -224,6 +253,8 @@ class ActivityFeedSliver extends StatelessWidget {
       }
       offset += switch (item.type) {
         _ActivityFeedSliverItemType.title => 33,
+        _ActivityFeedSliverItemType.privateCheckNotice =>
+          _privateCheckNoticeHeight(item.notice),
         _ActivityFeedSliverItemType.gap => item.height!,
         _ActivityFeedSliverItemType.message => 160,
         _ActivityFeedSliverItemType.sectionHeader ||
@@ -375,6 +406,7 @@ ValueKey<String>? _fallbackRowKey(String? rowKeyPrefix, int rowIndex) {
 
 enum _ActivityFeedSliverItemType {
   title,
+  privateCheckNotice,
   gap,
   message,
   sectionHeader,
@@ -392,6 +424,7 @@ class _ActivityFeedSliverItem {
     this.height,
     this.text,
     this.isError = false,
+    this.notice,
     this.row,
     this.rowKey,
     this.segmentPosition,
@@ -409,6 +442,15 @@ class _ActivityFeedSliverItem {
     return _ActivityFeedSliverItem._(
       type: _ActivityFeedSliverItemType.gap,
       height: height,
+    );
+  }
+
+  factory _ActivityFeedSliverItem.privateCheckNotice(
+    PrivateCheckNoticeState? notice,
+  ) {
+    return _ActivityFeedSliverItem._(
+      type: _ActivityFeedSliverItemType.privateCheckNotice,
+      notice: notice,
     );
   }
 
@@ -452,6 +494,7 @@ class _ActivityFeedSliverItem {
   final double? height;
   final String? text;
   final bool isError;
+  final PrivateCheckNoticeState? notice;
   final ActivityRowData? row;
   final ValueKey<String>? rowKey;
   final _ActivityFeedCardSegmentPosition? segmentPosition;
@@ -479,6 +522,19 @@ class _ActivityFeedSliverItemView extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: AppSpacing.s),
           child: _ActivityFeedTitleRow(),
+        ),
+      ),
+      // Above the first month, from the cards' leading edge on desktop.
+      _ActivityFeedSliverItemType.privateCheckNotice => _ActivityFeedCentered(
+        width: cardWidth,
+        child: PrivateCheckNoticeSlot(
+          notice: item.notice,
+          snapWhenScrolled: true,
+          padding: cardWidth == null
+              // A section apart from the first month.
+              ? const EdgeInsets.only(bottom: AppSpacing.md)
+              // Clear of the large serif title's descenders.
+              : const EdgeInsets.only(top: AppSpacing.sm),
         ),
       ),
       _ActivityFeedSliverItemType.gap => SizedBox(height: item.height),

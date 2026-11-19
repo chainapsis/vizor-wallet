@@ -48,6 +48,9 @@ ActivityRowData buildTransactionActivityRow({
   bool showPendingEstimate = true,
   bool privacyModeEnabled = false,
   bool privateQueriesEnabled = false,
+  // The list shows one notice for the rows awaiting the private check,
+  // checking or stopped (see `privateCheckNotice`).
+  bool privateCheckNoticeShown = false,
   bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
 }) {
@@ -163,7 +166,11 @@ ActivityRowData buildTransactionActivityRow({
         ? l10n.commonRefunded
         : privateQueriesEnabled &&
               transactionActivitySummaryIncomplete(transaction)
-        ? l10n.activityReceiptDetailsIncomplete
+        ? switch (entryAwaitsPrivateCheck(transaction)) {
+            true when privateCheckNoticeShown => null,
+            true => l10n.activityRowCheckingPrivately,
+            false => l10n.activityReceiptDetailsIncomplete,
+          }
         : null,
     statusText: isFailed
         ? l10n.commonFailed
