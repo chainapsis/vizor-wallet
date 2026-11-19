@@ -84,4 +84,26 @@ void main() {
     await tester.pump();
     expect(_color(tester), muted);
   });
+
+  testWidgets('a quiet reset while the reveal lands shows the mark still', (
+    tester,
+  ) async {
+    final muted = AppThemeData.dark.colors.icon.muted;
+    await tester.pumpWidget(_mark(on: false, reveal: 0));
+    await tester.pumpWidget(_mark(on: true, reveal: 1));
+    await tester.pump(kSwapConfidentialRevealDuration * 0.2);
+    // An account switch or session reset turns the route off without a turn.
+    await tester.pumpWidget(_mark(on: false, reveal: 1));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(_color(tester), muted);
+    final scales = tester
+        .widgetList<Transform>(
+          find.descendant(
+            of: find.byType(SwapConfidentialIcon),
+            matching: find.byType(Transform),
+          ),
+        )
+        .map((transform) => transform.transform.entry(0, 0));
+    expect(scales, everyElement(1.0));
+  });
 }

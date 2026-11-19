@@ -226,15 +226,17 @@ class SwapConfidentialIcon extends StatefulWidget {
 }
 
 class _SwapConfidentialIconState extends State<SwapConfidentialIcon> {
-  /// [SwapConfidentialIcon.reveal] when this mark was built. A mark built
-  /// again after a turn off (a step or page returned to) shows still instead
-  /// of draining once more.
-  late final int _revealAtMount;
+  /// [SwapConfidentialIcon.reveal] of the last turn off this mark saw rise.
+  /// Only that turn drains: a quiet reset, which leaves the count as it was,
+  /// and a mark built again later (a step or page returned to) show still.
+  int? _concealedAt;
 
   @override
-  void initState() {
-    super.initState();
-    _revealAtMount = widget.reveal;
+  void didUpdateWidget(SwapConfidentialIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.reveal != oldWidget.reveal && !widget.on) {
+      _concealedAt = widget.reveal;
+    }
   }
 
   bool get on => widget.on;
@@ -271,7 +273,7 @@ class _SwapConfidentialIconState extends State<SwapConfidentialIcon> {
       child: icon,
       builder: (context, t, child) {
         if (!on) {
-          final played = reveal == _revealAtMount ? 1.0 : t;
+          final played = reveal == _concealedAt ? t : 1.0;
           return _concealFrame(colors.icon.brandCrimson, color, played, still);
         }
         if (still) return child!;
