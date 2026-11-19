@@ -149,6 +149,36 @@ void main() {
     );
   });
 
+  test('a send the wallet just built waits on scanning, not the check', () {
+    // Unmined: its shielded side is still unsettled too.
+    final justSent = _transaction(
+      'aa',
+      'sent',
+      provisional: true,
+      mined: false,
+    );
+    expect(entryAwaitsPrivateCheck(justSent), isFalse);
+    expect(
+      receiptAwaitsPrivateCheck(justSent, recoveryStopped: false),
+      isFalse,
+    );
+    expect(
+      privateCheckNotice(
+        [justSent, _transaction('bb', 'sent', provisional: true, mined: false)],
+        privateQueriesEnabled: true,
+        stop: null,
+      ),
+      isNull,
+    );
+    expect(
+      receiptPrivateCheckStop(
+        justSent,
+        stop: rust_sync.TransparentStopReason.stalled,
+      ),
+      isNull,
+    );
+  });
+
   test('network fee is display-only and bound to the receipt identity', () {
     final tx = _transaction(
       'aa',
@@ -463,10 +493,11 @@ rust_sync.TransactionInfo _transaction(
   int accountBalanceDelta = 0,
   String displayPool = 'shielded',
   bool expiredUnmined = false,
+  bool mined = true,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
-    minedHeight: expiredUnmined ? BigInt.zero : BigInt.from(2500000),
+    minedHeight: expiredUnmined || !mined ? BigInt.zero : BigInt.from(2500000),
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.from(10000),

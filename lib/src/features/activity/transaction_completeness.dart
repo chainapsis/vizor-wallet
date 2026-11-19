@@ -76,10 +76,12 @@ bool receiptDetailsComplete(rust_sync.TransactionDetail? detail) =>
         rust_sync.TransparentDetailsState.available;
 
 /// Whether an entry's summary waits on private recovery checking its
-/// transparent side: it is provisional and can still be mined into the range
-/// recovery covers. An expired transaction never is, so it never settles.
+/// transparent side: it is provisional and mined. Scanning has settled the
+/// shielded side of a mined transaction, so what is left is the private
+/// check of its transparent side. An unmined one, such as a send the wallet
+/// just built, still waits on scanning, and an expired one never settles.
 bool entryAwaitsPrivateCheck(rust_sync.TransactionInfo tx) =>
-    tx.provisional && !tx.expiredUnmined;
+    tx.provisional && !tx.expiredUnmined && tx.minedHeight > BigInt.zero;
 
 /// The `PrivateCheckNotice` a list shows above its rows: the check is still
 /// running, or it stopped for [stop].

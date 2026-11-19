@@ -644,6 +644,14 @@ void main() {
       expired.amountSubtitle,
       isNot(testL10n.activityRowCheckingPrivately),
     );
+
+    // A send the wallet just built waits on scanning, not the check.
+    final justSent = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', provisional: true, minedHeight: BigInt.zero),
+      privateQueriesEnabled: true,
+    );
+    expect(justSent.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
   });
 
   testWidgets('a list notice replaces the label on provisional rows only', (
