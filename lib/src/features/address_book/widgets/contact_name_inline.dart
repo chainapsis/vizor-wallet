@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/formatting/address_display.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -60,5 +61,5 @@ String contactAddressDisplayText({
   String? compactAddress,
 }) {
   final address = compactAddress?.trim() ?? '';
-  return address.isEmpty ? label : '$label ($address)';
+  return address.isEmpty ? label : labeledAddressText(label, address);
 }

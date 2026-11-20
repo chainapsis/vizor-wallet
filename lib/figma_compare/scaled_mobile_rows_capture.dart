@@ -94,7 +94,7 @@ class MobileStatusRowCapture extends StatelessWidget {
               ? PayActivityStatusPresentation(
                   phase: _payPhase,
                   timestampText: 'Nov 17, 2026',
-                  txIdText: '0x1234...5678',
+                  txIdText: '0x1234ab...cdef5678',
                   convertedFromText: '1.12 ZEC',
                   transactionFeeText: '0.01 ZEC',
                 )

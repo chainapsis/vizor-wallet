@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -371,7 +372,9 @@ class _DiscoveredAccountRowState extends State<_DiscoveredAccountRow> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        _shortAddress(widget.account.firstTransparentAddress),
+                        truncatedLongAddress(
+                          widget.account.firstTransparentAddress,
+                        ),
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.codeSmall.copyWith(
                           color: colors.text.secondary,
@@ -402,11 +405,6 @@ class _DiscoveredAccountRowState extends State<_DiscoveredAccountRow> {
 
   String _accountPathLabel() {
     return "m/44'/${widget.bip44CoinType}'/${widget.account.zip32AccountIndex}'/...";
-  }
-
-  String _shortAddress(String address) {
-    if (address.length <= 28) return address;
-    return '${address.substring(0, 12)} ... ${address.substring(address.length - 12)}';
   }
 }
 

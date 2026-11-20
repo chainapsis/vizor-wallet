@@ -12,7 +12,6 @@ import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/models/recipient_suggestions.dart';
 import '../../../address_book/widgets/mobile_recipient_list.dart';
-import '../../../swap/models/swap_address_formatting.dart';
 import '../../../swap/models/swap_models.dart';
 import '../../models/pay_recent_recipients.dart';
 
@@ -127,7 +126,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
             : ValueKey('mobile_pay_contact_row_surface_${contact.id}'),
         name: contact?.label,
         profilePictureId: contact?.profilePictureId,
-        addressText: _compactAddress(recent.address),
+        address: recent.address,
+        // Pay rows carry amounts, so the list keeps the short form.
+        longAddress: false,
         amountText: _outgoingAmountText(recent.amountText),
         timeLabel: payRecentTimeLabel(context.l10n, recent.lastUsedAt),
         selected:
@@ -193,7 +194,8 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                                   ),
                                   name: contact.label,
                                   profilePictureId: contact.profilePictureId,
-                                  addressText: _compactAddress(contact.address),
+                                  address: contact.address,
+                                  longAddress: false,
                                   selected:
                                       widget.selectedContactId == contact.id,
                                   selectionSlotKey:
@@ -493,13 +495,6 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     );
   }
 }
-
-String _compactAddress(String address) => compactSwapAddress(
-  address,
-  maxLength: 22,
-  prefixLength: 9,
-  suffixLength: 8,
-);
 
 String? _outgoingAmountText(String? value) {
   final trimmed = value?.trim() ?? '';

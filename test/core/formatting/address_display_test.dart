@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 
 void main() {
   group('truncatedAddress', () {
@@ -7,7 +8,17 @@ void main() {
       const address =
           'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
           '73d57f73c6dc05121591a83861cd190591';
-      expect(truncatedAddress(address), 'u195091 ... 190591');
+      expect(
+        truncatedAddress(address),
+        '${address.substring(0, kTruncatedAddressHeadLength)} ... '
+        '${address.substring(address.length - kTruncatedAddressTailLength)}',
+      );
+    });
+
+    test('takes 6 + 5 on phones and 9 + 7 on desktop', () {
+      final mobile = kAppFormFactor == AppFormFactor.mobile;
+      expect(kTruncatedAddressHeadLength, mobile ? 6 : 9);
+      expect(kTruncatedAddressTailLength, mobile ? 5 : 7);
     });
 
     test('returns short addresses unchanged', () {
@@ -27,7 +38,8 @@ void main() {
       expect(pastBoundary.length, boundary + 1);
       expect(
         truncatedAddress(pastBoundary),
-        'abcdefg ... ${pastBoundary.substring(pastBoundary.length - 6)}',
+        '${pastBoundary.substring(0, kTruncatedAddressHeadLength)} ... '
+        '${pastBoundary.substring(pastBoundary.length - kTruncatedAddressTailLength)}',
       );
     });
 
@@ -58,14 +70,15 @@ void main() {
       expect(truncatedTxid(''), '');
     });
 
-    test('returns ids at the truncation boundary unchanged', () {
-      const boundary = kTruncatedTxidEndLength * 2;
+    test('returns ids no longer than the shortened form unchanged', () {
+      // Shortening a 17–19 character id would not make it any shorter.
+      const boundary = kTruncatedTxidEndLength * 2 + 3;
       final atBoundary = 'a' * boundary;
-      expect(atBoundary.length, 16);
+      expect(atBoundary.length, 19);
       expect(truncatedTxid(atBoundary), atBoundary);
 
       final pastBoundary = 'a' * (boundary + 1);
-      expect(pastBoundary.length, 17);
+      expect(pastBoundary.length, 20);
       expect(
         truncatedTxid(pastBoundary),
         '${pastBoundary.substring(0, kTruncatedTxidEndLength)}'

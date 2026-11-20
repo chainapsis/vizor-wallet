@@ -10,7 +10,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../swap/domain/swap_quote.dart';
-import '../../../swap/models/swap_address_formatting.dart';
+import '../../../../core/formatting/address_display.dart';
 import '../../../swap/models/swap_quote_text.dart';
 import '../../../swap/widgets/swap_asset_icon.dart';
 
@@ -52,12 +52,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
     final colors = context.colors;
     final quote = widget.quote;
     final contact = widget.recipientContact;
-    final compactRecipient = compactSwapAddress(
-      widget.recipientAddress,
-      prefixLength: 6,
-      suffixLength: 5,
-      separator: ' ... ',
-    );
+    final compactRecipient = truncatedAddress(widget.recipientAddress);
 
     return Column(
       key: const ValueKey('mobile_pay_review_content'),

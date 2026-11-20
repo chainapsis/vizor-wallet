@@ -59,7 +59,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-      tester.widget<Text>(find.text('u195091 ... 190591')).overflow,
+      tester.widget<Text>(find.text('u19509 ... 90591')).overflow,
       TextOverflow.ellipsis,
     );
   });
@@ -110,7 +110,7 @@ void main() {
       expect(action.top, greaterThan(0));
       expect(action.bottom, lessThan(size.height));
       expect(find.text('0.5 ZEC'), findsNothing);
-      expect(find.text('u195091 ... 190591'), findsNothing);
+      expect(find.text('u19509 ... 90591'), findsNothing);
       expect(find.text('Scan original QR'), findsOneWidget);
       expect(find.text('Review link details'), findsOneWidget);
     }

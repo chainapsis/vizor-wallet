@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/formatting/address_display.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart';
@@ -350,7 +351,7 @@ class _MobileDiscoveredAccountRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _shortAddress(account.firstTransparentAddress),
+                      truncatedLongAddress(account.firstTransparentAddress),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.codeMedium.copyWith(
@@ -374,11 +375,6 @@ class _MobileDiscoveredAccountRow extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _shortAddress(String address) {
-    if (address.length <= 24) return address;
-    return '${address.substring(0, 10)} ... ${address.substring(address.length - 10)}';
   }
 }
 

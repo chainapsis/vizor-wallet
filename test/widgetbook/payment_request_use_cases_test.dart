@@ -3,6 +3,7 @@ import 'dart:ui' show SemanticsAction;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -30,7 +31,7 @@ void main() {
       expect(find.text(r'$35.00'), findsNothing);
       expect(find.text('Recipient'), findsNothing);
       expect(find.text('Shielded'), findsNothing);
-      expect(find.text('u195091 ... 190591'), findsNothing);
+      expect(find.text(truncatedAddress(_address)), findsNothing);
       expect(find.text('Memo included'), findsNothing);
       expect(_key('external_request_warning'), findsOneWidget);
       expect(_key('payment_request_summary'), findsNothing);

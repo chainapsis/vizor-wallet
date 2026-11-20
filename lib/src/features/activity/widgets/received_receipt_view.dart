@@ -292,6 +292,8 @@ class ReceivedReceiptView extends StatelessWidget {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
         label: context.l10n.activityReceiptFrom,
         value: truncatedAddress(address),
+        // A transparent address's wide capitals can overrun the column.
+        valueFit: BoxFit.scaleDown,
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
         bottomLeftIconName: _poolIconName(isShieldedSource),
         bottomLeftIconColor: _poolIconColor(context, isShieldedSource),

@@ -13,7 +13,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../address_book/contact_label_generator.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/address_book_network_icon.dart';
-import '../../swap/models/swap_address_formatting.dart';
+import '../../../core/formatting/address_display.dart';
 
 /// "Add to Contacts" modal on the pay recipient step — Figma 6241:105199.
 /// Collects a label (1-20 chars) and profile picture for the typed address;
@@ -196,13 +196,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
             key: const ValueKey('pay_add_contact_address_field'),
             label: '',
             showLabel: false,
-            initialValue: compactSwapAddress(
-              widget.address,
-              maxLength: 23,
-              prefixLength: 12,
-              suffixLength: 8,
-              separator: '...',
-            ),
+            initialValue: truncatedLongAddress(widget.address),
             enabled: false,
             readOnly: true,
             textStyle: AppTypography.labelLarge.copyWith(

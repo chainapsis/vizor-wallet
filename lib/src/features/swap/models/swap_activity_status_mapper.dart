@@ -1,13 +1,13 @@
 import 'package:intl/intl.dart' show DateFormat;
 
+import '../../../core/formatting/address_line.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../address_book/models/address_book_contact.dart';
-import '../../address_book/widgets/contact_name_inline.dart';
 import '../domain/near_intents_explorer.dart';
 import 'swap_address_book_helpers.dart';
-import 'swap_address_formatting.dart';
+import '../../../core/formatting/address_display.dart';
 import 'swap_deposit_broadcast_result.dart';
 import 'swap_detail_tooltips.dart';
 import 'swap_fiat_value_formatting.dart';
@@ -99,8 +99,10 @@ class SwapActivityStatusPresentation {
     this.receiveLabel =
         "You're receiving", // l10n-ignore: fixture default; the presenter always passes localized labels
     this.payDetailText = '',
+    this.payDetailAddress,
     this.payDetailCopyText,
     this.receiveDetailText = '',
+    this.receiveDetailAddress,
     this.receiveDetailCopyText,
     this.statusLabel = '',
     required this.badgeKind,
@@ -130,6 +132,10 @@ class SwapActivityStatusPresentation {
   /// external→ZEC swaps the "Refund to: …" address line.
   final String payDetailText;
 
+  /// [payDetailText] when it names the refund address, for rendering that
+  /// keeps the address whole (see `AddressLineText`).
+  final AddressLine? payDetailAddress;
+
   /// Full address copied by the pay row's copy affordance, when the pay
   /// line shows the refund address.
   final String? payDetailCopyText;
@@ -137,6 +143,10 @@ class SwapActivityStatusPresentation {
   /// Bottom line of the receive summary row: the fiat value, or for
   /// ZEC→external swaps the "To: … on [SwapAsset.chainLabel]" address line.
   final String receiveDetailText;
+
+  /// [receiveDetailText] when it names the recipient address, for rendering
+  /// that keeps the address whole (see `AddressLineText`).
+  final AddressLine? receiveDetailAddress;
 
   /// Full address copied by the receive row's copy affordance, when the
   /// receive line shows the recipient address.
@@ -204,35 +214,39 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   // address on the external side (recipient when sending ZEC, refund
   // address when depositing an external asset).
   var payDetailText = payFiatText;
+  AddressLine? payDetailAddress;
   String? payDetailCopyText;
   var receiveDetailText = receiveFiatText;
+  AddressLine? receiveDetailAddress;
   String? receiveDetailCopyText;
   if (sendsZec) {
     if (payMode) {
       payDetailText = l10n.commonPrivatelyFromShieldedBalance;
     }
     if (recipientAddress != null && recipientAddress.isNotEmpty) {
-      receiveDetailText = l10n.commonToAddressOnChain(
-        _headerAddressText(
-          recipientAddress,
-          asset: receiveAsset,
-          contacts: addressBookContacts,
-          contactId: intent.userExternalContactId,
-        ),
-        receiveAsset.chainLabel,
+      receiveDetailAddress = _headerAddressLine(
+        (address) =>
+            l10n.commonToAddressOnChain(address, receiveAsset.chainLabel),
+        recipientAddress,
+        asset: receiveAsset,
+        contacts: addressBookContacts,
+        contactId: intent.userExternalContactId,
       );
+      receiveDetailText = receiveDetailAddress.text;
       receiveDetailCopyText = recipientAddress;
     }
   } else {
     if (refundAddress != null && refundAddress.isNotEmpty) {
-      payDetailText = l10n.commonRefundToAddress(
-        _headerAddressText(
-          refundAddress,
-          asset: sellAsset,
-          contacts: addressBookContacts,
-          contactId: intent.userExternalContactId,
-        ),
+      // Under the amount paid, a bare address would read as the payee.
+      payDetailAddress = _headerAddressLine(
+        l10n.commonRefundToAddress,
+        refundAddress,
+        asset: sellAsset,
+        contacts: addressBookContacts,
+        contactId: intent.userExternalContactId,
+        keepBefore: true,
       );
+      payDetailText = payDetailAddress.text;
       payDetailCopyText = refundAddress;
     }
   }
@@ -286,8 +300,10 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
         ? l10n.swapActivityYouReceived
         : l10n.commonYoureReceiving,
     payDetailText: payDetailText,
+    payDetailAddress: payDetailAddress,
     payDetailCopyText: payDetailCopyText,
     receiveDetailText: receiveDetailText,
+    receiveDetailAddress: receiveDetailAddress,
     receiveDetailCopyText: receiveDetailCopyText,
     statusLabel: findingPayout
         ? l10n.swapFindingPayout
@@ -366,13 +382,7 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
         : formatDayMonthTime(timestamp, l10n.localeName),
     txIdText: explorerId == null
         ? l10n.swapActivityNotReported
-        : compactSwapAddress(
-            explorerId,
-            maxLength: 19,
-            prefixLength: 8,
-            suffixLength: 8,
-            separator: '...',
-          ),
+        : truncatedTxid(explorerId),
     txIdUri: swapActivityExplorerUri(intent),
     txIdCopyText: explorerId,
     convertedFromText: amount(intent.sellAmount),
@@ -674,7 +684,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         SwapStatusDetailRowData(
           label: sourceTxLabel,
           kind: SwapStatusDetailKind.sourceTx,
-          value: compactSwapAddress(depositTxHash),
+          value: truncatedTxid(depositTxHash),
           copyable: true,
           copyText: depositTxHash,
         ),
@@ -686,7 +696,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         SwapStatusDetailRowData(
           label: l10n.swapActivityDetailDeliveryTx(receiveSymbol),
           kind: SwapStatusDetailKind.deliveryTx,
-          value: compactSwapAddress(destinationChainTxHash),
+          value: truncatedTxid(destinationChainTxHash),
           copyable: true,
           copyText: destinationChainTxHash,
         ),
@@ -856,7 +866,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       SwapStatusDetailRowData(
         label: sourceTxLabel,
         kind: SwapStatusDetailKind.sourceTx,
-        value: compactSwapAddress(depositTxHash),
+        value: truncatedTxid(depositTxHash),
         copyable: true,
         copyText: depositTxHash,
       ),
@@ -864,7 +874,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDeliveryTx(receiveSymbol),
         kind: SwapStatusDetailKind.deliveryTx,
-        value: compactSwapAddress(destinationChainTxHash),
+        value: truncatedTxid(destinationChainTxHash),
         copyable: true,
         copyText: destinationChainTxHash,
       ),
@@ -941,7 +951,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailSourceTxShielded(sourceSymbol),
         kind: SwapStatusDetailKind.sourceTx,
-        value: compactSwapAddress(depositTxHash),
+        value: truncatedTxid(depositTxHash),
         copyable: true,
         copyText: depositTxHash,
       ),
@@ -949,7 +959,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDeliveryTx(receiveSymbol),
         kind: SwapStatusDetailKind.deliveryTx,
-        value: compactSwapAddress(destinationChainTxHash),
+        value: truncatedTxid(destinationChainTxHash),
         copyable: true,
         copyText: destinationChainTxHash,
       ),
@@ -1000,7 +1010,7 @@ SwapStatusDetailRowData? _swapActivityTxIdRow(
   return SwapStatusDetailRowData(
     label: l10n.commonTxId,
     kind: SwapStatusDetailKind.txId,
-    value: compactSwapAddress(txId),
+    value: truncatedTxid(txId),
     linkUri: linkUri,
     copyable: linkUri == null,
     copyText: txId,
@@ -1109,7 +1119,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDepositTx(sourceSymbol),
         kind: SwapStatusDetailKind.sourceTx,
-        value: compactSwapAddress(depositTxHash),
+        value: truncatedTxid(depositTxHash),
         copyable: true,
         copyText: depositTxHash,
       ),
@@ -1117,23 +1127,28 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   ];
 }
 
-/// Header address text: `"Rowan (0x0cd7ad0 ... 0727181)"` when the address
-/// matches a saved contact, plain compact address otherwise.
-String _headerAddressText(
+/// Header address line: [template] around `"Rowan (0x0cd7ad0 ... 0727181)"`
+/// when the address matches a saved contact, the plain compact address
+/// otherwise.
+AddressLine _headerAddressLine(
+  String Function(String address) template,
   String address, {
   required SwapAsset? asset,
   required Iterable<AddressBookContact> contacts,
   String? contactId,
+  bool keepBefore = false,
 }) {
-  final label = addressBookContactForSwapAsset(
-    contacts: contacts,
-    asset: asset,
-    address: address,
-    contactId: contactId,
-  )?.label.trim();
-  final compact = compactSwapAddress(address);
-  if (label == null || label.isEmpty) return compact;
-  return contactAddressDisplayText(label: label, compactAddress: compact);
+  return AddressLine.inTemplate(
+    template,
+    address: truncatedAddress(address),
+    keepBefore: keepBefore,
+    label: addressBookContactForSwapAsset(
+      contacts: contacts,
+      asset: asset,
+      address: address,
+      contactId: contactId,
+    )?.label,
+  );
 }
 
 List<SwapStatusDetailRowData> _addressDetailRows({
@@ -1153,21 +1168,11 @@ List<SwapStatusDetailRowData> _addressDetailRows({
   final addressNetwork = addressBookLabel == null || asset == null
       ? null
       : AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
-  // Matched rows share the address line with the network chip, so use a tighter
-  // compaction (keeps the 0x prefix and the last 5 chars, no spaced ellipsis).
-  final value = addressBookLabel == null
-      ? compactSwapAddress(address)
-      : compactSwapAddress(
-          address,
-          prefixLength: 7,
-          suffixLength: 5,
-          separator: '…',
-        );
   return [
     SwapStatusDetailRowData(
       label: label,
       kind: kind,
-      value: value,
+      value: truncatedAddress(address),
       copyable: true,
       copyText: address,
       addressBookLabel: addressBookLabel,

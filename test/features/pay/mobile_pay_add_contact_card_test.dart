@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -84,7 +85,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Ethereum'), findsOneWidget);
-    expect(find.textContaining('0x11111111111111'), findsOneWidget);
+    expect(find.text(truncatedLongAddress(_address)), findsOneWidget);
     expect(generatorCalls, 1);
     expect(
       tester

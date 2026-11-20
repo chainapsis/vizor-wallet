@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart' show MaterialApp, Tooltip;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/l10n/l10n.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -121,7 +122,7 @@ void main() {
     );
     // Address values are compacted by kind.
     expect(find.text(address), findsNothing);
-    expect(find.text('0x9aDF…Ef064'), findsOneWidget);
+    expect(find.text(truncatedAddress(address)), findsOneWidget);
     // The fee tooltip is the Korean swap-fee tooltip.
     expect(
       find.byWidgetPredicate(

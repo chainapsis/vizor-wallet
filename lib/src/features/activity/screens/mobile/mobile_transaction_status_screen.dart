@@ -461,7 +461,7 @@ class _MobileTransactionStatusScreenState
               leadingIconLabel: poolLabel,
               text: namedRecipient != null
                   ? namedRecipient.name
-                  : _truncateAddress(address),
+                  : truncatedAddress(address),
               struckThrough: failed,
               iconName: AppIcons.chevronForward,
               onTap: () => unawaited(_showFullAddressSheet(address)),
@@ -952,12 +952,6 @@ class _MobileTransactionStatusScreenState
     if (lower.startsWith('zs')) return context.l10n.commonShieldedAddress;
     if (lower.startsWith('t')) return context.l10n.commonTransparentAddress;
     return context.l10n.commonZcashAddress;
-  }
-
-  String _truncateAddress(String address) {
-    if (address.length <= 14) return address;
-    return '${address.substring(0, 6)} ... ' // l10n-ignore: address
-        '${address.substring(address.length - 5)}';
   }
 }
 

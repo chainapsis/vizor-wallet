@@ -14,6 +14,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../core/formatting/address_display.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
@@ -734,18 +735,7 @@ List<TextSpan> _addressSpans(BuildContext context, String address) {
     ];
   }
 
-  return [TextSpan(text: _compactAddress(address))];
-}
-
-String _compactAddress(String address) {
-  const leadingLength = 13;
-  const trailingLength = 11;
-  const separator = ' ... ';
-  if (address.length <= leadingLength + trailingLength + separator.length) {
-    return address;
-  }
-  return '${address.substring(0, leadingLength)}$separator' // l10n-ignore: address text
-      '${address.substring(address.length - trailingLength)}';
+  return [TextSpan(text: truncatedLongAddress(address))];
 }
 
 class _IconOnlyButton extends StatelessWidget {

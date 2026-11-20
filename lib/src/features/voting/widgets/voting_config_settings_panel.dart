@@ -12,7 +12,6 @@ import '../../../core/widgets/untranslated_details.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
-import '../../swap/models/swap_address_formatting.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_config_source_provider.dart';
 import '../../../providers/voting/voting_round_visibility_provider.dart';
@@ -1185,13 +1184,9 @@ String _compactSourceUrl(String raw) {
 
 String _middleTruncateSourceUrl(String raw) {
   final compact = _compactSourceUrl(raw);
-  return compactSwapAddress(
-    compact,
-    maxLength: 56,
-    prefixLength: 28,
-    suffixLength: 25,
-    separator: '...',
-  );
+  if (compact.length <= 56) return compact;
+  return '${compact.substring(0, 28)}...' // l10n-ignore: URL truncation
+      '${compact.substring(compact.length - 25)}';
 }
 
 bool _sameSourceUrl(String lhs, String rhs) {

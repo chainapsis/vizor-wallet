@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
@@ -40,12 +41,18 @@ void main() {
     expect(find.text('From'), findsOneWidget);
     // Canonical 7+6 truncation for both the sender headline and the
     // receiving sub-line.
-    expect(find.text('t1PV7ny ... GVSpEX'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentFromAddress)),
+      findsOneWidget,
+    );
     expect(find.text('Transparent'), findsOneWidget);
     expect(find.text('Show full address'), findsOneWidget);
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('120 ZEC'), findsOneWidget);
-    expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentReceivingAddress)),
+      findsOneWidget,
+    );
 
     expect(find.byType(ReviewWrapCard), findsOneWidget);
     expect(find.byType(ReviewWrapDivider), findsNothing);
@@ -190,7 +197,10 @@ void main() {
 
     expect(find.text('From'), findsOneWidget);
     expect(find.text('Mike'), findsOneWidget);
-    expect(find.text('t1PV7ny ... GVSpEX'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentFromAddress)),
+      findsOneWidget,
+    );
     expect(find.text('Show full address'), findsOneWidget);
     expect(find.text('Transparent'), findsNothing);
   });
@@ -273,7 +283,10 @@ void main() {
     );
     // Only the Amount row remains, still carrying the receiving sub-line.
     expect(find.byType(ReviewInfoRow), findsOneWidget);
-    expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentReceivingAddress)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('fires the affordance callbacks', (tester) async {
