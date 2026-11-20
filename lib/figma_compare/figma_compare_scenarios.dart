@@ -1840,6 +1840,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     renderShadows: true,
   ),
   FigmaCompareScenario(
+    id: 'desktop-home-sidebar-balance-popover-migrating',
+    description:
+        'Home during a migration with the sidebar balance popover open',
+    builder: buildDesktopHomeSidebarBalancePopoverMigratingUseCase,
+    platform: TargetPlatform.macOS,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
     id: 'send-spendable-wait-popover',
     description: 'Desktop popover listing what can be sent now',
     builder: buildSendSpendableWaitPopoverUseCase,
