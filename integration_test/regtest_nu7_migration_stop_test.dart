@@ -36,12 +36,13 @@ void main() {
     await pumpUntil(
       tester,
       () => tester.any(
-        find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
+        find.byKey(
+          const ValueKey('home_desktop_ironwood_migration_cta_button'),
+        ),
       ),
-      description: 'Ironwood announcement for the Orchard balance',
+      description: 'migration CTA for the Orchard balance',
       timeout: const Duration(minutes: 5),
     );
-    await dismissIronwoodAnnouncement(tester);
     await openPrivateMigrationReview(tester);
     await startPrivateMigrationFromReview(tester);
     final accountUuid = await firstDesktopRegtestAccountUuid();

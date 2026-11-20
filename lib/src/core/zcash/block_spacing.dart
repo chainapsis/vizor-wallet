@@ -1,6 +1,5 @@
-import 'dart:math' as math;
-
-/// Target block spacing on one network, split at NU7 activation (ZIP 218).
+/// Target block spacing on one network. Time estimates use the NU7 spacing
+/// (ZIP 218); ZIP 318 reference blocks keep the pre-NU7 one.
 class BlockSpacing {
   const BlockSpacing({
     required this.preNu7BlockSeconds,
@@ -8,8 +7,8 @@ class BlockSpacing {
     this.nu7ActivationHeight,
   });
 
-  /// 75-second blocks with no scheduled upgrade, for previews and tests.
-  static const preNu7 = BlockSpacing(
+  /// No NU7 activation height, as on default regtest, for previews and tests.
+  static const nu7Unscheduled = BlockSpacing(
     preNu7BlockSeconds: 75,
     nu7BlockSeconds: 25,
   );
@@ -19,16 +18,10 @@ class BlockSpacing {
   final int nu7BlockSeconds;
 
   /// Estimates the blocks after [fromHeight] up to and including [toHeight].
-  int secondsBetween(int fromHeight, int toHeight) {
-    if (toHeight <= fromHeight) return 0;
-    final blocks = toHeight - fromHeight;
-    final activation = nu7ActivationHeight;
-    final preNu7Blocks = activation == null
-        ? blocks
-        : (math.min(toHeight, activation - 1) - fromHeight).clamp(0, blocks);
-    return preNu7Blocks * preNu7BlockSeconds +
-        (blocks - preNu7Blocks) * nu7BlockSeconds;
-  }
+  /// Every estimate starts at a tip past mainnet and testnet activation;
+  /// default regtest mines its 75-second blocks on demand.
+  int secondsBetween(int fromHeight, int toHeight) =>
+      toHeight <= fromHeight ? 0 : (toHeight - fromHeight) * nu7BlockSeconds;
 
   /// Blocks that one ZIP 318 reference block, a 75-second block, spans at
   /// [height]: 1 before NU7 activation and 3 from it.
@@ -48,9 +41,9 @@ class BlockSpacing {
 class BlockTimeEstimate {
   const BlockTimeEstimate({required this.spacing, required this.tipHeight});
 
-  /// Pre-NU7 spacing from an unknown tip, for previews and tests.
-  static const preNu7 = BlockTimeEstimate(
-    spacing: BlockSpacing.preNu7,
+  /// [BlockSpacing.nu7Unscheduled] from an unknown tip, for previews and tests.
+  static const nu7Unscheduled = BlockTimeEstimate(
+    spacing: BlockSpacing.nu7Unscheduled,
     tipHeight: 0,
   );
 

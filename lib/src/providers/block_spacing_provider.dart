@@ -30,9 +30,9 @@ final blockSpacingProvider = Provider<BlockSpacing>((ref) {
       nu7BlockSeconds: schedule.nu7BlockSeconds,
     );
   } catch (error) {
-    // Estimates only: keep the pre-NU7 spacing rather than failing the screen.
-    log('BlockSpacing: schedule unavailable, using pre-NU7 spacing: $error');
-    return BlockSpacing.preNu7;
+    // Estimates only: keep the default spacing rather than failing the screen.
+    log('BlockSpacing: schedule unavailable, using default spacing: $error');
+    return BlockSpacing.nu7Unscheduled;
   }
 });
 

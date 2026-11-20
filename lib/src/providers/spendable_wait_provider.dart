@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/zcash/block_spacing.dart';
 import '../core/zcash/spendable_wait.dart';
-import '../features/migration/providers/ironwood_migration_announcement_provider.dart';
+import '../features/migration/providers/ironwood_migration_state_provider.dart';
 import 'account_provider.dart';
 import 'block_spacing_provider.dart';
 import 'sync_provider.dart';

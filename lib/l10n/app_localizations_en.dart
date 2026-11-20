@@ -3993,16 +3993,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Preparing private migration plan';
 
   @override
-  String get migrationAnnouncementBody =>
-      'Ironwood is the latest Zcash shielded pool.\nIt\'s the first formally verified pool with\ncutting edge cryptography.';
-
-  @override
-  String get migrationAnnouncementReleaseNote => 'Official Release Note';
-
-  @override
-  String get migrationAnnouncementStart => 'Start Migration';
-
-  @override
   String get migrationBackAbout => 'About Migration';
 
   @override
@@ -4734,16 +4724,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationMobileActionSubmittingScheduled =>
       'Submitting scheduled transaction...';
-
-  @override
-  String get migrationMobileAnnouncementBody =>
-      'Zcash’s latest shielded pool, bringing cutting-edge cryptography and formal verification.\n\nYour shielded balance needs a one-time migration to Ironwood.';
-
-  @override
-  String get migrationMobileAnnouncementOfficial => 'Official announcement';
-
-  @override
-  String get migrationMobileAnnouncementUpgrade => 'Upgrade to Ironwood';
 
   @override
   String get migrationMobileAttentionContinueTitle => 'Continue your migration';
@@ -8525,7 +8505,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkWaitingDescription => 'This may take a little while.';
 
   @override
-  String get paymentLinkWaitingStatusLabel => 'Wait 1:15 to get the link';
+  String get paymentLinkWaitingStatusLabel => 'Wait 0:25 to get the link';
 
   @override
   String get paymentLinkWalletSaveRecoveryFailed =>

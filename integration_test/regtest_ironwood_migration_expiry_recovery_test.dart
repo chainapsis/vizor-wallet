@@ -81,12 +81,13 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
+          find.byKey(
+            const ValueKey('home_desktop_ironwood_migration_cta_button'),
+          ),
         ),
-        description: 'Ironwood announcement after activation',
+        description: 'migration CTA after activation',
         timeout: const Duration(minutes: 5),
       );
-      await dismissIronwoodAnnouncement(tester);
       final plan = await rust_sync.getOrchardMigrationPrivatePlan(
         dbPath: await getWalletDbPath(),
         network: 'regtest',

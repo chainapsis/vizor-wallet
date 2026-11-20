@@ -497,7 +497,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         waitingHeading: 'Your Gift Card\nis almost ready!',
         waitingPrimaryText: context.l10n.paymentLinkClaimWaitingDescription,
         waitingSecondaryText: context.l10n.paymentLinkWaitingDescription,
-        waitingStatusLabel: 'Wait 1:15 to claim',
+        waitingStatusLabel: 'Wait 0:25 to claim',
       ),
       PaymentLinkPreviewState.ready => const _PaymentLinkReadyPreview(),
       PaymentLinkPreviewState.cardsList ||

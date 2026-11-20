@@ -505,7 +505,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
   }
 
   func testRedrawFitsEveryPeerThatValidationAccepts() throws {
-    let activation = try testnetNu7ActivationHeight()
+    let activation = testnetNu7ActivationHeight
     // From NU7 each redrawn peer takes at least three blocks.
     let afterNu7 = activation + 1_000
     // Before NU7 a peer that expires first still leaves room for later ones.
@@ -565,7 +565,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
   }
 
   func testValidationReservesThreeBlocksPerPeerAfterNu7() throws {
-    let remoteHeight = try testnetNu7ActivationHeight() + 1_000
+    let remoteHeight = testnetNu7ActivationHeight + 1_000
     var batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100, 100, 100])
     batch.items = batch.items.enumerated().map { index, item in
       BackgroundMigrationOutboxItem(
@@ -772,36 +772,22 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     }
   }
 
-  func testCadenceUsesTwentyFiveSecondBlocksFromNu7() {
-    // Blocks 101...109 take 75 seconds; 110...120 take 25.
+  func testCadenceUsesTwentyFiveSecondBlocks() {
     XCTAssertEqual(
-      BackgroundMigrationOutboxCadence.estimatedSeconds(
-        from: 100,
-        to: 120,
-        nu7ActivationHeight: 110
-      ),
-      9 * 75 + 11 * 25
-    )
-    XCTAssertEqual(
-      BackgroundMigrationOutboxCadence.nextCheckDelay(
-        remoteHeight: 100,
-        nextScheduledHeight: 120,
-        nu7ActivationHeight: 110
-      ),
-      350
+      BackgroundMigrationOutboxCadence.estimatedSeconds(from: 100, to: 120),
+      20 * 25
     )
     XCTAssertEqual(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 200,
-        nextScheduledHeight: 230,
-        nu7ActivationHeight: 110
+        nextScheduledHeight: 230
       ),
       150
     )
   }
 
   func testBroadcastsAreHeldAroundNu7ByTheirTargetHeight() throws {
-    let activation = try testnetNu7ActivationHeight()
+    let activation = testnetNu7ActivationHeight
     func armedSnapshot(targetHeight: UInt64?) throws -> BackgroundMigrationOutboxSnapshot {
       let batch = try makeBatchBeforeNu7(targetHeight: targetHeight)
       var snapshot = BackgroundMigrationOutboxSnapshot()
@@ -828,7 +814,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
   }
 
   func testRunnerReportsAPartHeldForTheUpgrade() throws {
-    let activation = try testnetNu7ActivationHeight()
+    let activation = testnetNu7ActivationHeight
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }
     let batch = try makeBatchBeforeNu7(targetHeight: activation - 100)
@@ -852,7 +838,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
   }
 
   func testUpgradeStopKeyNamesTheUpgradeOnceNoOldBranchBlockIsLeft() throws {
-    let activation = try testnetNu7ActivationHeight()
+    let activation = testnetNu7ActivationHeight
     func key(
       _ targetHeight: UInt64?,
       at remoteHeight: UInt64,
@@ -879,7 +865,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
   }
 
   func testUpgradeStopKeyNamesTheLatestCrossedUpgrade() throws {
-    let activation = try testnetNu7ActivationHeight()
+    let activation = testnetNu7ActivationHeight
     let batch = try makeBatchBeforeNu7(targetHeight: activation - 100)
     var snapshot = BackgroundMigrationOutboxSnapshot()
     try snapshot.stage(batch)
@@ -896,7 +882,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
   }
 
   func testStopAlertCoversOnlyUnsentPartsItsUpgradeStopped() throws {
-    let activation = try testnetNu7ActivationHeight()
+    let activation = testnetNu7ActivationHeight
     let key = "test:\(activation)"
     let stopped = try makeBatchBeforeNu7(targetHeight: activation - 100)
     var snapshot = BackgroundMigrationOutboxSnapshot()
@@ -915,7 +901,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
   }
 
   func testRunnerReportsTheUpgradeThatStoppedAPart() throws {
-    let activation = try testnetNu7ActivationHeight()
+    let activation = testnetNu7ActivationHeight
     func outcome(at remoteHeight: UInt64) throws -> BackgroundMigrationOutboxRunResult {
       let harness = try makeStoreHarness()
       defer { harness.cleanup() }
@@ -983,24 +969,21 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertEqual(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: 101,
-        nu7ActivationHeight: nil
+        nextScheduledHeight: 101
       ),
       60
     )
     XCTAssertEqual(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: 244,
-        nu7ActivationHeight: nil
+        nextScheduledHeight: 244
       ),
       600
     )
     XCTAssertNil(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: nil,
-        nu7ActivationHeight: nil
+        nextScheduledHeight: nil
       )
     )
   }
@@ -1990,13 +1973,12 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
-  private func testnetNu7ActivationHeight() throws -> UInt64 {
-    try XCTUnwrap(BackgroundMigrationOutboxCadence.nu7ActivationHeight(network: "test"))
-  }
+  /// Testnet NU7 activation (ZIP 259).
+  private let testnetNu7ActivationHeight: UInt64 = 4_465_026
 
   /// One part due 12 blocks before testnet NU7, signed for `targetHeight`.
   private func makeBatchBeforeNu7(targetHeight: UInt64?) throws -> BackgroundMigrationOutboxBatch {
-    let scheduledHeight = try testnetNu7ActivationHeight() - 12
+    let scheduledHeight = testnetNu7ActivationHeight - 12
     let expiryHeight = try XCTUnwrap(
       BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: scheduledHeight, network: "test")
     )

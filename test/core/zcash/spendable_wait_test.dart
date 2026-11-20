@@ -111,7 +111,7 @@ void main() {
       expect(wait.waitFor(_zec + BigInt.one), const AvailableIn.minutes(1, 3));
     });
 
-    test('blocks are timed at the spacing of the tip', () {
+    test('blocks are timed at the NU7 spacing', () {
       SpendableWait at(BlockSpacing spacing) => spendableWaitOf(
         availableNow: _zec,
         pending: PendingSpendable(
@@ -122,6 +122,7 @@ void main() {
         spacing: spacing,
       );
       expect(at(_nu7).receivedWait, const AvailableIn.minutes(1, 3));
+      // A tip before activation reads no differently.
       expect(
         at(
           const BlockSpacing(
@@ -130,7 +131,7 @@ void main() {
             nu7ActivationHeight: _tip * 2,
           ),
         ).receivedWait,
-        const AvailableIn.minutes(5, 7),
+        const AvailableIn.minutes(1, 3),
       );
     });
   });

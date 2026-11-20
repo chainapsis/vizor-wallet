@@ -21,7 +21,7 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_carousel.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -880,7 +880,7 @@ void main() {
 
     expect(find.text('Amount to migrate'), findsOneWidget);
     expect(find.text('Migration complete in'), findsOneWidget);
-    expect(find.text('~7 hrs'), findsOneWidget);
+    expect(find.text('~3 hrs'), findsOneWidget);
     expect(find.text('Est. preparation completion'), findsNothing);
     expect(find.text('Review shuffle'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
@@ -2289,7 +2289,7 @@ void main() {
       expect(find.text('12 ZEC'), findsOneWidget);
       expect(find.text('Left to migrate'), findsOneWidget);
       expect(find.text('Schedule pending'), findsNWidgets(2));
-      expect(find.text('~2 mins'), findsNothing);
+      expect(find.text('~1 min'), findsNothing);
     },
   );
 
@@ -2684,7 +2684,7 @@ void main() {
     expect(find.text('10 ZEC'), findsOneWidget);
     expect(find.text('1,002'), findsOneWidget);
     expect(find.text('60 ZEC'), findsOneWidget);
-    expect(find.text('in ~20 minutes'), findsOneWidget);
+    expect(find.text('in ~7 minutes'), findsOneWidget);
   });
 
   testWidgets('preparing status opens its separate schedule', (tester) async {
@@ -3130,7 +3130,7 @@ void main() {
     expect(find.text('2 notes awaiting confirmation'), findsOneWidget);
     expect(find.text('Left to migrate'), findsOneWidget);
     expect(find.text('0.3 ZEC'), findsNWidgets(2));
-    expect(find.text('~3 mins'), findsNothing);
+    expect(find.text('~1 min'), findsNothing);
     expect(
       find.textContaining('The next signing window will open'),
       findsNothing,
@@ -3227,7 +3227,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Ironwood Migration'), findsOneWidget);
-    expect(find.text('~8 mins'), findsNothing);
+    expect(find.text('~3 mins'), findsNothing);
     expect(
       find.textContaining('The next signing window will open'),
       findsNothing,
@@ -4738,8 +4738,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('~34 mins'), findsOneWidget);
-    expect(find.text('~2 mins'), findsNothing);
+    expect(find.text('~12 mins'), findsOneWidget);
+    expect(find.text('~1 min'), findsNothing);
   });
 
   testWidgets(
@@ -4850,8 +4850,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('~18 mins'), findsOneWidget);
-      expect(find.text('~14 mins'), findsNothing);
+      expect(find.text('~6 mins'), findsOneWidget);
+      expect(find.text('~5 mins'), findsNothing);
     },
   );
 
@@ -4992,8 +4992,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('in ~2.5 hours'), findsOneWidget);
-      expect(find.text('~4 mins'), findsNothing);
+      expect(find.text('in ~50 minutes'), findsOneWidget);
+      expect(find.text('~2 mins'), findsNothing);
     },
   );
 
@@ -5186,7 +5186,7 @@ void main() {
       lessThan(tester.getRect(find.text('Completed at block 4,209,997')).left),
     );
     expect(find.text('0.5 ZEC'), findsOneWidget);
-    expect(find.text('in ~50 minutes'), findsOneWidget);
+    expect(find.text('in ~17 minutes'), findsOneWidget);
     expect(find.text('Completed at block 4,209,997'), findsOneWidget);
     expect(find.text('Confirming 1/3'), findsOneWidget);
     expect(find.text('Rescheduled #4,210,030'), findsOneWidget);
@@ -5298,7 +5298,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Schedule pending'), findsOneWidget);
-      expect(find.text('~4 mins'), findsNothing);
+      expect(find.text('~2 mins'), findsNothing);
     },
   );
 

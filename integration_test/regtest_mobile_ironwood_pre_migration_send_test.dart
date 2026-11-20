@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -73,24 +73,6 @@ void main() {
         },
         description: 'required mobile Ironwood migration state',
         timeout: const Duration(minutes: 5),
-      );
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
-        ),
-        description: 'mobile Ironwood migration announcement',
-      );
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_ironwood_announcement_close_button'),
-      );
-      await pumpUntil(
-        tester,
-        () => !tester.any(
-          find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
-        ),
-        description: 'migration announcement dismissal before sending',
       );
       await pumpUntil(
         tester,

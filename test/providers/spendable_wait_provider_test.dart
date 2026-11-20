@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/core/zcash/spendable_wait.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
 import 'package:zcash_wallet/src/providers/spendable_wait_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
