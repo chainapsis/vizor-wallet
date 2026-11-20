@@ -1,4 +1,5 @@
 import '../../features/home/providers/home_initialization_provider.dart';
+import '../../features/home/services/home_displayed_balance.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -479,8 +480,17 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final isImporting =
         showImporting ||
         (activeAccountUuid != null && accountSync.isImportingAccount);
+    // Home's number, so the two cannot disagree: the total would add
+    // transparent funds and funds a pending transaction holds, which Home's
+    // balance card leaves out.
+    final displayedBalance = homeDisplayedBalance(
+      accountSync,
+      ironwoodOnly:
+          ref.watch(ironwoodHomeBalancePresentationProvider) ==
+          IronwoodHomeBalancePresentationMode.ironwoodOnly,
+    );
     final balanceText =
-        '${accountSync.hasDisplayBalance ? _formatSidebarBalance(accountSync.displayTotalBalance) : '—'} ' // l10n-ignore: amount format
+        '${accountSync.hasDisplayBalance ? _formatSidebarBalance(displayedBalance) : '—'} ' // l10n-ignore: amount format
         '$kZcashDefaultCurrencyTicker';
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final balanceLabel = hideAmountIfPrivacyMode(
@@ -1077,6 +1087,7 @@ class _SidebarAccountHeader extends StatelessWidget {
                         fit: FlexFit.loose,
                         child: Text(
                           balanceLabel,
+                          key: const ValueKey('sidebar_account_balance'),
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.secondary,
