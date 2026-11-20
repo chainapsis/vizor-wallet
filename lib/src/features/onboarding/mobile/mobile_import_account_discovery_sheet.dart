@@ -8,6 +8,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/address_line_text.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -350,10 +351,19 @@ class _MobileDiscoveredAccountRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      truncatedLongAddress(account.firstTransparentAddress),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    // The long form, or the short one where it would be cut.
+                    AddressLineText(
+                      AddressLine(
+                        address: truncatedLongAddress(
+                          account.firstTransparentAddress,
+                          monospace: true,
+                        ),
+                        shortAddress: truncatedAddress(
+                          account.firstTransparentAddress,
+                          monospace: true,
+                        ),
+                      ),
+                      singleLine: true,
                       style: AppTypography.codeMedium.copyWith(
                         color: colors.text.secondary,
                       ),

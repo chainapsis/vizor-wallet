@@ -1206,36 +1206,24 @@ change. The subsections below this list carry the detailed rules.
   pass a title, hint and `sanitize` for a flow with its own rules.
   Memo labels, errors and buttons grow with text; the input keeps an internal
   scroll view. Its scrollbar has a 24px hit area and a 6px visible thumb.
-- A shortened address or transaction id takes one of the three forms in
+- Shortened addresses and transaction ids come from
   `lib/src/core/formatting/address_display.dart`, never a local `substring`:
-  `truncatedAddress` (6 + 5 on phones, `u19509 ... 90591`; 9 + 7 on
-  desktop, which has the room) where the address shares a
-  line with a name, label or action (reviews, statuses, composers, deposit
-  rows, sentences); `truncatedLongAddress` (13 + 11) where checking it is the
-  point and it has a line to itself (the receive address, the Send recipient
-  lists, an address being saved as a contact, accounts found on import); a
-  long-form row that runs short of room gives `AddressLine(shortAddress:)` so
-  it drops to the short form instead of being cut. Pay's recipient rows carry
-  amounts and keep the short form throughout; `truncatedTxid` (8 + 8) for
-  transaction ids and hashes. Log lines and viewing keys keep their own
-  shortening.
-- A one-line sentence naming a compacted address ("To: Mike (0x5290 ...
-  69ee7) on Ethereum"): an `AddressLine` (`AddressLine.inTemplate` around the
-  ARB message) shown through `ReviewInfoRow.bottomLeftAddress` or
-  `AddressLineText`, on desktop too, never a pre-built string in a `Text` that
-  ellipsizes. The address is never cut, and a saved contact's name stays
-  visible on phones too. When the line is too wide, the text after the
-  address gives way first; then the name moves to its own line above the
-  address (shortened if it must be), so the row grows by a line; without a
-  name, the text before the address gives way last. Pass `keepBefore: true`
-  when that text says what the address is for ("Refund to:" under the amount
-  paid); it then stays, with the address wrapping below it.
-- In a `ReviewInfoRow`, the text beside the "Full address" action
-  (`trailingActionLabel`) keeps its whole line: when the two don't fit side
-  by side, the action moves to a line of its own below, still at the end,
-  rather than the address being cut. A line naming a saved contact keeps the
-  order above instead: the name moves up and the address stays beside the
-  action.
+  - `truncatedAddress`: 6 + 5 on phones, 9 + 7 on desktop. The address
+    shares its line with a name, label or action.
+  - `truncatedLongAddress`: 13 + 11. The address has its own line and people
+    check it (receive, Send recipients, saving a contact, import). Give
+    `AddressLine(shortAddress:)` so a narrow row drops to the short form.
+  - `truncatedTxid`: 8 + 8, for transaction ids.
+  - In Geist Mono, pass `monospace: true` (`...` without spaces).
+- An address inside a sentence ("To: Mike (0x5290 ... 69ee7) on Ethereum")
+  is an `AddressLine` shown by `AddressLineText` or
+  `ReviewInfoRow.bottomLeftAddress`, never a pre-built string in a `Text` that
+  ellipsizes. The address is never cut: the text after it gives way first,
+  then a contact's name moves to the line above, then the text before it.
+  `keepBefore: true` keeps a label like "Refund to:".
+- In a `ReviewInfoRow`, when the bottom text and "Full address" don't fit on
+  one line, the button moves to the line below. A contact's line splits off
+  the name instead.
 - Buttons `AppButton`, icons `AppIcon(AppIcons.x)`, toasts `showAppToast`,
   haptics `AppHaptics`.
 

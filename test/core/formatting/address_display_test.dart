@@ -15,6 +15,22 @@ void main() {
       );
     });
 
+    test('drops the separator spaces for a monospace face', () {
+      const address =
+          'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+          '73d57f73c6dc05121591a83861cd190591';
+      expect(
+        truncatedAddress(address, monospace: true),
+        '${address.substring(0, kTruncatedAddressHeadLength)}...'
+        '${address.substring(address.length - kTruncatedAddressTailLength)}',
+      );
+      expect(
+        truncatedLongAddress(address, monospace: true),
+        '${address.substring(0, kLongTruncatedAddressHeadLength)}...'
+        '${address.substring(address.length - kLongTruncatedAddressTailLength)}',
+      );
+    });
+
     test('takes 6 + 5 on phones and 9 + 7 on desktop', () {
       final mobile = kAppFormFactor == AppFormFactor.mobile;
       expect(kTruncatedAddressHeadLength, mobile ? 6 : 9);

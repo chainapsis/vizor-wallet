@@ -7,6 +7,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/address_line_text.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
@@ -371,11 +372,20 @@ class _DiscoveredAccountRowState extends State<_DiscoveredAccountRow> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        truncatedLongAddress(
-                          widget.account.firstTransparentAddress,
+                      // The long form, or the short one where it would be
+                      // cut.
+                      AddressLineText(
+                        AddressLine(
+                          address: truncatedLongAddress(
+                            widget.account.firstTransparentAddress,
+                            monospace: true,
+                          ),
+                          shortAddress: truncatedAddress(
+                            widget.account.firstTransparentAddress,
+                            monospace: true,
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
+                        singleLine: true,
                         style: AppTypography.codeSmall.copyWith(
                           color: colors.text.secondary,
                         ),

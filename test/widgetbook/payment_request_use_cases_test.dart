@@ -31,7 +31,10 @@ void main() {
       expect(find.text(r'$35.00'), findsNothing);
       expect(find.text('Recipient'), findsNothing);
       expect(find.text('Shielded'), findsNothing);
-      expect(find.text(truncatedAddress(_address)), findsNothing);
+      expect(
+        find.text(truncatedAddress(_address, monospace: true)),
+        findsNothing,
+      );
       expect(find.text('Memo included'), findsNothing);
       expect(_key('external_request_warning'), findsOneWidget);
       expect(_key('payment_request_summary'), findsNothing);

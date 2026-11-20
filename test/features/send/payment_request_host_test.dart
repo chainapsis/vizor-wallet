@@ -775,7 +775,10 @@ void main() {
       find.byKey(const ValueKey('payment_request_recipient_name')),
       findsNothing,
     );
-    expect(find.text(truncatedAddress(_address)), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_address, monospace: true)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the fiat line lands when the price arrives after the card', (
@@ -816,7 +819,10 @@ void main() {
       find.byKey(const ValueKey('payment_request_recipient_name')),
       findsNothing,
     );
-    expect(find.text(truncatedAddress(_address)), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_address, monospace: true)),
+      findsOneWidget,
+    );
   });
 
   // A card that has run out of ways to answer itself stops promising an

@@ -4,12 +4,20 @@ library;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_surface.dart';
 import 'package:zcash_wallet/widgetbook/payment_request_use_cases.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+
+// The fixture's address, as the card sets it in Geist Mono.
+final _cardAddress = truncatedAddress(
+  'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+  '73d57f73c6dc05121591a83861cd190591',
+  monospace: true,
+);
 
 void main() {
   testWidgets('mobile status previews show details and matching actions', (
@@ -59,7 +67,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-      tester.widget<Text>(find.text('u19509 ... 90591')).overflow,
+      tester.widget<Text>(find.text(_cardAddress)).overflow,
       TextOverflow.ellipsis,
     );
   });
@@ -110,7 +118,7 @@ void main() {
       expect(action.top, greaterThan(0));
       expect(action.bottom, lessThan(size.height));
       expect(find.text('0.5 ZEC'), findsNothing);
-      expect(find.text('u19509 ... 90591'), findsNothing);
+      expect(find.text(_cardAddress), findsNothing);
       expect(find.text('Scan original QR'), findsOneWidget);
       expect(find.text('Review link details'), findsOneWidget);
     }
