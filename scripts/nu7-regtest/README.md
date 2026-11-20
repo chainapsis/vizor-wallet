@@ -20,6 +20,10 @@ scripts/nu7-regtest/down.sh
   refuse heights they cannot use.
 - Funding pays block coinbase to the address with `generatetoaddress`: Orchard
   before NU6.3, Ironwood from it. Coinbase needs 100 confirmations.
+- `fund-orchard.py` funds exact Orchard amounts before NU6.3, one note per
+  address, which Zebra cannot do without a wallet. It mines coinbase to the
+  offline signer in `rust/regtest-orchard-funder` (taken from the Zakura E2E
+  branch), which pins NU6.3 at 500, so the chain must use that height.
 - Ports bind loopback only: Zebra RPC on 48232 (`NU7_REGTEST_RPC_PORT`) and
   lightwalletd on 49067 (`NU7_REGTEST_LIGHTWALLETD_PORT`). RPC auth is off.
 - `down.sh` and `reset.sh` touch only the `vizor-nu7-regtest` compose project.
