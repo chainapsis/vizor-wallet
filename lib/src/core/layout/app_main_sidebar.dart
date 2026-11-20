@@ -1,5 +1,5 @@
+import '../../features/home/providers/account_balance_breakdown_provider.dart';
 import '../../features/home/providers/home_initialization_provider.dart';
-import '../../features/home/services/home_displayed_balance.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -44,6 +44,7 @@ import '../widgets/app_tappable.dart';
 import '../widgets/app_tooltip.dart';
 import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
+import 'sidebar_balance_popover.dart';
 import 'desktop_sidebar_spacing.dart';
 import '../l10n/locale_typography.dart';
 
@@ -480,19 +481,15 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final isImporting =
         showImporting ||
         (activeAccountUuid != null && accountSync.isImportingAccount);
-    // Home's number, so the two cannot disagree: the total would add
-    // transparent funds and funds a pending transaction holds, which Home's
-    // balance card leaves out.
-    final displayedBalance = homeDisplayedBalance(
-      accountSync,
-      ironwoodOnly:
-          ref.watch(ironwoodHomeBalancePresentationProvider) ==
-          IronwoodHomeBalancePresentationMode.ironwoodOnly,
-    );
+    // Home's number, so the two cannot disagree. What it leaves out opens in
+    // a popover while the pointer rests on the balance.
+    final balanceBreakdown = ref.watch(activeAccountBalanceBreakdownProvider);
     final balanceText =
-        '${accountSync.hasDisplayBalance ? _formatSidebarBalance(displayedBalance) : '—'} ' // l10n-ignore: amount format
+        '${accountSync.hasDisplayBalance ? _formatSidebarBalance(balanceBreakdown.headline) : '—'} ' // l10n-ignore: amount format
         '$kZcashDefaultCurrencyTicker';
     final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final balanceHasMore =
+        accountSync.hasDisplayBalance && balanceBreakdown.hasMore;
     final balanceLabel = hideAmountIfPrivacyMode(
       balanceText,
       privacyModeEnabled: privacyModeEnabled,
@@ -550,6 +547,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                             activeAccount?.profilePictureId ??
                             kDefaultProfilePictureId,
                         balanceLabel: balanceLabel,
+                        balanceHasMore: balanceHasMore,
+                        balanceBreakdownSummary: balanceHasMore
+                            ? sidebarBalanceBreakdownSummary(
+                                context.l10n,
+                                balanceBreakdown,
+                                privacyModeEnabled: privacyModeEnabled,
+                              )
+                            : null,
                         hardwareSignerKind: activeAccount?.hardwareSignerKind,
                         privacyModeEnabled: privacyModeEnabled,
                         onTogglePrivacyMode: () =>
@@ -1029,6 +1034,8 @@ class _SidebarAccountHeader extends StatelessWidget {
     required this.accountName,
     required this.profilePictureId,
     required this.balanceLabel,
+    required this.balanceHasMore,
+    required this.balanceBreakdownSummary,
     required this.hardwareSignerKind,
     required this.privacyModeEnabled,
     required this.onTogglePrivacyMode,
@@ -1040,6 +1047,10 @@ class _SidebarAccountHeader extends StatelessWidget {
   final String accountName;
   final String profilePictureId;
   final String balanceLabel;
+
+  /// Whether the account holds anything [balanceLabel] leaves out.
+  final bool balanceHasMore;
+  final String? balanceBreakdownSummary;
   final HardwareSignerKind? hardwareSignerKind;
   final bool privacyModeEnabled;
   final VoidCallback onTogglePrivacyMode;
@@ -1085,13 +1096,17 @@ class _SidebarAccountHeader extends StatelessWidget {
                     children: [
                       Flexible(
                         fit: FlexFit.loose,
-                        child: Text(
-                          balanceLabel,
-                          key: const ValueKey('sidebar_account_balance'),
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.secondary,
-                            fontWeight: FontWeight.w400,
+                        child: SidebarBalanceHover(
+                          enabled: balanceHasMore,
+                          semanticsTooltip: balanceBreakdownSummary,
+                          child: Text(
+                            balanceLabel,
+                            key: const ValueKey('sidebar_account_balance'),
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.secondary,
+                              fontWeight: FontWeight.w400,
+                            ),
                           ),
                         ),
                       ),

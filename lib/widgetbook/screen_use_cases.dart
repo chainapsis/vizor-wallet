@@ -44,6 +44,7 @@ import '../src/core/config/swap_feature_config.dart';
 import '../src/core/config/zcash_explorer.dart';
 import '../src/core/navigation/mobile_routes.dart';
 import '../src/core/layout/app_layout.dart';
+import '../src/core/layout/sidebar_balance_popover.dart';
 import '../src/features/activity/activity_eta_provider.dart';
 import '../src/features/swap/providers/swap_activity_store.dart';
 import '../src/features/activity/screens/activity_screen.dart';
@@ -70,6 +71,7 @@ import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/home/providers/nu7_announcement_provider.dart';
 import '../src/features/home/widgets/nu7_announcement.dart';
+import '../src/features/home/services/account_balance_breakdown.dart';
 import '../src/features/home/services/transparent_shielding_service.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -1377,6 +1379,84 @@ Widget _buildHomeActivityComparison({
 
 Widget buildDesktopHomeUnknownBalanceUseCase(BuildContext context) =>
     _buildDesktopHomeStartupUseCase();
+
+// 2.5 ZEC shielded, with 1 ZEC transparent and 0.5 ZEC a transaction holds.
+final _homeExtraFundsState =
+    _homeSyncedState(
+      orchardBalance: BigInt.from(250000000),
+      transparentBalance: BigInt.from(100000000),
+      canShieldTransparentBalance: true,
+      recentTransactions: [for (var i = 1; i <= 5; i++) _homeTx(i)],
+    ).copyWith(
+      hasRecentTransactionsData: true,
+      displayShieldedLockedBalance: BigInt.from(50000000),
+      totalBalance: BigInt.from(400000000),
+      displayTotalBalance: BigInt.from(400000000),
+    );
+
+/// The popover that opens while the pointer rests on the sidebar balance.
+Widget buildSidebarBalancePopoverUseCase(BuildContext context) {
+  return Padding(
+    padding: const EdgeInsets.all(AppSpacing.xl),
+    child: Align(
+      alignment: Alignment.topLeft,
+      child: SidebarBalancePopoverSurface(
+        breakdown: AccountBalanceBreakdown.of(
+          _homeExtraFundsState,
+          ironwoodOnly: false,
+        ),
+      ),
+    ),
+  );
+}
+
+/// Desktop Home with that popover open in place, as a pointer resting on the
+/// balance would open it.
+Widget buildDesktopHomeSidebarBalancePopoverUseCase(BuildContext context) =>
+    const _SidebarBalancePopoverCapture();
+
+/// The same popover during a migration, when Home shows Ironwood alone: it
+/// lists the Orchard funds still migrating and funds in the Sapling pool.
+Widget buildDesktopHomeSidebarBalancePopoverMigratingUseCase(
+  BuildContext context,
+) => const _SidebarBalancePopoverCapture(migrating: true);
+
+class _SidebarBalancePopoverCapture extends StatefulWidget {
+  const _SidebarBalancePopoverCapture({this.migrating = false});
+
+  final bool migrating;
+
+  @override
+  State<_SidebarBalancePopoverCapture> createState() =>
+      _SidebarBalancePopoverCaptureState();
+}
+
+class _SidebarBalancePopoverCaptureState
+    extends State<_SidebarBalancePopoverCapture> {
+  @override
+  void initState() {
+    super.initState();
+    SidebarBalanceHover.debugAlwaysOpen = true;
+  }
+
+  @override
+  void dispose() {
+    SidebarBalanceHover.debugAlwaysOpen = false;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.migrating
+      ? _buildDesktopHomeMigrationInProgress(
+          saplingBalance: BigInt.from(320_000_000),
+        )
+      : _buildDesktopHomeUseCase(
+          accountState: _accountsDesignState,
+          syncState: _homeExtraFundsState,
+          migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+          zecUsdPrice: 70,
+        );
+}
 
 Widget buildDesktopHomeInitialScanUseCase(BuildContext context) =>
     _buildDesktopHomeStartupUseCase(initialScan: true);
@@ -2962,7 +3042,19 @@ Widget _buildDesktopZeroValueUseCase({String? receiptKind}) {
 
 Widget buildDesktopHomeIronwoodMigrationInProgressUseCase(
   BuildContext context,
-) {
+) => _buildDesktopHomeMigrationInProgress();
+
+/// Home during a migration. [saplingBalance] adds funds in the Sapling pool,
+/// which the migration leaves where they are.
+Widget _buildDesktopHomeMigrationInProgress({BigInt? saplingBalance}) {
+  final sapling = saplingBalance ?? BigInt.zero;
+  final synced = _homeSyncedState(
+    orchardBalance: BigInt.from(10_221_000_000),
+    ironwoodBalance: BigInt.from(4_011_000_000),
+    transparentBalance: BigInt.from(1_412_000_000),
+    canShieldTransparentBalance: true,
+    recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3)],
+  );
   final status = _previewMigrationStatus(
     kIronwoodMigrationBroadcastScheduledPhase,
     activeRunId: 'preview-run',
@@ -2978,13 +3070,14 @@ Widget buildDesktopHomeIronwoodMigrationInProgressUseCase(
   );
   return _buildDesktopHomeUseCase(
     accountState: _accountsDesignState,
-    syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(10_221_000_000),
-      ironwoodBalance: BigInt.from(4_011_000_000),
-      transparentBalance: BigInt.from(1_412_000_000),
-      canShieldTransparentBalance: true,
-      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3)],
-    ),
+    syncState: sapling == BigInt.zero
+        ? synced
+        : synced.copyWith(
+            saplingBalance: sapling,
+            displayShieldedBalance: synced.displayShieldedBalance + sapling,
+            totalBalance: synced.totalBalance + sapling,
+            displayTotalBalance: synced.displayTotalBalance + sapling,
+          ),
     migrationCta: IronwoodHomeMigrationCtaState.resume(
       network: 'main',
       accountUuid: _accountsDesignState.activeAccountUuid!,

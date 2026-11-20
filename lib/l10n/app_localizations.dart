@@ -17390,6 +17390,36 @@ abstract class AppLocalizations {
   /// **'Address couldn\'t be copied'**
   String get sidebarAddressCopyFailed;
 
+  /// Detail line under the Transparent row of the popover that opens when the pointer rests on the desktop sidebar balance. It says these funds are not part of the shielded balance shown above. Keep it short; the popover is 288px wide.
+  ///
+  /// In en, this message translates to:
+  /// **'Not shielded yet'**
+  String get sidebarBalanceNotShielded;
+
+  /// Detail line under the Sapling row of the desktop sidebar balance popover, shown while Home shows the Ironwood balance alone: these funds sit in the older Sapling pool, which the migration does not move. Keep it short; the popover is 288px wide.
+  ///
+  /// In en, this message translates to:
+  /// **'Older shielded pool'**
+  String get sidebarBalanceOlderPool;
+
+  /// Label of a row in the desktop sidebar balance popover: shielded funds that a transaction not yet finished is holding, so they are in neither the shielded balance nor the spendable amount. The row's amount is the value of the held funds, not the amount being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'On hold'**
+  String get sidebarBalanceOnHold;
+
+  /// Detail line under the On hold row of the desktop sidebar balance popover. Keep it short; the popover is 288px wide.
+  ///
+  /// In en, this message translates to:
+  /// **'Unfinished transaction'**
+  String get sidebarBalanceOnHoldDetail;
+
+  /// Detail line under the Orchard row of the desktop sidebar balance popover while an Ironwood migration is running: these Orchard funds have not moved to Ironwood yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Still migrating'**
+  String get sidebarBalanceStillMigrating;
+
   /// Screen-reader label of the sidebar button that hides amounts.
   ///
   /// In en, this message translates to:

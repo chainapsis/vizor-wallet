@@ -10599,6 +10599,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarAddressCopyFailed => 'Address couldn\'t be copied';
 
   @override
+  String get sidebarBalanceNotShielded => 'Not shielded yet';
+
+  @override
+  String get sidebarBalanceOlderPool => 'Older shielded pool';
+
+  @override
+  String get sidebarBalanceOnHold => 'On hold';
+
+  @override
+  String get sidebarBalanceOnHoldDetail => 'Unfinished transaction';
+
+  @override
+  String get sidebarBalanceStillMigrating => 'Still migrating';
+
+  @override
   String get sidebarHideBalance => 'Hide balance';
 
   @override
