@@ -73,6 +73,8 @@ pub(crate) use swap_private::{
     cancel_recovery, filter_step, recover, recovery_generation, RecoveryError, Round, Wait,
 };
 #[cfg(test)]
+mod scan_bench;
+#[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
 pub(crate) mod transparent_details;
