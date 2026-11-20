@@ -40,3 +40,11 @@ macOS app scenario with `scripts/e2e/flutter-macos-nu7-migration-stop.sh`, and
 its iOS simulator counterpart with
 `scripts/e2e/flutter-ios-regtest-mobile-nu7-migration-stop.sh` (one booted
 simulator, or `SIMULATOR_UDID`).
+
+The base Ironwood migration runs here too, so it pays the NU7 fee:
+`scripts/e2e/flutter-macos-ironwood-migration-nu7.sh` and
+`scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-nu7.sh`. They use
+the same test files as the zcashd runners; NU6.3 is at 500 and NU7 at 520, and
+the driver's `/activate` mines through both while the app runs. They fund
+0.0105 ZEC, which only the NU7 start gate admits. The other migration
+scenarios still run on `scripts/ironwood-regtest/`.
