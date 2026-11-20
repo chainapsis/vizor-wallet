@@ -2872,6 +2872,7 @@
   "sidebarAccountNameFallback": "사‍용‍자 이‍름",
   "sidebarAddressCopyFailed": "주‍소‍를 복‍사‍하‍지 못‍했‍어‍요",
   "sidebarBalanceNotShielded": "아‍직 비‍공‍개 전‍환 전",
+  "sidebarBalanceOlderPool": "이‍전 비‍공‍개 풀",
   "sidebarBalanceOnHold": "보‍류 중",
   "sidebarBalanceOnHoldDetail": "끝‍나‍지 않‍은 거‍래",
   "sidebarBalanceStillMigrating": "마‍이‍그‍레‍이‍션 중",

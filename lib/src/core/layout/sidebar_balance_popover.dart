@@ -63,6 +63,14 @@ List<_BreakdownRow> _breakdownRows(
       detail: l10n.sidebarBalanceStillMigrating,
       amount: breakdown.migrating,
     ),
+  if (breakdown.sapling > BigInt.zero)
+    (
+      key: 'sapling',
+      icon: AppIcons.shieldKeyhole,
+      label: 'Sapling', // l10n-ignore: pool name
+      detail: l10n.sidebarBalanceOlderPool,
+      amount: breakdown.sapling,
+    ),
   if (breakdown.onHold > BigInt.zero)
     (
       key: 'on_hold',

@@ -10606,6 +10606,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarBalanceNotShielded => 'Not shielded yet';
 
   @override
+  String get sidebarBalanceOlderPool => 'Older shielded pool';
+
+  @override
   String get sidebarBalanceOnHold => 'On hold';
 
   @override

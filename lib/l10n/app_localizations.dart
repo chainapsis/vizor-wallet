@@ -17402,6 +17402,12 @@ abstract class AppLocalizations {
   /// **'Not shielded yet'**
   String get sidebarBalanceNotShielded;
 
+  /// Detail line under the Sapling row of the desktop sidebar balance popover, shown while Home shows the Ironwood balance alone: these funds sit in the older Sapling pool, which the migration does not move. Keep it short; the popover is 288px wide.
+  ///
+  /// In en, this message translates to:
+  /// **'Older shielded pool'**
+  String get sidebarBalanceOlderPool;
+
   /// Label of a row in the desktop sidebar balance popover: shielded funds that a transaction not yet finished is holding, so they are in neither the shielded balance nor the spendable amount. The row's amount is the value of the held funds, not the amount being sent.
   ///
   /// In en, this message translates to:

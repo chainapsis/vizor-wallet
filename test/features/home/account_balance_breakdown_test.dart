@@ -1,8 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/sidebar_balance_popover.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_balance_cache.dart';
 import 'package:zcash_wallet/src/features/home/services/account_balance_breakdown.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
+import '../../support/test_l10n.dart';
 
 void main() {
   group('AccountBalanceBreakdown', () {
@@ -54,6 +57,52 @@ void main() {
       expect(breakdown.migrating, BigInt.from(220));
       expect(breakdown.onHold, BigInt.from(7));
       expect(_sum(breakdown), sync.displayTotalBalance);
+    });
+
+    test('names Sapling funds only while Home shows Ironwood only', () {
+      // The migration moves Orchard, so Sapling stays behind.
+      final sync = SyncState(accountUuid: 'account-1').withFetchedAccountData(
+        balance: _balance(
+          sapling: 30,
+          saplingPending: 5,
+          orchard: 200,
+          ironwood: 40,
+          saplingLocked: 3,
+        ),
+        syncComplete: true,
+      );
+
+      final ironwoodOnly = AccountBalanceBreakdown.of(sync, ironwoodOnly: true);
+      expect(ironwoodOnly.headline, BigInt.from(40));
+      expect(ironwoodOnly.sapling, BigInt.from(35));
+      expect(ironwoodOnly.migrating, BigInt.from(200));
+      expect(ironwoodOnly.onHold, BigInt.from(3));
+      expect(_sum(ironwoodOnly), sync.displayTotalBalance);
+
+      // Otherwise Sapling is part of the shielded balance itself.
+      final allShielded = AccountBalanceBreakdown.of(sync, ironwoodOnly: false);
+      expect(allShielded.headline, BigInt.from(275));
+      expect(allShielded.sapling, BigInt.zero);
+      expect(_sum(allShielded), sync.displayTotalBalance);
+    });
+
+    test('opens for an account whose only other funds are Sapling', () {
+      final sync = SyncState(accountUuid: 'account-1').withFetchedAccountData(
+        balance: _balance(sapling: 30000000, ironwood: 40000000),
+        syncComplete: true,
+      );
+
+      final breakdown = AccountBalanceBreakdown.of(sync, ironwoodOnly: true);
+
+      expect(breakdown.hasMore, isTrue);
+      expect(
+        sidebarBalanceBreakdownSummary(
+          testL10n,
+          breakdown,
+          privacyModeEnabled: false,
+        ),
+        'Sapling 0.3 ZEC',
+      );
     });
 
     test('leaves out transparent funds whose amount is not current', () {
@@ -146,9 +195,12 @@ BigInt _sum(AccountBalanceBreakdown breakdown) =>
     breakdown.headline +
     breakdown.transparent +
     breakdown.migrating +
+    breakdown.sapling +
     breakdown.onHold;
 
 rust_sync.WalletBalance _balance({
+  int sapling = 0,
+  int saplingPending = 0,
   int orchard = 0,
   int ironwood = 0,
   int orchardPending = 0,
@@ -171,7 +223,7 @@ rust_sync.WalletBalance _balance({
         : BigInt.from(transparentLastKnown),
     transparentPrivate: false,
     transparent: BigInt.from(transparent),
-    sapling: BigInt.zero,
+    sapling: BigInt.from(sapling),
     orchard: BigInt.from(orchard),
     ironwood: BigInt.from(ironwood),
     transparentLocked: BigInt.from(transparentLocked),
@@ -179,7 +231,7 @@ rust_sync.WalletBalance _balance({
     orchardLocked: BigInt.from(orchardLocked),
     ironwoodLocked: BigInt.from(ironwoodLocked),
     transparentPending: BigInt.zero,
-    saplingPending: BigInt.zero,
+    saplingPending: BigInt.from(saplingPending),
     orchardPending: BigInt.from(orchardPending),
     ironwoodPending: BigInt.from(ironwoodPending),
     changePendingConfirmation: BigInt.zero,
@@ -187,10 +239,12 @@ rust_sync.WalletBalance _balance({
     pendingSpendableTipHeight: 0,
     valuePendingSpendability: BigInt.zero,
     uneconomicValue: BigInt.zero,
-    spendable: BigInt.from(orchard + ironwood),
+    spendable: BigInt.from(sapling + orchard + ironwood),
     locked: BigInt.from(locked + transparentLocked),
     total: BigInt.from(
-      orchard +
+      sapling +
+          saplingPending +
+          orchard +
           ironwood +
           orchardPending +
           ironwoodPending +
