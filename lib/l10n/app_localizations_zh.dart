@@ -9769,6 +9769,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarAddressCopyFailed => '无法复制地址';
 
   @override
+  String get sidebarBalanceNotShielded => '尚未转为隐私余额';
+
+  @override
+  String get sidebarBalanceOnHold => '暂时保留';
+
+  @override
+  String get sidebarBalanceOnHoldDetail => '交易未完成';
+
+  @override
+  String get sidebarBalanceStillMigrating => '仍在迁移';
+
+  @override
   String get sidebarHideBalance => '隐藏余额';
 
   @override

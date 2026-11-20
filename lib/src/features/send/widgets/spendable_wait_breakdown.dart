@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,9 +7,9 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_context_menu.dart' show appContextMenuShadow;
 import '../../../core/config/network_config.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_popover_surface.dart';
 import '../../../core/widgets/mobile/mobile_section.dart';
 import '../../../core/widgets/mobile/mobile_serif_amount.dart';
 import '../../../core/widgets/mobile/mobile_surface_card.dart';
@@ -355,7 +353,7 @@ class SendSpendableWaitButton extends ConsumerStatefulWidget {
   static const _popoverHeightEstimate = 280.0;
 
   static const _iconSize = 16.0;
-  static const _tailSize = 10.0;
+  static const _tailSize = AppPopoverSurface.tailSize;
 
   // The tail's center from the popover's trailing edge: past the rounded
   // corner, on the straight part of the edge.
@@ -521,51 +519,15 @@ class SpendableWaitPopoverSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final edge = BorderSide(color: colors.border.subtleOpacity);
-    // Merged, not replaced: the ambient style carries the locale's fonts.
-    return DefaultTextStyle.merge(
-      style: const TextStyle(decoration: TextDecoration.none),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            key: const ValueKey('send_spendable_wait_popover'),
-            width: SendSpendableWaitButton.popoverWidth,
-            padding: const EdgeInsets.all(AppSpacing.s),
-            decoration: BoxDecoration(
-              color: colors.background.raised,
-              borderRadius: BorderRadius.circular(AppRadii.large),
-              border: Border.all(color: colors.border.subtleOpacity),
-              boxShadow: appContextMenuShadow,
-            ),
-            child: SpendableWaitBreakdown(
-              wait: wait,
-              privacyModeEnabled: privacyModeEnabled,
-              compact: true,
-            ),
-          ),
-          Positioned(
-            right:
-                SendSpendableWaitButton._tailInset -
-                SendSpendableWaitButton._tailSize / 2,
-            top: tailBelow ? null : -SendSpendableWaitButton._tailSize / 2,
-            bottom: tailBelow ? -SendSpendableWaitButton._tailSize / 2 : null,
-            child: Transform.rotate(
-              angle: math.pi / 4,
-              child: Container(
-                width: SendSpendableWaitButton._tailSize,
-                height: SendSpendableWaitButton._tailSize,
-                decoration: BoxDecoration(
-                  color: colors.background.raised,
-                  border: tailBelow
-                      ? Border(right: edge, bottom: edge)
-                      : Border(left: edge, top: edge),
-                ),
-              ),
-            ),
-          ),
-        ],
+    return AppPopoverSurface(
+      surfaceKey: const ValueKey('send_spendable_wait_popover'),
+      width: SendSpendableWaitButton.popoverWidth,
+      tailEdge: tailBelow ? AppPopoverTailEdge.bottom : AppPopoverTailEdge.top,
+      tailInset: SendSpendableWaitButton._tailInset,
+      child: SpendableWaitBreakdown(
+        wait: wait,
+        privacyModeEnabled: privacyModeEnabled,
+        compact: true,
       ),
     );
   }

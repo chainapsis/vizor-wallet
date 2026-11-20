@@ -10434,6 +10434,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sidebarAddressCopyFailed => '주‍소‍를 복‍사‍하‍지 못‍했‍어‍요';
 
   @override
+  String get sidebarBalanceNotShielded => '아‍직 비‍공‍개 전‍환 전';
+
+  @override
+  String get sidebarBalanceOnHold => '보‍류 중';
+
+  @override
+  String get sidebarBalanceOnHoldDetail => '끝‍나‍지 않‍은 거‍래';
+
+  @override
+  String get sidebarBalanceStillMigrating => '마‍이‍그‍레‍이‍션 중';
+
+  @override
   String get sidebarHideBalance => '잔‍액 숨‍기‍기';
 
   @override
