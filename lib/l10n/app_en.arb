@@ -13435,6 +13435,22 @@
   "@sidebarAddressCopyFailed": {
     "description": "Toast when copying the account address from the sidebar failed."
   },
+  "sidebarBalanceNotShielded": "Not shielded yet",
+  "@sidebarBalanceNotShielded": {
+    "description": "Detail line under the Transparent row of the popover that opens when the pointer rests on the desktop sidebar balance. It says these funds are not part of the shielded balance shown above. Keep it short; the popover is 288px wide."
+  },
+  "sidebarBalanceOnHold": "On hold",
+  "@sidebarBalanceOnHold": {
+    "description": "Label of a row in the desktop sidebar balance popover: shielded funds that a transaction not yet finished is holding, so they are in neither the shielded balance nor the spendable amount. The row's amount is the value of the held funds, not the amount being sent."
+  },
+  "sidebarBalanceOnHoldDetail": "Unfinished transaction",
+  "@sidebarBalanceOnHoldDetail": {
+    "description": "Detail line under the On hold row of the desktop sidebar balance popover. Keep it short; the popover is 288px wide."
+  },
+  "sidebarBalanceStillMigrating": "Still migrating",
+  "@sidebarBalanceStillMigrating": {
+    "description": "Detail line under the Orchard row of the desktop sidebar balance popover while an Ironwood migration is running: these Orchard funds have not moved to Ironwood yet."
+  },
   "sidebarHideBalance": "Hide balance",
   "@sidebarHideBalance": {
     "description": "Screen-reader label of the sidebar button that hides amounts."

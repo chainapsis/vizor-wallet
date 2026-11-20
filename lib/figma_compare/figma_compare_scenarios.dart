@@ -1826,6 +1826,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'sidebar-balance-popover',
+    description: 'Desktop popover listing what the sidebar balance leaves out',
+    builder: buildSidebarBalancePopoverUseCase,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-sidebar-balance-popover',
+    description:
+        'Home with the sidebar balance popover open beside the sidebar',
+    builder: buildDesktopHomeSidebarBalancePopoverUseCase,
+    platform: TargetPlatform.macOS,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
     id: 'send-spendable-wait-popover',
     description: 'Desktop popover listing what can be sent now',
     builder: buildSendSpendableWaitPopoverUseCase,

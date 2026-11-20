@@ -381,6 +381,180 @@ void main() {
     expect(find.text('3.5 ZEC'), findsNothing);
   });
 
+  testWidgets('funds outside the balance leave the sidebar layout alone', (
+    tester,
+  ) async {
+    const keys = ['home', 'voting', 'activity', 'settings', 'sign_out'];
+    Map<String, Rect> rects() => {
+      for (final key in keys)
+        if (find.byKey(ValueKey('sidebar_${key}_button')).evaluate().isNotEmpty)
+          key: tester.getRect(find.byKey(ValueKey('sidebar_${key}_button'))),
+    };
+
+    await tester.pumpWidget(_sidebarHarness(_shieldedOnlySyncState));
+    await tester.pump();
+    final plain = rects();
+    expect(plain.keys, containsAll(<String>['home', 'voting', 'activity']));
+
+    await tester.pumpWidget(_sidebarHarness(_extraFundsSyncState));
+    await tester.pump();
+
+    expect(rects(), plain);
+  });
+
+  testWidgets('balance breakdown opens beside the sidebar after a rest', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sidebarHarness(_extraFundsSyncState));
+    await tester.pump();
+    final popover = find.byKey(const ValueKey('sidebar_balance_popover'));
+    final balance = find.byKey(const ValueKey('sidebar_account_balance'));
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer();
+
+    // A pointer passing over the balance opens nothing.
+    await gesture.moveTo(tester.getCenter(balance));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.moveTo(tester.getCenter(find.text('home route')));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(popover, findsNothing);
+
+    await gesture.moveTo(tester.getCenter(balance));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(popover, findsNothing);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(popover, findsOneWidget);
+
+    // Over the pane, never over the navigation.
+    expect(
+      tester.getRect(popover).left,
+      greaterThanOrEqualTo(
+        tester.getRect(find.byType(AppDesktopSidebarSurface)).right,
+      ),
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('sidebar_balance_popover_headline')),
+          )
+          .data,
+      '2.5 ZEC',
+    );
+    expect(
+      find.descendant(of: popover, matching: find.text('1 ZEC')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: popover, matching: find.text('0.5 ZEC')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: popover, matching: find.text('On hold')),
+      findsOneWidget,
+    );
+    // A list of what the balance leaves out, not a sum, and no "+": funds on
+    // hold are not on their way in.
+    expect(
+      find.descendant(of: popover, matching: find.textContaining('+')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: popover, matching: find.text('4 ZEC')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: popover, matching: find.text('Total')),
+      findsNothing,
+    );
+
+    // It takes no pointer events: a click in its area reaches the pane.
+    final hit = tester.hitTestOnBinding(tester.getCenter(popover));
+    final surface = tester.renderObject(popover);
+    expect(hit.path.map((entry) => entry.target), isNot(contains(surface)));
+
+    await gesture.moveTo(tester.getCenter(find.text('home route')));
+    await tester.pump();
+    expect(popover, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('balance breakdown stays closed when nothing is left out', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sidebarHarness(_shieldedOnlySyncState));
+    await tester.pump();
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer();
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('sidebar_account_balance'))),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byKey(const ValueKey('sidebar_balance_popover')), findsNothing);
+  });
+
+  testWidgets('a press on the hovered balance still opens the account menu', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sidebarHarness(_extraFundsSyncState));
+    await tester.pump();
+    final popover = find.byKey(const ValueKey('sidebar_balance_popover'));
+    final balance = find.byKey(const ValueKey('sidebar_account_balance'));
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer();
+    await gesture.moveTo(tester.getCenter(balance));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(popover, findsOneWidget);
+
+    await gesture.down(tester.getCenter(balance));
+    await gesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(popover, findsNothing);
+    expect(find.text('My accounts'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('balance breakdown masks every amount in privacy mode', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_extraFundsSyncState, privacyModeEnabled: true),
+    );
+    await tester.pump();
+    final popover = find.byKey(const ValueKey('sidebar_balance_popover'));
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer();
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('sidebar_account_balance'))),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(popover, findsOneWidget);
+    final amounts = tester
+        .widgetList<Text>(
+          find.descendant(of: popover, matching: find.textContaining('ZEC')),
+        )
+        .map((text) => text.data)
+        .toList();
+    expect(amounts, hasLength(3));
+    expect(amounts, everyElement('•••••• ZEC'));
+    final semantics = tester.getSemantics(
+      find.byKey(const ValueKey('sidebar_account_balance')),
+    );
+    expect(semantics.tooltip, isNot(contains('1 ZEC')));
+    expect(semantics.tooltip, contains('••••••'));
+  });
+
   testWidgets('sidebar limits visible balance fractions to four places', (
     tester,
   ) async {
@@ -1829,6 +2003,27 @@ Finder _syncTextTooltip() {
     matching: find.byType(Tooltip),
   );
 }
+
+/// Shielded funds only: the sidebar balance leaves nothing out.
+final _shieldedOnlySyncState = SyncState(
+  accountUuid: 'account-1',
+  hasBalanceData: true,
+  isSyncComplete: true,
+  displayShieldedBalance: BigInt.from(250000000),
+  displayTotalBalance: BigInt.from(250000000),
+);
+
+/// 2.5 ZEC shielded, 1 ZEC transparent and 0.5 ZEC held by a transaction.
+final _extraFundsSyncState = SyncState(
+  accountUuid: 'account-1',
+  hasBalanceData: true,
+  isSyncComplete: true,
+  displayShieldedBalance: BigInt.from(250000000),
+  transparentBalance: BigInt.from(100000000),
+  transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
+  displayShieldedLockedBalance: BigInt.from(50000000),
+  displayTotalBalance: BigInt.from(400000000),
+);
 
 const _singleAccountState = AccountState(
   accounts: [
