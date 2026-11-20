@@ -1075,7 +1075,7 @@ class _RecipientDetails extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
                         identity?.displayName ??
-                            truncatedAddress(request.address),
+                            truncatedAddress(request.address, monospace: true),
                         key: identity == null
                             ? null
                             : const ValueKey('payment_request_recipient_name'),
@@ -1089,7 +1089,7 @@ class _RecipientDetails extends StatelessWidget {
                       ),
                       if (identity != null)
                         Text(
-                          truncatedAddress(request.address),
+                          truncatedAddress(request.address, monospace: true),
                           key: const ValueKey(
                             'payment_request_recipient_address',
                           ),

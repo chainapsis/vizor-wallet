@@ -167,7 +167,7 @@ Widget buildGiftCardUsageActivityCapture(BuildContext context) => _fixture(
       statusIconName: AppIcons.checkCircle,
       statusColor: context.colors.text.positiveStrong,
       timestampText: '14 September, 18:20',
-      txIdText: 'f154...8143',
+      txIdText: 'f154c2a9...e6d78143',
       feeText: '0.0002 ZEC',
       onTxIdPressed: _noop,
     ),

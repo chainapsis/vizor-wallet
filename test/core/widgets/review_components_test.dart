@@ -27,13 +27,16 @@ void main() {
         tester,
         ReviewInfoRow(
           label: 'To',
-          value: 'u195091 ... 190591',
+          value: 'u19509 ... 90591',
           leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
           bottomLeftIconName: AppIcons.shieldKeyhole,
           bottomLeftText: 'Shielded',
           trailingActionLabel: 'Show full address',
           onTrailingAction: () => actionTaps++,
         ),
+        // The test font draws every glyph a full em wide; give the badge
+        // and the action the one line real glyphs share.
+        width: 640,
       );
 
       expect(
@@ -41,7 +44,7 @@ void main() {
         ReviewInfoRow.height,
       );
 
-      final valueText = tester.widget<Text>(find.text('u195091 ... 190591'));
+      final valueText = tester.widget<Text>(find.text('u19509 ... 90591'));
       expect(valueText.style?.fontFamily, 'Young Serif');
       expect(valueText.style?.fontSize, 32);
       expect(valueText.style?.decoration, isNull);
@@ -73,13 +76,13 @@ void main() {
         tester,
         const ReviewInfoRow(
           label: 'To',
-          value: 'u195091 ... 190591',
+          value: 'u19509 ... 90591',
           leading: ReviewInfoIconCircle(iconName: AppIcons.wallet),
           struckThrough: true,
         ),
       );
 
-      final valueText = tester.widget<Text>(find.text('u195091 ... 190591'));
+      final valueText = tester.widget<Text>(find.text('u19509 ... 90591'));
       expect(valueText.style?.decoration, TextDecoration.lineThrough);
     });
 
@@ -143,7 +146,7 @@ void main() {
                 ReviewInfoRow(
                   key: ValueKey('to'),
                   label: 'To',
-                  value: 'u195091 ... 190591',
+                  value: 'u19509 ... 90591',
                   leading: ReviewInfoIconCircle(iconName: AppIcons.wallet),
                 ),
               ],
@@ -365,7 +368,11 @@ void main() {
   );
 }
 
-Future<void> _pump(WidgetTester tester, Widget child) async {
+Future<void> _pump(
+  WidgetTester tester,
+  Widget child, {
+  double width = AppWindowSizing.contentAreaMaxWidth,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       localizationsDelegates: appLocalizationsDelegates,
@@ -374,10 +381,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
         child: Directionality(
           textDirection: TextDirection.ltr,
           child: Center(
-            child: SizedBox(
-              width: AppWindowSizing.contentAreaMaxWidth,
-              child: child,
-            ),
+            child: SizedBox(width: width, child: child),
           ),
         ),
       ),

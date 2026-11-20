@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart' show MaterialApp, Tooltip;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
@@ -456,7 +457,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Deposit USDC to'), findsOneWidget);
-    expect(find.text('0x9aDF…819E2'), findsOneWidget);
+    // Shortened once, from the full address, not from the passed value.
+    expect(find.text(truncatedAddress(fullAddress)), findsOneWidget);
     expect(find.text('0x9aDFd23 ... E4819E2'), findsNothing);
   });
 

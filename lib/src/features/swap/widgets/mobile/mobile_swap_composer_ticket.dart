@@ -12,7 +12,7 @@ import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
-import '../../models/swap_address_formatting.dart';
+import '../../../../core/formatting/address_display.dart';
 import '../../models/swap_fiat_amount.dart';
 import '../../models/swap_models.dart';
 import '../one_time_address_label.dart';
@@ -772,14 +772,7 @@ class _AddressChip extends StatelessWidget {
                     const SizedBox(width: AppSpacing.xxs),
                     Flexible(
                       child: Text(
-                        hasValue
-                            ? compactSwapAddress(
-                                trimmed,
-                                prefixLength: 6,
-                                suffixLength: 4,
-                                separator: ' … ',
-                              )
-                            : emptyText,
+                        hasValue ? truncatedAddress(trimmed) : emptyText,
                         key: const ValueKey('swap_destination_value'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

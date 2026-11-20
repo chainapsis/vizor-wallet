@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/widgetbook/received_receipt_use_cases.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+
+// The fixture's addresses (lib/widgetbook/received_receipt_use_cases.dart).
+const _transparentFromAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
+const _transparentReceivingAddress = 't1Z9N3oVYrYDpnbqDcXJpuLrGpcSLDgHXyo';
+const _shieldedReceivingAddress =
+    'u1j9g9dnk7f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+    '73d57f73c6dc05121591a83861cd190592';
 
 void main() {
   testWidgets('transparent-to-transparent use case renders the full frame', (
@@ -18,10 +26,16 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(ReceivedReceiptView), findsOneWidget);
     expect(find.text('Received successfully'), findsOneWidget);
-    expect(find.text('t1PV7ny ... GVSpEX'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentFromAddress)),
+      findsOneWidget,
+    );
     expect(find.text('Transparent'), findsOneWidget);
     expect(find.text('120 ZEC'), findsOneWidget);
-    expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentReceivingAddress)),
+      findsOneWidget,
+    );
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Zcash is a privacy-focused ...'), findsOneWidget);
     // The sender paid the fee, so a receive shows none.
@@ -39,7 +53,10 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(ReceivedReceiptView), findsOneWidget);
     expect(find.text('Transparent'), findsOneWidget);
-    expect(find.text('u1j9g9d ... 190592'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_shieldedReceivingAddress)),
+      findsOneWidget,
+    );
     expect(find.text('Completed'), findsOneWidget);
   });
 
@@ -63,7 +80,10 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(ReceivedReceiptView), findsOneWidget);
     expect(find.text('Mike'), findsOneWidget);
-    expect(find.text('t1PV7ny ... GVSpEX'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentFromAddress)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('in-progress use case shows the pending receive shape', (

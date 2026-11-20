@@ -1,4 +1,5 @@
 // l10n-ignore-file: chain names are proper nouns
+import '../../../core/formatting/address_display.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/profile_pictures.dart';
 
@@ -194,11 +195,7 @@ List<AddressBookContact> filterAddressBookContacts(
   ];
 }
 
-String previewAddress(String address) {
-  final trimmed = address.trim();
-  if (trimmed.length <= 15) return trimmed;
-  return '${trimmed.substring(0, 6)} ... ${trimmed.substring(trimmed.length - 5)}';
-}
+String previewAddress(String address) => truncatedAddress(address);
 
 enum AddressBookLabelError {
   missing,

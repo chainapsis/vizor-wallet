@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/leading_decimal_input.dart';
+import '../../support/app_test_fonts.dart';
 
 const _contactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
 const _recentAddress = '0x1111111111111111111111111111111111111111';
@@ -1219,6 +1220,10 @@ void main() {
     testWidgets('shows paying, recipient, countdown, and converted rows', (
       tester,
     ) async {
+      // The heights below are the Figma ones, measured with the app's fonts;
+      // the test font's full-em glyphs would push the full-address action
+      // onto its own line.
+      await tester.runAsync(loadAppTestFonts);
       await tester.pumpWidget(_harness(reviewStep(contact: _contact)));
 
       expect(find.text('Paying'), findsOneWidget);

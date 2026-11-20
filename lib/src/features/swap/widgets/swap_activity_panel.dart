@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/formatting/address_display.dart';
+import '../../../core/formatting/address_line.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -20,7 +22,6 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../../address_book/widgets/contact_name_inline.dart';
 import '../../send/widgets/verify_address_modal.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_activity_status_mapper.dart';
@@ -1066,7 +1067,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           label: presentation.payLabel,
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
-          bottomText: presentation.payDetailText,
+          bottomText: presentation.payDetailAddress == null
+              ? presentation.payDetailText
+              : null,
+          bottomAddress: presentation.payDetailAddress,
           oneTimeAddress:
               presentation.oneTimeAddress == OneTimeAddressRole.refund
               ? OneTimeAddressRole.refund
@@ -1076,16 +1080,16 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           label: presentation.receiveLabel,
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
-          bottomText: hasRecipient
-              ? context.l10n.swapPanelRecipientTo(
-                  _headerRecipientText(
-                    recipient,
-                    presentation: presentation,
-                    contacts: addressBookContacts,
-                    contactId: recipientContactId,
-                  ),
+          bottomText: hasRecipient ? null : presentation.receiveFiatText,
+          bottomAddress: hasRecipient
+              ? _headerRecipientLine(
+                  context.l10n.swapPanelRecipientTo,
+                  recipient,
+                  presentation: presentation,
+                  contacts: addressBookContacts,
+                  contactId: recipientContactId,
                 )
-              : presentation.receiveFiatText,
+              : null,
           fullAddress: recipientFullAddress,
           oneTimeAddress:
               presentation.oneTimeAddress == OneTimeAddressRole.payout
@@ -1160,8 +1164,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       payLabel: presentation.payLabel,
       receiveLabel: presentation.receiveLabel,
       payDetailText: presentation.payDetailText,
+      payDetailAddress: presentation.payDetailAddress,
       payDetailCopyText: presentation.payDetailCopyText,
       receiveDetailText: presentation.receiveDetailText,
+      receiveDetailAddress: presentation.receiveDetailAddress,
       receiveDetailCopyText: presentation.receiveDetailCopyText,
       statusLabel: presentation.statusLabel,
       badgeKind: presentation.badgeKind,
@@ -1229,31 +1235,26 @@ String? _payDepositTxid(SwapIntent intent) {
       : providerDepositTxid;
 }
 
-/// Figma-style 6 ... 5 truncation for the header's "To:" line.
-String _truncateHeaderAddress(String address) {
-  if (address.length <= 14) return address;
-  return '${address.substring(0, 6)} ... ' // l10n-ignore: address truncation
-      '${address.substring(address.length - 5)}';
-}
-
-/// Header "To:" text — `"Rowan (0x0cd7 ... 27181)"` when the recipient
-/// matches a saved contact on the receive asset's chain, plain truncated
-/// address otherwise.
-String _headerRecipientText(
+/// Header "To:" line — [template] around `"Rowan (0x0cd7 ... 27181)"` when
+/// the recipient matches a saved contact on the receive asset's chain, the
+/// plain truncated address otherwise.
+AddressLine _headerRecipientLine(
+  String Function(String recipient) template,
   String recipient, {
   required SwapActivityStatusPresentation presentation,
   required Iterable<AddressBookContact> contacts,
   String? contactId,
 }) {
-  final label = addressBookContactForSwapAsset(
-    contacts: contacts,
-    asset: presentation.receiveAsset,
-    address: recipient,
-    contactId: contactId,
-  )?.label.trim();
-  final compact = _truncateHeaderAddress(recipient);
-  if (label == null || label.isEmpty) return compact;
-  return contactAddressDisplayText(label: label, compactAddress: compact);
+  return AddressLine.inTemplate(
+    template,
+    address: truncatedAddress(recipient),
+    label: addressBookContactForSwapAsset(
+      contacts: contacts,
+      asset: presentation.receiveAsset,
+      address: recipient,
+      contactId: contactId,
+    )?.label,
+  );
 }
 
 String? mobileSwapStatusRecipientFullAddress(SwapIntent intent) {

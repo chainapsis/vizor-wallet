@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
@@ -199,7 +200,7 @@ void main() {
     expect(find.text(r'$250.12'), findsOneWidget);
     expect(find.text('To'), findsOneWidget);
     expect(find.text('Mike'), findsOneWidget);
-    expect(find.text('0x12351...76123'), findsOneWidget);
+    expect(find.text(truncatedAddress(_recipient)), findsOneWidget);
     expect(find.text('Full address'), findsOneWidget);
     expect(find.text('Payment progress'), findsOneWidget);
     expect(find.text('Transaction details'), findsOneWidget);

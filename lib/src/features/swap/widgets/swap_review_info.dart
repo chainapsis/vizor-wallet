@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/address_line_text.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_info_row.dart';
 import '../models/swap_models.dart';
@@ -14,10 +15,11 @@ class SwapReviewInfoSideData {
     required this.asset,
     required this.label,
     required this.amountText,
-    required this.detailText,
+    this.detailText,
+    this.detailAddress,
     this.detailCopyText,
     this.oneTimeAddress,
-  });
+  }) : assert(detailText == null || detailAddress == null);
 
   final SwapAsset asset;
 
@@ -27,9 +29,12 @@ class SwapReviewInfoSideData {
   /// Amount with symbol, rendered in the serif display style.
   final String amountText;
 
-  /// Bottom line: the fiat value, or the counterparty address line
-  /// (`To: … on <chain>` / `Refund to: …`).
-  final String detailText;
+  /// Bottom line: the fiat value.
+  final String? detailText;
+
+  /// Bottom line naming the counterparty address (`To: … on <chain>` /
+  /// `Refund to: …`), in place of [detailText].
+  final AddressLine? detailAddress;
 
   /// When set, the bottom line shows a Copy affordance copying this value.
   final String? detailCopyText;
@@ -105,6 +110,7 @@ class SwapReviewInfo extends StatelessWidget {
         showChainBadge: data.asset != SwapAsset.zec,
       ),
       bottomLeftText: data.detailText,
+      bottomLeftAddress: data.detailAddress,
       trailing: !showCopy && data.oneTimeAddress != null
           ? OneTimeAddressLabel(role: data.oneTimeAddress!)
           : null,

@@ -741,13 +741,7 @@ void main() {
       find.byKey(const ValueKey('mobile_tx_status_show_full_address')),
       findsNothing,
     );
-    expect(
-      find.text(
-        '${_address.substring(0, 6)} ... '
-        '${_address.substring(_address.length - 5)}',
-      ),
-      findsNothing,
-    );
+    expect(find.text(truncatedAddress(_address)), findsNothing);
     expect(find.byType(PaymentLinkGiftCard), findsOneWidget);
     // The card replaces the type icon, at 70% of the full-width card.
     expect(find.byType(TransactionTypeHero), findsNothing);
@@ -886,14 +880,9 @@ void main() {
       '123.12 ZEC',
     );
     expect(find.text('Recipient'), findsOneWidget);
-    // Figma-style 6 ... 5 truncation of the recipient.
+    // The recipient in the shared short address form.
     expect(find.text('u1l8xu ... d5gh'.replaceAll('  ', ' ')), findsNothing);
-    expect(
-      find.text(
-        '${_address.substring(0, 6)} ... ${_address.substring(_address.length - 5)}',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text(truncatedAddress(_address)), findsOneWidget);
     expect(_poolIcon('Shielded'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.00015 ZEC'), findsOneWidget);
@@ -1181,12 +1170,7 @@ void main() {
     expect(find.text('Sent ZEC'), findsOneWidget);
     expect(_poolIcon('TEX'), findsOneWidget);
     expect(find.text('Transparent'), findsNothing);
-    expect(
-      find.text(
-        '${_texAddress.substring(0, 6)} ... ${_texAddress.substring(_texAddress.length - 5)}',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text(truncatedAddress(_texAddress)), findsOneWidget);
   });
 
   testWidgets('sent receipt shows the exact pool without adding rows', (
@@ -1301,9 +1285,7 @@ void main() {
     );
 
     final addressText = tester.widget<Text>(
-      find.text(
-        '${_address.substring(0, 6)} ... ${_address.substring(_address.length - 5)}',
-      ),
+      find.text(truncatedAddress(_address)),
     );
     expect(addressText.style?.decoration, TextDecoration.lineThrough);
   });
@@ -1414,55 +1396,50 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('received tx separates transparent sender and shielded receiver', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        _tx(kind: 'received', fee: BigInt.zero),
-        detail: _detail(
-          kind: 'received',
-          sourceAddress: _transparentSenderAddress,
-          sourcePool: 'transparent',
-          outputs: [
-            rust_sync.TransactionDetailOutput(
-              usesOrchardReceiver: false,
-              address: _receivingShieldedAddress,
-              amountZatoshi: BigInt.from(12312000000),
-              pool: 'shielded',
-            ),
-          ],
+  testWidgets(
+    'received tx separates transparent sender and shielded receiver',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          _tx(kind: 'received', fee: BigInt.zero),
+          detail: _detail(
+            kind: 'received',
+            sourceAddress: _transparentSenderAddress,
+            sourcePool: 'transparent',
+            outputs: [
+              rust_sync.TransactionDetailOutput(
+                usesOrchardReceiver: false,
+                address: _receivingShieldedAddress,
+                amountZatoshi: BigInt.from(12312000000),
+                pool: 'shielded',
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text(
-        '${_transparentSenderAddress.substring(0, 6)} ... '
-        '${_transparentSenderAddress.substring(_transparentSenderAddress.length - 5)}',
-      ),
-      findsOneWidget,
-    );
-    // The wallet's own receiving address is not shown: under the amount it
-    // read as the sender, whom Zcash never reveals.
-    expect(
-      find.text(
-        '${_receivingShieldedAddress.substring(0, 6)} ... '
-        '${_receivingShieldedAddress.substring(_receivingShieldedAddress.length - 5)}',
-      ),
-      findsNothing,
-    );
-    // The sender's pool is named by its row glyph alone.
-    expect(find.text('Transparent'), findsNothing);
-    expect(_poolIcon('Transparent'), findsOneWidget);
-    expect(
-      tester
-          .getTopLeft(find.byKey(const ValueKey('mobile_tx_status_amount')))
-          .dy,
-      lessThan(tester.getTopLeft(find.text('From')).dy),
-    );
-  });
+      expect(
+        find.text(truncatedAddress(_transparentSenderAddress)),
+        findsOneWidget,
+      );
+      // The wallet's own receiving address is not shown: under the amount it
+      // read as the sender, whom Zcash never reveals.
+      expect(
+        find.text(truncatedAddress(_receivingShieldedAddress)),
+        findsNothing,
+      );
+      // The sender's pool is named by its row glyph alone.
+      expect(find.text('Transparent'), findsNothing);
+      expect(_poolIcon('Transparent'), findsOneWidget);
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('mobile_tx_status_amount')))
+            .dy,
+        lessThan(tester.getTopLeft(find.text('From')).dy),
+      );
+    },
+  );
 
   testWidgets('memo renders a message row that expands', (tester) async {
     const memo = 'Zcash is a privacy protecting digital currency.';
@@ -1604,10 +1581,7 @@ void main() {
     // the desktop receipt); its chevron still opens the full address.
     expect(find.text('Mom'), findsOneWidget);
     expect(
-      find.text(
-        '${_transparentSenderAddress.substring(0, 6)} ... '
-        '${_transparentSenderAddress.substring(_transparentSenderAddress.length - 5)}',
-      ),
+      find.text(truncatedAddress(_transparentSenderAddress)),
       findsNothing,
     );
     expect(_poolIcon('Transparent'), findsOneWidget);

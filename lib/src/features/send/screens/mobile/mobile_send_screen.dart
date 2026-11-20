@@ -1,3 +1,4 @@
+import '../../../../core/formatting/address_display.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
@@ -2167,20 +2168,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
   }
 
-  String _truncateAddress(String address) {
-    final value = address.trim();
-    if (value.length <= 28) return value;
-    return '${value.substring(0, 13)} ... ' // l10n-ignore: address truncation format
-        '${value.substring(value.length - 11)}';
-  }
-
-  String _compactReviewAddress(String address) {
-    final value = address.trim();
-    if (value.length <= 18) return value;
-    return '${value.substring(0, 7)} .... ' // l10n-ignore: address truncation format
-        '${value.substring(value.length - 7)}';
-  }
-
   _ReviewRecipientPresentation _reviewRecipientPresentation({
     required String address,
     required Iterable<AddressBookContact> contacts,
@@ -2527,7 +2514,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         key: ValueKey('mobile_send_recent_${recent.address}'),
         name: named?.name,
         profilePictureId: named?.profilePictureId,
-        addressText: _truncateAddress(recent.address),
+        address: recent.address,
         isShielded: recent.isShielded,
         onTap: () => _selectRecent(recent),
       );
@@ -2639,7 +2626,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                               ),
                               name: contact.label,
                               profilePictureId: contact.profilePictureId,
-                              addressText: _truncateAddress(contact.address),
+                              address: contact.address,
                               onTap: () => _selectContact(contact),
                             ),
                         ],
@@ -2950,7 +2937,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                           children: recipientLabel == null
                                               ? [
                                                   _RecipientLineText(
-                                                    _truncateAddress(
+                                                    truncatedLongAddress(
                                                       _addressController.text,
                                                     ),
                                                     color: colors.text.accent,
@@ -2965,7 +2952,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                                     height: AppSpacing.xxs,
                                                   ),
                                                   _RecipientLineText(
-                                                    _truncateAddress(
+                                                    truncatedLongAddress(
                                                       _addressController.text,
                                                     ),
                                                     color:
@@ -3440,7 +3427,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     required _ReviewRecipientPresentation recipient,
   }) {
     final colors = context.colors;
-    final compactAddress = _compactReviewAddress(address);
+    final compactAddress = truncatedAddress(address);
     // A request only retitles the row. The headline stays the recipient the
     // wallet resolved, so an unverified link label never stands in for the
     // identity being paid.
@@ -3702,7 +3689,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         '$_amountText ZEC'; // l10n-ignore: amount format
     final toLabel = _isDonation
         ? 'Vizor Wallet' // l10n-ignore: product name
-        : _contactLabel ?? _truncateAddress(_addressController.text.trim());
+        : _contactLabel ?? truncatedAddress(_addressController.text.trim());
 
     return Padding(
       key: ValueKey('mobile_send_status_${_phase.name}'),

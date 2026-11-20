@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:widgetbook/widgetbook.dart';
 
+import '../src/core/formatting/address_display.dart';
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/core/layout/app_pane_scroll_scaffold.dart';
@@ -587,6 +588,8 @@ class _SwapFailureBranchesPreview extends StatelessWidget {
         receiveLabel: presentation.receiveLabel,
         payDetailText: presentation.payDetailText,
         receiveDetailText: presentation.receiveDetailText,
+        payDetailAddress: presentation.payDetailAddress,
+        receiveDetailAddress: presentation.receiveDetailAddress,
         payDetailCopyText: presentation.payDetailCopyText,
         receiveDetailCopyText: presentation.receiveDetailCopyText,
         statusLabel: presentation.statusLabel,
@@ -953,8 +956,9 @@ const _designProgressSteps = <SwapStatusStepData>[
 ];
 
 const _designAccountProfilePictureId = 'pfp-01';
+const _designExternalAddress = '0x123kjhc4e984ac1832f10aa4x98g20';
 
-const _designTransactionDetails = <SwapStatusDetailRowData>[
+final _designTransactionDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'Account',
     kind: SwapStatusDetailKind.account,
@@ -964,12 +968,12 @@ const _designTransactionDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'USDC refund address',
     kind: SwapStatusDetailKind.refundAddress,
-    value: '0x123kjhc ... 4x98g20',
+    value: truncatedAddress(_designExternalAddress),
   ),
   SwapStatusDetailRowData(
     label: 'Deposit USDC to',
     kind: SwapStatusDetailKind.depositAddress,
-    value: '0x123kjhc ... 4x98g20',
+    value: truncatedAddress(_designExternalAddress),
     copyable: true,
   ),
   SwapStatusDetailRowData(
@@ -991,7 +995,7 @@ const _designTransactionDetails = <SwapStatusDetailRowData>[
   ),
 ];
 
-const _designCompletedDetails = <SwapStatusDetailRowData>[
+final _designCompletedDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'Account',
     kind: SwapStatusDetailKind.account,
@@ -1001,7 +1005,7 @@ const _designCompletedDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'USDC deposit to',
     kind: SwapStatusDetailKind.depositAddress,
-    value: '0x123kjhc ... 4x98g20',
+    value: truncatedAddress(_designExternalAddress),
     copyable: true,
   ),
   SwapStatusDetailRowData(
@@ -1021,7 +1025,7 @@ const _designCompletedDetails = <SwapStatusDetailRowData>[
   ),
 ];
 
-const _designIncompleteDepositDetails = <SwapStatusDetailRowData>[
+final _designIncompleteDepositDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'Account',
     kind: SwapStatusDetailKind.account,
@@ -1042,7 +1046,7 @@ const _designIncompleteDepositDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'Deposit USDC to',
     kind: SwapStatusDetailKind.depositAddress,
-    value: '0x123kjhc ... 4x98g20',
+    value: truncatedAddress(_designExternalAddress),
     copyable: true,
   ),
   SwapStatusDetailRowData(
@@ -1068,7 +1072,7 @@ const _designIncompleteDepositDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'USDC refund address',
     kind: SwapStatusDetailKind.refundAddress,
-    value: '0x123kjhc ... 4x98g20',
+    value: truncatedAddress(_designExternalAddress),
     copyable: true,
   ),
 ];

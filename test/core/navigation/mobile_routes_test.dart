@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
@@ -2029,7 +2030,10 @@ void main() {
       await tester.pumpAndSettle();
 
       final firstPageKey = _sendPageKey(tester);
-      expect(find.text('u1firstrequestaddress'), findsOneWidget);
+      expect(
+        find.text(truncatedLongAddress('u1firstrequestaddress')),
+        findsOneWidget,
+      );
 
       // What the payment-request card's Edit does when the user is already
       // standing on /send. A shared page key would update the page in place,
@@ -2045,8 +2049,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_sendPageKey(tester), isNot(firstPageKey));
-      expect(find.text('u1secondrequestaddress'), findsOneWidget);
-      expect(find.text('u1firstrequestaddress'), findsNothing);
+      expect(
+        find.text(truncatedLongAddress('u1secondrequestaddress')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(truncatedLongAddress('u1firstrequestaddress')),
+        findsNothing,
+      );
     },
   );
   testWidgets('send amount and review routes push mobile pages', (

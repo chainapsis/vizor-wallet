@@ -9,7 +9,7 @@ import '../../../core/widgets/review_info_row.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../swap/domain/swap_asset.dart';
 import '../../swap/domain/swap_quote.dart';
-import '../../swap/models/swap_address_formatting.dart';
+import '../../../core/formatting/address_display.dart';
 import '../../swap/models/swap_quote_text.dart';
 import '../../swap/widgets/swap_asset_icon.dart';
 
@@ -67,13 +67,7 @@ class PayReviewStep extends StatelessWidget {
     final valueStyle = AppTypography.headlineMedium.copyWith(
       color: colors.text.accent,
     );
-    final compactRecipient = compactSwapAddress(
-      recipientAddress,
-      prefixLength: 8,
-      suffixLength: 8,
-      separator: '...',
-      maxLength: 19,
-    );
+    final compactRecipient = truncatedAddress(recipientAddress);
     return Padding(
       key: const ValueKey('pay_review_step'),
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),

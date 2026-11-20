@@ -2,6 +2,7 @@ import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/address_line_text.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
@@ -9,7 +10,7 @@ import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/recipient_suggestions.dart';
-import '../../swap/models/swap_address_formatting.dart';
+import '../../../core/formatting/address_display.dart';
 import '../models/pay_recent_recipients.dart';
 import 'pay_wizard_page.dart';
 
@@ -380,12 +381,6 @@ class _PayRecipientRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final compactAddress = compactSwapAddress(
-      address,
-      maxLength: 16,
-      prefixLength: 7,
-      suffixLength: 5,
-    );
     final row = SizedBox(
       key: contact == null
           ? null
@@ -428,10 +423,11 @@ class _PayRecipientRow extends StatelessWidget {
                       color: colors.text.accent,
                     ),
                   ),
-                Text(
-                  compactAddress,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                // Pay rows carry amounts, so the list keeps the short form.
+                AddressLineText(
+                  AddressLine(address: truncatedAddress(address)),
+                  // The row has a fixed height.
+                  singleLine: true,
                   style: AppTypography.labelLarge.copyWith(
                     fontWeight: contact != null
                         ? FontWeight.w400

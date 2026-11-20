@@ -16,7 +16,7 @@ import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
 import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/widgets/address_book_network_icon.dart';
-import '../../../swap/models/swap_address_formatting.dart';
+import '../../../../core/formatting/address_display.dart';
 
 // The Figma fields reserve a 16px sub-label slot with a 4px gap even when
 // there is no helper copy. Express those empty slots as spacing so the modal
@@ -251,13 +251,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                   ],
                 ),
                 child: Text(
-                  compactSwapAddress(
-                    widget.address,
-                    maxLength: 30,
-                    prefixLength: 16,
-                    suffixLength: 10,
-                    separator: '...',
-                  ),
+                  truncatedLongAddress(widget.address),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(

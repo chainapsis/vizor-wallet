@@ -13,6 +13,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
@@ -915,13 +916,6 @@ Future<void> _toReviewStep(
   await _enterAmount(tester, amount);
   await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
   await tester.pumpAndSettle();
-}
-
-String _compactReviewAddress(String address) {
-  final value = address.trim();
-  if (value.length <= 18) return value;
-  return '${value.substring(0, 7)} .... '
-      '${value.substring(value.length - 7)}';
 }
 
 bool _sendRouteCanPop(WidgetTester tester) {
@@ -3861,7 +3855,7 @@ void main() {
     await _toReviewStep(tester, address: _texAddress);
 
     expect(find.text('Alice'), findsOneWidget);
-    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('TEX - ${truncatedAddress(_texAddress)}'), findsOne);
     expect(find.text('Transparent address'), findsNothing);
   });
 
@@ -4811,6 +4805,10 @@ void main() {
   testWidgets('review shows the receipt and the shielded memo entry', (
     tester,
   ) async {
+    // The heights below are the Figma ones, measured with the app's fonts;
+    // the test font's full-em glyphs would push the full-address action
+    // onto its own line.
+    await tester.runAsync(loadFigmaCompareFonts);
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
     await _toReviewStep(tester);
@@ -4870,7 +4868,7 @@ void main() {
     expect(reviewAmount.style?.height, AppTypography.headlineLarge.height);
     expect(find.text('Shielded address'), findsOneWidget);
     expect(find.text('Unified address'), findsNothing);
-    expect(find.text('u1tests .... 0000000'), findsOneWidget);
+    expect(find.text(truncatedAddress(_shieldedAddress)), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_full_address'))),
       isA<Size>().having((size) => size.height, 'height', 24),
@@ -5121,7 +5119,7 @@ void main() {
 
     await _toReviewStep(tester, address: _texAddress);
 
-    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('TEX - ${truncatedAddress(_texAddress)}'), findsOne);
     expect(find.text('Confirm with Ledger'), findsOneWidget);
   });
 
@@ -5144,7 +5142,7 @@ void main() {
 
     expect(find.text('Add short encrypted message'), findsNothing);
     expect(find.text('TEX address'), findsOneWidget);
-    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('TEX - ${truncatedAddress(_texAddress)}'), findsOne);
     expect(find.text('Transparent address'), findsNothing);
     expect(find.text('Tx fee'), findsOneWidget);
   });
