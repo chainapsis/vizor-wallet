@@ -9772,6 +9772,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarBalanceNotShielded => '尚未转为隐私余额';
 
   @override
+  String get sidebarBalanceOlderPool => '旧隐私池';
+
+  @override
   String get sidebarBalanceOnHold => '暂时保留';
 
   @override

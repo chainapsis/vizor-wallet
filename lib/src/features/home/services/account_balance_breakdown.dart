@@ -15,6 +15,7 @@ class AccountBalanceBreakdown {
     required this.headline,
     required this.transparent,
     required this.migrating,
+    required this.sapling,
     required this.onHold,
   });
 
@@ -30,6 +31,16 @@ class AccountBalanceBreakdown {
     final onHold = ironwoodOnly
         ? locked - sync.displayOrchardLockedBalance
         : locked;
+    // The migration moves Orchard only, so Sapling funds stay where they are
+    // and Home's Ironwood balance leaves them out. Every term is a display
+    // balance of the same read, so the difference is the Sapling share.
+    final sapling = ironwoodOnly
+        ? sync.displayShieldedBalance -
+              sync.displayOrchardBalance -
+              sync.displayOrchardPendingBalance -
+              sync.displayIronwoodBalance -
+              sync.displayIronwoodPendingBalance
+        : BigInt.zero;
     return AccountBalanceBreakdown._(
       ironwoodOnly: ironwoodOnly,
       headline: homeDisplayedBalance(sync, ironwoodOnly: ironwoodOnly),
@@ -40,6 +51,7 @@ class AccountBalanceBreakdown {
       migrating: ironwoodOnly
           ? sync.displayOrchardHoldingsBalance
           : BigInt.zero,
+      sapling: sapling < BigInt.zero ? BigInt.zero : sapling,
       onHold: onHold < BigInt.zero ? BigInt.zero : onHold,
     );
   }
@@ -56,6 +68,10 @@ class AccountBalanceBreakdown {
   /// Orchard holdings while Home shows Ironwood only; zero otherwise.
   final BigInt migrating;
 
+  /// Sapling funds while Home shows Ironwood only; zero otherwise, when they
+  /// are part of [headline].
+  final BigInt sapling;
+
   /// Shielded funds a pending transaction holds, apart from [migrating].
   final BigInt onHold;
 
@@ -63,6 +79,7 @@ class AccountBalanceBreakdown {
   bool get hasMore =>
       transparent > BigInt.zero ||
       migrating > BigInt.zero ||
+      sapling > BigInt.zero ||
       onHold > BigInt.zero;
 
   @override
@@ -72,9 +89,16 @@ class AccountBalanceBreakdown {
       other.headline == headline &&
       other.transparent == transparent &&
       other.migrating == migrating &&
+      other.sapling == sapling &&
       other.onHold == onHold;
 
   @override
-  int get hashCode =>
-      Object.hash(ironwoodOnly, headline, transparent, migrating, onHold);
+  int get hashCode => Object.hash(
+    ironwoodOnly,
+    headline,
+    transparent,
+    migrating,
+    sapling,
+    onHold,
+  );
 }

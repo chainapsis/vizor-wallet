@@ -10437,6 +10437,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sidebarBalanceNotShielded => '아‍직 비‍공‍개 전‍환 전';
 
   @override
+  String get sidebarBalanceOlderPool => '이‍전 비‍공‍개 풀';
+
+  @override
   String get sidebarBalanceOnHold => '보‍류 중';
 
   @override
