@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -19,7 +20,14 @@ const _driverUrl = String.fromEnvironment(
   defaultValue: 'http://127.0.0.1:39078',
 );
 const _network = 'regtest';
-final _fundedAmount = BigInt.from(1100000);
+const _fundedAmountZatoshi = int.fromEnvironment(
+  'ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI',
+  defaultValue: 1100000,
+);
+final _fundedAmount = BigInt.from(_fundedAmountZatoshi);
+final _fundedAmountText = ZecAmount.fromZatoshi(
+  _fundedAmount,
+).compactBalance.amountText;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +52,7 @@ void main() {
               tester,
               const ValueKey('home_desktop_balance_amount_text'),
             ) ==
-            '0.011',
+            _fundedAmountText,
         description: 'pre-Ironwood Orchard balance to render',
         timeout: const Duration(minutes: 5),
       );
@@ -58,9 +66,14 @@ void main() {
 
       e2eLog('activating Ironwood while the Flutter app is running');
       await ironwoodDriverPost(_driverUrl, '/activate');
+      // The zcashd chain activates NU6.3 here; the Zebra chain NU6.3 and NU7.
       final activeChain = await ironwoodDriverGet(_driverUrl, '/status');
       expect(activeChain['ironwoodActive'], isTrue);
-      expect(activeChain['consensusBranchId'], '37a5165b');
+      expect(
+        activeChain['consensusBranchId'],
+        isNot(initialChain['consensusBranchId']),
+      );
+      final activatedHeight = (activeChain['zcashdHeight'] as num).toInt();
 
       final providerContainer = ProviderScope.containerOf(
         tester.element(
@@ -77,7 +90,7 @@ void main() {
           return chain?.ironwoodActiveAtTip == true &&
               sync?.isSyncing == false &&
               sync?.isSyncComplete == true &&
-              (sync?.scannedHeight ?? 0) >= 500;
+              (sync?.scannedHeight ?? 0) >= activatedHeight;
         },
         description: 'active Ironwood chain and completed wallet sync',
         timeout: const Duration(minutes: 5),

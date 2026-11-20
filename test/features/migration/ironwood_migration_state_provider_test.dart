@@ -8,7 +8,9 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -66,9 +68,10 @@ void main() {
   test(
     'stays hidden when a denomination is affordable but its fees are not',
     () async {
-      // The planner subtracts the 80,000 split fee and the 15,000 migration fee
-      // before it looks for a denomination, so 1,000,000 buys the denomination
-      // and nothing to move it with. Prompting here is the same dead end.
+      // Before NU7 the planner subtracts the 80,000 split fee and the 15,000
+      // migration fee before it looks for a denomination, so 1,000,000 buys the
+      // denomination and nothing to move it with. Prompting here is the same
+      // dead end.
       final container = _container(
         ironwoodActiveAtTip: true,
         syncState: SyncState(
@@ -150,6 +153,38 @@ void main() {
       );
     },
   );
+
+  test('uses the NU7 fees once the wallet tip reaches NU7', () async {
+    // From NU7 the split fee is 16,000 and the migration fee 3,000, so the
+    // planner can move a denomination from 1,019,000.
+    Future<IronwoodPostMigrationMode> modeWith(int orchardBalance) async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        nu7ActivationHeight: 3_500_000,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(orchardBalance),
+          spendableBalance: BigInt.from(orchardBalance),
+          totalBalance: BigInt.from(orchardBalance),
+        ),
+      );
+      addTearDown(container.dispose);
+      await _settleCoreProviders(container);
+      return (await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      )).mode;
+    }
+
+    expect(await modeWith(1_019_000), IronwoodPostMigrationMode.required);
+    expect(
+      await modeWith(1_018_999),
+      isNot(IronwoodPostMigrationMode.required),
+    );
+  });
 
   test('completion surfaces a settled migration receipt once', () async {
     final completionStore = _FakeCompletionStore();
@@ -1135,9 +1170,18 @@ ProviderContainer _container({
   Object? migrationStatusError,
   OrchardMigrationStatusGetter? getMigrationStatus,
   bool isLedgerAccount = false,
+  int? nu7ActivationHeight,
 }) {
   return ProviderContainer(
     overrides: [
+      if (nu7ActivationHeight != null)
+        blockSpacingProvider.overrideWithValue(
+          BlockSpacing(
+            preNu7BlockSeconds: 75,
+            nu7BlockSeconds: 25,
+            nu7ActivationHeight: nu7ActivationHeight,
+          ),
+        ),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(isLedgerAccount: isLedgerAccount),
       ),
