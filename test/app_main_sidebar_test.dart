@@ -166,7 +166,7 @@ void main() {
           displaySpendableFreshness:
               SpendableBalanceFreshness.lastCompletedSync,
           totalBalance: BigInt.zero,
-          displayTotalBalance: BigInt.from(4_200_000_000),
+          displayShieldedBalance: BigInt.from(4_200_000_000),
         ),
         migrationCoordinatorState: IronwoodMigrationCoordinatorState(
           statuses: {'account-1': _readyMigrationStatus},
@@ -197,7 +197,7 @@ void main() {
         accountUuid: 'account-1',
         hasCachedBalance: true,
         remainingScanBlocks: 100,
-        displayTotalBalance: BigInt.from(250000000),
+        displayShieldedBalance: BigInt.from(250000000),
       ),
       '2.5 ZEC',
       false,
@@ -207,7 +207,7 @@ void main() {
       SyncState(
         accountUuid: 'account-1',
         hasBalanceData: true,
-        displayTotalBalance: BigInt.from(250000000),
+        displayShieldedBalance: BigInt.from(250000000),
       ),
       '2.5 ZEC',
       false,
@@ -218,7 +218,7 @@ void main() {
         accountUuid: 'account-1',
         hasBalanceData: true,
         hasRecentTransactionsError: true,
-        displayTotalBalance: BigInt.from(250000000),
+        displayShieldedBalance: BigInt.from(250000000),
       ),
       '2.5 ZEC',
       false,
@@ -251,7 +251,7 @@ void main() {
       SyncState(
         accountUuid: 'account-2',
         hasCachedBalance: true,
-        displayTotalBalance: BigInt.from(9900000000),
+        displayShieldedBalance: BigInt.from(9900000000),
       ),
       '— ZEC',
       false,
@@ -302,7 +302,7 @@ void main() {
               SyncState(
                 accountUuid: 'account-1',
                 hasCachedBalance: available,
-                displayTotalBalance: BigInt.from(250000000),
+                displayShieldedBalance: BigInt.from(250000000),
                 displayOrchardBalance: BigInt.from(200000000),
                 displayIronwoodBalance: BigInt.from(50000000),
               ),
@@ -353,6 +353,34 @@ void main() {
     }
   }
 
+  testWidgets('sidebar balance is the shielded balance Home shows', (
+    tester,
+  ) async {
+    // 2.5 ZEC shielded and 1 ZEC transparent: 3.5 ZEC in total.
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          accountUuid: 'account-1',
+          hasBalanceData: true,
+          isSyncComplete: true,
+          displayShieldedBalance: BigInt.from(250000000),
+          transparentBalance: BigInt.from(100000000),
+          transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
+          displayTotalBalance: BigInt.from(350000000),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_account_balance')))
+          .data,
+      '2.5 ZEC',
+    );
+    expect(find.text('3.5 ZEC'), findsNothing);
+  });
+
   testWidgets('sidebar limits visible balance fractions to four places', (
     tester,
   ) async {
@@ -362,7 +390,7 @@ void main() {
           accountUuid: 'account-1',
           hasAccountScopedData: true,
           isSyncComplete: true,
-          displayTotalBalance: BigInt.from(8_242_330_885),
+          displayShieldedBalance: BigInt.from(8_242_330_885),
           displayOrchardBalance: BigInt.from(285_885),
           displayIronwoodBalance: BigInt.from(5_240_000_000),
         ),
@@ -397,7 +425,7 @@ void main() {
           accountUuid: 'account-1',
           hasAccountScopedData: true,
           isSyncComplete: true,
-          displayTotalBalance: BigInt.one,
+          displayShieldedBalance: BigInt.one,
           displayOrchardBalance: BigInt.one,
           displayIronwoodBalance: BigInt.one,
         ),
@@ -420,7 +448,7 @@ void main() {
           accountUuid: 'account-1',
           hasAccountScopedData: true,
           isSyncComplete: true,
-          displayTotalBalance: BigInt.from(1_000_000_000_000),
+          displayShieldedBalance: BigInt.from(1_000_000_000_000),
           displayOrchardBalance: BigInt.from(1_234_567_890_000),
           displayIronwoodBalance: BigInt.from(123_456_789_000_000),
         ),
