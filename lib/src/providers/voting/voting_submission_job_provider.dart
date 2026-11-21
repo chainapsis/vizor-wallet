@@ -17,6 +17,8 @@ import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
+import '../../services/voting/voting_retry.dart';
+import '../../services/voting/voting_rust_exception.dart';
 import '../account_provider.dart';
 import '../rpc_endpoint_provider.dart';
 import 'voting_session_provider.dart';
@@ -932,8 +934,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
               continue;
             }
           } catch (repairError) {
-            // The device failure remains actionable if the durable request
-            // has been signed, submitted, replaced, or already retried.
+            if (!_isCurrentJob(key: key, generation: generation)) return;
+            final cause = votingRustExceptionOf(repairError) ?? repairError;
+            _failJob(
+              key: key,
+              generation: generation,
+              message: _messageFromError(cause),
+              retryable: isRetryableVotingError(cause),
+            );
+            return;
           }
           if (!_isCurrentJob(key: key, generation: generation)) return;
         }

@@ -844,9 +844,14 @@ pub async fn recover_rejected_ledger_delegation(
     let inputs = round_inputs(&ctx).map_err(view)?;
     let hotkey = hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, inputs.network)
         .map_err(view)?;
-    let pipeline = delegation::open_pipeline(&inputs, Some(hotkey))
-        .await
-        .map_err(view)?;
+    let pipeline = delegation::open_pipeline_with_snapshot_error(&inputs, Some(hotkey), |error| {
+        // The snapshot fetch precedes the SDK transaction that spends the retry.
+        VotingErrorView {
+            retryable: true,
+            ..view(internal(error))
+        }
+    })
+    .await?;
     tokio::task::spawn_blocking(move || {
         pipeline.recover_rejected_ledger_request(bundle_index, &hash)
     })
@@ -3013,6 +3018,23 @@ mod tests {
             .unwrap_err();
 
         assert!(err.message.contains("Voting hotkey reconstruction failed"));
+    }
+
+    #[tokio::test]
+    async fn ledger_repair_can_retry_when_the_snapshot_route_is_unavailable() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::begin_tor_enable();
+        crate::network_privacy::fail_tor_enable();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("voting.sqlite");
+        let ctx = test_round_context(&path, "regtest", "wallet-1");
+        let hotkey = generate_voting_hotkey("regtest".to_owned()).unwrap();
+        let error = recover_rejected_ledger_delegation(ctx, hotkey, 0, vec![1; 32])
+            .await
+            .unwrap_err();
+        assert!(error.retryable, "{}", error.message);
+        assert!(error.message.contains("Tor"), "{}", error.message);
+        assert!(!path.exists());
     }
 
     #[test]
