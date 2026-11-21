@@ -64,6 +64,7 @@ class VotingSubmissionJobState {
     this.ledgerDisplayMemo,
     this.ledgerBundleIndex,
     this.ledgerBundleCount = 0,
+    this.ledgerRequestRebuilt = false,
     this.pendingDraftVotes,
     this.pendingProposalIds = const [],
     this.pendingRecoveryWithoutDraft = false,
@@ -85,6 +86,7 @@ class VotingSubmissionJobState {
   final String? ledgerDisplayMemo;
   final int? ledgerBundleIndex;
   final int ledgerBundleCount;
+  final bool ledgerRequestRebuilt;
   final List<VotingDraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
   final bool pendingRecoveryWithoutDraft;
@@ -116,6 +118,7 @@ class VotingSubmissionJobState {
     int? ledgerBundleIndex,
     bool clearLedgerBundleIndex = false,
     int? ledgerBundleCount,
+    bool? ledgerRequestRebuilt,
     List<VotingDraftVote>? pendingDraftVotes,
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
@@ -147,6 +150,7 @@ class VotingSubmissionJobState {
           ? null
           : ledgerBundleIndex ?? this.ledgerBundleIndex,
       ledgerBundleCount: ledgerBundleCount ?? this.ledgerBundleCount,
+      ledgerRequestRebuilt: ledgerRequestRebuilt ?? this.ledgerRequestRebuilt,
       pendingDraftVotes: clearPendingDraftVotes
           ? null
           : pendingDraftVotes ?? this.pendingDraftVotes,
@@ -880,6 +884,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     await sessionNotifier.prepareLedgerSigning();
     if (!_isCurrentJob(key: key, generation: generation)) return;
 
+    int? rebuiltBundle;
     while (true) {
       final session = _sessionForJob(key);
       if (session == null) return;
@@ -893,6 +898,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       state = state.copyWith(
         status: VotingSubmissionJobStatus.waitingForLedger,
         ledgerDisplayMemo: request.displayMemo,
+        ledgerRequestRebuilt: request.bundleIndex == rebuiltBundle,
         ledgerBundleIndex: request.bundleIndex,
         ledgerBundleCount: request.bundleCount,
         keystoneUrParts: const [],
@@ -911,6 +917,26 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         );
       } catch (error) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
+        if (error is LedgerIronwoodDataRejected &&
+            rebuiltBundle != request.bundleIndex) {
+          try {
+            final repaired = await sessionNotifier
+                .recoverRejectedLedgerDelegation(
+                  bundleIndex: request.bundleIndex,
+                  rejectedSighash: request.pcztSighash,
+                  isCurrentJob: () =>
+                      _isCurrentJob(key: key, generation: generation),
+                );
+            if (repaired) {
+              rebuiltBundle = request.bundleIndex;
+              continue;
+            }
+          } catch (repairError) {
+            // The device failure remains actionable if the durable request
+            // has been signed, submitted, replaced, or already retried.
+          }
+          if (!_isCurrentJob(key: key, generation: generation)) return;
+        }
         _failJob(
           key: key,
           generation: generation,

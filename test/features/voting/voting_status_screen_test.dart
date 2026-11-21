@@ -4502,6 +4502,98 @@ void main() {
   });
 
   testWidgets(
+    'Ledger rebuilds the rejected bundle and surfaces a second device refusal',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final recovery = _MutableVotingRecoveryApi()
+        ..state = _recoveryState(bundleCount: 1);
+      final rust = _VotingStatusRustApi(recovery);
+      final second = Completer<List<LedgerVotingSignature>>();
+      final sent = <List<int>>[];
+      var repairs = 0;
+      final container = _statusContainer(
+        accountOverride: _LedgerAccountNotifier.new,
+        activeAccountUuid: () async => 'ledger-1',
+        accountIsHardware: true,
+        hardwareAccountUuids: const {'ledger-1'},
+        recoveryApi: recovery,
+        rust: rust,
+        hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+        overrides: [
+          ledgerVotingPcztSignerProvider.overrideWithValue((
+            account,
+            pczt,
+          ) async {
+            expect(account, 'ledger-1');
+            sent.add(List.of(pczt));
+            if (sent.length == 1) {
+              throw const LedgerIronwoodDataRejected(
+                'ledger_status_6a80: rejected',
+              );
+            }
+            return second.future;
+          }),
+          recoverRejectedLedgerDelegationProvider.overrideWithValue(({
+            required ctx,
+            required storedHotkeySecret,
+            required bundleIndex,
+            required rejectedSighash,
+          }) async {
+            repairs++;
+            expect(bundleIndex, 0);
+            expect(rejectedSighash, [3]);
+            final original = await rust._buildKeystoneDelegationRequest(
+              ctx: ctx,
+              storedHotkeySecret: storedHotkeySecret,
+              bundleIndex: bundleIndex,
+            );
+            return rust_delegate.KeystoneSigningRequest(
+              pcztBytes: Uint8List.fromList([4]),
+              redactedPcztBytes: Uint8List.fromList([7]),
+              pcztSighash: Uint8List.fromList([8]),
+              rk: original.rk,
+              actionIndex: original.actionIndex,
+              displayMemo: original.displayMemo,
+              eligibleWeightZatoshi: original.eligibleWeightZatoshi,
+              delegatedWeightZatoshi: original.delegatedWeightZatoshi,
+              bundleCount: original.bundleCount,
+              bundleIndex: original.bundleIndex,
+            );
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'ledger-1');
+      container.read(votingDraftProvider(key).notifier).setChoice(1, 0);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(withPlatformProgressBuilder: true),
+        ),
+      );
+      await _pumpUntilFound(
+        tester,
+        find.text(
+          'We rebuilt this vote request. Review it again on your Ledger.',
+        ),
+        attempts: 100,
+      );
+      expect(sent, [
+        [2, 0],
+        [7],
+      ]);
+      second.completeError(
+        const LedgerIronwoodDataRejected('ledger_status_6a80: rejected'),
+      );
+      await tester.pumpAndSettle();
+      expect(repairs, 1);
+      expect(sent, hasLength(2));
+      expect(rust.storedKeystoneSignatures, isEmpty);
+    },
+  );
+
+  testWidgets(
     'Ledger voting persists sequential bundles and ignores a late cancelled result',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1512, 982));

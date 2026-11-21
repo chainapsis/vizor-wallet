@@ -830,6 +830,31 @@ pub async fn build_keystone_delegation_requests(
     .map_err(view)
 }
 
+/// Recover the exact pending Ledger delegation after account-verified device
+/// rejection of Ironwood data. Only the returned replacement may be signed.
+pub async fn recover_rejected_ledger_delegation(
+    ctx: ApiVotingRoundContext,
+    stored_hotkey_secret: Vec<u8>,
+    bundle_index: u32,
+    rejected_sighash: Vec<u8>,
+) -> Result<zcash_voting::wire::KeystoneSigningRequest, VotingErrorView> {
+    let hash: [u8; 32] = rejected_sighash
+        .try_into()
+        .map_err(|_| view(invalid_input("Expected a 32-byte Ledger signing hash")))?;
+    let inputs = round_inputs(&ctx).map_err(view)?;
+    let hotkey = hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, inputs.network)
+        .map_err(view)?;
+    let pipeline = delegation::open_pipeline(&inputs, Some(hotkey))
+        .await
+        .map_err(view)?;
+    tokio::task::spawn_blocking(move || {
+        pipeline.recover_rejected_ledger_request(bundle_index, &hash)
+    })
+    .await
+    .map_err(|error| view(internal(format!("Ledger recovery task failed: {error}"))))?
+    .map_err(view)
+}
+
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
 /// The SDK checks each tuple against the bundle's current sighash and

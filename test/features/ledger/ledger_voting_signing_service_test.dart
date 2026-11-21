@@ -4,10 +4,50 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_exchange.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  test('only a failed Ironwood data reply before signing allows recovery', () {
+    bool matches(List<int> instructions, List<List<int>> replies) =>
+        ledgerRejectedIronwoodData([
+          for (final ins in instructions)
+            LedgerApduCommand(
+              cla: 0xe0,
+              ins: ins,
+              p1: 0,
+              p2: 0,
+              data: Uint8List(0),
+            ),
+        ], replies.map(Uint8List.fromList).toList());
+    const ok = [0x90, 0x00];
+    const rejected = [0x6a, 0x80];
+    expect(matches([0x52, 0x58, 0x59], [ok, rejected]), isTrue);
+    expect(matches([0x52, 0x58], [rejected]), isFalse);
+    expect(matches([0x58, 0x59], [ok, rejected]), isFalse);
+    expect(
+      matches(
+        [0x58],
+        [
+          [0x69, 0x85],
+        ],
+      ),
+      isFalse,
+    );
+    expect(
+      matches(
+        [0x58],
+        [
+          [0x6a],
+        ],
+      ),
+      isFalse,
+    );
+    expect(matches([0x59, 0x58], [ok, rejected]), isFalse);
+    expect(matches([0x58, 0x59], [rejected, ok]), isFalse);
+  });
+
   test(
     'mobile signing gate waits between sequential signing streams',
     () async {

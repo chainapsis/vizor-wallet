@@ -9,6 +9,9 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get votingLedgerRequestRebuilt => '已重新生成此投票请求。请在 Ledger 上再次核对。';
+
+  @override
   String get aboutBuiltByBody =>
       '我们打造了 Keplr，这款钱包服务于 Cosmos、Ethereum 和 Bitcoin 生态的数百万用户。Vizor 是我们心目中 Zcash 钱包该有的样子。';
 

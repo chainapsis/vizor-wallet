@@ -553,6 +553,10 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
   );
 }
 
+final recoverRejectedLedgerDelegationProvider = Provider(
+  (ref) => rust_api.recoverRejectedLedgerDelegation,
+);
+
 /// Vendor-neutral app-layer names for the pinned voting crate's external
 /// signer storage and proof APIs. The crate types remain Keystone-named, but
 /// neither the durable records nor these operations require a Keystone device.

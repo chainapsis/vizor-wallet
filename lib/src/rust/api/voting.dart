@@ -242,6 +242,20 @@ Future<List<KeystoneSigningRequest>> buildKeystoneDelegationRequests({
   bundleIndices: bundleIndices,
 );
 
+/// Recover the exact pending Ledger delegation after account-verified device
+/// rejection of Ironwood data. Only the returned replacement may be signed.
+Future<KeystoneSigningRequest> recoverRejectedLedgerDelegation({
+  required ApiVotingRoundContext ctx,
+  required List<int> storedHotkeySecret,
+  required int bundleIndex,
+  required List<int> rejectedSighash,
+}) => RustLib.instance.api.crateApiVotingRecoverRejectedLedgerDelegation(
+  ctx: ctx,
+  storedHotkeySecret: storedHotkeySecret,
+  bundleIndex: bundleIndex,
+  rejectedSighash: rejectedSighash,
+);
+
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
 /// The SDK checks each tuple against the bundle's current sighash and
