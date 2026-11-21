@@ -4502,6 +4502,185 @@ void main() {
   });
 
   testWidgets(
+    'Ledger rebuilds the rejected bundle and surfaces a second device refusal',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final recovery = _MutableVotingRecoveryApi()
+        ..state = _recoveryState(bundleCount: 1);
+      final rust = _VotingStatusRustApi(recovery);
+      final second = Completer<List<LedgerVotingSignature>>();
+      final sent = <List<int>>[];
+      var repairs = 0;
+      final container = _statusContainer(
+        accountOverride: _LedgerAccountNotifier.new,
+        activeAccountUuid: () async => 'ledger-1',
+        accountIsHardware: true,
+        hardwareAccountUuids: const {'ledger-1'},
+        recoveryApi: recovery,
+        rust: rust,
+        hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+        overrides: [
+          ledgerVotingPcztSignerProvider.overrideWithValue((
+            account,
+            pczt,
+          ) async {
+            expect(account, 'ledger-1');
+            sent.add(List.of(pczt));
+            if (sent.length == 1) {
+              throw const LedgerIronwoodDataRejected(
+                'ledger_status_6a80: rejected',
+              );
+            }
+            return second.future;
+          }),
+          recoverRejectedLedgerDelegationProvider.overrideWithValue(({
+            required ctx,
+            required storedHotkeySecret,
+            required bundleIndex,
+            required rejectedSighash,
+          }) async {
+            repairs++;
+            expect(bundleIndex, 0);
+            expect(rejectedSighash, [3]);
+            final original = await rust._buildKeystoneDelegationRequest(
+              ctx: ctx,
+              storedHotkeySecret: storedHotkeySecret,
+              bundleIndex: bundleIndex,
+            );
+            return rust_delegate.KeystoneSigningRequest(
+              pcztBytes: Uint8List.fromList([4]),
+              redactedPcztBytes: Uint8List.fromList([7]),
+              pcztSighash: Uint8List.fromList([8]),
+              rk: original.rk,
+              actionIndex: original.actionIndex,
+              displayMemo: original.displayMemo,
+              eligibleWeightZatoshi: original.eligibleWeightZatoshi,
+              delegatedWeightZatoshi: original.delegatedWeightZatoshi,
+              bundleCount: original.bundleCount,
+              bundleIndex: original.bundleIndex,
+            );
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'ledger-1');
+      container.read(votingDraftProvider(key).notifier).setChoice(1, 0);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(withPlatformProgressBuilder: true),
+        ),
+      );
+      await _pumpUntilFound(
+        tester,
+        find.text(
+          'We rebuilt this vote request. Review it again on your Ledger.',
+        ),
+        attempts: 100,
+      );
+      expect(sent, [
+        [2, 0],
+        [7],
+      ]);
+      second.completeError(
+        const LedgerIronwoodDataRejected('ledger_status_6a80: rejected'),
+      );
+      await tester.pumpAndSettle();
+      expect(repairs, 1);
+      expect(sent, hasLength(2));
+      expect(rust.storedKeystoneSignatures, isEmpty);
+    },
+  );
+
+  for (final (repairError, retryable) in [
+    (TimeoutException('Snapshot request timed out'), true),
+    (
+      const rust_wire.VotingErrorView(
+        kind: rust_wire.VotingErrorKindView.internal,
+        retryable: true,
+        message: 'Snapshot request timed out',
+      ),
+      true,
+    ),
+    (
+      const rust_wire.VotingErrorView(
+        kind: rust_wire.VotingErrorKindView.invalidInput,
+        retryable: false,
+        message: 'Request already repaired',
+      ),
+      false,
+    ),
+  ]) {
+    testWidgets(
+      'Ledger repair error ${repairError.runtimeType} offers Retry: $retryable',
+      (tester) async {
+        final recovery = _MutableVotingRecoveryApi()
+          ..state = _recoveryState(bundleCount: 1);
+        final rust = _VotingStatusRustApi(recovery);
+        var repairs = 0;
+        final container = _statusContainer(
+          accountOverride: _LedgerAccountNotifier.new,
+          activeAccountUuid: () async => 'ledger-1',
+          accountIsHardware: true,
+          hardwareAccountUuids: const {'ledger-1'},
+          recoveryApi: recovery,
+          rust: rust,
+          hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+          overrides: [
+            ledgerVotingPcztSignerProvider.overrideWithValue(
+              (_, _) async => throw const LedgerIronwoodDataRejected(
+                'ledger_status_6a80: rejected',
+              ),
+            ),
+            recoverRejectedLedgerDelegationProvider.overrideWithValue(({
+              required ctx,
+              required storedHotkeySecret,
+              required bundleIndex,
+              required rejectedSighash,
+            }) async {
+              expect(bundleIndex, 0);
+              expect(rejectedSighash, [3]);
+              repairs++;
+              throw repairError;
+            }),
+          ],
+        );
+        addTearDown(container.dispose);
+        const key = VotingSessionKey(
+          roundId: _roundId,
+          accountUuid: 'ledger-1',
+        );
+        container.read(votingDraftProvider(key).notifier).setChoice(1, 0);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: _statusHarness(withPlatformProgressBuilder: true),
+          ),
+        );
+        final message = find.textContaining(
+          retryable ? 'Snapshot request timed out' : 'Request already repaired',
+        );
+        final details = find.text(testL10n.commonShowDetails);
+        await _pumpUntilFound(tester, details, attempts: 100);
+        expect(repairs, 1);
+        expect(find.text('Retry'), retryable ? findsOneWidget : findsNothing);
+        if (retryable) {
+          await tester.tap(find.text('Retry'));
+          await _pumpUntilCondition(tester, () => repairs == 2, attempts: 100);
+          await tester.pumpAndSettle();
+          expect(find.text('Retry'), findsOneWidget);
+        }
+        // On mobile the details open in a sheet that covers the Retry button.
+        await tester.tap(details);
+        await tester.pumpAndSettle();
+        expect(message, findsOneWidget);
+        expect(rust.storedKeystoneSignatures, isEmpty);
+      },
+    );
+  }
+
+  testWidgets(
     'Ledger voting persists sequential bundles and ignores a late cancelled result',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1512, 982));

@@ -1,4 +1,6 @@
 {
+  "votingLedgerRequestRebuilt": "We rebuilt this vote request. Review it again on your Ledger.",
+  "@votingLedgerRequestRebuilt": {"description": "Shown during the new Ledger approval after an unsigned voting request was repaired."},
   "@@locale": "en",
   "aboutBuiltByBody": "We built Keplr, the wallet used by millions across Cosmos, Ethereum, and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.",
   "@aboutBuiltByBody": {

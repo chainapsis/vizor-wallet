@@ -155,7 +155,9 @@ version = "=0.1.0-rc9.8"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.4.0"
+git = "https://github.com/valargroup/zcash_voting"
+rev = "1fb73c1deff6efb5034e5923ac10f773c3b476f8"
+version = "=5.4.1"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -232,7 +234,9 @@ version = "=0.1.0-rc9.8"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_voting]
-version = "=5.4.0"
+git = "https://github.com/valargroup/zcash_voting"
+rev = "1fb73c1deff6efb5034e5923ac10f773c3b476f8"
+version = "=5.4.1"
 features = ["test-fixtures"]
 
 # Real adapter batches for the coordinator's fixture source, the fake txid
@@ -255,6 +259,8 @@ features = ["receiver-crypto"]
 version = "=0.1.0-rc.8"
 
 [dev-dependencies.vote-commitment-tree]
+git = "https://github.com/valargroup/zcash_voting"
+rev = "1fb73c1deff6efb5034e5923ac10f773c3b476f8"
 version = "=0.9.0"
 default-features = false
 features = ["zakura"]

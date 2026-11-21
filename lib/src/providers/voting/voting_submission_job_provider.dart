@@ -17,6 +17,8 @@ import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
+import '../../services/voting/voting_retry.dart';
+import '../../services/voting/voting_rust_exception.dart';
 import '../account_provider.dart';
 import '../rpc_endpoint_provider.dart';
 import 'voting_session_provider.dart';
@@ -64,6 +66,7 @@ class VotingSubmissionJobState {
     this.ledgerDisplayMemo,
     this.ledgerBundleIndex,
     this.ledgerBundleCount = 0,
+    this.ledgerRequestRebuilt = false,
     this.pendingDraftVotes,
     this.pendingProposalIds = const [],
     this.pendingRecoveryWithoutDraft = false,
@@ -85,6 +88,7 @@ class VotingSubmissionJobState {
   final String? ledgerDisplayMemo;
   final int? ledgerBundleIndex;
   final int ledgerBundleCount;
+  final bool ledgerRequestRebuilt;
   final List<VotingDraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
   final bool pendingRecoveryWithoutDraft;
@@ -116,6 +120,7 @@ class VotingSubmissionJobState {
     int? ledgerBundleIndex,
     bool clearLedgerBundleIndex = false,
     int? ledgerBundleCount,
+    bool? ledgerRequestRebuilt,
     List<VotingDraftVote>? pendingDraftVotes,
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
@@ -147,6 +152,7 @@ class VotingSubmissionJobState {
           ? null
           : ledgerBundleIndex ?? this.ledgerBundleIndex,
       ledgerBundleCount: ledgerBundleCount ?? this.ledgerBundleCount,
+      ledgerRequestRebuilt: ledgerRequestRebuilt ?? this.ledgerRequestRebuilt,
       pendingDraftVotes: clearPendingDraftVotes
           ? null
           : pendingDraftVotes ?? this.pendingDraftVotes,
@@ -880,6 +886,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     await sessionNotifier.prepareLedgerSigning();
     if (!_isCurrentJob(key: key, generation: generation)) return;
 
+    int? rebuiltBundle;
     while (true) {
       final session = _sessionForJob(key);
       if (session == null) return;
@@ -893,6 +900,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       state = state.copyWith(
         status: VotingSubmissionJobStatus.waitingForLedger,
         ledgerDisplayMemo: request.displayMemo,
+        ledgerRequestRebuilt: request.bundleIndex == rebuiltBundle,
         ledgerBundleIndex: request.bundleIndex,
         ledgerBundleCount: request.bundleCount,
         keystoneUrParts: const [],
@@ -911,6 +919,33 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         );
       } catch (error) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
+        if (error is LedgerIronwoodDataRejected &&
+            rebuiltBundle != request.bundleIndex) {
+          try {
+            final repaired = await sessionNotifier
+                .recoverRejectedLedgerDelegation(
+                  bundleIndex: request.bundleIndex,
+                  rejectedSighash: request.pcztSighash,
+                  isCurrentJob: () =>
+                      _isCurrentJob(key: key, generation: generation),
+                );
+            if (repaired) {
+              rebuiltBundle = request.bundleIndex;
+              continue;
+            }
+          } catch (repairError) {
+            if (!_isCurrentJob(key: key, generation: generation)) return;
+            final cause = votingRustExceptionOf(repairError) ?? repairError;
+            _failJob(
+              key: key,
+              generation: generation,
+              message: _messageFromError(cause),
+              retryable: isRetryableVotingError(cause),
+            );
+            return;
+          }
+          if (!_isCurrentJob(key: key, generation: generation)) return;
+        }
         _failJob(
           key: key,
           generation: generation,

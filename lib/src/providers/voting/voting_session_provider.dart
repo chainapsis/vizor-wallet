@@ -1053,6 +1053,61 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
+  /// Replace just the request rejected by this signing job. Hold the account
+  /// drain lease through both the durable replacement and the session update.
+  Future<bool> recoverRejectedLedgerDelegation({
+    required int bundleIndex,
+    required Uint8List rejectedSighash,
+    required bool Function() isCurrentJob,
+  }) async {
+    final release = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork(accountUuid: _sessionAccountUuid);
+    if (release == null) return false;
+    var replaced = false;
+    await _enqueue(
+      () async {
+        final current = await future;
+        final request = current.ledgerSigningRequest;
+        final context = await _loadContext(_roundId);
+        if (!isCurrentJob() ||
+            !context.isLedgerAccount ||
+            current.phase != VotingSessionPhase.ledgerSigning ||
+            request == null ||
+            request.bundleIndex != bundleIndex ||
+            !listEquals(request.pcztSighash, rejectedSighash)) {
+          return;
+        }
+        final secret = await _readStoredHotkey(context);
+        if (secret == null || !isCurrentJob()) return;
+        _throwIfContextStale(context, 'ledger-request-repair');
+        final repaired =
+            await ref.read(recoverRejectedLedgerDelegationProvider)(
+              ctx: _apiRoundContext(context),
+              storedHotkeySecret: secret,
+              bundleIndex: bundleIndex,
+              rejectedSighash: rejectedSighash,
+            );
+        _throwIfContextStale(context, 'ledger-request-repair');
+        if (!isCurrentJob()) return;
+        _setStateForContext(
+          context,
+          (state.value ?? current).copyWith(
+            ledgerSigningRequests: [
+              repaired,
+              ...current.ledgerSigningRequests.skip(1),
+            ],
+          ),
+        );
+        replaced = true;
+      },
+      cleanupProcessStateOnError: false,
+      publishError: false,
+      propagateError: true,
+    ).whenComplete(release);
+    return replaced;
+  }
+
   Future<void> handleLedgerSignatures(List<LedgerVotingSignature> signatures) {
     // Cancellation releases the interactive job guard immediately. Keep a
     // separate drain lease until an already-started signature write has ended.
