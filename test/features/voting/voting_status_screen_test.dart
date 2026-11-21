@@ -4655,7 +4655,7 @@ void main() {
         await tester.pumpWidget(
           UncontrolledProviderScope(
             container: container,
-            child: _statusHarness(),
+            child: _statusHarness(withPlatformProgressBuilder: true),
           ),
         );
         final message = find.textContaining(
@@ -4663,9 +4663,6 @@ void main() {
         );
         final details = find.text(testL10n.commonShowDetails);
         await _pumpUntilFound(tester, details, attempts: 100);
-        await tester.tap(details);
-        await tester.pumpAndSettle();
-        expect(message, findsOneWidget);
         expect(repairs, 1);
         expect(find.text('Retry'), retryable ? findsOneWidget : findsNothing);
         if (retryable) {
@@ -4674,6 +4671,10 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.text('Retry'), findsOneWidget);
         }
+        // On mobile the details open in a sheet that covers the Retry button.
+        await tester.tap(details);
+        await tester.pumpAndSettle();
+        expect(message, findsOneWidget);
         expect(rust.storedKeystoneSignatures, isEmpty);
       },
     );
