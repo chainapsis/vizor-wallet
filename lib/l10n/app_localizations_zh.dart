@@ -9,7 +9,8 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
-  String get votingLedgerRequestRebuilt => '已重新生成此投票请求。请在 Ledger 上再次核对。';
+  String get votingLedgerRequestRebuilt =>
+      '为兼容当前进行的投票，已重新生成投票请求。请在 Ledger 上再次核对。';
 
   @override
   String get aboutBuiltByBody =>

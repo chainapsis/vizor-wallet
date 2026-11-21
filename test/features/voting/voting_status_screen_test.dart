@@ -4575,7 +4575,7 @@ void main() {
       await _pumpUntilFound(
         tester,
         find.text(
-          'We rebuilt this vote request. Review it again on your Ledger.',
+          'Your vote request was rebuilt for compatibility with the live vote. Review it again on your Ledger.',
         ),
         attempts: 100,
       );

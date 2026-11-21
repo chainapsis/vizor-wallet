@@ -10,7 +10,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get votingLedgerRequestRebuilt =>
-      '투‍표 요‍청‍을 다‍시 만‍들‍었‍습‍니‍다. Ledger‍에‍서 다‍시 확‍인‍하‍세‍요.';
+      '진‍행 중‍인 투‍표‍와 호‍환‍되‍도‍록 투‍표 요‍청‍을 다‍시 만‍들‍었‍습‍니‍다. Ledger‍에‍서 다‍시 확‍인‍하‍세‍요.';
 
   @override
   String get aboutBuiltByBody =>
