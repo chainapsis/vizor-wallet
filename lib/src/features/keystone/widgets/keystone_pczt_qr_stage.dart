@@ -21,6 +21,7 @@ class KeystonePcztQrStage extends StatelessWidget {
     required this.error,
     this.size = 230,
     this.scanOptimized = true,
+    this.wholePixelModules = false,
     this.quietZone,
     super.key,
   });
@@ -30,6 +31,7 @@ class KeystonePcztQrStage extends StatelessWidget {
   final String? error;
   final double size;
   final bool scanOptimized;
+  final bool wholePixelModules;
   final PrettyQrQuietZone? quietZone;
 
   @override
@@ -43,6 +45,7 @@ class KeystonePcztQrStage extends StatelessWidget {
           urParts: urParts,
           size: size,
           scanOptimized: scanOptimized,
+          wholePixelModules: wholePixelModules,
           quietZone: quietZone,
         ),
         KeystonePcztQrStagePhase.failed => Center(
@@ -82,12 +85,14 @@ class _AnimatedKeystoneQr extends StatefulWidget {
     required this.urParts,
     required this.size,
     required this.scanOptimized,
+    required this.wholePixelModules,
     required this.quietZone,
   });
 
   final List<String> urParts;
   final double size;
   final bool scanOptimized;
+  final bool wholePixelModules;
   final PrettyQrQuietZone? quietZone;
 
   @override
@@ -158,6 +163,17 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
     final colors = context.colors;
     final moduleColor = colors.icon.accent;
     final frame = _frameAt(_index);
+    if (widget.wholePixelModules) {
+      return ColoredBox(
+        color: colors.surface.qrCode,
+        child: CustomPaint(
+          painter: _WholePixelQrPainter(
+            frame,
+            MediaQuery.devicePixelRatioOf(context),
+          ),
+        ),
+      );
+    }
     if (widget.scanOptimized) {
       return SizedBox(
         width: widget.size,
@@ -198,6 +214,51 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
       ),
     );
   }
+}
+
+/// Keeps camera-facing module edges sharp at the display's physical resolution.
+class _WholePixelQrPainter extends CustomPainter {
+  const _WholePixelQrPainter(this.frame, this.pixelRatio);
+
+  final QrImage frame;
+  final double pixelRatio;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const quietZone = 4;
+    final count = frame.moduleCount;
+    final pitch = (size.shortestSide * pixelRatio / (count + 2 * quietZone))
+        .floor();
+    if (pitch < 1) return;
+    final left = ((size.width * pixelRatio - count * pitch) / 2).floor();
+    final top = ((size.height * pixelRatio - count * pitch) / 2).floor();
+    final ink = Paint()
+      ..color = _scanOptimizedQrInk
+      ..isAntiAlias = false;
+    canvas.save();
+    canvas.scale(1 / pixelRatio);
+    for (var row = 0; row < count; row++) {
+      final y = (top + row * pitch).toDouble();
+      for (var column = 0; column < count; column++) {
+        if (frame.isDark(row, column)) {
+          canvas.drawRect(
+            Rect.fromLTWH(
+              (left + column * pitch).toDouble(),
+              y,
+              pitch.toDouble(),
+              pitch.toDouble(),
+            ),
+            ink,
+          );
+        }
+      }
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_WholePixelQrPainter old) =>
+      frame != old.frame || pixelRatio != old.pixelRatio;
 }
 
 /// Replaces the smooth symbol's square finder patterns with the Figma

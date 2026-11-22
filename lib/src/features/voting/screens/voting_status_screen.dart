@@ -1709,6 +1709,10 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                   urParts.isNotEmpty,
               child: KeystonePcztQrStage(
                 phase: qrPhase,
+                // A dense voting frame is 85 modules wide. At 1×, 372 pixels
+                // fits four pixels per module plus a four-module white border.
+                size: kAppFormFactor == AppFormFactor.desktop ? 372 : 230,
+                wholePixelModules: kAppFormFactor == AppFormFactor.desktop,
                 urParts: urParts,
                 error: qrError,
               ),
