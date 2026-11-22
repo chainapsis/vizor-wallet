@@ -58,6 +58,7 @@ import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_payout_discovery_provider.dart';
 import '../widgets/desktop_home_setup_carousel.dart';
 import '../../swap/providers/swap_state_provider.dart';
+import '../services/home_displayed_balance.dart';
 import '../services/transparent_balance_display.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
@@ -315,12 +316,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     final showsIronwoodOnlyBalance =
         balancePresentation == IronwoodHomeBalancePresentationMode.ironwoodOnly;
-    final totalShieldedBalance = sync.displayShieldedBalance;
-    final ironwoodBalance =
-        sync.displayIronwoodBalance + sync.displayIronwoodPendingBalance;
-    final displayedShieldedBalance = showsIronwoodOnlyBalance
-        ? ironwoodBalance
-        : totalShieldedBalance;
+    // Shared with the sidebar, which shows this same number.
+    final displayedShieldedBalance = homeDisplayedBalance(
+      sync,
+      ironwoodOnly: showsIronwoodOnlyBalance,
+    );
     final migratingBalance = sync.displayOrchardHoldingsBalance;
     final waitingForMigrationConfirmation =
         migratingBalance == BigInt.zero &&
