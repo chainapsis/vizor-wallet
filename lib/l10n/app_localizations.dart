@@ -20964,7 +20964,7 @@ abstract class AppLocalizations {
   /// [security] Secondary desktop voting action that confirms dropping unsigned bundles and reduces voting power.
   ///
   /// In en, this message translates to:
-  /// **'Use signed bundles only'**
+  /// **'Skip and use signed bundles only'**
   String get votingUseSignedBundles;
 
   /// Button that collapses a long description.

@@ -3463,7 +3463,7 @@
   "votingTerminalReasonDefault": "未经确认即已结束",
   "votingTerminalSingle": "委托 {bundle} 无法继续。请勿重试，该交易可能已在链上。",
   "votingTokenHolderTitle": "代币持有者投票",
-  "votingUseSignedBundles": "仅使用已签名票据包",
+  "votingUseSignedBundles": "跳过其余票据包，仅使用已签名票据包",
   "votingViewLess": "收起",
   "votingViewMore": "展开",
   "votingVoteLocked": "投票已锁定",

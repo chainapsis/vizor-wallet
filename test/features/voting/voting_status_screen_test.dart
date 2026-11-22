@@ -4804,16 +4804,19 @@ void main() {
     await tester.tap(find.text('Scan signature'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Return Signature'));
-    await _pumpUntilFound(tester, find.text('Use signed bundles only'));
+    await _pumpUntilFound(
+      tester,
+      find.text('Skip and use signed bundles only'),
+    );
 
     expect(find.text('Sign 1 voting bundle'), findsWidgets);
     expect(find.text('One Keystone approval'), findsOneWidget);
     expect(find.text('Bundle 1 of 2 memo'), findsNothing);
     expect(find.text('Bundle 2 of 2 memo'), findsOneWidget);
     expect(find.text('2 / 2'), findsNothing);
-    expect(find.text('Use signed bundles only'), findsOneWidget);
+    expect(find.text('Skip and use signed bundles only'), findsOneWidget);
 
-    await tester.tap(find.text('Use signed bundles only'));
+    await tester.tap(find.text('Skip and use signed bundles only'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Use signed bundles only?'), findsOneWidget);

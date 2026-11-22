@@ -16505,7 +16505,7 @@
   "@votingTokenHolderTitle": {
     "description": "Fallback name of a voting round shown when the round has no title."
   },
-  "votingUseSignedBundles": "Use signed bundles only",
+  "votingUseSignedBundles": "Skip and use signed bundles only",
   "@votingUseSignedBundles": {
     "description": "[security] Secondary desktop voting action that confirms dropping unsigned bundles and reduces voting power."
   },

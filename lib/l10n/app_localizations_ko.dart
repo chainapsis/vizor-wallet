@@ -12638,7 +12638,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingTokenHolderTitle => '토‍큰 보‍유‍자 투‍표';
 
   @override
-  String get votingUseSignedBundles => '서‍명‍한 묶‍음‍으‍로‍만 진‍행';
+  String get votingUseSignedBundles => '나‍머‍지‍는 건‍너‍뛰‍고 서‍명‍한 묶‍음‍만 사‍용';
 
   @override
   String get votingViewLess => '간‍단‍히 보‍기';

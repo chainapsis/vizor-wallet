@@ -11855,7 +11855,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingTokenHolderTitle => '代币持有者投票';
 
   @override
-  String get votingUseSignedBundles => '仅使用已签名票据包';
+  String get votingUseSignedBundles => '跳过其余票据包，仅使用已签名票据包';
 
   @override
   String get votingViewLess => '收起';

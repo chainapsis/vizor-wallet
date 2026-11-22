@@ -12835,7 +12835,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingTokenHolderTitle => 'Token holder voting';
 
   @override
-  String get votingUseSignedBundles => 'Use signed bundles only';
+  String get votingUseSignedBundles => 'Skip and use signed bundles only';
 
   @override
   String get votingViewLess => 'View less';
