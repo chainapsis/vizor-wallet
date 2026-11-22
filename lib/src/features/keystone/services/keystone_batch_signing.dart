@@ -6,7 +6,10 @@ import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 
-const _keystoneQrFragmentLength = 140;
+/// Bytes of payload in one frame of a Keystone animated QR: Keystone's own
+/// default. Send, swap, Gift Card, shielding and voting requests all use it,
+/// so they show the same symbol density. Migration sets its own.
+const keystoneQrFragmentLength = 200;
 
 /// What a friendly batch-signing error is about.
 enum KeystoneBatchSubject { transaction, deposit }
@@ -116,7 +119,7 @@ class KeystoneBatchSigningRequest {
 Future<KeystoneBatchSigningRequest> buildKeystoneBatchSigningRequest({
   required String requestId,
   required List<KeystoneBatchPcztSource> pczts,
-  int maxFragmentLength = _keystoneQrFragmentLength,
+  int maxFragmentLength = keystoneQrFragmentLength,
 }) async {
   if (requestId.isEmpty) {
     throw ArgumentError.value(requestId, 'requestId', 'must not be empty');
@@ -149,7 +152,7 @@ Future<KeystoneBatchSigningRequest> buildKeystoneBatchSigningRequest({
 Future<KeystoneBatchSigningRequest> buildPreparedKeystoneBatchSigningRequest({
   required String requestId,
   required List<KeystonePreparedBatchMessage> messages,
-  int maxFragmentLength = _keystoneQrFragmentLength,
+  int maxFragmentLength = keystoneQrFragmentLength,
 }) async {
   if (requestId.isEmpty) {
     throw ArgumentError.value(requestId, 'requestId', 'must not be empty');

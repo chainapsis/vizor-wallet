@@ -260,7 +260,7 @@ class _MobileKeystoneSignScreenState
         batchRequest = null;
         urParts = await rust_keystone.encodePcztUrParts(
           pcztBytes: signerPczts![index],
-          maxFragmentLen: BigInt.from(140),
+          maxFragmentLen: BigInt.from(keystoneQrFragmentLength),
         );
       } else {
         batchRequest = await buildKeystoneBatchSigningRequest(

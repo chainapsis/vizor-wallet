@@ -1,10 +1,7 @@
 part of '../ironwood_migration_flow_screen.dart';
 
 // Use the same fragment density for every migration signing request.
-// With the UR framing a 260-byte fragment is under 600 characters, the most a
-// 77-module alphanumeric symbol holds. That is 85 modules with the quiet zone,
-// so a 264 box gives each module 3 pixels at standard density.
-const _keystoneMigrationQrMaxFragmentLen = 260;
+const _keystoneMigrationQrMaxFragmentLen = 300;
 
 class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneCombinedSignScreen({
@@ -1843,7 +1840,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                     phase: KeystonePcztQrStagePhase.ready,
                     urParts: _urParts,
                     error: _error,
-                    size: 264,
+                    // A migration frame is 93 modules across with its quiet
+                    // zone; 280 gives each 3 pixels at standard density.
+                    size: 280,
                   ),
                 ),
               ),

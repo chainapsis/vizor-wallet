@@ -18,6 +18,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../keystone/services/keystone_batch_signing.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
@@ -185,7 +186,7 @@ class _KeystoneShieldSigningOverlayState
       );
       final urParts = await rust_keystone.encodePcztUrParts(
         pcztBytes: redactedPczt,
-        maxFragmentLen: BigInt.from(140),
+        maxFragmentLen: BigInt.from(keystoneQrFragmentLength),
       );
 
       if (!mounted || _closed) return;

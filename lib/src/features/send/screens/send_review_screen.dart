@@ -933,7 +933,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           urPartsByRound.add(
             await rust_keystone.encodePcztUrParts(
               pcztBytes: redacted,
-              maxFragmentLen: BigInt.from(140),
+              maxFragmentLen: BigInt.from(keystoneQrFragmentLength),
             ),
           );
           batchRequestsByRound.add(null);

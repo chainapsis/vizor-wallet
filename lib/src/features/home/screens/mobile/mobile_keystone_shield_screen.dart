@@ -21,6 +21,7 @@ import '../../../../core/zcash/wallet_error_code.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
+import '../../../keystone/services/keystone_batch_signing.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../../services/camera_permission_settings.dart';
 import '../../../../services/qr_scanner.dart';
@@ -181,7 +182,7 @@ class _MobileKeystoneShieldScreenState
       if (!mounted || _closed || _cancellationStarted) return;
       final urParts = await rust_keystone.encodePcztUrParts(
         pcztBytes: redactedPczt,
-        maxFragmentLen: BigInt.from(140),
+        maxFragmentLen: BigInt.from(keystoneQrFragmentLength),
       );
 
       if (!mounted || _closed || _cancellationStarted) return;

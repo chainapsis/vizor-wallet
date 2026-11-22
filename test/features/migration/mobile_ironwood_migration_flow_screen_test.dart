@@ -4827,7 +4827,7 @@ void main() {
       }
       expect(prepareCount, 1);
       expect(qr, findsOneWidget);
-      expect(_rustApiFake.encodedMaxFragmentLengths, [BigInt.from(260)]);
+      expect(_rustApiFake.encodedMaxFragmentLengths, [BigInt.from(300)]);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await discardStarted.future;
@@ -4844,8 +4844,8 @@ void main() {
       expect(prepareCount, 2);
       expect(qr, findsOneWidget);
       expect(_rustApiFake.encodedMaxFragmentLengths, [
-        BigInt.from(260),
-        BigInt.from(260),
+        BigInt.from(300),
+        BigInt.from(300),
       ]);
     },
   );
