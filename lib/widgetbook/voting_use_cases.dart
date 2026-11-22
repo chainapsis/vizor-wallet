@@ -548,6 +548,40 @@ Widget _mobileVotingFullPagePreview(
   );
 }
 
+/// The production desktop signing panel, isolated from wallet and Rust state.
+Widget buildDesktopVotingKeystoneRequestUseCase(BuildContext context) {
+  final presentation = _previewKeystonePresentation;
+  return ProviderScope(
+    child: AppDesktopShell(
+      sidebar: const _VotingPreviewSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingStatusContent(
+          phase: VotingSessionPhase.keystoneSigning,
+          submissionJobInFlight: true,
+          isHardwareAccount: true,
+          keystoneSigningBundleIndex: presentation.bundleIndex,
+          keystoneUrParts: presentation.urParts,
+          keystoneBatchMemos: presentation.batchMemos,
+          keystoneBatchMessageCount: presentation.batchMessageCount,
+          keystoneBatchTotalCount: presentation.batchTotalCount,
+          canSkipRemainingKeystoneBundles: presentation.canSkipRemainingBundles,
+          onScanKeystone: _previewNoop,
+          onSkipKeystoneBundles: _previewNoop,
+        ),
+      ),
+    ),
+  );
+}
+
+// Synthetic 10-KiB payload encoded with the pinned UR library at the voting
+// flow's 200-byte fragment limit. These frames reproduce display density;
+// they are not requests that a device should sign.
+const _previewVotingKeystoneUrParts = [
+  'UR:ZCASH-SIGN-BATCH/1-52/LPADCSEECFDEAECYJKREWTTTHDSKAEADAOAXAAAHAMATAYASBKBDBNBTBABSBEBYBGBWBBBZCMCHCSCFCYCWCECACKCTCXCLCPCNDKDADSDIDEDTDRDNDWDPDMDLDYEHEYEOEEECENEMETESFTFRFNFSFMFHFZFPFWFXFYFEFGFLFDGAGEGRGSGTGLGWGDGYGMGUGHGOHFHGHDHKHTHPHHHLHYHEHNHSIDIAIEIHIYIOISINIMJEJZJNJTJLJOJSJPJKJYKPKOKTKSKKKNKGKEKIKBLBLALYLFLSLRLPLNLTLOLDLELULKLGMNMYMHMEMOMUMWMDMTMSMKNLNYNDNSNTNNNENBOYOEOTOXONOLOSPDPTPKPYPSPMPLPEPFPAPRQDQZRERPRLRORHRDRKRFRYRNRSRTSESASRSSWNMTWTDS',
+  'UR:ZCASH-SIGN-BATCH/2-52/LPAOCSEECFDEAECYJKREWTTTHDSKSKSWSTSPSOSGSBSFSNTOTKTITTTDTETYTLTBTSTPTATNUYUOUTUEURVTVYVOVLVEVWVAVDVSWLWDWMWPWEWYWSWTWNWZWFWKYKYNYLYAYTZSAEADAOAXAAAHAMATAYASBKBDBNBTBABSBEBYBGBWBBBZCMCHCSCFCYCWCECACKCTCXCLCPCNDKDADSDIDEDTDRDNDWDPDMDLDYEHEYEOEEECENEMETESFTFRFNFSFMFHFZFPFWFXFYFEFGFLFDGAGEGRGSGTGLGWGDGYGMGUGHGOHFHGHDHKHTHPHHHLHYHEHNHSIDIAIEIHIYIOISINIMJEJZJNJTJLJOJSJPJKJYKPKOKTKSKKKNKGKEKIKBLBLALYLFLSLRLPLNLTLOLDLELULKLGMNHSKGDTUT',
+];
+
 Widget buildMobileVotingKeystoneRequestUseCase(BuildContext context) {
   return ProviderScope(
     child: MobileKeystoneVotingSigningScreen(
@@ -580,7 +614,7 @@ Widget _previewVotingScanner(
 
 final _previewKeystonePresentation = VotingKeystoneStatusPresentation(
   bundleIndex: 0,
-  urParts: const [_previewVotingKeystoneUr],
+  urParts: _previewVotingKeystoneUrParts,
   batchMemos: const [
     VotingKeystoneBatchMemo(
       bundleIndex: 0,
@@ -602,9 +636,6 @@ final _previewKeystonePresentation = VotingKeystoneStatusPresentation(
 
 Future<void> _previewSignedVotingResponse(List<int> _) async {}
 void _previewNoop() {}
-
-const _previewVotingKeystoneUr =
-    'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
 
 final _previewVotingShareNow = DateTime.utc(2026, 8, 23, 12);
 

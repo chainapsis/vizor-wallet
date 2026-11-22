@@ -3551,6 +3551,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'desktop-voting-keystone-request',
+    description: 'Desktop coinholder voting Keystone request QR',
+    builder: buildDesktopVotingKeystoneRequestUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-keystone-request',
     description: 'Mobile voting Keystone request QR step',
     builder: buildMobileVotingKeystoneRequestUseCase,
