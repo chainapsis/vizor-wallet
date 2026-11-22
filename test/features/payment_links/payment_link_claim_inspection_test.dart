@@ -278,8 +278,8 @@ void main() {
           await service.inspectClaim(_link());
           expect(api.checkUrls.single, selected);
           final urls = api.checkFallbackUrls.single;
-          expect(urls, hasLength(7));
-          expect(urls.toSet(), hasLength(7));
+          expect(urls, hasLength(12));
+          expect(urls.toSet(), hasLength(12));
           expect(urls, isNot(contains(selected)));
           expect(
             urls.toSet(),
@@ -515,6 +515,81 @@ void main() {
       expect(api.estimateDestinations, [_link().address]);
     });
 
+    Future<PaymentLinkClaimInspection> receiveCard({
+      String? setupAccountUuid,
+    }) async {
+      final inspection = await service.inspectClaim(_link());
+      final store = container.read(paymentLinkReceivedStoreProvider);
+      await store.saveReady(
+        inspection.link,
+        setupAccountUuid: setupAccountUuid,
+      );
+      await store.markReceiving(
+        address: inspection.link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'claim-tx',
+        claimSubmittedAt: DateTime.utc(2026, 10, 1),
+      );
+      await store.markReceived(address: inspection.link.address);
+      return inspection;
+    }
+
+    test('a received card stops before scanning its wallet again', () async {
+      final inspection = await receiveCard();
+      final scans = api.syncCalls;
+
+      await expectLater(
+        service.inspectClaim(_link()),
+        throwsA(
+          isA<PaymentLinkAlreadyReceivedException>().having(
+            (error) => error.destinationAccountUuid,
+            'destinationAccountUuid',
+            'receiver',
+          ),
+        ),
+      );
+      expect(api.syncCalls, scans);
+      // Recovery still owns the claim wallet the received record retains.
+      expect(await inspection.directory.exists(), isTrue);
+    });
+
+    for (final setupAccountUuid in [null, 'receiver']) {
+      test('preparing a received card is refused before scanning '
+          '(${setupAccountUuid == null ? 'pasted' : 'gift setup'})', () async {
+        await receiveCard(setupAccountUuid: setupAccountUuid);
+        accounts.select('receiver', 'u1receiveraddress');
+        final scans = api.syncCalls;
+
+        await expectLater(
+          service.prepareClaim(_link()),
+          throwsA(
+            isA<PaymentLinkAlreadyReceivedException>().having(
+              (error) => error.destinationAccountUuid,
+              'destinationAccountUuid',
+              'receiver',
+            ),
+          ),
+        );
+        expect(api.syncCalls, scans);
+      });
+    }
+
+    test('a received card after cleanup leaves no new claim wallet', () async {
+      final inspection = await receiveCard();
+      await container
+          .read(paymentLinkReceivedStoreProvider)
+          .clearConfirmedClaimSecret(address: inspection.link.address);
+      await inspection.directory.delete(recursive: true);
+      final scans = api.syncCalls;
+
+      await expectLater(
+        service.inspectClaim(_link()),
+        throwsA(isA<PaymentLinkAlreadyReceivedException>()),
+      );
+      expect(api.syncCalls, scans);
+      expect(await inspection.directory.exists(), isFalse);
+    });
+
     test('discard deletes a preview wallet without saving the card', () async {
       final inspection = await service.inspectClaim(_link());
       expect(await File(inspection.dbPath).exists(), isTrue);
@@ -649,6 +724,13 @@ void main() {
     for (final cleanup in ['inspection', 'retention', 'session']) {
       test('completed card cache is removed by $cleanup cleanup', () async {
         final first = await service.inspectClaim(_link());
+        // Reopening a received Card is refused, so only a screen prepared
+        // before the claim can still hold a session for it.
+        PaymentLinkClaimSession? stale;
+        if (cleanup != 'inspection') {
+          accounts.select('receiver', 'u1receiveraddress');
+          stale = await service.prepareClaim(first.link);
+        }
         final store = container.read(paymentLinkReceivedStoreProvider);
         await store.saveReady(first.link);
         final receiving = await store.markReceiving(
@@ -678,23 +760,26 @@ void main() {
 
         api.total = BigInt.zero;
         api.maxClaimable = null;
-        if (cleanup != 'inspection') {
-          accounts.select('receiver', 'u1receiveraddress');
-          final reopened = await service.prepareClaim(first.link);
-          expect(await File(reopened.dbPath).exists(), isTrue);
+        if (stale != null) {
+          // The stale session's scan can recreate the wallet after cleanup.
+          await File(stale.dbPath).create(recursive: true);
           if (cleanup == 'retention') {
             // A stale screen may choose retention for a completed receipt.
-            await service.retainPendingClaim(reopened);
+            await service.retainPendingClaim(stale);
           } else {
-            await service.discardClaimSession(reopened);
+            await service.discardClaimSession(stale);
           }
         } else {
-          final reopened = await service.inspectClaim(first.link);
-          expect(await File(reopened.dbPath).exists(), isTrue);
-          await service.discardClaimInspection(reopened);
+          final scans = api.syncCalls;
+          await expectLater(
+            service.inspectClaim(first.link),
+            throwsA(isA<PaymentLinkAlreadyReceivedException>()),
+          );
+          // The refused reopening imported a wallet and removed it unscanned.
+          expect(api.importCalls, 2);
+          expect(api.syncCalls, scans);
         }
 
-        expect(api.importCalls, 2);
         expect(await first.directory.exists(), isFalse);
         final receipt = (await store.load()).single;
         expect(receipt.status, PaymentLinkReceivedStatus.received);

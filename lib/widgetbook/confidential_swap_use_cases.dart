@@ -157,8 +157,11 @@ class _ConfidentialSwapPreviewState extends State<_ConfidentialSwapPreview> {
   double get _rate => _confidential ? 1120 : 1125;
 
   void _setMode(bool value) => setState(() {
-    if (value && !_confidential) {
-      _confidentialReveal.turnedOn(settingsOpen: _settingsOpen);
+    if (value != _confidential) {
+      _confidentialReveal.changed(
+        confidential: value,
+        settingsOpen: _settingsOpen,
+      );
     }
     _confidential = value;
     _failure = null;
@@ -586,6 +589,7 @@ class _ConfidentialSwapPreviewState extends State<_ConfidentialSwapPreview> {
         progressIndex: 0,
         steps: steps,
         details: details,
+        confidential: _recordedMode,
         showTabs: !complete,
       );
       return Column(
@@ -641,6 +645,7 @@ class _ConfidentialSwapPreviewState extends State<_ConfidentialSwapPreview> {
           onTabChanged: (tab) => setState(() => _statusTab = tab),
           steps: steps,
           details: details,
+          confidential: _recordedMode,
           flowConnector: flowConnector,
         ),
       ],

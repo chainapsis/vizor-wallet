@@ -582,6 +582,33 @@ void main() {
     },
   );
 
+  for (final receiver in [
+    ('original', 'This gift card was already claimed to Original.'),
+    ('removed', 'This gift has already been claimed.'),
+  ]) {
+    testWidgets('Gift check says which account already received the card '
+        '(${receiver.$1})', (tester) async {
+      await pump(
+        tester,
+        existing: true,
+        clipboard: incomingLink.toUri().toString(),
+      );
+      operations.inspectError = PaymentLinkAlreadyReceivedException(
+        address: incomingLink.address,
+        destinationAccountUuid: receiver.$1,
+      );
+      container.read(_routerProvider).go('/gift?addAccount=true');
+      await tester.pumpAndSettle();
+      await tester.tap(keyed('gift_desktop_paste_button'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(receiver.$2), findsOneWidget);
+      expect(keyed('gift_claim_go_back'), findsOneWidget);
+      expect(keyed('gift_claim_try_again'), findsNothing);
+      expect(operations.claimedDestinations, isEmpty);
+    });
+  }
+
   testWidgets('Gift entry and checked card use normal route text styles', (
     tester,
   ) async {
@@ -992,6 +1019,7 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
   Completer<void>? bindGate;
   Completer<void>? inspectionGate;
   Completer<void>? broadcastGate;
+  Object? inspectError;
   final allowLongSyncChecks = <bool>[];
   PaymentLinkClaimBroadcastStatus claimStatus =
       PaymentLinkClaimBroadcastStatus.broadcasted;
@@ -1081,6 +1109,8 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
   }) async {
     allowLongSyncChecks.add(allowLongSync);
     await inspectionGate?.future;
+    final error = inspectError;
+    if (error != null) throw error;
     return PaymentLinkClaimInspection(
       // Inspection resolves the Card's address and age, as the service does.
       link: link.withResolvedMetadata(

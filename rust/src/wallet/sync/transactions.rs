@@ -659,6 +659,15 @@ pub(crate) struct TransactionInfo {
     /// Whether later discovery or enhancement can still change this row. A
     /// provisional net debit is not a payment amount.
     pub provisional: bool,
+    /// Whether the row is provisional because private recovery is still
+    /// checking its transparent side; see
+    /// [`HistoryCompleteness::awaits_private_check`].
+    pub awaits_private_check: bool,
+    /// Whether every effect the account has in the transaction is settled:
+    /// no scan or private check still running can change the row. A
+    /// provisional row whose effects are settled stays provisional until the
+    /// wallet learns more another way.
+    pub effects_settled: bool,
     /// Whether `display_amount` is a balance movement that retains its fee,
     /// rather than an established payment. Show it as a net change, including
     /// when the account's fee share is unknown.
@@ -824,6 +833,15 @@ struct HistoryCompleteness {
     has_transparent_outputs: Option<bool>,
     details_complete: bool,
     provisional: bool,
+    /// Whether what keeps the entry provisional is private recovery checking
+    /// its transparent side: only transparent effects are unsettled, or the
+    /// history has not been read yet (as right after Private queries is
+    /// turned on). Shielded effects settle once scanned; missing payment
+    /// details are not the check's to finish.
+    awaits_private_check: bool,
+    /// Whether every owned effect is settled; false until the history read
+    /// reports.
+    effects_settled: bool,
     /// The library's classification of the account's side, once read. A net
     /// reconstruction (a privately recovered mixed shielding) has a final
     /// movement but no attributed fee or payment; see
@@ -855,6 +873,8 @@ impl HistoryCompleteness {
             has_transparent_outputs: None,
             details_complete: true,
             provisional: false,
+            awaits_private_check: false,
+            effects_settled: true,
             classification: Some(HistoryClassification::Reconstructed),
             fee: match (base.total_spent > 0, base.fee) {
                 (false, _) => Fee::NotApplicable,
@@ -871,10 +891,14 @@ impl HistoryCompleteness {
     /// Local intent can know every payment detail before scanning discovers
     /// all owned effects. Public discovery still counts as settled.
     fn of(details: &TransactionHistoryDetails) -> Self {
-        let effects_settled = details
+        let mut unsettled = details
             .effects
             .iter()
-            .all(|effect| effect.completeness.is_settled());
+            .filter(|effect| !effect.completeness.is_settled())
+            .peekable();
+        let effects_settled = unsettled.peek().is_none();
+        let awaits_private_check =
+            !effects_settled && unsettled.all(|effect| effect.pool == PoolType::Transparent);
         Self {
             has_transparent_outputs: details.has_transparent_outputs,
             details_complete: details.payment_details == DetailCompleteness::Complete,
@@ -888,6 +912,8 @@ impl HistoryCompleteness {
                 | HistoryClassification::Reconstructed
                 | HistoryClassification::NetReconstructed => false,
             } || !effects_settled,
+            awaits_private_check,
+            effects_settled,
             fee: match details.fee {
                 FeeState::Known(fee) => Fee::Known(fee.into()),
                 FeeState::Unattributed { .. } | FeeState::Unknown => Fee::Unknown,
@@ -915,6 +941,8 @@ impl HistoryCompleteness {
             has_transparent_outputs: None,
             details_complete: false,
             provisional: true,
+            awaits_private_check: true,
+            effects_settled: false,
             classification: None,
             fee: fee.map_or(Fee::Unknown, Fee::Known),
             unattributed_fee: None,
@@ -2676,6 +2704,8 @@ fn build_classified_tx_with_fee(
             created_time: base.created_time,
             details_complete: base.history.details_complete,
             provisional: base.history.provisional,
+            awaits_private_check: base.history.awaits_private_check,
+            effects_settled: base.history.effects_settled,
             amount_includes_fee: false,
         },
         sort_key: base.history_sort_key(),
@@ -3267,6 +3297,8 @@ mod tests {
                 details_complete: true,
                 classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
+                awaits_private_check: false,
+                effects_settled: true,
                 fee: Fee::Known(20_000),
                 unattributed_fee: None,
                 network_fee: None,
@@ -3476,6 +3508,77 @@ mod tests {
     }
 
     #[test]
+    fn awaits_private_check_only_while_transparent_effects_are_unsettled() {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            AccountMovement, AggregatePayment, EffectCompleteness, PoolEffect,
+        };
+        use zcash_protocol::{value::Zatoshis, PoolType};
+
+        let effect = |pool, completeness| PoolEffect {
+            pool,
+            received: Zatoshis::ZERO,
+            spent: Zatoshis::ZERO,
+            completeness,
+        };
+        let mut details = TransactionHistoryDetails {
+            has_transparent_outputs: None,
+            transaction_metadata: None,
+            whole_fee: None,
+            inferred_outgoing: None,
+            aggregate_payment: AggregatePayment::Unknown,
+            account_movement: AccountMovement {
+                received: 0,
+                spent: 0,
+                complete: true,
+            },
+            txid: TxId::from_bytes([1; 32]),
+            mined_height: None,
+            effects: vec![
+                effect(PoolType::ORCHARD, EffectCompleteness::Complete),
+                effect(PoolType::Transparent, EffectCompleteness::Incomplete),
+            ],
+            payment_details: DetailCompleteness::Complete,
+            fee: FeeState::NotApplicable,
+            classification: HistoryClassification::Reconstructed,
+            pending_private_details: vec![],
+            activity: zcash_client_backend::data_api::transparent_ledger::AccountActivity::Unknown,
+        };
+
+        // Only the transparent side is unsettled: private recovery's check.
+        let checking = HistoryCompleteness::of(&details);
+        assert!(checking.provisional);
+        assert!(checking.awaits_private_check);
+        assert!(!checking.effects_settled);
+
+        // A shielded effect not scanned yet waits on scanning instead.
+        details.effects[0].completeness = EffectCompleteness::Incomplete;
+        let scanning = HistoryCompleteness::of(&details);
+        assert!(scanning.provisional);
+        assert!(!scanning.awaits_private_check);
+        assert!(!scanning.effects_settled);
+
+        // Every effect settled, but the account's payment is not established:
+        // its details are missing, which the check does not finish.
+        for effect in &mut details.effects {
+            effect.completeness = EffectCompleteness::Complete;
+        }
+        details.classification = HistoryClassification::Provisional;
+        let unestablished = HistoryCompleteness::of(&details);
+        assert!(unestablished.provisional);
+        assert!(!unestablished.awaits_private_check);
+        // Nothing running can settle it.
+        assert!(unestablished.effects_settled);
+
+        // Settled through and through: nothing waits.
+        details.classification = HistoryClassification::Reconstructed;
+        assert!(!HistoryCompleteness::of(&details).awaits_private_check);
+
+        // Not read yet, as right after Private queries is turned on.
+        assert!(HistoryCompleteness::unread(None).awaits_private_check);
+        assert!(!HistoryCompleteness::unread(None).effects_settled);
+    }
+
+    #[test]
     fn history_mapping_keeps_public_discovery_settled_and_provisional_classification() {
         use zcash_client_backend::data_api::transparent_ledger::{
             AccountMovement, AggregatePayment, EffectCompleteness, PoolEffect,
@@ -3560,6 +3663,8 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: true,
+            awaits_private_check: true,
+            effects_settled: false,
             fee: Fee::Unknown,
             unattributed_fee: None,
             network_fee: None,
@@ -3575,6 +3680,8 @@ mod tests {
             details_complete: true,
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
+            awaits_private_check: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             unattributed_fee: None,
             network_fee: None,

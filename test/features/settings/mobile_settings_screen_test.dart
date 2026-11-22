@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_welcome_a
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_section.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
+import 'package:zcash_wallet/src/features/settings/settings_focus.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/hide_balance_on_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
@@ -288,6 +289,12 @@ Widget _app({
   );
 }
 
+/// Settings opened at the Private queries row.
+class _PrivateQueriesFocus extends SettingsFocusRequest {
+  @override
+  SettingsFocus? build() => SettingsFocus.privateQueries;
+}
+
 /// Setting feedback fixed at `transition`.
 class _Feedback extends EnhancePirTransitionNotifier {
   _Feedback(this.transition);
@@ -468,6 +475,55 @@ void main() {
       );
     });
   }
+  group('opened at Private queries', () {
+    // Settings builds its whole list, rows below the screen included.
+    final row = find.byKey(
+      const ValueKey('mobile_settings_enhance_pir_row'),
+      skipOffstage: false,
+    );
+    double screenHeight(WidgetTester tester) =>
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+
+    void expectRowOnScreen(WidgetTester tester) {
+      final rect = tester.getRect(row);
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(rect.bottom, lessThanOrEqualTo(screenHeight(tester)));
+    }
+
+    testWidgets('scrolls there as Settings opens', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          enhancePirEnabled: true,
+          extraOverrides: [
+            settingsFocusRequestProvider.overrideWith(_PrivateQueriesFocus.new),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expectRowOnScreen(tester);
+      expect(
+        ProviderScope.containerOf(
+          tester.element(row),
+        ).read(settingsFocusRequestProvider),
+        isNull,
+      );
+    });
+
+    testWidgets('scrolls there when Settings is already open', (tester) async {
+      await tester.pumpWidget(_app(enhancePirEnabled: true));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(row).top, greaterThan(screenHeight(tester)));
+
+      ProviderScope.containerOf(tester.element(row))
+          .read(settingsFocusRequestProvider.notifier)
+          .request(SettingsFocus.privateQueries);
+      await tester.pumpAndSettle();
+
+      expectRowOnScreen(tester);
+    });
+  });
+
   testWidgets('mobile private recovery is labelled experimental', (
     tester,
   ) async {
@@ -1036,7 +1092,9 @@ void main() {
         ],
       ),
     );
-    await tester.pumpAndSettle();
+    // The check's loader turns from the start, so the screen never settles.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     final status = find.byKey(
       const ValueKey('near_swap_privacy_checking_past_swaps'),
     );

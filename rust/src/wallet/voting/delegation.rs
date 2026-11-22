@@ -87,6 +87,16 @@ pub async fn open_pipeline(
     inputs: &RoundInputs,
     hotkey: Option<VotingHotkey>,
 ) -> Result<Arc<VizorDelegationPipeline>, VotingError> {
+    open_pipeline_with_snapshot_error(inputs, hotkey, internal).await
+}
+
+/// Lets callers distinguish a snapshot transport failure from an invalid
+/// saved delegation when deciding whether the voter can try again.
+pub(crate) async fn open_pipeline_with_snapshot_error<E: From<VotingError>>(
+    inputs: &RoundInputs,
+    hotkey: Option<VotingHotkey>,
+    snapshot_error: impl FnOnce(String) -> E,
+) -> Result<Arc<VizorDelegationPipeline>, E> {
     zcash_voting::validate_round_params(&inputs.round_params)
         .map_err(|error| invalid_input(format!("Invalid voting round params: {error}")))?;
     let tree_state = fetch_snapshot_tree_state(
@@ -94,7 +104,7 @@ pub async fn open_pipeline(
         inputs.round_params.snapshot_height,
     )
     .await
-    .map_err(internal)?;
+    .map_err(snapshot_error)?;
     let lwd = DelegationLwdInputs::from_anchor_tree_state(
         inputs.network,
         inputs.round_params.clone(),

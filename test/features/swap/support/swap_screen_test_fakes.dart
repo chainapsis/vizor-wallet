@@ -152,6 +152,10 @@ class _FakeSwapProvider implements SwapProvider {
   final startedQuotes = <SwapQuote>[];
   final statusRequests = <_StatusRequest>[];
   final submittedDeposits = <_SubmittedDeposit>[];
+
+  /// Deposit addresses still unpaid past their deadline, as 1Click reports a
+  /// swap nobody paid. An expired swap checked here stays expired.
+  final unpaidDepositAddresses = <String>{};
   final List<SwapAsset> supportedAssets;
   final Object? submitDepositError;
 
@@ -264,6 +268,23 @@ class _FakeSwapProvider implements SwapProvider {
     statusRequests.add(
       _StatusRequest(depositAddress: intentId, depositMemo: depositMemo),
     );
+    if (unpaidDepositAddresses.contains(intentId)) {
+      return SwapIntentSnapshot(
+        id: intentId,
+        providerLabel: providerLabel,
+        pairText: '',
+        sellAmountText: '',
+        receiveEstimateText: '',
+        status: SwapIntentStatus.awaitingDeposit,
+        nextAction: 'Waiting for deposit',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.zec,
+          address: intentId,
+          deadline: DateTime.now().toUtc().subtract(const Duration(hours: 1)),
+        ),
+        statusOnly: true,
+      );
+    }
     final statusQuote = await quote(
       const SwapQuoteRequest(
         direction: SwapDirection.zecToExternal,

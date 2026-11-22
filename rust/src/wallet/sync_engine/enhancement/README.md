@@ -694,10 +694,30 @@ Classification follows the facts it has:
   `shielded`. A receipt follows a changed role only when that transaction has
   a single row, so separate self-send legs are not conflated.
 
-While Private queries is enabled, Activity rows mark an uncertain summary
-"Details incomplete"; established summaries keep their dates even when the
-payment details are missing. Receipts show a "Details: Incomplete" row and an
-"Unknown" fee when necessary. This is temporary integration feedback while
+While Private queries is enabled, Activity rows mark an uncertain summary:
+"Checking privately" while it waits on private recovery's transparent check,
+"Details incomplete" otherwise. `TransactionInfo::awaits_private_check` says
+which: it is set when only transparent effects are unsettled, or before the
+history read reports (as right after Private queries is turned on), and never
+for an entry that waits on scanning or lacks payment details. Established summaries keep their dates even
+when the payment details are missing. When more than one row in a list waits
+on the check (right after Private queries is turned on), the list shows one
+"Checking details privately" notice instead and those rows keep their dates.
+Desktop Home rows carry no label, so there the notice shows for one waiting
+row too.
+Once recovery stops, any row it left keeps its date and the same notice says
+why: in Home's words for a stop Vizor retries, or in one sentence with a
+button to the Private queries setting for the stops only turning it off
+clears, whose turn-off prompt says what that does. It shows with the setting
+off too, where turning it off did not finish; rows and receipts then keep
+their marks, so a provisional amount does not read as final. Receipts show a
+"Details" row and an "Unknown" fee when necessary: "Checking privately" while
+the entry awaits that check, otherwise "Incomplete". Its help says why
+recovery stopped when it did, and, when `TransactionInfo::effects_settled`
+says nothing still scanning or checking can change the entry, that the
+missing details stay unknown. A transparent details lookup the wallet gave up
+on says so, without promising an update. This is
+temporary integration feedback while
 private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and
 the previous placeholder or omitted fee row for an unrecorded fee. History
@@ -933,8 +953,9 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   exact fee, input and output counts, the first address-shaped source, the
   first two outputs (value and address) and flags naming what it omits
   (several source scripts, more than two outputs, transparent inputs with
-  net shielded funding). The wallet shows the omissions and offers a public
-  lookup of the whole transaction only when the user asks for one. One
+  net shielded funding). A receipt names only what its listed outputs leave
+  out, never how the transaction was funded, and offers a public lookup of the
+  whole transaction only when the user asks for one. One
   library `TxidDisplayService` per origin lives for the whole process, so the
   derived native profiles are built once. These are process statics: a
   restart starts with a fresh service, no map and no map check time. After a

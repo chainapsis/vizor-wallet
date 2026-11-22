@@ -142,6 +142,36 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     url: 'https://ap.zec.rocks:443',
   ),
   const RpcEndpointPreset(
+    id: 'fastz',
+    region: RpcEndpointRegion.global,
+    label: 'Zcash Labs', // l10n-ignore: provider name
+    url: 'https://rpc.fastz.cash:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'na-fastz',
+    region: RpcEndpointRegion.americas,
+    label: 'Zcash Labs North America', // l10n-ignore: provider name
+    url: 'https://na.fastz.cash:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'sa-fastz',
+    region: RpcEndpointRegion.americas,
+    label: 'Zcash Labs South America', // l10n-ignore: provider name
+    url: 'https://sa.fastz.cash:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'eu-fastz',
+    region: RpcEndpointRegion.europe,
+    label: 'Zcash Labs Europe', // l10n-ignore: provider name
+    url: 'https://eu.fastz.cash:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'ap-fastz',
+    region: RpcEndpointRegion.asiaPacific,
+    label: 'Zcash Labs Asia Pacific', // l10n-ignore: provider name
+    url: 'https://ap.fastz.cash:443',
+  ),
+  const RpcEndpointPreset(
     id: 'z3-deepikaw',
     region: RpcEndpointRegion.community,
     label: 'Deepikaw Z3', // l10n-ignore: provider name
@@ -241,6 +271,11 @@ List<RpcEndpointConfig> automaticRpcEndpointCandidatesFor(
     'ap-zec-rocks',
     'na-zec-rocks',
     'sa-zec-rocks',
+    'fastz',
+    'eu-fastz',
+    'ap-fastz',
+    'na-fastz',
+    'sa-fastz',
   ];
   return List.unmodifiable([
     for (final id in ids)
@@ -269,6 +304,11 @@ String? automaticRpcEndpointOperatorForUrl(String url) =>
       'ap.zec.rocks' ||
       'na.zec.rocks' ||
       'sa.zec.rocks' => 'zec-rocks',
+      'rpc.fastz.cash' ||
+      'eu.fastz.cash' ||
+      'ap.fastz.cash' ||
+      'na.fastz.cash' ||
+      'sa.fastz.cash' => 'zcash-labs',
       _ => null,
     };
 

@@ -9,6 +9,8 @@ import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/features/payment_links/services/payment_link_received_store.dart';
 import '../src/features/payment_links/widgets/payment_link_claim_outcome_view.dart';
+import '../src/features/payment_links/widgets/payment_link_confetti.dart';
+import '../src/features/payment_links/widgets/payment_link_wizard_chrome.dart';
 import '../src/core/l10n/l10n.dart';
 
 Widget buildClaimNoBalanceUseCase(BuildContext context) =>
@@ -55,6 +57,34 @@ Widget buildClaimArchivedUseCase(BuildContext context) => _wrapOutcome(
     onArchive: () {},
   ),
 );
+Widget buildClaimAlreadyReceivedUseCase(BuildContext context) =>
+    _receivedOutcome(context, receivedAccountName: 'Savings');
+Widget buildClaimReceivedByRemovedAccountUseCase(BuildContext context) =>
+    _receivedOutcome(context);
+
+/// A Card this wallet already received, framed as each form factor's redeem
+/// screen shows it; a removed receiving account reads as claimed elsewhere.
+Widget _receivedOutcome(BuildContext context, {String? receivedAccountName}) {
+  PaymentLinkClaimOutcomeView view({bool embedded = false}) =>
+      PaymentLinkClaimOutcomeView(
+        availability: PaymentLinkAvailability.claimedElsewhere,
+        receivedAccountName: receivedAccountName,
+        embedded: embedded,
+        onBack: () {},
+      );
+  if (kAppFormFactor == AppFormFactor.mobile) return _wrapOutcome(view());
+  return _wrapOutcome(
+    PaymentLinkReceivedDesktopView(
+      state: PaymentLinkClaimDesktopState.outcome,
+      card: const PaymentLinkLoadingCard(),
+      onBack: () {},
+      backLabel: context.l10n.paymentLinkMyCards,
+      decoration: const PaymentLinkConfetti(),
+      statusContent: view(embedded: true),
+    ),
+  );
+}
+
 Widget _wrapOutcome(Widget view) => Builder(
   builder: (context) => ColoredBox(
     color: context.colors.background.window,

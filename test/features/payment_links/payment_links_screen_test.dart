@@ -725,6 +725,161 @@ void main() {
     });
   }
 
+  PaymentLinkReceivedRecord receivedIn(String accountUuid) =>
+      PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+        status: PaymentLinkReceivedStatus.received,
+        claimLink: null,
+        destinationAccountUuid: accountUuid,
+        claimTxids: 'claim-tx',
+        availability: PaymentLinkAvailability.available,
+      );
+
+  Future<void> pasteIncomingLink(WidgetTester tester) async {
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+  }
+
+  Finder outcomeText(String text) => find.descendant(
+    of: find.byKey(const ValueKey('payment_link_claim_outcome_content')),
+    matching: find.text(text),
+  );
+
+  for (final receiver in [
+    ('account-2', 'Received', 'This gift card was already claimed to Savings.'),
+    (
+      'removed-account',
+      'Claimed elsewhere',
+      "This card was claimed in another wallet first. Your balance hasn't changed.",
+    ),
+  ]) {
+    testWidgets('a card received in ${receiver.$1} is not offered again', (
+      tester,
+    ) async {
+      final operations = FakePaymentLinkOperations(
+        claimable: false,
+        receivedRecords: [receivedIn(receiver.$1)],
+        prepareClaimError: PaymentLinkAlreadyReceivedException(
+          address: incomingLink.address,
+          destinationAccountUuid: receiver.$1,
+        ),
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        bootstrap: twoAccountBootstrap,
+        clipboard: FakePaymentLinkClipboard(
+          text: incomingLink.toUri().toString(),
+        ),
+      );
+      // The receipt belongs to another account, so the list starts empty.
+      await pasteIncomingLink(tester);
+
+      expect(outcomeText(receiver.$2), findsOneWidget);
+      expect(outcomeText(receiver.$3), findsOneWidget);
+      expect(find.text('This gift card is ready to claim.'), findsNothing);
+      expect(operations.preparedLinks, hasLength(1));
+      expect(operations.claimedLinks, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('a received card outcome stays when Received reloads', (
+    tester,
+  ) async {
+    final loadGate = Completer<void>();
+    final operations = FakePaymentLinkOperations(
+      claimable: false,
+      receivedRecords: [receivedIn('account-2')],
+      prepareClaimError: PaymentLinkAlreadyReceivedException(
+        address: incomingLink.address,
+        destinationAccountUuid: 'account-2',
+      ),
+      receivedLoadGate: loadGate,
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: twoAccountBootstrap,
+      clipboard: FakePaymentLinkClipboard(
+        text: incomingLink.toUri().toString(),
+      ),
+    );
+    await pasteIncomingLink(tester);
+    // The received record reaches the screen after the outcome opened.
+    loadGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(
+      outcomeText('This gift card was already claimed to Savings.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a card received in the active account shows its receipt', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      claimable: false,
+      receivedRecords: [receivedIn('account-1')],
+      prepareClaimError: PaymentLinkAlreadyReceivedException(
+        address: incomingLink.address,
+        destinationAccountUuid: 'account-1',
+      ),
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: twoAccountBootstrap,
+    );
+    ProviderScope.containerOf(tester.element(find.byType(MaterialApp)))
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('This gift card was already claimed to Primary Vault.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('payment_link_received_${incomingLink.address}')),
+      findsOneWidget,
+    );
+    expect(find.text('This gift card is ready to claim.'), findsNothing);
+    expect(operations.claimedLinks, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a received record does not override an empty card check', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      claimable: false,
+      receivedRecords: [receivedIn('account-2')],
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: twoAccountBootstrap,
+      clipboard: FakePaymentLinkClipboard(
+        text: incomingLink.toUri().toString(),
+      ),
+    );
+    await pasteIncomingLink(tester);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('payment_link_claim_outcome_content')),
+        matching: find.text('No balance'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('This gift card is ready to claim.'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a card claimed elsewhere is grouped and removed on confirm', (
     tester,
   ) async {

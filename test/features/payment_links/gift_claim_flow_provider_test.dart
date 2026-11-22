@@ -552,6 +552,24 @@ void main() {
     },
   );
 
+  test('a card this wallet received keeps its receiving account', () async {
+    final container = makeContainer();
+
+    flow(container).open(incomingLink);
+    operations.failNext(
+      PaymentLinkAlreadyReceivedException(
+        address: incomingLink.address,
+        destinationAccountUuid: 'account-2',
+      ),
+    );
+    await pumpEventQueue();
+
+    final state = container.read(giftClaimFlowProvider)!;
+    expect(state.phase, GiftClaimPhase.failed);
+    expect(state.failure, GiftClaimFailure.alreadyReceived);
+    expect(state.receivedAccountUuid, 'account-2');
+  });
+
   test('check failures become their own states', () async {
     final container = makeContainer();
 

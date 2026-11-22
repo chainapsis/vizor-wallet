@@ -159,6 +159,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   VizorPaymentLink? _outcomeLink;
   PaymentLinkAvailability _outcomeAvailability =
       PaymentLinkAvailability.noBalance;
+
+  /// Set when [_outcomeLink] is a Card this wallet already received.
+  PaymentLinkAlreadyReceivedException? _alreadyReceivedOutcome;
   bool _showArchivedCards = false;
 
   int _mobileNavigationEpoch = 0;
@@ -873,8 +876,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
 
   void _applyReceivedCards(List<PaymentLinkReceivedRecord> records) {
     _receivedCards = records;
+    // Leaves an in-flight claim's outcome once it lands; a Card that was
+    // already received when opened stays on its outcome.
     if (_page == PaymentLinksLocalPage.redeem &&
         _outcomeLink != null &&
+        _alreadyReceivedOutcome == null &&
         records.any(
           (record) =>
               record.address == _outcomeLink!.address &&
@@ -927,6 +933,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     if (!mounted || !_isCurrentNavigation(epoch)) return;
     _outcomeLink = session.link;
     _outcomeAvailability = availability;
+    _alreadyReceivedOutcome = null;
   }
 
   void _rememberReceivedLink(VizorPaymentLink link) {
@@ -972,6 +979,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       setState(() {
         _outcomeLink = link;
         _outcomeAvailability = record.availability;
+        _alreadyReceivedOutcome = null;
         _page = PaymentLinksLocalPage.redeem;
       });
     } else {
@@ -985,50 +993,76 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final record = _receivedCards
         .where((r) => r.address == link.address)
         .firstOrNull;
+    final alreadyReceived = _alreadyReceivedOutcome;
+    // A removed account is no longer this wallet's, as any other claimer.
+    final receivedAccountName = alreadyReceived == null
+        ? null
+        : ref
+              .watch(accountProvider)
+              .value
+              ?.accounts
+              .where(
+                (account) =>
+                    account.uuid == alreadyReceived.destinationAccountUuid,
+              )
+              .firstOrNull
+              ?.name;
     return PaymentLinkClaimOutcomeView(
       embedded: embedded,
-      availability: record?.availability ?? _outcomeAvailability,
+      // A received record keeps its claim-time availability; the check that
+      // opened this outcome is the only current answer for it.
+      availability: alreadyReceived != null
+          ? PaymentLinkAvailability.claimedElsewhere
+          : record == null ||
+                record.status == PaymentLinkReceivedStatus.received
+          ? _outcomeAvailability
+          : record.availability,
+      receivedAccountName: receivedAccountName,
       busy: _operationInProgress,
       archived: record?.archived ?? false,
       onBack: () => _showPage(PaymentLinksLocalPage.home),
-      onCheck: () async {
-        final epoch = _mobileNavigationEpoch;
-        if (record?.isClaimInFlight ?? false) {
-          setState(() => _operationInProgress = true);
-          try {
-            var records = _receivedCards;
-            await ref.read(paymentLinkClaimCoordinatorProvider).trackRetention(
-              () async {
-                records = await _paymentLinkOperations
-                    .inspectReceivedLinkClaims(
-                      _receivedCards,
-                      allowResubmit: false,
-                    );
-              },
-            );
-            if (!mounted || !_isCurrentNavigation(epoch)) return;
-            setState(() {
-              _applyReceivedCards(records);
-              final current = records
-                  .where((r) => r.address == link.address)
-                  .firstOrNull;
-              _outcomeAvailability =
-                  current?.availability ?? PaymentLinkAvailability.checking;
-              if (current?.status == PaymentLinkReceivedStatus.received) {
-                _page = PaymentLinksLocalPage.home;
+      // Nothing a later check finds can change an already received Card.
+      onCheck: alreadyReceived != null
+          ? null
+          : () async {
+              final epoch = _mobileNavigationEpoch;
+              if (record?.isClaimInFlight ?? false) {
+                setState(() => _operationInProgress = true);
+                try {
+                  var records = _receivedCards;
+                  await ref
+                      .read(paymentLinkClaimCoordinatorProvider)
+                      .trackRetention(() async {
+                        records = await _paymentLinkOperations
+                            .inspectReceivedLinkClaims(
+                              _receivedCards,
+                              allowResubmit: false,
+                            );
+                      });
+                  if (!mounted || !_isCurrentNavigation(epoch)) return;
+                  setState(() {
+                    _applyReceivedCards(records);
+                    final current = records
+                        .where((r) => r.address == link.address)
+                        .firstOrNull;
+                    _outcomeAvailability =
+                        current?.availability ??
+                        PaymentLinkAvailability.checking;
+                    if (current?.status == PaymentLinkReceivedStatus.received) {
+                      _page = PaymentLinksLocalPage.home;
+                    }
+                  });
+                } catch (_) {
+                  if (mounted && _isCurrentNavigation(epoch)) {
+                    _showError(context.l10n.paymentLinkCardStatusCheckFailed);
+                  }
+                } finally {
+                  if (mounted) setState(() => _operationInProgress = false);
+                }
+              } else {
+                await _checkPaymentLink(link);
               }
-            });
-          } catch (_) {
-            if (mounted && _isCurrentNavigation(epoch)) {
-              _showError(context.l10n.paymentLinkCardStatusCheckFailed);
-            }
-          } finally {
-            if (mounted) setState(() => _operationInProgress = false);
-          }
-        } else {
-          await _checkPaymentLink(link);
-        }
-      },
+            },
       onRemove: record != null && record.canRemove
           ? () => _requestRemoveReceivedCard(record)
           : null,
@@ -2352,6 +2386,38 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _page = PaymentLinksLocalPage.home;
       });
       _showError(context.l10n.paymentLinkClaimInFlightError);
+    } on PaymentLinkAlreadyReceivedException catch (error) {
+      log('PaymentLinkClaim: link was already received in this wallet');
+      if (!mounted || !_isCurrentNavigation(epoch)) return;
+      final accountState = ref.read(accountProvider).value;
+      final account = accountState?.accounts
+          .where((account) => account.uuid == error.destinationAccountUuid)
+          .firstOrNull;
+      final receivedHere =
+          account != null && account.uuid == accountState?.activeAccountUuid;
+      // The active account's list shows the Card itself. Another account hides
+      // it, so the redeem area keeps the outcome where the paste landed.
+      setState(() {
+        _receivedLink = null;
+        _claimStageActive = false;
+        _longSyncLink = null;
+        _retryLink = null;
+        _redeemState = PaymentLinkRedeemVisualState.paste;
+        if (receivedHere) {
+          _activeCardsTab = PaymentLinkCardsTab.received;
+          _page = PaymentLinksLocalPage.home;
+        } else {
+          _outcomeLink = link.withResolvedMetadata(address: error.address);
+          _alreadyReceivedOutcome = error;
+          _page = PaymentLinksLocalPage.redeem;
+        }
+      });
+      if (receivedHere) {
+        showAppToast(
+          context,
+          context.l10n.paymentLinkAlreadyClaimedToAccount(account.name),
+        );
+      }
     } on PaymentLinkNetworkMismatchException catch (error) {
       log(
         'PaymentLinkClaim: rejected link for another network '

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -102,6 +103,10 @@ class MobileSettingsScreen extends ConsumerWidget {
             // Soft edges under the top nav and the tab bar, as on every tab.
             child: MobileTabRootScrollFades(
               child: ListView(
+                // The list is a few screens long: built whole, a row another
+                // screen opens Settings at (SettingsFocusTarget) is there to
+                // scroll to.
+                scrollCacheExtent: const ScrollCacheExtent.viewport(10),
                 padding: EdgeInsets.fromLTRB(
                   kMobilePageMargin,
                   AppSpacing.s,

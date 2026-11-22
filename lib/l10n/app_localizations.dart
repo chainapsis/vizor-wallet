@@ -538,6 +538,12 @@ abstract class AppLocalizations {
   /// **'Transparent balance'**
   String get activityBalanceTransparent;
 
+  /// Value of the Details row when the private lookup of a transaction's transparent outputs was given up; no later sync retries it.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t be looked up privately'**
+  String get activityDetailsGaveUp;
+
   /// Row value shown after a public load of the transaction details failed; the row stays tappable.
   ///
   /// In en, this message translates to:
@@ -759,35 +765,11 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 more output} other{{count} more outputs}}'**
   String activityOmissionMoreOutputs(int count);
 
-  /// Item in the list of what private details leave out: further sender addresses.
-  ///
-  /// In en, this message translates to:
-  /// **'other sending addresses'**
-  String get activityOmissionOtherSenders;
-
   /// Item in the list of what private details leave out: an output address.
   ///
   /// In en, this message translates to:
   /// **'an output address'**
   String get activityOmissionOutputAddress;
-
-  /// Item in the list of what private details leave out: the sender address.
-  ///
-  /// In en, this message translates to:
-  /// **'the sending address'**
-  String get activityOmissionSender;
-
-  /// Item in the list of what private details leave out: inputs owned by other wallets.
-  ///
-  /// In en, this message translates to:
-  /// **'inputs from other wallets'**
-  String get activityOmissionSharedFunding;
-
-  /// Item in the list of what private details leave out: the shielded part of the funds.
-  ///
-  /// In en, this message translates to:
-  /// **'the shielded part of the funding'**
-  String get activityOmissionShieldedFunding;
 
   /// Subtitle of a Pay activity row: the payment was made from shielded ZEC.
   ///
@@ -825,6 +807,30 @@ abstract class AppLocalizations {
   /// **'Mixed'**
   String get activityPoolMixed;
 
+  /// Short notice above Activity lists (Home's recent activity and the Activity tab) while Private queries is still checking several entries; replaces the label on each of them. Avoid leaving one word alone on a second line.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking details privately. Amounts may still change.'**
+  String get activityPrivateCheckNotice;
+
+  /// Short notice above Activity lists when private recovery stopped because earlier public records don't match it; a button to the Private queries setting follows. Home's homeTransparentStopLegacyDiscrepancy says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier public records don\'t match private recovery.'**
+  String get activityPrivateCheckStopLegacyDiscrepancy;
+
+  /// Short notice above Activity lists when turning off Private queries did not finish; a button to the Private queries setting follows. Home's homeTransparentStopOptOutUnfinished says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Turning off Private queries didn\'t finish.'**
+  String get activityPrivateCheckStopOptOutUnfinished;
+
+  /// Short notice above Activity lists when private recovery stopped on conflicting records; a button to the Private queries setting follows. Home's homeTransparentStopQuarantined says the same at length.
+  ///
+  /// In en, this message translates to:
+  /// **'Private recovery found conflicting records for this account.'**
+  String get activityPrivateCheckStopQuarantined;
+
   /// Body of the dialog that confirms loading one transaction's details from the server.
   ///
   /// In en, this message translates to:
@@ -855,6 +861,24 @@ abstract class AppLocalizations {
   /// **'Card fee'**
   String get activityReceiptCardFee;
 
+  /// Help for a receipt whose private check stopped before it finished; the reason follows as its own paragraph.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor stopped checking this transaction privately before it finished. The amount shown may change.'**
+  String get activityReceiptCheckStoppedHelp;
+
+  /// Value of the Details row on a receipt, and the title of its help sheet, while Private queries is still checking the transaction. Short.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking privately'**
+  String get activityReceiptCheckingPrivately;
+
+  /// Explains a receipt whose Details row says Private queries is still checking it.
+  ///
+  /// In en, this message translates to:
+  /// **'A transaction can also involve your transparent funds. Vizor is still checking this one privately, and the check finishes on its own. The amount shown may change.'**
+  String get activityReceiptCheckingPrivatelyHelp;
+
   /// Label of a row on the receipt of a received transaction that cannot be spent yet: how many network confirmations it has.
   ///
   /// In en, this message translates to:
@@ -884,6 +908,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.'**
   String get activityReceiptDetailsIncompleteHelp;
+
+  /// Help for a receipt whose details stay incomplete although nothing is still being scanned or checked privately.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries can\'t work out every detail of this transaction, so some stay unknown. The amount shown is how much this account\'s balance changed.'**
+  String get activityReceiptDetailsSettledHelp;
 
   /// Part of the gift card batch cost breakdown: the network fee while the batch is pending or failed.
   ///
@@ -950,6 +980,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Total fee for this transaction. Your account\'s share of this fee is unknown.'**
   String get activityReceiptUnattributedFeeHelp;
+
+  /// Short label under the amount of an Activity row, in place of its date, while Private queries is still checking that transaction. Keep it as short as the date.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking privately'**
+  String get activityRowCheckingPrivately;
 
   /// Timestamp of an activity row from today on desktop.
   ///
@@ -11924,6 +11960,12 @@ abstract class AppLocalizations {
   /// **'Your Gift Card\nis almost ready!'**
   String get paymentLinkAlmostReadyReceivedHeading;
 
+  /// Error shown when the user redeems a Gift Card that this wallet already claimed. {accountName} is the name of the account that received it.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card was already claimed to {accountName}.'**
+  String paymentLinkAlreadyClaimedToAccount(String accountName);
+
   /// Screen reader label of a disabled currency toggle on the Gift Card amount field; {currency} is USD and {reason} explains why it is unavailable.
   ///
   /// In en, this message translates to:
@@ -17904,6 +17946,12 @@ abstract class AppLocalizations {
   /// **'{symbol} sent'**
   String swapActivityStepSent(String symbol);
 
+  /// Description of the first swap progress step after the user says they sent an external deposit that NEAR Intents has not seen yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for NEAR Intents to detect your deposit.'**
+  String get swapActivityStepSentAwaitingDetection;
+
   /// Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit.
   ///
   /// In en, this message translates to:
@@ -18102,16 +18150,28 @@ abstract class AppLocalizations {
   /// **'Confidential'**
   String get swapConfidentialLabel;
 
+  /// Note at the bottom of a confidential payment's progress card, where a standard payment shows its View on NEAR Intents link: why NEAR Intents explorer links aren't offered. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite. Up to three lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidential payments hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.'**
+  String get swapConfidentialNoExplorerPay;
+
+  /// Note at the bottom of a confidential swap's progress card, where a standard swap shows its View on NEAR Intents link: why NEAR Intents explorer links aren't offered. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite. Up to three lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidential swaps hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.'**
+  String get swapConfidentialNoExplorerSwap;
+
   /// Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen.
   ///
   /// In en, this message translates to:
   /// **'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.'**
   String get swapConfidentialRouteTooltip;
 
-  /// Description under the Confidential toggle in the swap and Pay settings modal.
+  /// Description under the Confidential toggle in the swap and Pay settings modal: what the route hides, limited to NEAR Intents, since the deposit and payout still show on their own chains. The progress card explains the missing explorer link.
   ///
   /// In en, this message translates to:
-  /// **'Your deposit and payout can\'t be tracked to each other.'**
+  /// **'Hides the link between your deposit and payout on NEAR Intents.'**
   String get swapConfidentialSettingDescription;
 
   /// Toast on mobile after the user tries to save a swap address that is already in the address book.
@@ -18222,6 +18282,12 @@ abstract class AppLocalizations {
   /// **'This deposit address is no longer valid.\nPlease, start another swap transaction.'**
   String get swapDepositTimeoutBody;
 
+  /// Body on the desktop deposit screen after the deposit window ended, when the user said they sent the deposit but NEAR Intents never detected it. Contains a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may try to refund it to your refund address.'**
+  String get swapDepositTimeoutClaimedBody;
+
   /// Title of the desktop screen showing the one-time deposit address for a swap.
   ///
   /// In en, this message translates to:
@@ -18270,10 +18336,10 @@ abstract class AppLocalizations {
   /// **'Deposit is not indexed yet.\nCheck again in a few minutes.'**
   String get swapFailureDepositNotIndexed;
 
-  /// [security] Swap status panel: the provider rejected the submitted deposit transaction. Tells the user which deposit details to check.
+  /// [security] Swap status: the provider did not accept a deposit transaction hash (HTTP 400, invalid input). Asks the user to check the hash and try again.
   ///
   /// In en, this message translates to:
-  /// **'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.'**
+  /// **'Couldn’t submit this transaction hash.\nCheck it and try again.'**
   String get swapFailureDepositRejected;
 
   /// Swap status panel: telling the provider about the deposit transaction failed.
@@ -19098,7 +19164,7 @@ abstract class AppLocalizations {
   /// **'Copy deposit details'**
   String get swapSupportCopyAction;
 
-  /// Persistent inline message when copying support details fails.
+  /// Error when copying the deposit details from the swap support sheet fails: a toast on mobile, an inline line on desktop.
   ///
   /// In en, this message translates to:
   /// **'Couldn’t copy the details. Try again.'**
@@ -19115,11 +19181,29 @@ abstract class AppLocalizations {
     String routeDetails,
   );
 
+  /// Toast after the swap support sheet copies the deposit details for an email.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit details copied'**
+  String get swapSupportDetailsCopied;
+
   /// Instructions for copying deposit details into a support email the user writes.
   ///
   /// In en, this message translates to:
   /// **'If you still need help, copy the deposit details and paste them into an email to the address below.'**
   String get swapSupportDirectHelp;
+
+  /// Toast after the swap support sheet copies the support email address.
+  ///
+  /// In en, this message translates to:
+  /// **'Support email copied'**
+  String get swapSupportEmailCopied;
+
+  /// Error toast when copying the support email address from the swap support sheet fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t copy the email address. Try again.'**
+  String get swapSupportEmailCopyFailed;
 
   /// Existing swap refund-policy design: ExpiredBody text in the failed or expired deposit support flow.
   ///
@@ -19174,6 +19258,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Please, start another swap transaction.'**
   String get swapTimeoutBody;
+
+  /// Body on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it.
+  ///
+  /// In en, this message translates to:
+  /// **'If it arrives late, NEAR may try to refund it to your refund address.'**
+  String get swapTimeoutClaimedBody;
+
+  /// Serif headline on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it. Two lines at most.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit wasn’t detected in time'**
+  String get swapTimeoutClaimedHeadline;
+
+  /// Link under the restart button on the swap timeout screen when the user said they sent the deposit; opens the support sheet with the deposit details and the support email.
+  ///
+  /// In en, this message translates to:
+  /// **'Get help'**
+  String get swapTimeoutGetHelp;
 
   /// Headline on the swap timeout screen explaining the one-time deposit address has expired.
   ///
@@ -20252,6 +20354,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reconnect your Ledger and try again.'**
   String get votingLedgerReconnect;
+
+  /// Shown during the new Ledger approval after an unsigned voting request was repaired.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote request was rebuilt for compatibility with the live vote. Review it again on your Ledger.'**
+  String get votingLedgerRequestRebuilt;
 
   /// Shown in place of an untranslated voting SDK error when a voting screen fails to load: alone under a load-failed title, or as {error} in votingResultsLoadFailed, votingResultsRoundLoadFailed, votingReviewLoadFailed and votingConfirmationLoadFailed. The English error stays behind commonShowDetails.
   ///

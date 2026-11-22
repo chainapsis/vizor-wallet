@@ -343,10 +343,19 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       previous,
       next,
     ) {
-      if (previous != false || !next) return;
-      unawaited(AppHaptics.privacyToggle());
-      final changed = _confidentialReveal.turnedOn(
-        settingsOpen: _swapModal.value == _SwapModalSurface.slippageSettings,
+      if (previous == null || previous == next) return;
+      final settingsOpen =
+          _swapModal.value == _SwapModalSurface.slippageSettings;
+      // Only the settings turn the route off on purpose. Leaving the
+      // surface, switching accounts or Swap/Pay sessions, or retrying a
+      // standard swap turns it off quietly.
+      if (!next && !settingsOpen) return;
+      // The settings row ticked as it flipped; turning on adds the heavier
+      // tick when it applies, turning off adds none.
+      if (next) unawaited(AppHaptics.privacyToggle());
+      final changed = _confidentialReveal.changed(
+        confidential: next,
+        settingsOpen: settingsOpen,
       );
       if (changed) setState(() {});
     });

@@ -155,7 +155,7 @@ version = "=0.1.0-rc9.8"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.4.0"
+version = "=5.4.1"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -232,7 +232,7 @@ version = "=0.1.0-rc9.8"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_voting]
-version = "=5.4.0"
+version = "=5.4.1"
 features = ["test-fixtures"]
 
 # Real adapter batches for the coordinator's fixture source, the fake txid

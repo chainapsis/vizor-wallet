@@ -59,6 +59,7 @@ class SwapStatusPageContent extends StatefulWidget {
     this.onTabChanged,
     this.onCopy,
     this.explorerUri,
+    this.confidential = false,
     this.flowConnector,
     super.key,
   });
@@ -109,6 +110,9 @@ class SwapStatusPageContent extends StatefulWidget {
   /// Copy callback for the [SwapReviewInfo] address lines (clipboard + toast).
   final ValueChanged<String>? onCopy;
   final Uri? explorerUri;
+
+  /// A confidential swap: the progress card says why it has no explorer link.
+  final bool confidential;
 
   /// Optional replacement for the paying/receiving flow arrow row.
   final Widget? flowConnector;
@@ -318,14 +322,17 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             const SizedBox(height: AppSpacing.sm),
             if (widget.activeTab == SwapStatusTab.progress)
               _SwapDetailCard(
-                hasExplorerFooter: widget.explorerUri != null,
+                hasExplorerFooter:
+                    widget.explorerUri != null || widget.confidential,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _SwapProgressRoute(steps: _displayedSteps()),
                     if (widget.explorerUri case final uri?)
-                      SwapProgressExplorerFooter(uri: uri),
+                      SwapProgressExplorerFooter(uri: uri)
+                    else if (widget.confidential)
+                      SwapProgressConfidentialNote(payment: widget.paymentMode),
                   ],
                 ),
               )
@@ -708,10 +715,10 @@ class _ProgressStep extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
+                      // Wraps at large text sizes; the step grows from its
+                      // minimum height.
                       child: Text(
                         title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         // Desktop redesign: active title is bold (w600) on
                         // accent. Mobile (mobile-ui-vibe-coding-polishing-2):
                         // every title stays w500 (the active step is set
@@ -832,7 +839,7 @@ class _ProgressStepIcon extends StatelessWidget {
               // Mobile (mobile-ui-vibe-coding-polishing-2) shows the per-step
               // action glyph for completed steps; desktop shows a check.
               kAppFormFactor == AppFormFactor.mobile
-                  ? _pendingProgressIcon(step)
+                  ? _completedProgressIcon(step)
                   : AppIcons.check,
               size: 16,
               color: colors.icon.inverse,
@@ -850,9 +857,15 @@ String _pendingProgressIcon(SwapStatusStepData step) {
   return switch (step.kind) {
     SwapStatusStepKind.swap => AppIcons.swapArrows,
     SwapStatusStepKind.walletDelivery => AppIcons.arrowDownCircle,
+    SwapStatusStepKind.depositConfirmation => AppIcons.time,
     SwapStatusStepKind.other => AppIcons.check,
   };
 }
+
+String _completedProgressIcon(SwapStatusStepData step) =>
+    step.kind == SwapStatusStepKind.depositConfirmation
+    ? AppIcons.check
+    : _pendingProgressIcon(step);
 
 /// Detail-rows column for the non-terminal Transaction details tab. The fee
 /// row (the last row) is separated from the rows above by a hairline divider.

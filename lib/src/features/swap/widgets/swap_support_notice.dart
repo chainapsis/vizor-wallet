@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -21,9 +24,16 @@ class SwapSupportPrompt extends StatelessWidget {
     required this.onTap,
     required this.failedSwap,
     super.key,
-  });
+  }) : depositClaimed = false;
+
+  /// The prompt on a timeout whose deposit the user says they sent.
+  const SwapSupportPrompt.depositClaimed({required this.onTap, super.key})
+    : failedSwap = false,
+      depositClaimed = true;
+
   final VoidCallback onTap;
   final bool failedSwap;
+  final bool depositClaimed;
 
   @override
   Widget build(BuildContext context) => Align(
@@ -49,7 +59,9 @@ class SwapSupportPrompt extends StatelessWidget {
             size: AppIconSize.medium,
           ),
           child: Text(
-            failedSwap
+            depositClaimed
+                ? context.l10n.swapTimeoutGetHelp
+                : failedSwap
                 ? context.l10n.swapSupportFailedPrompt
                 : context.l10n.swapSupportExpiredPrompt,
           ),
@@ -90,14 +102,29 @@ class _SwapSupportNoticeState extends State<SwapSupportNotice> {
         ),
       );
     } catch (_) {
-      if (mounted) setState(() => _copyFailed = true);
+      if (!mounted) return;
+      // Mobile reports a failed copy with the destructive toast, as Settings
+      // does for the viewing key; desktop keeps the inline line.
+      if (kAppFormFactor == AppFormFactor.mobile) {
+        showAppToast(
+          context,
+          addressOnly
+              ? l10n.swapSupportEmailCopyFailed
+              : l10n.swapSupportCopyFailed,
+          iconName: AppIcons.warningCircle,
+          tone: AppToastTone.destructive,
+        );
+      } else {
+        setState(() => _copyFailed = true);
+      }
       return;
     }
+    unawaited(AppHaptics.copy());
     if (!mounted) return;
     setState(() => _copyFailed = false);
     showAppToast(
       context,
-      addressOnly ? l10n.commonAddressCopied : l10n.commonCopied,
+      addressOnly ? l10n.swapSupportEmailCopied : l10n.swapSupportDetailsCopied,
     );
   }
 

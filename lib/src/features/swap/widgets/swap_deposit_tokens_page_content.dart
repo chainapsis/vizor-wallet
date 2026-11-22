@@ -18,6 +18,7 @@ import '../../../core/widgets/dot_qr_shape.dart';
 import '../domain/swap_contract.dart';
 import '../../../core/formatting/address_display.dart';
 import '../models/swap_deposit_qr_payload.dart';
+import '../models/swap_token_amount_formatting.dart';
 import 'swap_support_notice.dart';
 
 class SwapDepositTokensPageContent extends StatelessWidget {
@@ -439,7 +440,7 @@ class _MobileDepositQrCard extends StatelessWidget {
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            amountText,
+                            groupSwapAmountText(amountText),
                             textAlign: TextAlign.center,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -627,6 +628,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
   const SwapDepositTimeoutPageContent({
     required this.onRestart,
     this.onLateDeposit,
+    this.depositClaimed = false,
     super.key,
   });
 
@@ -636,9 +638,16 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
   final VoidCallback onRestart;
   final VoidCallback? onLateDeposit;
 
+  /// Whether the user said they sent the deposit. Such a timeout explains
+  /// that it went undetected and offers help instead of asking whether they
+  /// sent one.
+  final bool depositClaimed;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final lateDeposit = onLateDeposit;
+    final claimed = depositClaimed && lateDeposit != null;
     return SizedBox(
       key: const ValueKey('swap_deposit_timeout_panel'),
       width: 340,
@@ -691,9 +700,11 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  context.l10n.swapDepositTimeoutBody,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  claimed
+                      ? context.l10n.swapDepositTimeoutClaimedBody
+                      : context.l10n.swapDepositTimeoutBody,
+                  maxLines: claimed ? null : 2,
+                  overflow: claimed ? null : TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.accent,
@@ -712,9 +723,11 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
             leading: const AppIcon(AppIcons.renew, size: 16),
             child: Text(context.l10n.swapTimeoutRestart),
           ),
-          if (onLateDeposit != null) ...[
+          if (lateDeposit != null) ...[
             const SizedBox(height: AppSpacing.xs),
-            SwapSupportPrompt(onTap: onLateDeposit!, failedSwap: false),
+            claimed
+                ? SwapSupportPrompt.depositClaimed(onTap: lateDeposit)
+                : SwapSupportPrompt(onTap: lateDeposit, failedSwap: false),
           ],
         ],
       ),
@@ -775,7 +788,7 @@ class _DepositQrCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      amountText,
+                      groupSwapAmountText(amountText),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.headlineSmall.copyWith(
@@ -1129,7 +1142,7 @@ class _DepositDetailsList extends StatelessWidget {
             label: mobile
                 ? context.l10n.swapDepositAmountToDeposit
                 : context.l10n.commonAmount,
-            value: amountText,
+            value: groupSwapAmountText(amountText),
             copyText: _depositAmountCopyText(amountText, asset),
             toastMessage: mobile
                 ? context.l10n.swapDepositAmountCopiedMobile

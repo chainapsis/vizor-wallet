@@ -8,6 +8,7 @@ import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_section.dart';
+import '../../settings_focus.dart';
 import '../near_swap_privacy_info.dart';
 import '../settings_sub_option.dart';
 import 'mobile_tor_control.dart';
@@ -43,7 +44,10 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const MobileTorControl(),
-          const MobilePrivateQueriesControl(divided: true),
+          const SettingsFocusTarget(
+            focus: SettingsFocus.privateQueries,
+            child: MobilePrivateQueriesControl(divided: true),
+          ),
           if (nearSwapPrivacy != null) ...[
             const SizedBox(height: AppSpacing.md),
             // An option of Private queries: its icon sits under the label

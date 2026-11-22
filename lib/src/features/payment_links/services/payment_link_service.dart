@@ -616,6 +616,23 @@ class PaymentLinkClaimInFlightException implements Exception {
   String toString() => 'This gift card is already being received.'; // l10n-ignore: exception text, UI branches on the type
 }
 
+/// This wallet already received the Gift Card, so nothing is left to claim.
+///
+/// [destinationAccountUuid] names the receiving account, which may since have
+/// been removed. [address] is the Card's, which an address-free link lacks.
+class PaymentLinkAlreadyReceivedException implements Exception {
+  const PaymentLinkAlreadyReceivedException({
+    required this.address,
+    required this.destinationAccountUuid,
+  });
+
+  final String address;
+  final String? destinationAccountUuid;
+
+  @override
+  String toString() => 'This gift card was already received in this wallet.'; // l10n-ignore: exception text, UI branches on the type
+}
+
 /// A pasted Gift Card belongs to a different Zcash network than the wallet.
 ///
 /// This is a permanent property of the link, not a transient lookup failure,
@@ -2079,6 +2096,14 @@ class PaymentLinkService
       requirePreparation();
       if (existingRecord?.isClaimInFlight ?? false) {
         throw const PaymentLinkClaimInFlightException();
+      }
+      // This wallet already took the balance; a scan could only report an
+      // empty Card, so say where it went instead.
+      if (existingRecord?.status == PaymentLinkReceivedStatus.received) {
+        throw PaymentLinkAlreadyReceivedException(
+          address: link.address,
+          destinationAccountUuid: existingRecord!.destinationAccountUuid,
+        );
       }
       log('PaymentLinkClaim: recovery address validated');
 

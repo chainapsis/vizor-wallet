@@ -3624,6 +3624,18 @@ class TransactionInfo {
   /// A provisional debit is a net amount, not a payment amount.
   final bool provisional;
 
+  /// Whether the entry is provisional only because private recovery is
+  /// still checking its transparent side, or its history has not been read
+  /// yet (as right after Private queries is turned on). False for an entry
+  /// that waits on scanning or lacks payment details.
+  final bool awaitsPrivateCheck;
+
+  /// Whether every effect the account has in the entry is settled: no
+  /// scan or private check still running can change it. A provisional
+  /// entry whose effects are settled stays provisional until the wallet
+  /// learns more another way.
+  final bool effectsSettled;
+
   /// Whether `display_amount` is a balance movement that retains its fee,
   /// rather than an established payment. Show it as a net change, including
   /// when the account's fee share is unknown.
@@ -3648,6 +3660,8 @@ class TransactionInfo {
     required this.createdTime,
     required this.detailsComplete,
     required this.provisional,
+    this.awaitsPrivateCheck = false,
+    this.effectsSettled = false,
     required this.amountIncludesFee,
   });
 
@@ -3671,6 +3685,8 @@ class TransactionInfo {
       createdTime.hashCode ^
       detailsComplete.hashCode ^
       provisional.hashCode ^
+      awaitsPrivateCheck.hashCode ^
+      effectsSettled.hashCode ^
       amountIncludesFee.hashCode;
 
   @override
@@ -3696,6 +3712,8 @@ class TransactionInfo {
           createdTime == other.createdTime &&
           detailsComplete == other.detailsComplete &&
           provisional == other.provisional &&
+          awaitsPrivateCheck == other.awaitsPrivateCheck &&
+          effectsSettled == other.effectsSettled &&
           amountIncludesFee == other.amountIncludesFee;
 }
 

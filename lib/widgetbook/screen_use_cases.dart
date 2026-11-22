@@ -826,6 +826,8 @@ Widget buildMobileSettingsMainUseCase(
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
       ),
+      // Settings builds its whole list, the swap history check included.
+      swapRecoveryUsesServerProvider.overrideWith((_) async => false),
     ],
     child: _MobilePreviewFrame(
       constrainToDesignSize: false,

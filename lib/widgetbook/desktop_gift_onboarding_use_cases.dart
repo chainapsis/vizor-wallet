@@ -138,6 +138,20 @@ Widget buildDesktopGiftPasswordUseCase(BuildContext context) => const _Capture(
 );
 Widget buildDesktopGiftCheckErrorUseCase(BuildContext context) =>
     const _Capture(screen: GiftClaimScreen(), phase: GiftClaimPhase.failed);
+Widget buildDesktopGiftAlreadyReceivedUseCase(BuildContext context) =>
+    const _Capture(
+      screen: GiftClaimScreen(addingAccount: true),
+      phase: GiftClaimPhase.failed,
+      failure: GiftClaimFailure.alreadyReceived,
+      receivedAccountUuid: 'savings',
+    );
+Widget buildDesktopGiftReceivedByRemovedAccountUseCase(BuildContext context) =>
+    const _Capture(
+      screen: GiftClaimScreen(addingAccount: true),
+      phase: GiftClaimPhase.failed,
+      failure: GiftClaimFailure.alreadyReceived,
+      receivedAccountUuid: 'removed',
+    );
 Widget buildDesktopGiftLongScanUseCase(BuildContext context) => const _Capture(
   screen: GiftClaimScreen(),
   phase: GiftClaimPhase.longSyncConfirmation,
@@ -145,9 +159,16 @@ Widget buildDesktopGiftLongScanUseCase(BuildContext context) => const _Capture(
 
 /// Read-only scenarios use only route memory and local fixtures.
 class _Capture extends StatefulWidget {
-  const _Capture({required this.screen, this.phase});
+  const _Capture({
+    required this.screen,
+    this.phase,
+    this.failure = GiftClaimFailure.network,
+    this.receivedAccountUuid,
+  });
   final Widget screen;
   final GiftClaimPhase? phase;
+  final GiftClaimFailure failure;
+  final String? receivedAccountUuid;
   @override
   State<_Capture> createState() => _CaptureState();
 }
@@ -171,8 +192,16 @@ class _CaptureState extends State<_Capture> {
   Widget build(BuildContext context) => ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-      accountProvider.overrideWith(_EmptyAccounts.new),
-      giftClaimFlowProvider.overrideWith(() => _GiftFlow(widget.phase)),
+      accountProvider.overrideWith(
+        () => _CaptureAccounts(named: widget.receivedAccountUuid != null),
+      ),
+      giftClaimFlowProvider.overrideWith(
+        () => _GiftFlow(
+          widget.phase,
+          failure: widget.failure,
+          receivedAccountUuid: widget.receivedAccountUuid,
+        ),
+      ),
       giftCardEntryPriceProvider.overrideWith((_) async => 31.9618),
     ],
     child: Router(
@@ -183,23 +212,33 @@ class _CaptureState extends State<_Capture> {
   );
 }
 
-class _EmptyAccounts extends AccountNotifier {
+/// Empty unless a scenario names the account that received a Card.
+class _CaptureAccounts extends AccountNotifier {
+  _CaptureAccounts({required this.named});
+  final bool named;
+
   @override
-  AccountState build() => const AccountState();
+  AccountState build() => named
+      ? const AccountState(
+          accounts: [AccountInfo(uuid: 'savings', name: 'Savings', order: 0)],
+          activeAccountUuid: 'savings',
+        )
+      : const AccountState();
 }
 
 class _GiftFlow extends GiftClaimFlowNotifier {
-  _GiftFlow(this.phase);
+  _GiftFlow(this.phase, {required this.failure, this.receivedAccountUuid});
   final GiftClaimPhase? phase;
+  final GiftClaimFailure failure;
+  final String? receivedAccountUuid;
   @override
   GiftClaimFlowState? build() => phase == null
       ? null
       : GiftClaimFlowState(
           link: _link,
           phase: phase!,
-          failure: phase == GiftClaimPhase.failed
-              ? GiftClaimFailure.network
-              : null,
+          failure: phase == GiftClaimPhase.failed ? failure : null,
+          receivedAccountUuid: receivedAccountUuid,
           inspection: phase == GiftClaimPhase.inspected ? _inspection : null,
           setupPersona: const AccountPersona(
             name: 'Windborne Protector',

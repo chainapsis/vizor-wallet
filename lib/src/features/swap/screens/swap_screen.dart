@@ -191,9 +191,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
       previous,
       next,
     ) {
-      if (previous != false || !next) return;
-      final changed = _confidentialReveal.turnedOn(
-        settingsOpen: _swapModal == _SwapModalSurface.slippageSettings,
+      if (previous == null || previous == next) return;
+      final settingsOpen = _swapModal == _SwapModalSurface.slippageSettings;
+      // Only the settings turn the route off on purpose. Leaving the
+      // surface, switching accounts or Swap/Pay sessions, or retrying a
+      // standard swap turns it off quietly.
+      if (!next && !settingsOpen) return;
+      final changed = _confidentialReveal.changed(
+        confidential: next,
+        settingsOpen: settingsOpen,
       );
       if (changed) setState(() {});
     });

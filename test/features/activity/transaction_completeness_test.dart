@@ -4,6 +4,292 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import '../../support/test_l10n.dart';
 
 void main() {
+  test('one notice covers several rows waiting on the private check', () {
+    final waiting = _transaction('aa', 'received', provisional: true);
+    final alsoWaiting = _transaction('bb', 'received', provisional: true);
+    final settled = _transaction('cc', 'received');
+    PrivateCheckNoticeState? notice(
+      List<rust_sync.TransactionInfo> txs, {
+      bool privateQueriesEnabled = true,
+      rust_sync.TransparentStopReason? stop,
+    }) => privateCheckNotice(
+      txs,
+      privateQueriesEnabled: privateQueriesEnabled,
+      stop: stop,
+    );
+
+    expect(
+      notice([waiting, alsoWaiting, settled]),
+      const PrivateCheckNoticeState.checking(),
+    );
+    // An expired transaction is never mined into coverage.
+    final expired = _transaction(
+      'dd',
+      'received',
+      provisional: true,
+      expiredUnmined: true,
+    );
+    expect(notice([waiting, expired]), isNull);
+    // A single new receive keeps its own label.
+    expect(notice([waiting, settled]), isNull);
+    // Rows without labels, as on desktop Home, leave even one to the notice.
+    expect(
+      privateCheckNotice(
+        [waiting, settled],
+        privateQueriesEnabled: true,
+        stop: null,
+        rowsLabelled: false,
+      ),
+      const PrivateCheckNoticeState.checking(),
+    );
+    expect(
+      notice([waiting, alsoWaiting], privateQueriesEnabled: false),
+      isNull,
+    );
+  });
+
+  test('a stopped check shows why on any row it left', () {
+    final waiting = _transaction('aa', 'received', provisional: true);
+    final settled = _transaction('cc', 'received');
+    const stalled = rust_sync.TransparentStopReason.stalled;
+
+    expect(
+      privateCheckNotice(
+        [waiting, settled],
+        privateQueriesEnabled: true,
+        stop: stalled,
+      ),
+      const PrivateCheckNoticeState.stopped(stalled),
+    );
+    // Turning Private queries off did not finish, so the setting reads off.
+    expect(
+      privateCheckNotice(
+        [waiting],
+        privateQueriesEnabled: false,
+        stop: rust_sync.TransparentStopReason.optOutUnfinished,
+      ),
+      const PrivateCheckNoticeState.stopped(
+        rust_sync.TransparentStopReason.optOutUnfinished,
+      ),
+    );
+    // Nothing waits, so the list has nothing to explain.
+    expect(
+      privateCheckNotice([settled], privateQueriesEnabled: true, stop: stalled),
+      isNull,
+    );
+  });
+
+  test('only the stops the user clears point to Settings', () {
+    expect(
+      [
+        for (final stop in rust_sync.TransparentStopReason.values)
+          if (transparentStopNeedsSettings(stop)) stop,
+      ],
+      unorderedEquals([
+        rust_sync.TransparentStopReason.quarantined,
+        rust_sync.TransparentStopReason.legacyDiscrepancy,
+        rust_sync.TransparentStopReason.optOutUnfinished,
+      ]),
+    );
+  });
+
+  test('a stopped receipt explains why its details are incomplete', () {
+    const stalled = rust_sync.TransparentStopReason.stalled;
+    final waiting = _transaction('aa', 'received', provisional: true);
+    expect(receiptPrivateCheckStop(waiting, stop: stalled), stalled);
+    expect(
+      receiptPrivateCheckStop(_transaction('cc', 'received'), stop: stalled),
+      isNull,
+    );
+    expect(
+      receiptIncompleteDetailsHelp(
+        testL10n,
+        awaitsPrivateCheck: false,
+        stop: stalled,
+      ),
+      '${testL10n.activityReceiptCheckStoppedHelp}\n\n'
+      '${testL10n.homeTransparentStopStalled}',
+    );
+    // Nothing running can fill in a settled entry's missing details.
+    expect(
+      receiptIncompleteDetailsHelp(
+        testL10n,
+        awaitsPrivateCheck: false,
+        stop: null,
+        effectsSettled: true,
+      ),
+      testL10n.activityReceiptDetailsSettledHelp,
+    );
+    expect(
+      receiptIncompleteDetailsHelp(
+        testL10n,
+        awaitsPrivateCheck: false,
+        stop: null,
+      ),
+      testL10n.activityReceiptDetailsIncompleteHelp,
+    );
+    expect(
+      receiptIncompleteDetailsHelp(
+        testL10n,
+        awaitsPrivateCheck: true,
+        stop: null,
+      ),
+      testL10n.activityReceiptCheckingPrivatelyHelp,
+    );
+  });
+
+  test('a receipt waits on the private check only for unsettled effects', () {
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'received', provisional: true),
+        recoveryStopped: false,
+      ),
+      isTrue,
+    );
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'received', provisional: true),
+        recoveryStopped: true,
+      ),
+      isFalse,
+    );
+    // A history not read again yet, right after Private queries is turned
+    // on, knows nothing; its receipt says it is being checked, as its row does.
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction(
+          'aa',
+          'received',
+          provisional: true,
+          detailsComplete: false,
+        ),
+        recoveryStopped: false,
+      ),
+      isTrue,
+    );
+    // A debit whose payment is not established lacks details; the wallet does
+    // not report that as the check's to finish.
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction(
+          'aa',
+          'sent',
+          provisional: true,
+          detailsComplete: false,
+          awaitsPrivateCheck: false,
+        ),
+        recoveryStopped: false,
+      ),
+      isFalse,
+    );
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'received', detailsComplete: false),
+        recoveryStopped: false,
+      ),
+      isFalse,
+    );
+    expect(
+      receiptAwaitsPrivateCheck(
+        _transaction('aa', 'received', provisional: true, expiredUnmined: true),
+        recoveryStopped: false,
+      ),
+      isFalse,
+    );
+  });
+
+  test('a send the wallet just built waits on scanning, not the check', () {
+    // Its shielded side is still unsettled, so the wallet does not report it
+    // as waiting on the check.
+    final justSent = _transaction(
+      'aa',
+      'sent',
+      provisional: true,
+      mined: false,
+      awaitsPrivateCheck: false,
+    );
+    expect(entryAwaitsPrivateCheck(justSent), isFalse);
+    expect(
+      receiptAwaitsPrivateCheck(justSent, recoveryStopped: false),
+      isFalse,
+    );
+    expect(
+      privateCheckNotice(
+        [
+          justSent,
+          _transaction(
+            'bb',
+            'sent',
+            provisional: true,
+            mined: false,
+            awaitsPrivateCheck: false,
+          ),
+        ],
+        privateQueriesEnabled: true,
+        stop: null,
+      ),
+      isNull,
+    );
+    expect(
+      receiptPrivateCheckStop(
+        justSent,
+        stop: rust_sync.TransparentStopReason.stalled,
+      ),
+      isNull,
+    );
+  });
+
+  test('only the outputs a receipt lists get a "Not shown" line', () {
+    const everything = [
+      'multiple_source_scripts',
+      'shared_funding',
+      'shielded_and_transparent_funding',
+      'non_standard_sender',
+      'more_than_two_outputs',
+      'non_standard_output',
+    ];
+    rust_sync.TransactionDetail detail(String kind, {bool listed = true}) =>
+        rust_sync.TransactionDetail(
+          txidHex: 'aa',
+          txKind: kind,
+          outputs: const [],
+          detailsComplete: false,
+          provisional: false,
+          transparentDetailsState: rust_sync.TransparentDetailsState.available,
+          transparentRecipients: [
+            if (listed)
+              rust_sync.TransparentRecipient(
+                outputIndex: 0,
+                address: 't1other',
+                amountZatoshi: BigInt.from(1000),
+                isOwn: false,
+              ),
+          ],
+          transparentOutputCount: 4,
+          transparentOmissions: everything,
+        );
+
+    // A send lists its outputs: what that list leaves out is named, how the
+    // transaction was funded is not.
+    expect(transparentOmissionPhrases(testL10n, detail('sent')), [
+      testL10n.activityOmissionMoreOutputs(2),
+      testL10n.activityOmissionOutputAddress,
+    ]);
+    // A receive lists no outputs, so names nothing.
+    for (final kind in ['received', 'receiving']) {
+      expect(
+        transparentOmissionPhrases(testL10n, detail(kind)),
+        isEmpty,
+        reason: kind,
+      );
+    }
+    // Nor does a send whose receipt lists no outputs.
+    expect(
+      transparentOmissionPhrases(testL10n, detail('sent', listed: false)),
+      isEmpty,
+    );
+  });
+
   test('network fee is display-only and bound to the receipt identity', () {
     final tx = _transaction(
       'aa',
@@ -317,16 +603,22 @@ rust_sync.TransactionInfo _transaction(
   BigInt? fee,
   int accountBalanceDelta = 0,
   String displayPool = 'shielded',
+  bool expiredUnmined = false,
+  bool mined = true,
+  bool? awaitsPrivateCheck,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
-    minedHeight: BigInt.from(2500000),
-    expiredUnmined: false,
+    minedHeight: expiredUnmined || !mined ? BigInt.zero : BigInt.from(2500000),
+    expiredUnmined: expiredUnmined,
     accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.from(10000),
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    // The wallet reports a mined provisional entry here as waiting on the
+    // check unless a test says otherwise.
+    awaitsPrivateCheck: awaitsPrivateCheck ?? (provisional && mined),
     amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',

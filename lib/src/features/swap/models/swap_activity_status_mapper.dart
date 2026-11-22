@@ -114,6 +114,7 @@ class SwapActivityStatusPresentation {
     this.paymentMode = false,
     this.payStatus,
     this.explorerUri,
+    this.confidential = false,
     required this.showTabs,
     this.oneTimeAddress,
   });
@@ -162,6 +163,10 @@ class SwapActivityStatusPresentation {
   final bool paymentMode;
   final PayActivityStatusPresentation? payStatus;
   final Uri? explorerUri;
+
+  /// The swap took the confidential route, so its progress card explains the
+  /// missing explorer link instead of offering one.
+  final bool confidential;
   final bool showTabs;
 
   /// Set when the swap's ZEC side uses a one-time address: the payout when
@@ -268,13 +273,15 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     receiveAsset: receiveAsset,
     payFiatText: payFiatText,
     receiveFiatText: receiveFiatText,
-    payAmountText: swapAmountTextForPrivacy(
+    payAmountText: _activityAmountText(
       intent.sellAmount,
       privacyModeEnabled: privacyModeEnabled,
+      group: !payMode,
     ),
-    receiveAmountText: swapAmountTextForPrivacy(
+    receiveAmountText: _activityAmountText(
       intent.receiveEstimate,
       privacyModeEnabled: privacyModeEnabled,
+      group: !payMode,
     ),
     payLabel: payMode
         ? _payIntentShowsPaidCopy(intent)
@@ -329,6 +336,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     paymentMode: payMode,
     payStatus: payStatus,
     explorerUri: swapActivityExplorerUri(intent),
+    confidential: intent.confidential,
     // Mobile keeps the shared progress tabs while reading its detail values
     // from [payStatus]; desktop renders its dedicated Pay status content.
     // A payout still being found keeps its steps, like any swap in progress.
@@ -474,8 +482,9 @@ SwapStatusBadgeKind _swapActivityStatusBadgeKind(SwapIntentStatus status) {
 }
 
 int _swapActivityStatusProgressIndex(SwapIntent intent) {
-  final hasDepositTx = intent.depositTxHash?.trim().isNotEmpty ?? false;
-  final depositSent = hasDepositTx || intent.depositClaimedAt != null;
+  // The user's "I've sent it" tap alone is not a deposit: the first step stays
+  // active until the provider sees one.
+  final depositSent = intent.depositTxHash?.trim().isNotEmpty ?? false;
   return switch (intent.status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit => depositSent ? 1 : 0,
@@ -536,8 +545,13 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
     ];
   }
   final sendsZecToExternal = intent.direction == SwapDirection.zecToExternal;
+  final awaitingDetection =
+      intent.status == SwapIntentStatus.awaitingExternalDeposit &&
+      intent.depositClaimedAt != null;
   final sourceActive = sendsZecToExternal
       ? l10n.swapActivityStepSending(sourceSymbol)
+      : awaitingDetection
+      ? l10n.swapActivityStepSent(sourceSymbol)
       : l10n.swapActivityStepDepositing(sourceSymbol);
   final sourceDone = sendsZecToExternal
       ? l10n.swapActivityStepSent(sourceSymbol)
@@ -564,11 +578,14 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
           ? l10n.swapActivityStepSend(sourceSymbol)
           : l10n.swapActivityStepDeposit(sourceSymbol),
       lastCheckedLabel: lastCheckedLabel,
-      description: l10n.swapActivityStepSourceDescription,
+      description: awaitingDetection
+          ? l10n.swapActivityStepSentAwaitingDetection
+          : l10n.swapActivityStepSourceDescription,
     ),
     SwapStatusStepData(
       title: l10n.swapActivityStepDepositConfirmation,
       state: SwapStatusStepState.pending,
+      kind: SwapStatusStepKind.depositConfirmation,
       activeTitle: l10n.swapActivityStepDepositConfirmationActive,
       lastCheckedLabel: lastCheckedLabel,
       description: l10n.swapActivityStepDepositConfirmationDescription,
@@ -610,7 +627,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   required bool privacyModeEnabled,
 }) {
   String amount(String text) =>
-      swapAmountTextForPrivacy(text, privacyModeEnabled: privacyModeEnabled);
+      _activityAmountText(text, privacyModeEnabled: privacyModeEnabled);
   final sourceSymbol = swapActivityPairSymbol(l10n, intent.pair, 0);
   final receiveSymbol = swapActivityPairSymbol(l10n, intent.pair, 1);
   final sourceAsset = swapActivitySellAsset(intent);
@@ -670,7 +687,10 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       if (!failed && !payMode)
         SwapStatusDetailRowData(
           label: l10n.swapActivityDetailRealizedSlippage,
-          value: intent.realisedSlippageText ?? l10n.swapActivityNotReported,
+          value: _activitySlippageText(
+            intent.realisedSlippageText ?? l10n.swapActivityNotReported,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
         ),
       if (timestamp != null)
         SwapStatusDetailRowData(
@@ -822,8 +842,11 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         kind: SwapStatusDetailKind.slippageTolerance,
         value: swapDetailValueText(
           l10n,
-          intent.slippageToleranceText ??
-              l10n.swapActivityDetailConfiguredQuote,
+          _activitySlippageText(
+            intent.slippageToleranceText ??
+                l10n.swapActivityDetailConfiguredQuote,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
         ),
       ),
     if (!payMode)
@@ -1033,7 +1056,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   required bool privacyModeEnabled,
 }) {
   String amount(String text) =>
-      swapAmountTextForPrivacy(text, privacyModeEnabled: privacyModeEnabled);
+      _activityAmountText(text, privacyModeEnabled: privacyModeEnabled);
   final sourceAsset = swapActivitySellAsset(intent);
   final receiveAsset = swapActivityReceiveAsset(intent);
   final providerInfo = intent.providerRefundInfo;
@@ -1426,6 +1449,31 @@ String? _firstNonEmpty(Iterable<String?> values) {
     if (trimmed != null && trimmed.isNotEmpty) return trimmed;
   }
   return null;
+}
+
+String _activityAmountText(
+  String text, {
+  required bool privacyModeEnabled,
+  bool group = true,
+}) {
+  final visible = swapAmountTextForPrivacy(
+    text,
+    privacyModeEnabled: privacyModeEnabled,
+  );
+  return group ? groupSwapAmountText(visible) : visible;
+}
+
+final _slippageWithAmount = RegExp(r'^(.+) (\([^()]+%\))$');
+
+String _activitySlippageText(String text, {required bool privacyModeEnabled}) {
+  if (!privacyModeEnabled) return groupSwapAmountText(text);
+  final match = _slippageWithAmount.firstMatch(text);
+  if (match == null) return text;
+  final maskedAmount = swapAmountTextForPrivacy(
+    match[1]!,
+    privacyModeEnabled: true,
+  );
+  return '$maskedAmount ${match[2]}';
 }
 
 double? _numericAmount(String amountText) {

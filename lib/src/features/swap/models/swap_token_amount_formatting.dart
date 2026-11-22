@@ -1,4 +1,19 @@
+import '../../../core/formatting/number_format.dart';
 import '../domain/swap_contract.dart';
+
+final _leadingUngroupedAmount = RegExp(
+  r'^(\s*(?:[<>~≈$+\-]\s*)*)([0-9]{4,})(?=(?:\.[0-9]+)?(?:$|\s+(?!\s*%)))',
+);
+
+/// Groups the integer part of a swap amount without rounding or changing its
+/// units. The input may include a sign, fiat symbol, or trailing slippage.
+String groupSwapAmountText(String text) => text.replaceFirstMapped(
+  _leadingUngroupedAmount,
+  (match) => '${match[1]}${formatGroupedIntegerDigits(match[2]!)}',
+);
+
+String groupSwapRateText(String text) =>
+    text.split(' = ').map(groupSwapAmountText).join(' = ');
 
 String? swapBaseUnitAmountText({
   required String? value,

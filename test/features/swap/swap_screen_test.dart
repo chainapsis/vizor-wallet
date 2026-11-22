@@ -673,7 +673,7 @@ void main() {
           child: Center(
             child: SwapDepositTokensPageContent(
               asset: SwapAsset.usdc,
-              amountText: '999.99 USDC',
+              amountText: '113000.125 USDC',
               depositAddress: depositAddress,
               expiresInLabel: '16mins',
               onDeposited: () {},
@@ -728,7 +728,7 @@ void main() {
           .getRect(
             find.descendant(
               of: find.byKey(const ValueKey('swap_deposit_amount_right_item')),
-              matching: find.text('999.99 USDC'),
+              matching: find.text('113,000.125 USDC'),
             ),
           )
           .right,
@@ -766,7 +766,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_amount')));
     await tester.pump();
 
-    expect(clipboardWrites.last, '999.99');
+    expect(find.text('113,000.125 USDC'), findsNWidgets(2));
+    expect(clipboardWrites.last, '113000.125');
 
     await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_address')));
     await tester.pump();
@@ -885,6 +886,211 @@ void main() {
     );
   });
 
+  testWidgets('a timeout whose deposit the user says they sent explains it '
+      'went undetected', (tester) async {
+    await tester.pumpWidget(
+      _themeHarnessWithTheme(
+        AppThemeData.light,
+        SwapDepositTimeoutPageContent(
+          onRestart: () {},
+          onLateDeposit: () {},
+          depositClaimed: true,
+        ),
+      ),
+    );
+
+    expect(find.text('Swap failed'), findsOneWidget);
+    expect(
+      find.text(
+        'Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may '
+        'try to refund it to your refund address.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Sent a deposit?'), findsNothing);
+    final check = find.byKey(const ValueKey('swap_support_prompt'));
+    final restart = find.byKey(const ValueKey('swap_deposit_restart_button'));
+    expect(
+      find.descendant(of: check, matching: find.text('Get help')),
+      findsOneWidget,
+    );
+    // The same layout as any timeout: restart first, the help link under it.
+    expect(
+      tester.widget<AppButton>(restart).variant,
+      AppButtonVariant.secondary,
+    );
+    expect(tester.widget<AppButton>(check).variant, AppButtonVariant.ghost);
+    expect(tester.getRect(restart).bottom, lessThan(tester.getRect(check).top));
+
+    // Without a support sheet to open, the usual timeout stays.
+    await tester.pumpWidget(
+      _themeHarnessWithTheme(
+        AppThemeData.light,
+        SwapDepositTimeoutPageContent(onRestart: () {}, depositClaimed: true),
+      ),
+    );
+    expect(find.text('Get help'), findsNothing);
+    expect(
+      find.text(
+        'This deposit address is no longer valid.\nPlease, start '
+        'another swap transaction.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an expired swap the user marked as sent shows the claimed '
+      'timeout in activity detail', (tester) async {
+    await _setViewport(tester, const Size(1080, 720));
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'claimed-deposit',
+          txHash: '',
+          status: SwapIntentStatus.expired,
+          nextAction: 'Start a fresh quote',
+        ).copyWith(depositClaimedAt: DateTime.utc(2026, 5, 7, 10)),
+      ],
+    );
+    final router = GoRouter(
+      initialLocation: '/activity/swap/claimed-deposit?from=swap',
+      routes: [_swapRoute(), _swapActivityRoute()],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        router,
+        seedSwapActivityFixtures: false,
+        sessionStore: sessionStore,
+        swapProvider: _FakeSwapProvider()
+          ..unpaidDepositAddresses.add('claimed-deposit'),
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Get help'), findsOneWidget);
+    expect(find.text('Sent a deposit?'), findsNothing);
+  });
+
+  testWidgets('opening an expired swap checks its status once', (tester) async {
+    await _setViewport(tester, const Size(1080, 720));
+    final unpaid = _FakeSwapProvider()..unpaidDepositAddresses.add('unpaid');
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/unpaid?from=swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: unpaid,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialIntents: [
+            _persistedIntent(
+              id: 'unpaid',
+              txHash: '',
+              status: SwapIntentStatus.expired,
+              nextAction: 'Start a fresh quote',
+            ),
+          ],
+        ),
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+    );
+    await tester.pumpAndSettle();
+    // Still unpaid: one check, and the timeout stays.
+    expect(unpaid.statusRequests.map((r) => r.depositAddress), ['unpaid']);
+    expect(
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+      findsOneWidget,
+    );
+
+    // The provider saw the deposit after the deadline: the swap moves on.
+    final detected = _FakeSwapProvider();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/late?from=swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: detected,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialIntents: [
+            _persistedIntent(
+              id: 'late',
+              txHash: '',
+              status: SwapIntentStatus.expired,
+              nextAction: 'Start a fresh quote',
+            ),
+          ],
+        ),
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_activity_detail_page')),
+    );
+    await tester.pumpAndSettle();
+    expect(detected.statusRequests.map((r) => r.depositAddress), ['late']);
+    expect(
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('an expired swap opened during a refresh is checked after it', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(1080, 720));
+    final gate = Completer<void>();
+    final provider = _PendingExternalDepositSwapProvider(statusGate: gate);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity/swap/late?from=swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: provider,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialIntents: [
+            _persistedIntent(id: 'open', txHash: 'open-tx'),
+            _persistedIntent(
+              id: 'late',
+              txHash: '',
+              status: SwapIntentStatus.expired,
+              nextAction: 'Start a fresh quote',
+            ),
+          ],
+        ),
+      ),
+    );
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+    );
+    await tester.pump();
+    // The refresh of the open swap is still in flight.
+    final requested = provider.statusRequests.map((r) => r.depositAddress);
+    expect(requested, contains('open'));
+    expect(requested, isNot(contains('late')));
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(
+      provider.statusRequests.where((r) => r.depositAddress == 'late'),
+      hasLength(1),
+    );
+  });
+
   testWidgets(
     'expired deposit timeout content stays centered in activity detail',
     (tester) async {
@@ -909,6 +1115,8 @@ void main() {
           router,
           seedSwapActivityFixtures: false,
           sessionStore: sessionStore,
+          swapProvider: _FakeSwapProvider()
+            ..unpaidDepositAddresses.add('expired-deposit'),
         ),
       );
       await _pumpUntilPresent(
@@ -978,6 +1186,8 @@ void main() {
         router,
         seedSwapActivityFixtures: false,
         sessionStore: sessionStore,
+        swapProvider: _FakeSwapProvider()
+          ..unpaidDepositAddresses.add('expired-pay'),
         priceRefreshInterval: const Duration(seconds: 1),
       ),
     );
@@ -1235,7 +1445,8 @@ void main() {
       blockchain: 'base',
       decimals: 6,
     );
-    final swapProvider = _DeferredSupportedAssetsSwapProvider();
+    final swapProvider = _DeferredSupportedAssetsSwapProvider()
+      ..unpaidDepositAddresses.add('dynamic-pay');
     final router = GoRouter(
       initialLocation: '/activity/swap/dynamic-pay?from=pay',
       routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
@@ -1326,7 +1537,8 @@ void main() {
       blockchain: 'base',
       decimals: 6,
     );
-    final swapProvider = _DeferredSupportedAssetsSwapProvider();
+    final swapProvider = _DeferredSupportedAssetsSwapProvider()
+      ..unpaidDepositAddresses.add('removed-pay');
     final router = GoRouter(
       initialLocation: '/activity/swap/removed-pay?from=pay',
       routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
@@ -3153,6 +3365,20 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
     await tester.pumpAndSettle();
+    final semantics = tester.ensureSemantics();
+    expect(
+      tester.getSemantics(
+        find.byKey(const ValueKey('swap_address_scan_button')),
+      ),
+      isSemantics(label: 'Scan QR code', isButton: true),
+    );
+    expect(
+      tester.getSemantics(
+        find.byKey(const ValueKey('swap_address_contacts_button')),
+      ),
+      isSemantics(label: 'Open contacts', isButton: true),
+    );
+    semantics.dispose();
     await tester.tap(
       find.byKey(const ValueKey('swap_address_contacts_button')),
     );
@@ -4933,6 +5159,14 @@ void main() {
       find.byKey(const ValueKey('swap_asset_search_clear_button')),
       findsOneWidget,
     );
+    final semantics = tester.ensureSemantics();
+    expect(
+      tester.getSemantics(
+        find.byKey(const ValueKey('swap_asset_search_clear_button')),
+      ),
+      isSemantics(label: 'Clear search', isButton: true),
+    );
+    semantics.dispose();
 
     await tester.tap(
       find.byKey(const ValueKey('swap_asset_search_clear_button')),
@@ -5079,6 +5313,74 @@ void main() {
 
     expect(swapProvider.requests.single.slippageBps, 200);
   });
+
+  testWidgets(
+    'turning confidential off in settings plays; other paths stay quiet',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _FakeSwapProvider(),
+          seedSwapActivityFixtures: false,
+          sessionStore: _FakeSwapPersistenceStore(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final settings = find.byKey(const ValueKey('swap_settings_button'));
+      final mark = find.descendant(
+        of: settings,
+        matching: find.byType(SwapConfidentialIcon),
+      );
+      // This harness runs with Reduce Motion, so the turn off is the colour
+      // fade alone.
+      Color? markColor() => tester
+          .widget<AppIcon>(
+            find.descendant(of: mark, matching: find.byType(AppIcon)),
+          )
+          .color;
+      Future<void> flip() async {
+        await tester.tap(settings);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('swap_confidential_switch')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('swap_slippage_update_button')),
+        );
+        await tester.pump();
+      }
+
+      await flip();
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwapConfidentialIcon>(mark).on, isTrue);
+
+      final crimson = markColor();
+      await flip();
+      await tester.pump(kSwapConfidentialConcealDuration * 0.4);
+      expect(tester.widget<SwapConfidentialIcon>(mark).on, isFalse);
+      final fading = markColor();
+      await tester.pumpAndSettle();
+      final muted = markColor();
+      expect(fading, isNot(anyOf(crimson, muted)));
+
+      // Leaving the surface resets the route without a play.
+      await flip();
+      await tester.pumpAndSettle();
+      ProviderScope.containerOf(
+        tester.element(settings),
+      ).read(swapStateProvider.notifier).resetComposerQuoteSettings();
+      await tester.pump();
+      await tester.pump(kSwapConfidentialConcealDuration * 0.4);
+      expect(tester.widget<SwapConfidentialIcon>(mark).on, isFalse);
+      expect(markColor(), muted);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('the confidential setting sends the confidential route', (
     tester,
@@ -5228,9 +5530,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
     await tester.pumpAndSettle();
 
-    final description = find.byKey(
-      const ValueKey('swap_slippage_description'),
-    );
+    final description = find.byKey(const ValueKey('swap_slippage_description'));
     final explainerTop = tester.getBottomLeft(description).dy;
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
@@ -11728,6 +12028,20 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
     await tester.pumpAndSettle();
+    // The submit only speeds detection up, so its failure shows no error,
+    // not even until the next status refresh clears it.
+    final shownErrors = <SwapMessage>[];
+    final errors =
+        ProviderScope.containerOf(
+          tester.element(find.byType(Scaffold).first),
+          listen: false,
+        ).listen(swapStateProvider.select((state) => state.statusError), (
+          _,
+          next,
+        ) {
+          if (next != null) shownErrors.add(next);
+        });
+    addTearDown(errors.close);
     await tester.tap(find.byKey(const ValueKey('swap_start_button')));
     await tester.pumpAndSettle();
 
@@ -11736,10 +12050,155 @@ void main() {
     expect(sessionStore.savedIntents, hasLength(1));
     expect(sessionStore.savedIntents.single.depositTxHash, 'zec-auto-txid');
     expect(sessionStore.savedIntents.single.accountUuid, 'account-1');
+    expect(shownErrors, isEmpty);
     await _openSwapStatusDetails(tester, expand: true);
     expect(find.text('zec-auto-txid'), findsWidgets);
     expect(find.textContaining('Could not send ZEC deposit'), findsNothing);
   });
+
+  testWidgets('a deposit broadcast after an account switch saves no submit '
+      'error', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(
+      submitDepositError: Exception('submit temporarily unavailable'),
+    );
+    final depositSender = _DelayedSwapDepositSender();
+    final sessionStore = _FakeSwapPersistenceStore();
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () =>
+            _FakeSwapAccountNotifier(_twoAccountBootstrap.initialAccountState),
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pump();
+    expect(depositSender.requests, hasLength(1));
+
+    // The broadcast lands after the user moved to account-2.
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+    depositSender.completeSend();
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.submittedDeposits, hasLength(1));
+    final saved = sessionStore.intentsFor('account-1').single;
+    expect(saved.depositTxHash, 'zec-auto-txid');
+    expect(saved.statusError, isNull);
+  });
+
+  testWidgets(
+    'only a transaction hash the user enters reports a failed submit',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider(
+        submitDepositError: Exception('submit temporarily unavailable'),
+      );
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: swapProvider,
+          depositSender: _FakeSwapDepositSender(),
+          sessionStore: _FakeSwapPersistenceStore(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '1.5',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(Scaffold).first),
+        listen: false,
+      );
+      final notifier = container.read(swapStateProvider.notifier);
+      final shownErrors = <SwapMessage>[];
+      final errors = container.listen(
+        swapStateProvider.select((state) => state.statusError),
+        (_, next) {
+          if (next != null) shownErrors.add(next);
+        },
+      );
+      addTearDown(errors.close);
+      final intent = container
+          .read(swapStateProvider)
+          .intents
+          .firstWhere((intent) => intent.depositTxHash == 'zec-auto-txid');
+
+      // Hardware deposits the wallet broadcast itself, for a known intent and
+      // for one the state does not hold yet.
+      await notifier.submitDepositTransactionForIntent(
+        intentId: intent.id,
+        accountUuid: 'account-1',
+        txHash: 'hardware-txid',
+        broadcastStatus: SwapDepositBroadcastStatus.broadcasted,
+      );
+      await notifier.recordHardwareDepositBroadcast(
+        intent: intent.copyWith(id: 'hardware-intent'),
+        broadcast: const SwapDepositBroadcastResult(
+          txHash: 'hardware-new-txid',
+          status: SwapDepositBroadcastStatus.broadcasted,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(swapProvider.submittedDeposits, hasLength(3));
+      expect(shownErrors, isEmpty);
+
+      notifier.updateDepositTxHash('typed-txid');
+      await notifier.submitSelectedDepositTransaction();
+      await tester.pumpAndSettle();
+      expect(shownErrors, [
+        const SwapFailureMessage(
+          SwapFailureOperation.submitDeposit,
+          SwapFailureCategory.serviceUnavailable,
+        ),
+      ]);
+    },
+  );
 
   testWidgets('a ZEC deposit held for the network upgrade opens no swap', (
     tester,

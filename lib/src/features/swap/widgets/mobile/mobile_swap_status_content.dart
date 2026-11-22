@@ -87,7 +87,7 @@ class MobileSwapStatusContent extends StatelessWidget {
             key: const ValueKey('mobile_swap_status_card'),
             hasExplorerFooter:
                 activeTab == SwapStatusTab.progress &&
-                presentation.explorerUri != null,
+                (presentation.explorerUri != null || presentation.confidential),
             child: activeTab == SwapStatusTab.progress
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
@@ -99,7 +99,11 @@ class MobileSwapStatusContent extends StatelessWidget {
                         badgeKind: presentation.badgeKind,
                       ),
                       if (presentation.explorerUri case final uri?)
-                        SwapProgressExplorerFooter(uri: uri),
+                        SwapProgressExplorerFooter(uri: uri)
+                      else if (presentation.confidential)
+                        SwapProgressConfidentialNote(
+                          payment: presentation.paymentMode,
+                        ),
                     ],
                   )
                 : presentation.paymentMode && presentation.payStatus != null

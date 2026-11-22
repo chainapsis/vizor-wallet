@@ -30,8 +30,8 @@ import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/zcash/spendable_wait.dart';
+import '../../../../providers/sync_provider.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -60,6 +60,7 @@ import '../../transaction_completeness.dart';
 import '../../widgets/mobile/transaction_type_hero.dart';
 import '../../widgets/transparent_details_section.dart';
 import '../transaction_receipt_loading.dart';
+import '../../private_details_marked_provider.dart';
 
 /// Route arguments for [MobileTransactionStatusScreen]. The row that
 /// was tapped passes its [initialTransaction] so the screen renders
@@ -305,6 +306,9 @@ class _MobileTransactionStatusScreenState
     final colors = context.colors;
     final l10n = context.l10n;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final transparentStop = ref.watch(
+      syncProvider.select((sync) => sync.value?.transparentStop),
+    );
     final tx = receiptTransaction;
     final detail = matchingReceiptDetailFor(tx);
     final activeAccountUuid =
@@ -785,6 +789,15 @@ class _MobileTransactionStatusScreenState
                                     privacyModeEnabled: privacyModeEnabled,
                                   ),
                             detailsIncomplete: _showIncompleteDetails(tx),
+                            detailsAwaitPrivateCheck: receiptAwaitsPrivateCheck(
+                              tx,
+                              recoveryStopped: transparentStop != null,
+                            ),
+                            detailsStop: receiptPrivateCheckStop(
+                              tx,
+                              stop: transparentStop,
+                            ),
+                            detailsEffectsSettled: tx.effectsSettled,
                           ),
                           if (giftCard == null &&
                               detail?.transparentDetailsState != null)
@@ -854,12 +867,12 @@ class _MobileTransactionStatusScreenState
 
   // Temporary integration feedback is scoped to the Private queries setting.
   bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
+      ref.watch(privateDetailsMarkedProvider) && transactionFeeIsUnknown(tx);
 
   /// The receipt's own detail, once read, can complete what the activity
   /// entry could not: private transparent details that establish every payee.
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) &&
+      ref.watch(privateDetailsMarkedProvider) &&
       transactionDetailsIncomplete(tx) &&
       !receiptDetailsComplete(receiptDetail);
 
@@ -1115,6 +1128,9 @@ class _DetailCard extends StatelessWidget {
     this.isCardCreation = false,
     this.showsNetworkFee = false,
     this.detailsIncomplete = false,
+    this.detailsAwaitPrivateCheck = false,
+    this.detailsStop,
+    this.detailsEffectsSettled = false,
   });
 
   /// The From / To row, when the transaction has a counterparty to name.
@@ -1132,6 +1148,17 @@ class _DetailCard extends StatelessWidget {
   final bool isCardCreation;
   final bool showsNetworkFee;
   final bool detailsIncomplete;
+
+  /// Whether the incomplete details wait only on the private check, which
+  /// finishes on its own; see `receiptAwaitsPrivateCheck`.
+  final bool detailsAwaitPrivateCheck;
+
+  /// Why private recovery stopped checking these details; see
+  /// `receiptPrivateCheckStop`.
+  final rust_sync.TransparentStopReason? detailsStop;
+
+  /// Whether nothing still running can fill in the missing details.
+  final bool detailsEffectsSettled;
 
   @override
   Widget build(BuildContext context) {
@@ -1207,15 +1234,23 @@ class _DetailCard extends StatelessWidget {
                   key: const ValueKey('mobile_tx_status_details_incomplete'),
                   label: context.l10n.activityReceiptDetails,
                   value: _ValueWithIcon(
-                    text: context.l10n.activityReceiptIncomplete,
+                    text: detailsAwaitPrivateCheck
+                        ? context.l10n.activityReceiptCheckingPrivately
+                        : context.l10n.activityReceiptIncomplete,
                     iconName: AppIcons.help,
                     iconColor: context.colors.icon.muted,
                     onTap: () => unawaited(
                       showMobileTxFeeInfoSheet(
                         context,
-                        title: context.l10n.activityReceiptDetailsIncomplete,
-                        description:
-                            context.l10n.activityReceiptDetailsIncompleteHelp,
+                        title: detailsAwaitPrivateCheck
+                            ? context.l10n.activityReceiptCheckingPrivately
+                            : context.l10n.activityReceiptDetailsIncomplete,
+                        description: receiptIncompleteDetailsHelp(
+                          context.l10n,
+                          awaitsPrivateCheck: detailsAwaitPrivateCheck,
+                          stop: detailsStop,
+                          effectsSettled: detailsEffectsSettled,
+                        ),
                       ),
                     ),
                   ),

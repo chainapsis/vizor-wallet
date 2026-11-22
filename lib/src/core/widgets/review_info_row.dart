@@ -393,6 +393,8 @@ class ReviewInfoRow extends StatelessWidget {
           size: AppButtonSize.small,
           iconGap: 0,
           constrainContent: true,
+          // Scaled text makes the button taller instead of clipping.
+          growWithContent: true,
           // The eye glyph matches the ghost label color per the Figma
           // frames (not the default icon tint).
           leading: AppIcon(

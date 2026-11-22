@@ -37,6 +37,8 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
+import '../../../activity/transaction_completeness.dart';
+import '../../../activity/widgets/private_check_notice.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
 import '../../../../providers/voting/voting_config_source_provider.dart';
@@ -77,6 +79,7 @@ import '../../providers/backup_reminder_provider.dart';
 import '../../providers/nu7_announcement_provider.dart';
 import '../../widgets/nu7_announcement.dart';
 import '../../widgets/mobile_home_carousel.dart';
+import '../../../activity/private_details_marked_provider.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// up to ten recent activity rows — Figma `HOME` section frames
@@ -976,6 +979,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     rust_sync.TransactionInfo transaction,
     GiftCardActivityMetadata? giftCard, {
     required bool privacyModeEnabled,
+    required bool privateCheckNoticeShown,
   }) {
     return ActivityEntry(
       timestamp:
@@ -984,7 +988,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
-        privateQueriesEnabled: ref.watch(enhancePirProvider),
+        privateQueriesEnabled: ref.watch(privateDetailsMarkedProvider),
+        privateCheckNoticeShown: privateCheckNoticeShown,
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
@@ -1201,32 +1206,64 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 awaitingTxid: item.payoutAwaitingDiscovery,
               ),
         );
-    final entries = <ActivityEntry>[
+    ActivityEntry transactionEntry(
+      ({rust_sync.TransactionInfo tx, GiftCardActivityMetadata? giftCard})
+      listed, {
+      bool privateCheckNoticeShown = false,
+    }) => _transactionEntry(
+      context,
+      ref,
+      listed.tx,
+      listed.giftCard,
+      privacyModeEnabled: privacyModeEnabled,
+      privateCheckNoticeShown: privateCheckNoticeShown,
+    );
+    final listedTransactions = [
       for (final tx in giftCardActivityIndex.withPendingClaims(
         sync.recentTransactions,
       ))
         if (!absorption.absorbs(tx))
-          _transactionEntry(
-            context,
-            ref,
-            tx,
-            giftCardActivityIndex.metadataFor(
+          (
+            tx: tx,
+            giftCard: giftCardActivityIndex.metadataFor(
               tx,
               transactions: sync.recentTransactions,
             ),
-            privacyModeEnabled: privacyModeEnabled,
           ),
+    ];
+    final transactionEntries = {
+      for (final item in listedTransactions) transactionEntry(item): item,
+    };
+    final entries = <ActivityEntry>[
+      ...transactionEntries.keys,
       for (final item in swapItems)
         ActivityEntry(timestamp: item.activityTimestamp, row: swapRow(item)),
     ]..sort(compareActivityEntries);
+    final shownEntries = entries
+        .take(MobileHomeScreen._recentActivityLimit)
+        .toList();
+    // The notice speaks only for the rows Home shows.
+    final notice = privateCheckNotice(
+      [for (final entry in shownEntries) ?transactionEntries[entry]?.tx],
+      privateQueriesEnabled: ref.watch(enhancePirProvider),
+      stop: sync.transparentStop,
+    );
     final swapItemsByRowId = {
       for (final item in swapItems) item.stableId: item,
     };
     final recentRows = [
-      for (final entry in entries.take(MobileHomeScreen._recentActivityLimit))
-        switch (swapItemsByRowId[entry.row.stableId]) {
-          final item? => swapRow(item, shown: true),
-          null => entry.row,
+      for (final entry in shownEntries)
+        switch ((
+          swapItemsByRowId[entry.row.stableId],
+          transactionEntries[entry],
+        )) {
+          (final item?, _) => swapRow(item, shown: true),
+          // A row the notice covers drops its own label.
+          (_, final listed?) when notice != null => transactionEntry(
+            listed,
+            privateCheckNoticeShown: true,
+          ).row,
+          _ => entry.row,
         },
     ];
 
@@ -1439,6 +1476,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     context.go('/activity');
                   },
                 ),
+                // Mounted with the rows, so it never slides in on load.
+                if (!activityLoading)
+                  PrivateCheckNoticeSlot(
+                    notice: notice,
+                    padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  ),
                 const SizedBox(height: AppSpacing.md),
                 Semantics(
                   label: activityLoading

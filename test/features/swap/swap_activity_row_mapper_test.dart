@@ -113,6 +113,44 @@ void main() {
     expect(row!.childRows, isEmpty);
   });
 
+  testWidgets('a claimed external deposit stays on the first step', (
+    tester,
+  ) async {
+    ActivityRowData? row;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: SwapActivityRowItem(
+                  intentId: 'swap-claimed',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '0.21 USDC',
+                  receiveEstimateText: '0.0030 ZEC',
+                  status: SwapIntentStatus.awaitingExternalDeposit,
+                  direction: SwapDirection.externalToZec,
+                  externalAsset: SwapAsset.usdc,
+                  activityTimestamp: DateTime.utc(2026, 5, 7, 10, 30),
+                  depositClaimedAt: DateTime.utc(2026, 5, 7, 10, 40),
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    // The user's tap is not a deposit until the provider sees one.
+    expect(row!.statusText, '1/4 In progress');
+    expect(row!.leadingProgressValue, 0.25);
+  });
+
   testWidgets('maps pay records as payment activity rows', (tester) async {
     ActivityRowData? row;
 

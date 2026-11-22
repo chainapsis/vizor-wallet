@@ -391,14 +391,16 @@ void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
       confirm: (_) async => false,
     );
     expect(omitted, findsOneWidget);
-    expect(find.text('1 more output, other sending addresses'), findsOneWidget);
+    // How it was funded is not named; only the listed outputs are.
+    expect(find.text('1 more output'), findsOneWidget);
+    expect(find.textContaining('other sending addresses'), findsNothing);
     expect(load, findsOneWidget);
     expect(find.text(testL10n.activityDetailsLoadPublicly), findsOneWidget);
     expect(lookups, 0, reason: 'nothing is loaded without a tap');
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('omissions a public load cannot show offer no load', (
+  testWidgets('funding omissions are not named and offer no load', (
     tester,
   ) async {
     await pump(
@@ -412,7 +414,8 @@ void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
       ]),
       lookup: (_) async => fail('no public load'),
     );
-    expect(find.text('other sending addresses'), findsOneWidget);
+    expect(omitted, findsNothing);
+    expect(find.textContaining('other sending addresses'), findsNothing);
     expect(load, findsNothing);
     await tester.pumpWidget(const SizedBox());
   });

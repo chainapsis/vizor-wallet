@@ -503,6 +503,112 @@ void main() {
     });
   }
 
+  testWidgets('a card the active account received shows its mobile receipt', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      claimable: false,
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+          status: PaymentLinkReceivedStatus.received,
+          claimLink: null,
+          destinationAccountUuid: 'account-1',
+          claimTxids: 'claim-tx',
+          availability: PaymentLinkAvailability.available,
+        ),
+      ],
+      prepareClaimError: PaymentLinkAlreadyReceivedException(
+        address: incomingLink.address,
+        destinationAccountUuid: 'account-1',
+      ),
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: twoAccountBootstrap,
+    );
+    await setWidgetTestViewport(tester, const Size(390, 844));
+    await tester.pumpAndSettle();
+    ProviderScope.containerOf(tester.element(find.byType(MaterialApp)))
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('This gift card was already claimed to Primary Vault.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey('payment_link_mobile_received_${incomingLink.address}'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('This gift card is ready to claim.'), findsNothing);
+    expect(operations.claimedLinks, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final throwsReceived in [true, false]) {
+    testWidgets('a card another account received is not offered on mobile '
+        '(${throwsReceived ? 'refused' : 'empty check'})', (tester) async {
+      final operations = FakePaymentLinkOperations(
+        claimable: false,
+        receivedRecords: [
+          PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+            status: PaymentLinkReceivedStatus.received,
+            claimLink: null,
+            destinationAccountUuid: 'account-2',
+            claimTxids: 'claim-tx',
+            availability: PaymentLinkAvailability.available,
+          ),
+        ],
+        prepareClaimError: throwsReceived
+            ? PaymentLinkAlreadyReceivedException(
+                address: incomingLink.address,
+                destinationAccountUuid: 'account-2',
+              )
+            : null,
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        bootstrap: twoAccountBootstrap,
+        clipboard: FakePaymentLinkClipboard(
+          text: incomingLink.toUri().toString(),
+        ),
+      );
+      await setWidgetTestViewport(tester, const Size(390, 844));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_mobile_paste_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Redeem the Card'), findsOneWidget);
+      expect(find.text('This gift card is ready to claim.'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('payment_link_mobile_redeem_drop_zone'),
+          ),
+          matching: find.text(
+            throwsReceived
+                ? 'This gift card was already claimed to Savings.'
+                : 'No balance',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(operations.claimedLinks, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final settings in [
     (true, true, true),
     (true, true, false),

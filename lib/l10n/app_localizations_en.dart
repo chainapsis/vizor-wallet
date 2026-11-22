@@ -275,6 +275,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityBalanceTransparent => 'Transparent balance';
 
   @override
+  String get activityDetailsGaveUp => 'Couldn\'t be looked up privately';
+
+  @override
   String get activityDetailsLoadFailed => 'Failed — try again';
 
   @override
@@ -404,20 +407,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get activityOmissionOtherSenders => 'other sending addresses';
-
-  @override
   String get activityOmissionOutputAddress => 'an output address';
-
-  @override
-  String get activityOmissionSender => 'the sending address';
-
-  @override
-  String get activityOmissionSharedFunding => 'inputs from other wallets';
-
-  @override
-  String get activityOmissionShieldedFunding =>
-      'the shielded part of the funding';
 
   @override
   String get activityPayFromShielded => 'from shielded ZEC';
@@ -440,6 +430,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityPoolMixed => 'Mixed';
 
   @override
+  String get activityPrivateCheckNotice =>
+      'Checking details privately. Amounts may still change.';
+
+  @override
+  String get activityPrivateCheckStopLegacyDiscrepancy =>
+      'Earlier public records don\'t match private recovery.';
+
+  @override
+  String get activityPrivateCheckStopOptOutUnfinished =>
+      'Turning off Private queries didn\'t finish.';
+
+  @override
+  String get activityPrivateCheckStopQuarantined =>
+      'Private recovery found conflicting records for this account.';
+
+  @override
   String get activityPublicLookupBody =>
       'Vizor will ask the server for this one transaction to show what private lookups leave out.';
 
@@ -455,6 +461,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityReceiptCardFee => 'Card fee';
+
+  @override
+  String get activityReceiptCheckStoppedHelp =>
+      'Vizor stopped checking this transaction privately before it finished. The amount shown may change.';
+
+  @override
+  String get activityReceiptCheckingPrivately => 'Checking privately';
+
+  @override
+  String get activityReceiptCheckingPrivatelyHelp =>
+      'A transaction can also involve your transparent funds. Vizor is still checking this one privately, and the check finishes on its own. The amount shown may change.';
 
   @override
   String get activityReceiptConfirmations => 'Confirmations';
@@ -473,6 +490,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityReceiptDetailsIncompleteHelp =>
       'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.';
+
+  @override
+  String get activityReceiptDetailsSettledHelp =>
+      'Private queries can\'t work out every detail of this transaction, so some stay unknown. The amount shown is how much this account\'s balance changed.';
 
   @override
   String get activityReceiptEstimatedNetworkFee => 'Estimated network fee';
@@ -508,6 +529,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityReceiptUnattributedFeeHelp =>
       'Total fee for this transaction. Your account\'s share of this fee is unknown.';
+
+  @override
+  String get activityRowCheckingPrivately => 'Checking privately';
 
   @override
   String activityRowToday(String time) {
@@ -7237,6 +7261,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your Gift Card\nis almost ready!';
 
   @override
+  String paymentLinkAlreadyClaimedToAccount(String accountName) {
+    return 'This gift card was already claimed to $accountName.';
+  }
+
+  @override
   String paymentLinkAmountCurrencyDisabledSemantic(
     String currency,
     String reason,
@@ -10937,6 +10966,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepSentAwaitingDetection =>
+      'Waiting for NEAR Intents to detect your deposit.';
+
+  @override
   String get swapActivityStepSourceDescription =>
       'Confirm waiting for the source chain and provider to recognise the deposit';
 
@@ -11061,12 +11094,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapConfidentialLabel => 'Confidential';
 
   @override
+  String get swapConfidentialNoExplorerPay =>
+      'Confidential payments hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.';
+
+  @override
+  String get swapConfidentialNoExplorerSwap =>
+      'Confidential swaps hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.';
+
+  @override
   String get swapConfidentialRouteTooltip =>
       'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.';
 
   @override
   String get swapConfidentialSettingDescription =>
-      'Your deposit and payout can\'t be tracked to each other.';
+      'Hides the link between your deposit and payout on NEAR Intents.';
 
   @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';
@@ -11132,6 +11173,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This deposit address is no longer valid.\nPlease, start another swap transaction.';
 
   @override
+  String get swapDepositTimeoutClaimedBody =>
+      'Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may try to refund it to your refund address.';
+
+  @override
   String get swapDepositTitle => 'Deposit tokens';
 
   @override
@@ -11162,7 +11207,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapFailureDepositRejected =>
-      'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.';
+      'Couldn’t submit this transaction hash.\nCheck it and try again.';
 
   @override
   String get swapFailureDepositSubmitFailed =>
@@ -11672,8 +11717,18 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapSupportDetailsCopied => 'Deposit details copied';
+
+  @override
   String get swapSupportDirectHelp =>
       'If you still need help, copy the deposit details and paste them into an email to the address below.';
+
+  @override
+  String get swapSupportEmailCopied => 'Support email copied';
+
+  @override
+  String get swapSupportEmailCopyFailed =>
+      'Couldn’t copy the email address. Try again.';
 
   @override
   String get swapSupportExpiredBody =>
@@ -11705,6 +11760,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapTimeoutBody => 'Please, start another swap transaction.';
+
+  @override
+  String get swapTimeoutClaimedBody =>
+      'If it arrives late, NEAR may try to refund it to your refund address.';
+
+  @override
+  String get swapTimeoutClaimedHeadline =>
+      'Your deposit wasn’t detected in time';
+
+  @override
+  String get swapTimeoutGetHelp => 'Get help';
 
   @override
   String get swapTimeoutHeadline => 'This deposit address is no longer valid';
@@ -12397,6 +12463,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get votingLedgerReconnect => 'Reconnect your Ledger and try again.';
+
+  @override
+  String get votingLedgerRequestRebuilt =>
+      'Your vote request was rebuilt for compatibility with the live vote. Review it again on your Ledger.';
 
   @override
   String get votingLoadFailedRetry => 'Try again in a moment.';

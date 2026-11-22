@@ -11,6 +11,7 @@ import '../../address_book/widgets/contact_name_inline.dart';
 import '../../../core/formatting/address_display.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
+import '../models/swap_token_amount_formatting.dart';
 import 'one_time_address_label.dart';
 import 'swap_asset_icon.dart';
 import 'swap_quote_error_text.dart';
@@ -173,7 +174,9 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final receiveInputIsFiat =
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final targetDirection = state.direction.toggled;
-    final rateText = widget.rateText ?? _rateTextForState(context.l10n, state);
+    final rateText = groupSwapRateText(
+      widget.rateText ?? _rateTextForState(context.l10n, state),
+    );
     final quoteError =
         state.quoteAmountPrecisionError(context.l10n) ??
         state.externalAssetSupportError(context.l10n) ??
@@ -194,6 +197,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final ticket = _SwapTicketShell(
       key: const ValueKey('swap_compact_ticket'),
       confidentialReveal: widget.confidentialReveal,
+      confidential: widget.state.confidential,
       payCard: _SwapAmountCard(
         label: context.l10n.commonYouPay,
         active: payActive,
@@ -484,10 +488,12 @@ class _SwapTicketShell extends StatelessWidget {
     required this.targetDirection,
     required this.onToggleDirection,
     required this.confidentialReveal,
+    required this.confidential,
     super.key,
   });
 
   final int confidentialReveal;
+  final bool confidential;
   final Widget payCard;
   final Widget receiveCard;
   final SwapDirection targetDirection;
@@ -515,6 +521,7 @@ class _SwapTicketShell extends StatelessWidget {
             child: Center(
               child: SwapConfidentialSeamReveal(
                 reveal: confidentialReveal,
+                on: confidential,
                 size: 40,
                 radius: 12,
                 child: _SwapDirectionButton(
