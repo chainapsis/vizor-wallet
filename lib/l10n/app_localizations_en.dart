@@ -279,6 +279,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityBalanceTransparent => 'Transparent balance';
 
   @override
+  String get activityDetailsGaveUp => 'Couldn\'t be looked up privately';
+
+  @override
   String get activityDetailsLoadFailed => 'Failed — try again';
 
   @override
@@ -408,20 +411,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get activityOmissionOtherSenders => 'other sending addresses';
-
-  @override
   String get activityOmissionOutputAddress => 'an output address';
-
-  @override
-  String get activityOmissionSender => 'the sending address';
-
-  @override
-  String get activityOmissionSharedFunding => 'inputs from other wallets';
-
-  @override
-  String get activityOmissionShieldedFunding =>
-      'the shielded part of the funding';
 
   @override
   String get activityPayFromShielded => 'from shielded ZEC';
@@ -444,6 +434,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityPoolMixed => 'Mixed';
 
   @override
+  String get activityPrivateCheckNotice =>
+      'Checking details privately. Amounts may still change.';
+
+  @override
+  String get activityPrivateCheckStopLegacyDiscrepancy =>
+      'Earlier public records don\'t match private recovery.';
+
+  @override
+  String get activityPrivateCheckStopOptOutUnfinished =>
+      'Turning off Private queries didn\'t finish.';
+
+  @override
+  String get activityPrivateCheckStopQuarantined =>
+      'Private recovery found conflicting records for this account.';
+
+  @override
   String get activityPublicLookupBody =>
       'Vizor will ask the server for this one transaction to show what private lookups leave out.';
 
@@ -459,6 +465,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityReceiptCardFee => 'Card fee';
+
+  @override
+  String get activityReceiptCheckStoppedHelp =>
+      'Vizor stopped checking this transaction privately before it finished. The amount shown may change.';
+
+  @override
+  String get activityReceiptCheckingPrivately => 'Checking privately';
+
+  @override
+  String get activityReceiptCheckingPrivatelyHelp =>
+      'A transaction can also involve your transparent funds. Vizor is still checking this one privately, and the check finishes on its own. The amount shown may change.';
 
   @override
   String get activityReceiptConfirmations => 'Confirmations';
@@ -477,6 +494,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityReceiptDetailsIncompleteHelp =>
       'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.';
+
+  @override
+  String get activityReceiptDetailsSettledHelp =>
+      'Private queries can\'t work out every detail of this transaction, so some stay unknown. The amount shown is how much this account\'s balance changed.';
 
   @override
   String get activityReceiptEstimatedNetworkFee => 'Estimated network fee';
@@ -512,6 +533,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityReceiptUnattributedFeeHelp =>
       'Total fee for this transaction. Your account\'s share of this fee is unknown.';
+
+  @override
+  String get activityRowCheckingPrivately => 'Checking privately';
 
   @override
   String activityRowToday(String time) {

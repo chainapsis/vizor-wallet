@@ -17485,8 +17485,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 19)
-      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
+    if (arr.length != 21)
+      throw Exception('unexpected arr length: expect 21 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
@@ -17506,7 +17506,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       createdTime: dco_decode_u_64(arr[15]),
       detailsComplete: dco_decode_bool(arr[16]),
       provisional: dco_decode_bool(arr[17]),
-      amountIncludesFee: dco_decode_bool(arr[18]),
+      awaitsPrivateCheck: dco_decode_bool(arr[18]),
+      effectsSettled: dco_decode_bool(arr[19]),
+      amountIncludesFee: dco_decode_bool(arr[20]),
     );
   }
 
@@ -23338,6 +23340,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_createdTime = sse_decode_u_64(deserializer);
     var var_detailsComplete = sse_decode_bool(deserializer);
     var var_provisional = sse_decode_bool(deserializer);
+    var var_awaitsPrivateCheck = sse_decode_bool(deserializer);
+    var var_effectsSettled = sse_decode_bool(deserializer);
     var var_amountIncludesFee = sse_decode_bool(deserializer);
     return TransactionInfo(
       txidHex: var_txidHex,
@@ -23358,6 +23362,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       createdTime: var_createdTime,
       detailsComplete: var_detailsComplete,
       provisional: var_provisional,
+      awaitsPrivateCheck: var_awaitsPrivateCheck,
+      effectsSettled: var_effectsSettled,
       amountIncludesFee: var_amountIncludesFee,
     );
   }
@@ -28341,6 +28347,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.createdTime, serializer);
     sse_encode_bool(self.detailsComplete, serializer);
     sse_encode_bool(self.provisional, serializer);
+    sse_encode_bool(self.awaitsPrivateCheck, serializer);
+    sse_encode_bool(self.effectsSettled, serializer);
     sse_encode_bool(self.amountIncludesFee, serializer);
   }
 

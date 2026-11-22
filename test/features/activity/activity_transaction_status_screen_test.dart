@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -1476,6 +1477,68 @@ void main() {
     expect(find.text('Incomplete'), findsOneWidget);
   });
 
+  testWidgets('a receipt waiting on the private check says so', (tester) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        // Not read again yet: nothing known, as right after Private queries
+        // is turned on.
+        initialTransaction: _transaction(
+          txKind: 'received',
+          provisional: true,
+          awaitsPrivateCheck: true,
+          detailsComplete: false,
+          feeState: rust_sync.TransactionFeeState.unknown,
+        ),
+        initialDetail: _detail(txKind: 'received'),
+      ),
+    );
+
+    expect(find.text('Details'), findsOneWidget);
+    expect(
+      find.text(testL10n.activityReceiptCheckingPrivately),
+      findsOneWidget,
+    );
+    expect(find.text('Incomplete'), findsNothing);
+  });
+
+  testWidgets('a stopped private recovery keeps the incomplete row', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      transparentStop: rust_sync.TransparentStopReason.stalled,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          provisional: true,
+          awaitsPrivateCheck: true,
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Incomplete'), findsOneWidget);
+    expect(find.text(testL10n.activityReceiptCheckingPrivately), findsNothing);
+    // Its help says why.
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppTooltip &&
+            (widget.message ?? '').endsWith(
+              testL10n.homeTransparentStopStalled,
+            ),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('an exact recovered send still marks missing recipient details', (
     tester,
   ) async {
@@ -1620,6 +1683,7 @@ rust_sync.TransactionInfo _transaction({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
+  bool awaitsPrivateCheck = false,
   bool amountIncludesFee = false,
   BigInt? displayAmount,
   int accountBalanceDelta = 0,
@@ -1634,6 +1698,7 @@ rust_sync.TransactionInfo _transaction({
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    awaitsPrivateCheck: awaitsPrivateCheck,
     amountIncludesFee: amountIncludesFee,
     blockTime: _blockTime,
     isTransparent: displayPool == 'transparent',
@@ -1703,6 +1768,7 @@ Future<void> _pumpScreen(
   bool pricingEnabled = true,
   bool privacyEnabled = false,
   bool privateQueriesEnabled = false,
+  rust_sync.TransparentStopReason? transparentStop,
   Future<List<rust_sync.TransactionInfo>> Function(String, String)?
   historyLoader,
   Future<rust_sync.TransactionDetail?> Function(
@@ -1756,6 +1822,7 @@ Future<void> _pumpScreen(
               accountUuid: 'account-1',
               hasAccountScopedData: true,
               percentage: 1,
+              transparentStop: transparentStop,
             ),
           ),
         ),

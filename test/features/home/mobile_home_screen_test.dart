@@ -54,6 +54,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
@@ -61,6 +62,7 @@ import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/app_test_fonts.dart';
 import '../../support/wallet_path_read_blocker.dart';
@@ -274,6 +276,7 @@ Widget _app(
   Widget Function(GoRouterState)? receiptBuilder,
   Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
   _MemoryNu7AnnouncementStore? nu7AnnouncementStore,
+  bool privateQueriesEnabled = false,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final ironwoodAnnouncementStore = _FakeIronwoodAnnouncementStore();
@@ -421,6 +424,8 @@ Widget _app(
         ),
       accountProvider.overrideWith(AccountNotifier.new),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
+      if (privateQueriesEnabled)
+        enhancePirProvider.overrideWith(() => FakeEnhancePirNotifier(true)),
       if (syncKeepAwakeNotifier != null)
         syncKeepAwakeProvider.overrideWith(() => syncKeepAwakeNotifier),
       privacyModeProvider.overrideWith(_FakePrivacyModeNotifier.new),
@@ -611,7 +616,7 @@ rust_sync.MigrationStatus _proofReadyMigrationStatus({
   );
 }
 
-rust_sync.TransactionInfo _tx(int index) {
+rust_sync.TransactionInfo _tx(int index, {bool provisional = false}) {
   final seconds = BigInt.from(1800000000 + index);
   return rust_sync.TransactionInfo(
     txidHex: 'tx-$index',
@@ -621,7 +626,8 @@ rust_sync.TransactionInfo _tx(int index) {
     fee: BigInt.zero,
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
-    provisional: false,
+    provisional: provisional,
+    awaitsPrivateCheck: provisional,
     amountIncludesFee: false,
     blockTime: seconds,
     isTransparent: false,
@@ -3615,6 +3621,39 @@ void main() {
       find.byKey(const ValueKey('mobile_home_activity_row_10')),
       findsNothing,
     );
+  });
+
+  group('the private check notice speaks only for the rows Home shows', () {
+    // Twelve receives, newest first; Home shows the newest ten.
+    Future<void> pumpWith(WidgetTester tester, Set<int> waiting) async {
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _app(
+          _syncedState(orchardBalance: BigInt.from(100000000)).copyWith(
+            recentTransactions: [
+              for (var i = 1; i <= 12; i++)
+                _tx(i, provisional: waiting.contains(i)),
+            ],
+          ),
+          privateQueriesEnabled: true,
+        ),
+      );
+      // The notice's loader keeps turning, so the screen never settles.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    testWidgets('waiting rows below the cut show no notice', (tester) async {
+      await pumpWith(tester, {1, 2});
+      expect(find.text(testL10n.activityPrivateCheckNotice), findsNothing);
+    });
+
+    testWidgets('waiting rows Home shows share the notice', (tester) async {
+      await pumpWith(tester, {11, 12});
+      expect(find.text(testL10n.activityPrivateCheckNotice), findsOneWidget);
+      expect(find.text(testL10n.activityRowCheckingPrivately), findsNothing);
+    });
   });
 
   testWidgets('recent activity shows a submitted claim before wallet history', (

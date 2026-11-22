@@ -1,6 +1,7 @@
 import '../../../core/l10n/l10n.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../activity/transaction_completeness.dart';
 
 /// Home's transparent balance: the current amount, a last-known amount marked
 /// as such, an explicit unavailable state, or a stopped private recovery with
@@ -71,15 +72,7 @@ class TransparentBalanceDisplay {
   /// Why recovery stopped and what the user can do about it, or null when it
   /// has not stopped.
   String? hint(AppLocalizations l10n) => switch (stop) {
+    final stop? => transparentStopHint(l10n, stop),
     null => null,
-    rust_sync.TransparentStopReason.quarantined =>
-      l10n.homeTransparentStopQuarantined,
-    rust_sync.TransparentStopReason.legacyDiscrepancy =>
-      l10n.homeTransparentStopLegacyDiscrepancy,
-    rust_sync.TransparentStopReason.withdrawn =>
-      l10n.homeTransparentStopWithdrawn,
-    rust_sync.TransparentStopReason.stalled => l10n.homeTransparentStopStalled,
-    rust_sync.TransparentStopReason.optOutUnfinished =>
-      l10n.homeTransparentStopOptOutUnfinished,
   };
 }

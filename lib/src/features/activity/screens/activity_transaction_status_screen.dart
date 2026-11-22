@@ -22,8 +22,8 @@ import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../../core/zcash/spendable_wait.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/spendable_wait_provider.dart';
@@ -44,6 +44,7 @@ import '../widgets/received_receipt_view.dart';
 import '../widgets/shielded_receipt_view.dart';
 import '../widgets/transparent_details_section.dart';
 import 'transaction_receipt_loading.dart';
+import '../private_details_marked_provider.dart';
 
 // Callers and tests name the receipt seams from here.
 export 'transaction_receipt_loading.dart'
@@ -176,14 +177,28 @@ class _ActivityTransactionStatusScreenState
 
   // Temporary integration feedback is scoped to the Private queries setting.
   bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
+      ref.watch(privateDetailsMarkedProvider) && transactionFeeIsUnknown(tx);
 
   /// The receipt's own detail, once read, can complete what the activity
   /// entry could not: private transparent details that establish every payee.
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) &&
+      ref.watch(privateDetailsMarkedProvider) &&
       transactionDetailsIncomplete(tx) &&
       !receiptDetailsComplete(receiptDetail);
+
+  _IncompleteDetailsRow _incompleteDetailsRow(rust_sync.TransactionInfo tx) {
+    final stop = ref.watch(
+      syncProvider.select((sync) => sync.value?.transparentStop),
+    );
+    return _IncompleteDetailsRow(
+      awaitsPrivateCheck: receiptAwaitsPrivateCheck(
+        tx,
+        recoveryStopped: stop != null,
+      ),
+      stop: receiptPrivateCheckStop(tx, stop: stop),
+      effectsSettled: tx.effectsSettled,
+    );
+  }
 
   bool _showsNetworkFee(rust_sync.TransactionInfo tx) =>
       unattributedReceiptNetworkFee(tx, matchingReceiptDetailFor(tx)) != null;
@@ -689,15 +704,7 @@ class _ActivityTransactionStatusScreenState
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),
               ),
-              if (_showIncompleteDetails(tx))
-                ReviewListRow(
-                  label: context.l10n.activityReceiptDetails,
-                  value: context.l10n.activityReceiptIncomplete,
-                  trailingIconName: AppIcons.help,
-                  trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip:
-                      context.l10n.activityReceiptDetailsIncompleteHelp,
-                ),
+              if (_showIncompleteDetails(tx)) _incompleteDetailsRow(tx),
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
                 ReviewListRow(
@@ -801,7 +808,10 @@ class _ActivityTransactionStatusScreenState
       redesignedContent = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [redesignedContent, const _IncompleteDetailsNotice()],
+        children: [
+          redesignedContent,
+          _IncompleteDetailsNotice(row: _incompleteDetailsRow(tx)),
+        ],
       );
     }
 
@@ -887,22 +897,44 @@ String _truncatedDisplayTxid(String protocolTxid) => truncatedTxid(
 
 /// Marks a dedicated receipt whose entry is incomplete.
 class _IncompleteDetailsNotice extends StatelessWidget {
-  const _IncompleteDetailsNotice();
+  const _IncompleteDetailsNotice({required this.row});
+
+  final _IncompleteDetailsRow row;
 
   @override
   Widget build(BuildContext context) {
-    return _ReceiptContentColumn(
-      child: ReviewWrapCard(
-        children: [
-          ReviewListRow(
-            label: context.l10n.activityReceiptDetails,
-            value: context.l10n.activityReceiptIncomplete,
-            trailingIconName: AppIcons.help,
-            trailingIconColor: context.colors.text.secondary,
-            trailingIconTooltip:
-                context.l10n.activityReceiptDetailsIncompleteHelp,
-          ),
-        ],
+    return _ReceiptContentColumn(child: ReviewWrapCard(children: [row]));
+  }
+}
+
+/// The Details row of a receipt whose entry is incomplete: still being
+/// checked privately (see `receiptAwaitsPrivateCheck`), or incomplete, and
+/// why when recovery stopped.
+class _IncompleteDetailsRow extends StatelessWidget {
+  const _IncompleteDetailsRow({
+    required this.awaitsPrivateCheck,
+    this.stop,
+    this.effectsSettled = false,
+  });
+
+  final bool awaitsPrivateCheck;
+  final rust_sync.TransparentStopReason? stop;
+  final bool effectsSettled;
+
+  @override
+  Widget build(BuildContext context) {
+    return ReviewListRow(
+      label: context.l10n.activityReceiptDetails,
+      value: awaitsPrivateCheck
+          ? context.l10n.activityReceiptCheckingPrivately
+          : context.l10n.activityReceiptIncomplete,
+      trailingIconName: AppIcons.help,
+      trailingIconColor: context.colors.text.secondary,
+      trailingIconTooltip: receiptIncompleteDetailsHelp(
+        context.l10n,
+        awaitsPrivateCheck: awaitsPrivateCheck,
+        stop: stop,
+        effectsSettled: effectsSettled,
       ),
     );
   }

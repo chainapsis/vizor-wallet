@@ -5,6 +5,8 @@ import '../providers/home_activity_state.dart';
 import '../providers/home_initialization_provider.dart';
 import '../widgets/home_activity_skeleton.dart';
 import '../../activity/widgets/deferred_gift_card_recovery.dart';
+import '../../activity/widgets/private_check_notice.dart';
+import '../../activity/transaction_completeness.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -65,6 +67,7 @@ import '../widgets/keystone_shield_signing_overlay.dart';
 import '../widgets/ledger_shield_signing_overlay.dart';
 import '../providers/nu7_announcement_provider.dart';
 import '../widgets/nu7_announcement.dart';
+import '../../activity/private_details_marked_provider.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -633,7 +636,18 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     });
 
     final notice = _noticeData();
-    final rows = _activityRows(context);
+    final shownActivity = _recentActivity(context);
+    final rows = [for (final entry in shownActivity) entry.row()];
+    // Home's rows never label incomplete details, so only the notice shows.
+    // It speaks only for the rows Home shows.
+    final privateCheck = widget.hasActivitySyncData
+        ? privateCheckNotice(
+            [for (final entry in shownActivity) ?entry.transaction],
+            privateQueriesEnabled: ref.watch(enhancePirProvider),
+            stop: widget.sync.transparentStop,
+            rowsLabelled: false,
+          )
+        : null;
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
     String? activeAccountName;
@@ -699,6 +713,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       isShieldingBalance: widget.isShieldingBalance,
       privacyModeEnabled: widget.privacyModeEnabled,
       activityRows: rows,
+      privateCheckNotice: privateCheck,
       isActivityLoading: activityState == HomeActivityState.loading,
       isActivityUnavailable: activityState == HomeActivityState.unavailable,
       notice: notice,
@@ -759,7 +774,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     return null;
   }
 
-  List<ActivityRowData> _activityRows(BuildContext context) {
+  /// The newest entries, which Home shows, before their rows are built.
+  List<_HomeActivityEntry> _recentActivity(BuildContext context) {
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final giftCardActivityIndex = accountUuid == null
         ? GiftCardActivityIndex.empty
@@ -810,10 +826,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
           ),
         ),
     ]..sort(_compareHomeActivityEntries);
-    return entries
-        .take(_recentActivityLimit)
-        .map((entry) => entry.row())
-        .toList(growable: false);
+    return entries.take(_recentActivityLimit).toList(growable: false);
   }
 
   _HomeActivityEntry _homeTransactionActivityEntry(
@@ -822,13 +835,14 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     GiftCardActivityMetadata? giftCard,
   ) {
     return _HomeActivityEntry(
+      transaction: transaction,
       timestamp:
           giftCard?.activityTimestamp ??
           transactionActivityTimestamp(transaction),
       row: () => buildTransactionActivityRow(
         context: context,
         transaction: transaction,
-        privateQueriesEnabled: ref.watch(enhancePirProvider),
+        privateQueriesEnabled: ref.watch(privateDetailsMarkedProvider),
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
@@ -892,9 +906,16 @@ class _HomePaneState extends ConsumerState<_HomePane> {
 }
 
 class _HomeActivityEntry {
-  const _HomeActivityEntry({required this.timestamp, required this.row});
+  const _HomeActivityEntry({
+    required this.timestamp,
+    required this.row,
+    this.transaction,
+  });
 
   final DateTime? timestamp;
+
+  /// The transaction a row shows, if it shows one.
+  final rust_sync.TransactionInfo? transaction;
 
   /// Builds the row, which Home does only for the entries it shows, so a swap
   /// it doesn't show starts no payout check.
@@ -1254,6 +1275,7 @@ class _HomeDesktopPane extends StatelessWidget {
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.activityRows,
+    this.privateCheckNotice,
     required this.isActivityLoading,
     this.isActivityUnavailable = false,
     required this.notice,
@@ -1288,6 +1310,7 @@ class _HomeDesktopPane extends StatelessWidget {
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final List<ActivityRowData> activityRows;
+  final PrivateCheckNoticeState? privateCheckNotice;
   final bool isActivityLoading;
   final bool isActivityUnavailable;
   final _HomeNoticeData? notice;
@@ -1397,6 +1420,7 @@ class _HomeDesktopPane extends StatelessWidget {
                           ),
                           child: _HomeDesktopActivityCard(
                             rows: activityRows,
+                            privateCheckNotice: privateCheckNotice,
                             isLoading: isActivityLoading,
                             onSeeAll: onActivity,
                           ),
@@ -2631,9 +2655,11 @@ class _HomeDesktopActivityCard extends StatelessWidget {
   const _HomeDesktopActivityCard({
     required this.rows,
     required this.onSeeAll,
+    this.privateCheckNotice,
     this.isLoading = false,
   });
 
+  final PrivateCheckNoticeState? privateCheckNotice;
   final bool isLoading;
   final List<ActivityRowData> rows;
   final VoidCallback onSeeAll;
@@ -2664,6 +2690,12 @@ class _HomeDesktopActivityCard extends StatelessWidget {
               color: colors.button.ghost.label,
             ),
           ),
+          // Mounted with the rows, so it never slides in on load.
+          if (!isLoading)
+            PrivateCheckNoticeSlot(
+              notice: privateCheckNotice,
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+            ),
           const SizedBox(height: AppSpacing.sm),
           Semantics(
             label: isLoading ? context.l10n.commonLoadingActivity : null,

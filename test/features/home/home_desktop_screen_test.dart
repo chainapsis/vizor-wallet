@@ -46,10 +46,12 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
@@ -1329,6 +1331,51 @@ void main() {
     expect(find.text('Received'), findsNWidgets(4));
   });
 
+  group('the private check notice speaks only for the rows Home shows', () {
+    // Seven receives, newest last; Home shows the newest five.
+    Future<void> pumpWith(WidgetTester tester, Set<int> waiting) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          swapEnabled: false,
+          privateQueriesEnabled: true,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            recentTransactions: [
+              for (var i = 0; i < 7; i++)
+                _receivedZecTx(
+                  txidHex: 'received-$i',
+                  amountZatoshi: (i + 1) * 10_000_000,
+                  blockTime: 1_700_000_000 + i,
+                  provisional: waiting.contains(i),
+                ),
+            ],
+          ),
+        ),
+      );
+      await _pumpUntilPresent(tester, find.text('Received'));
+    }
+
+    testWidgets('waiting rows below the cut show no notice', (tester) async {
+      await pumpWith(tester, {0, 1});
+      expect(find.text(testL10n.activityPrivateCheckNotice), findsNothing);
+    });
+
+    testWidgets('waiting rows Home shows share the notice', (tester) async {
+      await pumpWith(tester, {5, 6});
+      expect(find.text(testL10n.activityPrivateCheckNotice), findsOneWidget);
+    });
+
+    testWidgets('one waiting row is noted too, since rows carry no label', (
+      tester,
+    ) async {
+      await pumpWith(tester, {6});
+      expect(find.text(testL10n.activityPrivateCheckNotice), findsOneWidget);
+      expect(find.text(testL10n.activityRowCheckingPrivately), findsNothing);
+    });
+  });
+
   testWidgets('home recent activity labels Gift Card transactions', (
     tester,
   ) async {
@@ -2155,6 +2202,7 @@ rust_sync.TransactionInfo _receivedZecTx({
   required String txidHex,
   required int amountZatoshi,
   required int blockTime,
+  bool provisional = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -2164,7 +2212,8 @@ rust_sync.TransactionInfo _receivedZecTx({
     fee: BigInt.zero,
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
-    provisional: false,
+    provisional: provisional,
+    awaitsPrivateCheck: provisional,
     amountIncludesFee: false,
     blockTime: BigInt.from(blockTime),
     isTransparent: false,
@@ -2252,6 +2301,7 @@ Widget _appHarness(
   HardwareSignerKind? hardwareSignerKind,
   Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
   _MemoryNu7AnnouncementStore? nu7AnnouncementStore,
+  bool privateQueriesEnabled = false,
 }) {
   final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
   return ProviderScope(
@@ -2283,6 +2333,8 @@ Widget _appHarness(
       syncProvider.overrideWith(
         () => syncNotifier ?? FakeSyncNotifier(syncState ?? _syncedSyncState),
       ),
+      if (privateQueriesEnabled)
+        enhancePirProvider.overrideWith(() => FakeEnhancePirNotifier(true)),
       ledgerSignedOperationServiceProvider.overrideWithValue(
         const _EmptyLedgerSignedOperationService(),
       ),

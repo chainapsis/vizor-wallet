@@ -99,6 +99,7 @@ rust_sync.TransactionInfo _tx({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
+  bool awaitsPrivateCheck = false,
   bool amountIncludesFee = false,
   BigInt? displayAmount,
   int accountBalanceDelta = 0,
@@ -112,6 +113,7 @@ rust_sync.TransactionInfo _tx({
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    awaitsPrivateCheck: awaitsPrivateCheck,
     amountIncludesFee: amountIncludesFee,
     blockTime: blockTime ?? BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',
@@ -189,6 +191,7 @@ Widget _app(
   bool pricingEnabled = true,
   bool privacyEnabled = false,
   bool privateQueriesEnabled = false,
+  rust_sync.TransparentStopReason? transparentStop,
   String? routeTxid,
   List<rust_sync.TransactionInfo>? history,
   Map<String, ReceivedSpendableWait>? spendableWaits,
@@ -209,7 +212,11 @@ Widget _app(
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
-          SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+          SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            transparentStop: transparentStop,
+          ),
         ),
       ),
       addressBookRepositoryProvider.overrideWithValue(
@@ -1152,6 +1159,62 @@ void main() {
 
     expect(
       find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a receipt waiting on the private check says so', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        // Not read again yet: nothing known, as right after Private queries
+        // is turned on.
+        _tx(
+          provisional: true,
+          awaitsPrivateCheck: true,
+          detailsComplete: false,
+        ),
+        privateQueriesEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(testL10n.activityReceiptCheckingPrivately),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text(testL10n.activityReceiptCheckingPrivately));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(testL10n.activityReceiptCheckingPrivatelyHelp),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a stopped private recovery keeps the incomplete row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(provisional: true, awaitsPrivateCheck: true),
+        privateQueriesEnabled: true,
+        transparentStop: rust_sync.TransparentStopReason.stalled,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Incomplete'), findsOneWidget);
+    expect(find.text(testL10n.activityReceiptCheckingPrivately), findsNothing);
+
+    // Its help says why.
+    await tester.tap(find.text('Incomplete'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(testL10n.homeTransparentStopStalled),
       findsOneWidget,
     );
   });

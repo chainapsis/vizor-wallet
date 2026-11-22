@@ -16,17 +16,21 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/activity/activity_history_pager.dart'
+    show activityPageSize;
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/test_l10n.dart';
 import '../../support/wallet_path_read_blocker.dart';
@@ -71,6 +75,7 @@ rust_sync.TransactionInfo _tx({
   int accountBalanceDelta = 0,
   bool isTransparent = false,
   bool? provisional,
+  bool awaitsPrivateCheck = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -83,6 +88,7 @@ rust_sync.TransactionInfo _tx({
         : rust_sync.TransactionFeeState.known,
     detailsComplete: !amountIncludesFee,
     provisional: provisional ?? amountIncludesFee,
+    awaitsPrivateCheck: awaitsPrivateCheck,
     amountIncludesFee: amountIncludesFee,
     blockTime: blockTime,
     isTransparent: isTransparent,
@@ -127,9 +133,13 @@ Widget _app(
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   GoRouter? router,
   bool? swapEnabled,
+  bool privateQueriesEnabled = false,
 }) {
   return ProviderScope(
     overrides: [
+      enhancePirProvider.overrideWith(
+        () => FakeEnhancePirNotifier(privateQueriesEnabled),
+      ),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       if (etaLabels != null)
@@ -664,5 +674,142 @@ void main() {
       find.text("Couldn't load activity. Try again in a moment."),
       findsOneWidget,
     );
+  });
+
+  group('rows waiting on the private check', () {
+    List<rust_sync.TransactionInfo> history(int waiting) => [
+      for (var i = 0; i < 3; i++)
+        _tx(
+          txidHex: 'private-check-$i',
+          blockTime: BigInt.from(1800000000 - i),
+          provisional: i < waiting,
+          awaitsPrivateCheck: i < waiting,
+        ),
+    ];
+
+    testWidgets('several share one notice and keep their dates', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app((_) async => history(3), privateQueriesEnabled: true),
+      );
+      // The notice's loader keeps pulsing, so the screen never settles.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text(testL10n.activityPrivateCheckNotice), findsOneWidget);
+      expect(
+        find.text(testL10n.activityReceiptDetailsIncomplete),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a single one keeps its own label', (tester) async {
+      await tester.pumpWidget(
+        _app((_) async => history(1), privateQueriesEnabled: true),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(testL10n.activityPrivateCheckNotice), findsNothing);
+      expect(find.text(testL10n.activityRowCheckingPrivately), findsOneWidget);
+    });
+
+    testWidgets('rows loaded past the page cut do not raise it', (
+      tester,
+    ) async {
+      // A page loads whole transactions, and the last one splits into two
+      // rows, so one loaded row falls below the cut. Only that row waits.
+      final loaded = [
+        for (var i = 0; i < activityPageSize - 1; i++)
+          _tx(txidHex: 'page-cut-$i', blockTime: BigInt.from(1800000000 - i)),
+        _tx(
+          txidHex: 'page-cut-split',
+          kind: 'sent',
+          blockTime: BigInt.from(1700000000),
+        ),
+        _tx(
+          txidHex: 'page-cut-split',
+          blockTime: BigInt.from(1700000000),
+          provisional: true,
+          awaitsPrivateCheck: true,
+        ),
+      ];
+      await tester.pumpWidget(
+        _app(
+          (_) async => loaded,
+          privateQueriesEnabled: true,
+          syncNotifier: FakeSyncNotifier(
+            SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+              transparentStop: rust_sync.TransparentStopReason.stalled,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(testL10n.homeTransparentStopStalled), findsNothing);
+    });
+
+    testWidgets('an unfinished opt-out keeps rows marked', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          (_) async => [
+            // Settled, but its amount is still a provisional movement.
+            _tx(
+              txidHex: 'opt-out-provisional',
+              blockTime: BigInt.from(1800000000),
+              provisional: true,
+            ),
+          ],
+          // Turning Private queries off did not finish: the setting reads
+          // off, but privately recovered rows are still provisional.
+          privateQueriesEnabled: false,
+          syncNotifier: FakeSyncNotifier(
+            SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+              transparentStop: rust_sync.TransparentStopReason.optOutUnfinished,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(testL10n.activityReceiptDetailsIncomplete),
+        findsOneWidget,
+      );
+    });
+
+    for (final waiting in [1, 3]) {
+      testWidgets('a stopped recovery says why over $waiting waiting', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _app(
+            (_) async => history(waiting),
+            privateQueriesEnabled: true,
+            syncNotifier: FakeSyncNotifier(
+              SyncState(
+                accountUuid: 'account-1',
+                hasAccountScopedData: true,
+                transparentStop: rust_sync.TransparentStopReason.stalled,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text(testL10n.activityPrivateCheckNotice), findsNothing);
+        expect(find.text(testL10n.homeTransparentStopStalled), findsOneWidget);
+        expect(
+          find.text(testL10n.activityReceiptDetailsIncomplete),
+          findsNothing,
+        );
+        expect(find.text(testL10n.activityRowCheckingPrivately), findsNothing);
+      });
+    }
   });
 }
