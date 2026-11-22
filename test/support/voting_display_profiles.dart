@@ -51,6 +51,12 @@ final desktopVotingProfiles = [
 ];
 
 const mobileVotingProfiles = [
+  VotingDisplayProfile(
+    'iPhone SE (3rd generation)',
+    Size(375, 667),
+    2,
+    top: 20,
+  ),
   VotingDisplayProfile('iPhone 16e', Size(390, 844), 3, top: 47, bottom: 34),
   VotingDisplayProfile('iPhone 16', Size(393, 852), 3, top: 59, bottom: 34),
   VotingDisplayProfile(

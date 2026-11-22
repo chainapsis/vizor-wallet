@@ -30,7 +30,7 @@ void main() {
         boundaryKey: key,
         parts: votingQrFrames,
       );
-      await checkVotingQrFrames(tester, key, profile.ratio, wholePixels: false);
+      await checkVotingQrFrames(tester, key, profile.ratio, wholePixels: true);
       await tester.pumpWidget(const SizedBox());
     });
   }

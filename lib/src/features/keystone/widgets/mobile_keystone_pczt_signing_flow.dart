@@ -128,6 +128,7 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     this.onRequestAuxiliaryAction,
     this.showCancelAction = true,
     this.allowQrContentScrolling = false,
+    this.minimumQrPhysicalSize,
     this.forceScannerActiveForTesting = false,
     this.startInScannerForTesting = false,
     this.onScanWindowForTesting,
@@ -162,6 +163,10 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   /// Scroll the title, request details, and QR together while keeping actions
   /// visible, including when system text scaling enlarges the request details.
   final bool allowQrContentScrolling;
+
+  /// When set, render whole-pixel modules and use scrolling to reserve this
+  /// many physical pixels per side, up to what the viewport can show at once.
+  final double? minimumQrPhysicalSize;
   final bool forceScannerActiveForTesting;
   final bool startInScannerForTesting;
   final ValueChanged<Rect>? onScanWindowForTesting;
@@ -527,14 +532,23 @@ class _MobileKeystonePcztSigningFlowState
       ],
     );
 
-    Widget qrRegion(double width, double height) {
+    Widget qrRegion(double width, double height, {double? viewportHeight}) {
       final availableForQr =
           height -
           _mobileKeystoneQrPromptGap -
           _mobileKeystonePromptBlockHeight;
+      final minimumSize = widget.minimumQrPhysicalSize;
+      final minimumLogicalSize = minimumSize == null
+          ? 120.0
+          : math
+                .min(
+                  math.min(width, viewportHeight ?? height),
+                  minimumSize / MediaQuery.devicePixelRatioOf(context),
+                )
+                .clamp(0.0, _mobileKeystoneQrFrameSize);
       final frameSize = math
           .min(_mobileKeystoneQrFrameSize, math.min(width, availableForQr))
-          .clamp(120.0, _mobileKeystoneQrFrameSize)
+          .clamp(minimumLogicalSize, _mobileKeystoneQrFrameSize)
           .toDouble();
       return Center(
         child: Column(
@@ -594,6 +608,7 @@ class _MobileKeystonePcztSigningFlowState
                             constraints.crossAxisExtent - 2 * kMobilePageMargin,
                             constraints.viewportMainAxisExtent -
                                 constraints.precedingScrollExtent,
+                            viewportHeight: constraints.viewportMainAxisExtent,
                           ),
                         ),
                       ),
@@ -715,6 +730,7 @@ class _MobileKeystonePcztSigningFlowState
       error: null,
       size: size,
       scanOptimized: true,
+      wholePixelModules: widget.minimumQrPhysicalSize != null,
       quietZone: const PrettyQrQuietZone.modules(3),
     );
   }

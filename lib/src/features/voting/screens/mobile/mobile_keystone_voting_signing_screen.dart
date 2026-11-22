@@ -70,6 +70,9 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
             : null,
         showCancelAction: false,
         allowQrContentScrolling: true,
+        // Three physical pixels per module for an 85-module voting frame
+        // and its four-module white border on each side.
+        minimumQrPhysicalSize: (85 + 2 * 4) * 3,
         preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
           urParts: presentation.urParts,
           pcztWithProofs: Future<List<int>>.value(const []),
