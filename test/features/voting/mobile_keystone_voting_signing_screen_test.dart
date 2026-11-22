@@ -34,6 +34,25 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+  testWidgets('iPhone 16e keeps a scannable QR at double text size', (
+    tester,
+  ) async {
+    final profile = mobileVotingProfiles.firstWhere(
+      (p) => p.name == 'iPhone 16e',
+    );
+    final key = GlobalKey();
+    await _pumpSigningScreen(
+      tester,
+      profile: profile,
+      textScale: 2,
+      boundaryKey: key,
+      parts: votingQrFrames,
+    );
+    final qr = find.byKey(const ValueKey('mobile_voting_keystone_qr_frame'));
+    expect(tester.getSize(qr).shortestSide, greaterThanOrEqualTo(120));
+    await checkVotingQrFrames(tester, key, profile.ratio, wholePixels: true);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('uses the mobile Keystone two-step signing presentation', (
     tester,
   ) async {

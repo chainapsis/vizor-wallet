@@ -71,6 +71,7 @@ typedef MobileKeystonePcztScannerBuilder =
 enum _SignStage { preparing, showQr, scanning, failed }
 
 const _mobileKeystoneQrFrameSize = 320.0;
+const _mobileKeystoneMinimumQrFrameSize = 120.0;
 const _mobileKeystoneDesignWidth = 393.0;
 const _mobileKeystoneDesignHeight = 852.0;
 const _mobileKeystoneScanWindowSize = 285.0;
@@ -539,11 +540,14 @@ class _MobileKeystonePcztSigningFlowState
           _mobileKeystonePromptBlockHeight;
       final minimumSize = widget.minimumQrPhysicalSize;
       final minimumLogicalSize = minimumSize == null
-          ? 120.0
+          ? _mobileKeystoneMinimumQrFrameSize
           : math
                 .min(
                   math.min(width, viewportHeight ?? height),
-                  minimumSize / MediaQuery.devicePixelRatioOf(context),
+                  math.max(
+                    _mobileKeystoneMinimumQrFrameSize,
+                    minimumSize / MediaQuery.devicePixelRatioOf(context),
+                  ),
                 )
                 .clamp(0.0, _mobileKeystoneQrFrameSize);
       final frameSize = math
