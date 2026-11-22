@@ -103,6 +103,7 @@ class _DesktopKeystoneVotingSigningState
     urParts: widget.urParts,
     error: widget.qrError,
     size: size,
+    wholePixelModules: true,
     playback: _playback,
   );
 

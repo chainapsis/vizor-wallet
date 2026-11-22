@@ -1,7 +1,10 @@
 @Tags(['desktop'])
 library;
 
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +15,8 @@ import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stag
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
+import 'package:zxing2/qrcode.dart' as zxing;
+
 import '../../support/keystone_qr_fixtures.dart';
 
 final _parts = [for (final f in keystoneQrDensityFixtures.take(2)) f.part];
@@ -56,10 +61,11 @@ Future<void> _pump(
   Widget content, {
   Locale locale = const Locale('en'),
   double scale = 1,
+  double pixelRatio = 1,
   Size size = const Size(1080, 720),
 }) async {
-  tester.view.physicalSize = size;
-  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = size * pixelRatio;
+  tester.view.devicePixelRatio = pixelRatio;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
@@ -74,6 +80,7 @@ Future<void> _pump(
             body: MediaQuery(
               data: MediaQueryData(
                 size: size,
+                devicePixelRatio: pixelRatio,
                 textScaler: TextScaler.linear(scale),
               ),
               child: Center(
@@ -95,6 +102,69 @@ Future<void> _pump(
 }
 
 void main() {
+  for (final ratio in [1.0, 1.25, 2.0]) {
+    testWidgets('desktop voting frames decode on the pixel grid at ${ratio}x', (
+      tester,
+    ) async {
+      final boundaryKey = GlobalKey();
+      await _pump(
+        tester,
+        RepaintBoundary(key: boundaryKey, child: _content()),
+        pixelRatio: ratio,
+      );
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(boundaryKey),
+      );
+      for (final surface in ['normal', 'enlarged']) {
+        if (surface == 'enlarged') {
+          await tester.tap(find.byKey(const ValueKey('voting_enlarge_qr')));
+          await tester.pump();
+        }
+        final stage = find.byKey(ValueKey('voting_qr_$surface'));
+        final rect = tester
+            .getRect(stage)
+            .shift(-boundary.localToGlobal(Offset.zero));
+        for (var i = 0; i < _parts.length; i++) {
+          final fixture = keystoneQrDensityFixtures[i];
+          final text = await tester.runAsync(() async {
+            final image = await boundary.toImage(pixelRatio: ratio);
+            try {
+              final rgba = (await image.toByteData(
+                format: ui.ImageByteFormat.rawRgba,
+              ))!;
+              final source =
+                  zxing.RGBLuminanceSource(
+                    image.width,
+                    image.height,
+                    rgba.buffer.asInt32List(),
+                  ).crop(
+                    (rect.left * ratio).round(),
+                    (rect.top * ratio).round(),
+                    (rect.width * ratio).round(),
+                    (rect.height * ratio).round(),
+                  );
+              final count = fixture.alphanumericModuleCount;
+              final pitch = source.width ~/ (count + 8);
+              final margin = (source.width - count * pitch) ~/ 2;
+              // The top-left finder starts with seven solid black modules.
+              final row = source.getRow(margin, null).buffer.asUint8List();
+              expect(row.take(margin), everyElement(255));
+              expect(row.skip(margin).take(7 * pitch), everyElement(0));
+              expect(row[margin + 7 * pitch], 255);
+              return zxing.QRCodeReader()
+                  .decode(zxing.BinaryBitmap(zxing.HybridBinarizer(source)))
+                  .text;
+            } finally {
+              image.dispose();
+            }
+          });
+          expect(text, fixture.part);
+          await tester.pump(keystoneQrFrameInterval);
+        }
+      }
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
   testWidgets(
     '400px QR and 472px enlargement share playback at the minimum window size',
     (tester) async {
