@@ -16,6 +16,7 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../keystone/services/keystone_batch_signing.dart';
+import '../../../keystone/services/keystone_qr_config.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
@@ -260,7 +261,7 @@ class _MobileKeystoneSignScreenState
         batchRequest = null;
         urParts = await rust_keystone.encodePcztUrParts(
           pcztBytes: signerPczts![index],
-          maxFragmentLen: BigInt.from(140),
+          maxFragmentLen: BigInt.from(keystoneQrFragmentLength),
         );
       } else {
         batchRequest = await buildKeystoneBatchSigningRequest(

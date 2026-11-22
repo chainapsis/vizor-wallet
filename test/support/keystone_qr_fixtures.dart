@@ -1,5 +1,6 @@
 // First frames of a synthetic 10-KiB payload encoded by the pinned UR library
-// at the production fragment sizes. Display fixtures only, not signable PCZTs.
+// at current (140) and former (200, 300) fragment sizes for density regressions.
+// Display fixtures only, not signable PCZTs.
 const keystoneQrDensityFixtures = [
   (
     fragmentLength: 140,

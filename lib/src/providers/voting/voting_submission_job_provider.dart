@@ -977,7 +977,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       final batchRequest = await buildPreparedKeystoneBatchSigningRequest(
         requestId: baseRequestId,
         messages: _votingKeystoneBatchMessages(roundRequests),
-        maxFragmentLength: _votingKeystoneQrFragmentLength,
       );
       if (!_isCurrentJob(key: key, generation: generation)) return;
       _keystoneSigningRound = _VotingKeystoneSigningRound(
@@ -1707,7 +1706,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 }
 
 const _votingKeystoneBatchMaxMessages = 40;
-const _votingKeystoneQrFragmentLength = 200;
 
 String _votingKeystoneMessageId(int bundleIndex) =>
     'voting-bundle-$bundleIndex';

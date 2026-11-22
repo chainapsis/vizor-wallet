@@ -55,7 +55,7 @@ Future<Uint8List> _raster(
 
 void main() {
   test('shielding caches less dense level-M production-sized QR frames', () {
-    final fixture = keystoneQrDensityFixtures[1];
+    final fixture = keystoneQrDensityFixtures.first;
     final frames = KeystoneShieldQrFrames([fixture.part]);
     final image = frames.frame(0);
     expect(image.moduleCount, fixture.alphanumericModuleCount);

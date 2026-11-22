@@ -29,6 +29,7 @@ void main() {
     expect(request.urParts, const ['UR:ZCASH-SIGN-BATCH/TEST']);
     expect(rustApi.encodedMessages.single.pcztBytes, const [4, 5, 6]);
     expect(rustApi.encodedMessages.single.expectedSignatureCount, 2);
+    expect(rustApi.lastMaxFragmentLength, BigInt.from(140));
   });
 
   test('returns only the compact signature blob for each message', () async {
@@ -112,11 +113,13 @@ class _BatchRustApiFake implements RustLibApi {
   final encodedMessages = <ZcashBatchMessageInput>[];
   final encodedSignatureCounts = <int>[];
   int returnedSignatureCount = 2;
+  BigInt? lastMaxFragmentLength;
 
   void reset() {
     encodedMessages.clear();
     encodedSignatureCounts.clear();
     returnedSignatureCount = 2;
+    lastMaxFragmentLength = null;
   }
 
   @override
@@ -136,6 +139,7 @@ class _BatchRustApiFake implements RustLibApi {
     required BigInt maxFragmentLen,
   }) async {
     encodedMessages.addAll(messages);
+    lastMaxFragmentLength = maxFragmentLen;
     return const ['UR:ZCASH-SIGN-BATCH/TEST'];
   }
 

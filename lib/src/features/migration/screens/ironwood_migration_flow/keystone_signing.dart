@@ -1,8 +1,5 @@
 part of '../ironwood_migration_flow_screen.dart';
 
-// Use the same fragment density for every migration signing request.
-const _keystoneMigrationQrMaxFragmentLen = 300;
-
 class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneCombinedSignScreen({
     required this.approvedSchedule,
@@ -642,7 +639,6 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               signingRounds.length,
             ),
             messages: _preparedKeystoneBatchMessages(signingRounds[index]),
-            maxFragmentLength: _keystoneMigrationQrMaxFragmentLen,
           ),
         );
       }

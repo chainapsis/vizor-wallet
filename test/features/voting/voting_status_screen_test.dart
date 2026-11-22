@@ -4483,6 +4483,7 @@ void main() {
     expect(find.text('Sign 1 voting bundle'), findsOneWidget);
     expect(find.text('One Keystone approval'), findsOneWidget);
     expect(_RustApiFake.lastEncodedBatchMessageCount, 1);
+    expect(_RustApiFake.lastMaxFragmentLength, BigInt.from(140));
     expect(find.text('Bundle 1 of 1 memo'), findsOneWidget);
     expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
     expect(find.text('Scan signature'), findsOneWidget);
@@ -4872,6 +4873,7 @@ void main() {
     );
     expect(find.text('One Keystone approval'), findsNothing);
     expect(_RustApiFake.lastEncodedBatchMessageCount, 40);
+    expect(_RustApiFake.lastMaxFragmentLength, BigInt.from(140));
     expect(find.text('Bundle 1 of 50 memo'), findsOneWidget);
     expect(find.text('Bundle 2 of 50 memo'), findsNothing);
     expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
@@ -7304,6 +7306,7 @@ class _RustApiFake implements RustLibApi {
   static bool failBatchEncoding = false;
   static int maxBatchMessages = 40;
   static int lastEncodedBatchMessageCount = 0;
+  static BigInt? lastMaxFragmentLength;
 
   @override
   Future<List<String>> crateApiKeystoneEncodePcztUrParts({
@@ -7343,6 +7346,7 @@ class _RustApiFake implements RustLibApi {
       throw StateError('forced batch encoding failure');
     }
     lastEncodedBatchMessageCount = messages.length;
+    lastMaxFragmentLength = maxFragmentLen;
     return const ['ur:zcash-sign-batch/test'];
   }
 

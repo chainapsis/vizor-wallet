@@ -24,7 +24,10 @@ import '../../fakes/fake_sync_notifier.dart';
 void main() {
   setUpAll(() => RustLib.initMock(api: _SigningApi()));
   tearDownAll(RustLib.dispose);
-  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+  setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
+    _SigningApi.lastMaxFragmentLength = null;
+  });
   testWidgets(
     'Keystone cancel failure retains ownership and permits retry (desktop)',
     (tester) async {
@@ -96,6 +99,7 @@ void main() {
       VoidCallback cancel() => tester
           .widget<AppButton>(find.widgetWithText(AppButton, 'Back to review'))
           .onPressed!;
+      expect(_SigningApi.lastMaxFragmentLength, BigInt.from(140));
       final staleCancel = cancel();
       staleCancel();
       staleCancel();
@@ -214,6 +218,8 @@ IronwoodMigrationService _service({
 );
 
 class _SigningApi implements RustLibApi {
+  static BigInt? lastMaxFragmentLength;
+
   @override
   void crateApiKeystoneResetUrSession() {}
   @override
@@ -221,7 +227,11 @@ class _SigningApi implements RustLibApi {
     required String requestId,
     required List<rust_keystone_wallet.ZcashBatchMessageInput> messages,
     required BigInt maxFragmentLen,
-  }) async => ['UR:ZCASH-SIGN-BATCH/$requestId'];
+  }) async {
+    lastMaxFragmentLength = maxFragmentLen;
+    return ['UR:ZCASH-SIGN-BATCH/$requestId'];
+  }
+
   @override
   Future<Uint32List> crateApiKeystoneZcashSignBatchRoundMessageCounts({
     required String requestId,
