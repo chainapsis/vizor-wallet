@@ -1394,7 +1394,7 @@ void main() {
     final bscUsdc = supported.singleWhere(
       (asset) => asset.symbol == 'USDC' && asset.chainTicker == 'bsc',
     );
-    expect(bscUsdc.chainLabel, 'Binance Smart Chain');
+    expect(bscUsdc.chainLabel, 'BNB Smart Chain');
     expect(bscUsdc.tokenIconAsset, 'assets/swap/tokens/usdc.webp');
     expect(bscUsdc.chainIconKey, 'bsc');
     expect(bscUsdc.chainIconAsset, 'assets/swap/tokens/bnb.webp');

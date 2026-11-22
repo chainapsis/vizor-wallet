@@ -92,7 +92,7 @@ void main() {
       ),
     );
 
-    const warning = 'Send only USDT on Binance Smart Chain';
+    const warning = 'Send only USDT on BNB Smart Chain';
     final paragraph = tester.renderObject<RenderParagraph>(find.text(warning));
     expect(paragraph.didExceedMaxLines, isFalse);
     expect(

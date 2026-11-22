@@ -15,7 +15,7 @@ enum AddressBookNetwork {
   bitcoin('btc', 'Bitcoin', 'assets/swap/chains/btc.webp'),
   binanceSmartChain(
     'bsc',
-    'Binance Smart Chain',
+    'BNB Smart Chain',
     'assets/swap/tokens/bnb.webp',
   ),
   tron('tron', 'Tron', 'assets/swap/chains/tron.webp'),
