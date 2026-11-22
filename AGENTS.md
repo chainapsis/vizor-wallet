@@ -1207,14 +1207,19 @@ change. The subsections below this list carry the detailed rules.
   Memo labels, errors and buttons grow with text; the input keeps an internal
   scroll view. Its scrollbar has a 24px hit area and a 6px visible thumb.
 - Shortened addresses and transaction ids come from
-  `lib/src/core/formatting/address_display.dart`, never a local `substring`:
-  - `truncatedAddress`: 6 + 5 on phones, 9 + 7 on desktop. The address
+  `lib/src/core/formatting/address_display.dart`, never a local `substring`.
+  Pick the form by what the line does:
+  - `truncatedAddress` (6 + 5 on phones, 7 + 6 on desktop): the address
     shares its line with a name, label or action.
-  - `truncatedLongAddress`: 13 + 11. The address has its own line and people
+  - `truncatedLongAddress` (13 + 11): the address has its own line and people
     check it (receive, Send recipients, saving a contact, import). Give
     `AddressLine(shortAddress:)` so a narrow row drops to the short form.
-  - `truncatedTxid`: 8 + 8, for transaction ids.
+  - `truncatedTxid` (8 + 8): transaction ids.
   - In Geist Mono, pass `monospace: true` (`...` without spaces).
+- Each form has one length per platform. Change it only after measuring, at
+  default text size (phone 393pt, desktop 1080×720), that every short line
+  still fits and the review headline address stays within 85% of its column.
+  To show more in one place, move it up a form instead of adding a length.
 - An address inside a sentence ("To: Mike (0x5290 ... 69ee7) on Ethereum")
   is an `AddressLine` shown by `AddressLineText` or
   `ReviewInfoRow.bottomLeftAddress`, never a pre-built string in a `Text` that

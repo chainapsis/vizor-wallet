@@ -14,14 +14,15 @@ library;
 
 import '../layout/app_form_factor.dart';
 
-/// Head/tail lengths of the short form: 6+5 on phones, where 7+6 pushed
-/// "To:" off shared lines, and 9+7 on desktop, which has the room.
+/// Head/tail lengths of the short form: the longest that keeps every short
+/// line whole and the review headline address within 85% of its column.
+/// 6+5 on phones (7+6 pushes "To:" off), 7+6 on desktop (9+7 fills 93%).
 const kTruncatedAddressHeadLength = kAppFormFactor == AppFormFactor.mobile
     ? 6
-    : 9;
+    : 7;
 const kTruncatedAddressTailLength = kAppFormFactor == AppFormFactor.mobile
     ? 5
-    : 7;
+    : 6;
 const kTruncatedAddressSeparator = ' ... ';
 
 /// The separator in Geist Mono, where every glyph takes a full cell and

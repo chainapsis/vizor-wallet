@@ -11,6 +11,8 @@ import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view
 import 'package:zcash_wallet/src/features/send/widgets/send_review_layout.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../support/app_test_fonts.dart';
+
 const _transparentFromAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 
 const _transparentReceivingAddress = 't1Z9N3oVYrYDpnbqDcXJpuLrGpcSLDgHXyo';
@@ -103,6 +105,9 @@ void main() {
   testWidgets('matches the Figma received vertical offsets in pixels', (
     tester,
   ) async {
+    // Figma offsets, measured with the app's fonts; the test font's
+    // full-em glyphs would push the full-address action onto its own line.
+    await tester.runAsync(loadAppTestFonts);
     await _pump(
       tester,
       ReceivedReceiptView(

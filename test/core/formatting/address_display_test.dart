@@ -31,10 +31,10 @@ void main() {
       );
     });
 
-    test('takes 6 + 5 on phones and 9 + 7 on desktop', () {
+    test('takes 6 + 5 on phones and 7 + 6 on desktop', () {
       final mobile = kAppFormFactor == AppFormFactor.mobile;
-      expect(kTruncatedAddressHeadLength, mobile ? 6 : 9);
-      expect(kTruncatedAddressTailLength, mobile ? 5 : 7);
+      expect(kTruncatedAddressHeadLength, mobile ? 6 : 7);
+      expect(kTruncatedAddressTailLength, mobile ? 5 : 6);
     });
 
     test('returns short addresses unchanged', () {
