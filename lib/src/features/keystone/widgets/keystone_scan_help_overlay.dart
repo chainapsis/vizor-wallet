@@ -46,7 +46,6 @@ class KeystoneScanHelpOverlay extends StatefulWidget {
 }
 
 class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
-  final LayerLink _layerLink = LayerLink();
   final OverlayPortalController _overlayController = OverlayPortalController();
   bool _dismissed = false;
 
@@ -115,27 +114,59 @@ class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    return OverlayPortal(
+    return OverlayPortal.overlayChildLayoutBuilder(
       controller: _overlayController,
-      overlayChildBuilder: (_) => AppTheme(
-        data: context.appTheme,
-        child: CompositedTransformFollower(
-          link: _layerLink,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.centerRight,
-          followerAnchor: Alignment.centerLeft,
-          offset: const Offset(_tooltipGap, 0),
-          child: _KeystoneScanHelpTooltip(onDismiss: _dismiss),
-        ),
-      ),
-      child: CompositedTransformTarget(link: _layerLink, child: widget.child),
+      overlayChildBuilder: (_, info) {
+        final qr = MatrixUtils.transformRect(
+          info.childPaintTransform,
+          Offset.zero & info.childSize,
+        );
+        final spaceOnRight = info.overlaySize.width - qr.right;
+        const widthNeeded = _tooltipGap + _tooltipWidth + _tooltipPointerWidth;
+        final onLeft = spaceOnRight < widthNeeded && qr.left > spaceOnRight;
+        return AppTheme(
+          data: context.appTheme,
+          child: CustomSingleChildLayout(
+            delegate: _ScanHelpPosition(qr, onLeft),
+            child: _KeystoneScanHelpTooltip(
+              onLeft: onLeft,
+              onDismiss: _dismiss,
+            ),
+          ),
+        );
+      },
+      child: widget.child,
     );
   }
 }
 
-class _KeystoneScanHelpTooltip extends StatelessWidget {
-  const _KeystoneScanHelpTooltip({required this.onDismiss});
+class _ScanHelpPosition extends SingleChildLayoutDelegate {
+  const _ScanHelpPosition(this.qr, this.onLeft);
+  final Rect qr;
+  final bool onLeft;
 
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      constraints.loosen();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) => Offset(
+    onLeft ? qr.left - _tooltipGap - childSize.width : qr.right + _tooltipGap,
+    qr.center.dy - childSize.height / 2,
+  );
+
+  @override
+  bool shouldRelayout(_ScanHelpPosition old) =>
+      old.qr != qr || old.onLeft != onLeft;
+}
+
+class _KeystoneScanHelpTooltip extends StatelessWidget {
+  const _KeystoneScanHelpTooltip({
+    required this.onLeft,
+    required this.onDismiss,
+  });
+
+  final bool onLeft;
   final VoidCallback onDismiss;
 
   @override
@@ -144,17 +175,21 @@ class _KeystoneScanHelpTooltip extends StatelessWidget {
     return DefaultTextStyle.merge(
       style: const TextStyle(decoration: TextDecoration.none),
       child: Row(
+        textDirection: onLeft ? TextDirection.rtl : TextDirection.ltr,
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SvgPicture.asset(
-            'assets/icons/keystone_scan_help_pointer.svg',
-            width: _tooltipPointerWidth,
-            height: _tooltipPointerHeight,
-            fit: BoxFit.fill,
-            colorFilter: ColorFilter.mode(
-              colors.background.inverse,
-              BlendMode.srcIn,
+          Transform.flip(
+            flipX: onLeft,
+            child: SvgPicture.asset(
+              'assets/icons/keystone_scan_help_pointer.svg',
+              width: _tooltipPointerWidth,
+              height: _tooltipPointerHeight,
+              fit: BoxFit.fill,
+              colorFilter: ColorFilter.mode(
+                colors.background.inverse,
+                BlendMode.srcIn,
+              ),
             ),
           ),
           Container(

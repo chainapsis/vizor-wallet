@@ -1,126 +1,110 @@
 @Tags(['desktop'])
 library;
 
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
-import 'package:zxing2/qrcode.dart' as zxing;
-
-// A complete synthetic 600-byte transport payload from the released UR encoder:
-// three 200-byte source fragments and two redundant frames. No wallet data.
-const _frames = [
-  'UR:ZCASH-SIGN-BATCH/1-3/LPADAXCFAOHDCYCFCYDSUOHDSPAENNFNTNKSCHREGUWNMYDMSFIMAYOSFEVLLYCTRNHHZSMKENTLJKBYPEGLWPLEDESWIHAXOYFHUEKECYROHFYKMUEHTKJNBNPKFDVALPCNSEHEZCNSFTTPKOBZQDGYWSLGDWSGISAMOXFXVYLBCARFHTYAMTEETEJSBSPMGRWDLODSSSIAADNEFSUYKNCSRPGHWFMEDLSNJEBKPDFGVELFCLRSHLZONYETTBJYBGPAGWWELUDRSPIYAAOEFPURKICWRHHDYNMWEYTTJLBTPYGAVSLNDKSAHNZMNTFRTAKSCMQZGMWTMYDPSBINAYOLFYVOLACTRYHPYTMSENTYJPBEPEGTWMLDDISWIEAONBFHUTKGCFRLHFWKMODYTOJNBDPTFLVALRCPRTHYZCJPBZTAHK',
-  'UR:ZCASH-SIGN-BATCH/2-3/LPAOAXCFAOHDCYCFCYDSUOHDSPNDESTSKPBBPRGDWYLGDNSOIOAHOXFWVTKBCARKHKYLMDEETDJOBAPSGRWLLTDASSIDAENNFNUYKKCHREGHWZMHDMSFJEASOSFEVLLFCXRNHHZONLEMTLJKBGPFGLWPLEDTSTIHAXOEFZUEKECYRHHGYKMUEYTIJTBNPKGAVDLPCNSEHNZENSFTTAKTBZQDGYWTMNDWSGINATONFXVYLACKRFHTYAMSECTEJSBEPLGSWDLODISKIAADNEFMUOKNCSRLGOWFMEDLTOJZBKPDFLVWLSCLRSHYZTNYETTBKPBWPAGWWYLKDRSPIYAHOTFPURKBCERDHDYNMDEOTTJLBTPSGEVSLNDASRHSZMNTFNTNKSCMQZGUWNMYDPSFIMAYOLFYVLLYCTRYHHZSMKHENLGYDL',
-  'UR:ZCASH-SIGN-BATCH/3-3/LPAXAXCFAOHDCYCFCYDSUOHDSPENTYJKBYPEGTWMLEDESWIEAXOYFHUTKGCYROHFWKMUEHTKJNBDPKFDVALRCPSEHEZCNDFTTPKOBBPRGYWSLGDNSOISAMOXFWVYLBCARKHKYAMTEETDJSBSPMGRWLLODSSSIDAENEFSUYKKCSRPGHWZMHDLSNJEASPDFGVELFCXRSHLZONLEMTBJYBGPFGWWELUDTSTIYAAOEFZURKICWRHHGYNMWEYTIJTBTPYGAVDLNDKSAHNZENTFRTAKTBZQZGMWTMNDPSBINATONFYVOLACKRYHPYTMSECTYJPBEPLGSWMLDDISKIEAONBFMUOKGCFRLGOWKMODYTOJZBDPTFLVWLSCPRTHYZTNDESTSKPBWPRGDWYLKDRSOIOAHOTFWVTKBCERDHKYLMDEOYASPVOND',
-  'UR:ZCASH-SIGN-BATCH/4-3/LPAAAXCFAOHDCYCFCYDSUOHDSPNDESTSKPBBPRGDWYLGDNSOIOAHOXFWVTKBCARKHKYLMDEETDJOBAPSGRWLLTDASSIDAENNFNUYKKCHREGHWZMHDMSFJEASOSFEVLLFCXRNHHZONLEMTLJKBGPFGLWPLEDTSTIHAXOEFZUEKECYRHHGYKMUEYTIJTBNPKGAVDLPCNSEHNZENSFTTAKTBZQDGYWTMNDWSGINATONFXVYLACKRFHTYAMSECTEJSBEPLGSWDLODISKIAADNEFMUOKNCSRLGOWFMEDLTOJZBKPDFLVWLSCLRSHYZTNYETTBKPBWPAGWWYLKDRSPIYAHOTFPURKBCERDHDYNMDEOTTJLBTPSGEVSLNDASRHSZMNTFNTNKSCMQZGUWNMYDPSFIMAYOLFYVLLYCTRYHHZSMKPLISGRGH',
-  'UR:ZCASH-SIGN-BATCH/5-3/LPAHAXCFAOHDCYCFCYDSUOHDSPNDESTSKPBBPRGDWYLGDNSOIOAHOXFWVTKBCARKHKYLMDEETDJOBAPSGRWLLTDASSIDAENNFNUYKKCHREGHWZMHDMSFJEASOSFEVLLFCXRNHHZONLEMTLJKBGPFGLWPLEDTSTIHAXOEFZUEKECYRHHGYKMUEYTIJTBNPKGAVDLPCNSEHNZENSFTTAKTBZQDGYWTMNDWSGINATONFXVYLACKRFHTYAMSECTEJSBEPLGSWDLODISKIAADNEFMUOKNCSRLGOWFMEDLTOJZBKPDFLVWLSCLRSHYZTNYETTBKPBWPAGWWYLKDRSPIYAHOTFPURKBCERDHDYNMDEOTTJLBTPSGEVSLNDASRHSZMNTFNTNKSCMQZGUWNMYDPSFIMAYOLFYVLLYCTRYHHZSMKUTHGPAHE',
-];
+import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
+import '../../support/app_test_fonts.dart';
+import '../../support/widget_test_viewport.dart';
+import '../../support/voting_qr_capture.dart';
+import '../../support/voting_display_profiles.dart';
 
 void main() {
-  for (final ratio in [1.0, 1.25, 2.0]) {
+  setUpAll(loadAppTestFonts);
+  testWidgets(
+    'scan help fits beside the QR at the minimum desktop window and dismisses',
+    (tester) async {
+      final profile = desktopVotingProfiles.first;
+      await profile.apply(tester);
+      await _pumpDesktopVoting(tester, GlobalKey());
+      final qr = tester.getRect(find.byType(KeystonePcztQrStage));
+      expect(qr.size, const Size(372, 372));
+      final card = find.byKey(const ValueKey('keystone_scan_help_tooltip'));
+      final close = find.byKey(const ValueKey('keystone_scan_help_close'));
+      final bounds = Offset.zero & profile.size;
+      final cardRect = tester.getRect(card);
+      expect(cardRect.intersect(bounds), cardRect);
+      expect(tester.getRect(close).intersect(bounds), tester.getRect(close));
+      expect(cardRect.right, lessThan(qr.left));
+      // The open card tracks the same QR through a resize without reopening.
+      await setWidgetTestViewport(
+        tester,
+        const Size(1512, 982),
+        devicePixelRatio: 1,
+      );
+      await tester.pump();
+      expect(
+        tester.getRect(card).left,
+        greaterThan(tester.getRect(find.byType(KeystonePcztQrStage)).right),
+      );
+      await profile.apply(tester);
+      await tester.pump();
+      expect(tester.getRect(card), cardRect);
+      await tester.tap(close);
+      await tester.pump();
+      expect(card, findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  for (final profile in desktopVotingProfiles) {
     testWidgets(
-      'desktop voting renders scannable whole-pixel frames at ${ratio}x',
+      'desktop voting renders scannable whole-pixel frames on ${profile.name}',
       (tester) async {
-        tester.view.devicePixelRatio = ratio;
-        tester.view.physicalSize = const Size(1080, 800) * ratio;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+        await profile.apply(tester);
         final key = GlobalKey();
-        await tester.pumpWidget(
-          ProviderScope(
-            child: MaterialApp(
-              localizationsDelegates: appLocalizationsDelegates,
-              home: AppTheme(
-                data: AppThemeData.light,
-                child: Scaffold(
-                  body: RepaintBoundary(
-                    key: key,
-                    child: const VotingStatusContent(
-                      phase: VotingSessionPhase.keystoneSigning,
-                      isHardwareAccount: true,
-                      keystoneSigningBundleIndex: 0,
-                      keystoneUrParts: _frames,
-                      keystoneBatchMessageCount: 1,
-                      keystoneBatchTotalCount: 1,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+        await _pumpDesktopVoting(tester, key);
+        await checkVotingQrFrames(
+          tester,
+          key,
+          profile.ratio,
+          wholePixels: true,
         );
-        await tester.pump();
-        final boundary = tester.renderObject<RenderRepaintBoundary>(
-          find.byKey(key),
-        );
-        final rect = tester
-            .getRect(find.byType(KeystonePcztQrStage))
-            .shift(-boundary.localToGlobal(Offset.zero));
-        final unreadable = <int>[];
-        final offGrid = <int>[];
-        for (var i = 0; i < _frames.length; i++) {
-          final source = (await tester.runAsync(() async {
-            final image = await boundary.toImage(pixelRatio: ratio);
-            try {
-              final bytes = (await image.toByteData(
-                format: ui.ImageByteFormat.rawRgba,
-              ))!;
-              return zxing.RGBLuminanceSource(
-                image.width,
-                image.height,
-                bytes.buffer.asInt32List(),
-              ).crop(
-                (rect.left * ratio).round(),
-                (rect.top * ratio).round(),
-                (rect.width * ratio).round(),
-                (rect.height * ratio).round(),
-              );
-            } finally {
-              image.dispose();
-            }
-          }))!;
-          final bitmap = zxing.BinaryBitmap(zxing.HybridBinarizer(source));
-          try {
-            if (zxing.QRCodeReader().decode(bitmap).text != _frames[i]) {
-              unreadable.add(i);
-            }
-          } on zxing.ReaderException {
-            unreadable.add(i);
-          }
-          final count = QrCode.fromData(
-            data: _frames[i],
-            errorCorrectLevel: QrErrorCorrectLevel.M,
-          ).moduleCount;
-          if (!_hasSharpFinder(source, count)) offGrid.add(i);
-          await tester.pump(keystoneQrFrameInterval);
-        }
         await tester.pumpWidget(const SizedBox());
-        expect(
-          {'unreadable frames': unreadable, 'off-grid frames': offGrid},
-          {'unreadable frames': isEmpty, 'off-grid frames': isEmpty},
-        );
       },
     );
   }
 }
 
-// The top edge of the finder pattern is seven solid black modules, surrounded
-// by a white margin. Check actual pixels independently of the decoder.
-bool _hasSharpFinder(zxing.LuminanceSource source, int count) {
-  final pitch = source.width ~/ (count + 8);
-  final margin = (source.width - pitch * count) ~/ 2;
-  final row = source.getRow(margin, null).buffer.asUint8List();
-  return pitch >= 3 &&
-      row.take(margin).every((p) => p == 255) &&
-      row.skip(margin).take(7 * pitch).every((p) => p == 0) &&
-      row[margin + 7 * pitch] == 255;
+Future<void> _pumpDesktopVoting(WidgetTester tester, GlobalKey key) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        builder: (_, child) => RepaintBoundary(key: key, child: child!),
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: const AppDesktopShell(
+            sidebar: SizedBox.expand(),
+            pane: AppDesktopPane(
+              padding: EdgeInsets.zero,
+              child: VotingStatusContent(
+                phase: VotingSessionPhase.keystoneSigning,
+                isHardwareAccount: true,
+                keystoneSigningBundleIndex: 0,
+                keystoneUrParts: votingQrFrames,
+                keystoneBatchMemos: [
+                  VotingKeystoneBatchMemo(
+                    bundleIndex: 0,
+                    bundleCount: 1,
+                    displayMemo:
+                        'Authorize voting power for this round.\nAmount: 1.25000000 ZEC.',
+                  ),
+                ],
+                keystoneBatchMessageCount: 1,
+                keystoneBatchTotalCount: 1,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
 }

@@ -15,10 +15,25 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/test_l10n.dart';
+import '../../support/voting_qr_capture.dart';
+import '../../support/voting_display_profiles.dart';
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
 
+  for (final profile in mobileVotingProfiles) {
+    testWidgets('voting frames decode on ${profile.name}', (tester) async {
+      final key = GlobalKey();
+      await _pumpSigningScreen(
+        tester,
+        profile: profile,
+        boundaryKey: key,
+        parts: votingQrFrames,
+      );
+      await checkVotingQrFrames(tester, key, profile.ratio, wholePixels: false);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
   testWidgets('uses the mobile Keystone two-step signing presentation', (
     tester,
   ) async {
@@ -249,6 +264,9 @@ Future<void> _pumpSigningScreen(
   WidgetTester tester, {
   Future<void> Function(List<int>)? onSigned,
   bool interactiveScanner = false,
+  VotingDisplayProfile? profile,
+  GlobalKey? boundaryKey,
+  List<String> parts = const [_previewVotingUr],
   Size viewport = const Size(393, 852),
   double textScale = 1,
   List<VotingKeystoneBatchMemo>? memos,
@@ -256,21 +274,20 @@ Future<void> _pumpSigningScreen(
 }) async {
   tester.platformDispatcher.textScaleFactorTestValue = textScale;
   addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-  tester.view.devicePixelRatio = 1;
-  tester.view.physicalSize = viewport;
-  addTearDown(tester.view.reset);
+  await (profile ?? VotingDisplayProfile('test', viewport, 1)).apply(tester);
 
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
         localizationsDelegates: appLocalizationsDelegates,
         theme: ThemeData.dark(),
+        builder: (_, child) => RepaintBoundary(key: boundaryKey, child: child!),
         home: AppTheme(
           data: AppThemeData.dark,
           child: MobileKeystoneVotingSigningScreen(
             presentation: VotingKeystoneStatusPresentation(
               bundleIndex: memos?.first.bundleIndex ?? 1,
-              urParts: const [_previewVotingUr],
+              urParts: parts,
               batchMemos:
                   memos ??
                   [
