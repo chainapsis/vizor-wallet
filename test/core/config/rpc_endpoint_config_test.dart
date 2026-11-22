@@ -17,7 +17,7 @@ void main() {
         candidates
             .map((c) => automaticRpcEndpointOperatorForUrl(c.lightwalletdUrl))
             .toSet(),
-        {'stardust', 'zec-rocks'},
+        {'stardust', 'zec-rocks', 'zcash-labs'},
       );
       expect(
         automaticRpcEndpointOperatorForUrl('https://eu.zec.stardust.rest:443'),
@@ -110,6 +110,11 @@ void main() {
         'https://eu.zec.rocks:443',
         'https://kr.zec.stardust.rest:443',
         'https://ap.zec.rocks:443',
+        'https://rpc.fastz.cash:443',
+        'https://na.fastz.cash:443',
+        'https://sa.fastz.cash:443',
+        'https://eu.fastz.cash:443',
+        'https://ap.fastz.cash:443',
         'https://z3.deepikaw.xyz:443',
         'https://zprivacy.online:443',
         'https://lwd.zcashexplorer.app:9067',
@@ -475,11 +480,11 @@ void main() {
           candidates.map((c) => c.presetId),
           automaticRpcEndpointCandidatesFor(primary).map((c) => c.presetId),
         );
-        expect(candidates, hasLength(8));
+        expect(candidates, hasLength(13));
         expect(candidates.any(isAutomaticRpcEndpointConfig), isFalse);
         expect(
           candidates.map((c) => c.normalizedLightwalletdUrl).toSet(),
-          hasLength(8),
+          hasLength(13),
         );
         expect(
           candidates.any(
