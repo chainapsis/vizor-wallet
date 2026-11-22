@@ -540,6 +540,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             LedgerVotingSigningPanel(
               accountUuid: job!.key?.accountUuid,
               displayMemo: job.ledgerDisplayMemo ?? '',
+              requestRebuilt: job.ledgerRequestRebuilt,
               bundleIndex: job.ledgerBundleIndex!,
               bundleCount: job.ledgerBundleCount,
               onCancel: _cancelLedgerSigning,
@@ -590,6 +591,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneScanError: state.keystoneScanError?.text(context.l10n),
           ledgerAccountUuid: job?.key?.accountUuid,
           ledgerDisplayMemo: job?.ledgerDisplayMemo,
+          ledgerRequestRebuilt: job?.ledgerRequestRebuilt ?? false,
           ledgerSigningBundleIndex: job?.ledgerBundleIndex,
           ledgerSigningBundleCount: job?.ledgerBundleCount ?? 0,
           walletScannedHeight: state.walletScannedHeight,
@@ -881,6 +883,7 @@ class VotingStatusContent extends StatelessWidget {
     this.keystoneScanError,
     this.ledgerAccountUuid,
     this.ledgerDisplayMemo,
+    this.ledgerRequestRebuilt = false,
     this.ledgerSigningBundleIndex,
     this.ledgerSigningBundleCount = 0,
     this.walletScannedHeight,
@@ -926,6 +929,7 @@ class VotingStatusContent extends StatelessWidget {
   final String? keystoneScanError;
   final String? ledgerAccountUuid;
   final String? ledgerDisplayMemo;
+  final bool ledgerRequestRebuilt;
   final int? ledgerSigningBundleIndex;
   final int ledgerSigningBundleCount;
   final int? walletScannedHeight;
@@ -1039,6 +1043,7 @@ class VotingStatusContent extends StatelessWidget {
                   child: LedgerVotingSigningPanel(
                     accountUuid: ledgerAccountUuid,
                     displayMemo: ledgerDisplayMemo ?? '',
+                    requestRebuilt: ledgerRequestRebuilt,
                     bundleIndex: ledgerSigningBundleIndex!,
                     bundleCount: ledgerSigningBundleCount,
                     onCancel: onCancelLedger,
@@ -1228,6 +1233,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
   const LedgerVotingSigningPanel({
     this.accountUuid,
     required this.displayMemo,
+    this.requestRebuilt = false,
     required this.bundleIndex,
     required this.bundleCount,
     required this.onCancel,
@@ -1236,6 +1242,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
 
   final String? accountUuid;
   final String displayMemo;
+  final bool requestRebuilt;
   final int bundleIndex;
   final int bundleCount;
   final VoidCallback? onCancel;
@@ -1321,6 +1328,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           MobileLedgerMessage(context.l10n.votingLedgerApprovalNotice),
+          if (requestRebuilt) Text(context.l10n.votingLedgerRequestRebuilt),
           if (displayMemo.trim().isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
             SelectableText(
@@ -1381,6 +1389,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
                 color: colors.text.secondary,
               ),
             ),
+            if (requestRebuilt) Text(context.l10n.votingLedgerRequestRebuilt),
             if (displayMemo.trim().isNotEmpty) ...[
               const SizedBox(height: AppSpacing.sm),
               SizedBox(

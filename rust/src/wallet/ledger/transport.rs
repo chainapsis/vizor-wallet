@@ -234,12 +234,19 @@ impl LedgerTransport {
                 if command.finishes_pczt && index + 1 == total {
                     progress("reviewing", self.device_model);
                 }
-                self.exchange(
+                self.exchange_response(
+                    ZCASH_CLA,
                     command.instruction,
                     packet_p1(index, total),
                     packet_p2(index, total, command.finishes_pczt),
                     packet.clone(),
                 )
+                .and_then(|response| {
+                    if command.instruction == 0x58 && response.status == 0x6a80 {
+                        progress("ironwoodDataRejected", self.device_model);
+                    }
+                    response.into_data()
+                })
                 .map_err(|error| {
                     format!(
                         "Ledger PCZT APDU {:#04x} packet {}/{} failed: {error}",
@@ -295,8 +302,19 @@ impl LedgerTransport {
         p2: u8,
         data: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
+        self.exchange_response(cla, ins, p1, p2, data)?.into_data()
+    }
+
+    fn exchange_response(
+        &self,
+        cla: u8,
+        ins: u8,
+        p1: u8,
+        p2: u8,
+        data: Vec<u8>,
+    ) -> Result<ApduResponse, String> {
         let command = build_command(cla, ins, p1, p2, data)?;
-        let response = retry_review_busy(
+        retry_review_busy(
             || self.exchange_hid(&command),
             |response| response.status,
             || {
@@ -304,11 +322,7 @@ impl LedgerTransport {
                 std::thread::sleep(REVIEW_BUSY_RETRY_DELAY);
                 self.operation.check()
             },
-        )?;
-        if response.status != RESPONSE_OK {
-            return Err(map_status_word(response.status));
-        }
-        Ok(response.data)
+        )
     }
 
     /// App transitions may detach HID before the status word reaches the host.
@@ -759,6 +773,16 @@ struct ApduResponse {
     status: u16,
 }
 
+impl ApduResponse {
+    fn into_data(self) -> Result<Vec<u8>, String> {
+        if self.status == RESPONSE_OK {
+            Ok(self.data)
+        } else {
+            Err(map_status_word(self.status))
+        }
+    }
+}
+
 fn encode_command(command: &ApduCommand) -> Vec<u8> {
     let mut bytes = vec![
         command.cla,
@@ -921,20 +945,26 @@ mod tests {
 
     #[cfg(debug_assertions)]
     #[test]
-    fn signing_progress_includes_connection_model_before_any_apdu() {
+    fn signing_progress_reports_model_and_only_flags_ironwood_data_rejection() {
         use std::{
             net::TcpListener,
             sync::{Arc, Mutex},
             time::{Duration, Instant},
         };
 
-        for model in [Some("flex"), None] {
+        for (model, instruction, status, expect_rejection) in [
+            (Some("flex"), 0x56, "9000", false),
+            (None, 0x56, "9000", false),
+            (Some("stax"), 0x58, "6a80", true),
+            (Some("stax"), 0x56, "6a80", false),
+            (Some("stax"), 0x58, "6985", false),
+        ] {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let url = format!("http://{}", listener.local_addr().unwrap());
             let events = Arc::new(Mutex::new(Vec::new()));
             let server_events = Arc::clone(&events);
             let server = std::thread::spawn(move || {
-                for _ in 0..2 {
+                for status in ["9000", status] {
                     let (mut stream, _) = listener.accept().unwrap();
                     stream
                         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -950,7 +980,7 @@ mod tests {
                         .lock()
                         .unwrap()
                         .push(("exchange".to_owned(), None));
-                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"data\":\"9000\"}").unwrap();
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{{\"data\":\"{status}\"}}").unwrap();
                 }
             });
             let transport = LedgerTransport {
@@ -961,31 +991,31 @@ mod tests {
                 },
                 device_model: model,
             };
-            transport
-                .send_pczt_with_progress(
-                    &[CommandPackets {
-                        instruction: 0x56,
-                        packets: vec![vec![1], vec![2]],
-                        finishes_pczt: true,
-                    }],
-                    &|phase, device_model| {
-                        events
-                            .lock()
-                            .unwrap()
-                            .push((phase.to_owned(), device_model.map(str::to_owned)))
-                    },
-                )
-                .unwrap();
-            server.join().unwrap();
-            assert_eq!(
-                *events.lock().unwrap(),
-                vec![
-                    ("sending".to_owned(), model.map(str::to_owned)),
-                    ("exchange".to_owned(), None),
-                    ("reviewing".to_owned(), model.map(str::to_owned)),
-                    ("exchange".to_owned(), None),
-                ]
+            let result = transport.send_pczt_with_progress(
+                &[CommandPackets {
+                    instruction,
+                    packets: vec![vec![1], vec![2]],
+                    finishes_pczt: true,
+                }],
+                &|phase, device_model| {
+                    events
+                        .lock()
+                        .unwrap()
+                        .push((phase.to_owned(), device_model.map(str::to_owned)))
+                },
             );
+            server.join().unwrap();
+            assert_eq!(result.is_ok(), status == "9000");
+            let mut expected = vec![
+                ("sending".to_owned(), model.map(str::to_owned)),
+                ("exchange".to_owned(), None),
+                ("reviewing".to_owned(), model.map(str::to_owned)),
+                ("exchange".to_owned(), None),
+            ];
+            if expect_rejection {
+                expected.push(("ironwoodDataRejected".to_owned(), model.map(str::to_owned)));
+            }
+            assert_eq!(*events.lock().unwrap(), expected);
         }
     }
 

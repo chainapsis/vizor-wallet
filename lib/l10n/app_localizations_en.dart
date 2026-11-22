@@ -9,6 +9,10 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get votingLedgerRequestRebuilt =>
+      'Your vote request was rebuilt for compatibility with the live vote. Review it again on your Ledger.';
+
+  @override
   String get aboutBuiltByBody =>
       'We built Keplr, the wallet used by millions across Cosmos, Ethereum, and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.';
 

@@ -100,6 +100,12 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// Shown during the new Ledger approval after an unsigned voting request was repaired.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote request was rebuilt for compatibility with the live vote. Review it again on your Ledger.'**
+  String get votingLedgerRequestRebuilt;
+
   /// Body of the first paragraph of the About screen.
   ///
   /// In en, this message translates to:

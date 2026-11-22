@@ -16,6 +16,7 @@ import 'ledger_signing_exchange.dart';
 import 'ledger_signing_status_gate.dart';
 
 export 'ledger_signing_status_gate.dart';
+export 'ledger_signing_exchange.dart' show LedgerIronwoodDataRejected;
 
 typedef LedgerPcztSigner =
     Future<List<int>> Function(String accountUuid, List<int> pcztBytes);
@@ -163,7 +164,11 @@ final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
 
 /// Compact signing boundary for flows that persist the proofed PCZT separately
 /// and only need Ledger's spend-authorization signatures.
-final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
+final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>(
+  (ref) => _compactLedgerSigner(ref, voting: false),
+);
+
+LedgerVotingPcztSigner _compactLedgerSigner(Ref ref, {required bool voting}) {
   final capability = ref.watch(ledgerStaticCapabilityProvider);
   final loadWalletDbPath = ref.watch(ledgerWalletDbPathProvider);
   final networkName = ref.watch(
@@ -189,6 +194,7 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
           usb: () async => (await _signUsbWithProgress(
             progress: progress,
             compact: true,
+            voting: voting,
             dbPath: dbPath,
             accountUuid: accountUuid,
             pcztBytes: pcztBytes,
@@ -199,6 +205,7 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
               .read(ledgerMobileSigningStatusGateProvider)
               .run(
                 () => _signMobileVotingPczt(
+                  voting: voting,
                   check: check,
                   progress: progress,
                   mobile: mobile,
@@ -219,16 +226,17 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
         ),
     ];
   };
-});
+}
 
 /// Voting deliberately consumes only action signatures, not a transaction-like
 /// signed PCZT. The host memo associated with the request is not asserted to be
 /// clear-sign metadata displayed by the current Ledger Zcash app.
 final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
-  return ref.watch(ledgerActionPcztSignerProvider);
+  return _compactLedgerSigner(ref, voting: true);
 });
 
 Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
+  required bool voting,
   required void Function() check,
   required void Function(String) progress,
   required LedgerMobileBleService mobile,
@@ -254,6 +262,11 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     progress: progress,
   );
   check();
+  if (voting && ledgerRejectedIronwoodData(plan.commands, responses)) {
+    throw const LedgerIronwoodDataRejected(
+      'ledger_status_6a80: Ledger rejected Ironwood transaction data',
+    );
+  }
   return rust_ledger.ledgerFinalizeMobilePcztSigning(
     dbPath: dbPath,
     accountUuid: accountUuid,
@@ -269,10 +282,12 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
   required List<int> pcztBytes,
   required String network,
   required bool compact,
+  bool voting = false,
   required String? appVersion,
   required LedgerSigningProgressReporter progress,
 }) async {
   rust_ledger.LedgerSigningEvent? result;
+  var rejectedIronwoodData = false;
   await for (final event in rust_ledger.ledgerSignWithProgress(
     dbPath: dbPath,
     accountUuid: accountUuid,
@@ -283,7 +298,14 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
     // USB signing opens a new session; Rust holds it to this version.
     appVersion: appVersion,
   )) {
+    if (event.phase == 'ironwoodDataRejected') {
+      rejectedIronwoodData = true;
+      continue;
+    }
     if (event.error case final error?) {
+      if (voting && rejectedIronwoodData) {
+        throw LedgerIronwoodDataRejected(error);
+      }
       throw StateError(error);
     }
     if (event.phase == 'complete') {
