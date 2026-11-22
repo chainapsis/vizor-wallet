@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_snapped_qr.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
@@ -1222,11 +1223,9 @@ void main() {
         ),
       );
       await tester.pump();
-      final qr = find.byType(PrettyQrView);
+      final qr = find.byType(KeystoneSnappedQr);
       expect(tester.getSize(qr), const Size.square(264));
-      QrImage frame() =>
-          // ignore: invalid_use_of_protected_member
-          tester.widget<PrettyQrView>(qr).qrImage;
+      QrImage frame() => tester.widget<KeystoneSnappedQr>(qr).qrImage;
       final first = frame();
       await tester.pump(const Duration(milliseconds: 199));
       expect(frame(), same(first));

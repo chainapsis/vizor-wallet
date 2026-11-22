@@ -1473,6 +1473,10 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
   }
 }
 
+// A voting frame is a 69-module symbol, 77 modules with its quiet zone. 308
+// gives each module 4 pixels on a standard-density display and 8 at 2x.
+const _votingKeystoneQrSize = 308.0;
+
 class _KeystoneSigningPanel extends StatefulWidget {
   const _KeystoneSigningPanel({
     required this.bundleIndex,
@@ -1702,6 +1706,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                 phase: qrPhase,
                 urParts: urParts,
                 error: qrError,
+                size: _votingKeystoneQrSize,
               ),
             ),
             if (scanError != null) ...[

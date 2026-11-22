@@ -6,6 +6,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import 'keystone_snapped_qr.dart';
 
 enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 
@@ -21,7 +22,6 @@ class KeystonePcztQrStage extends StatelessWidget {
     required this.error,
     this.size = 230,
     this.scanOptimized = true,
-    this.quietZone,
     super.key,
   });
 
@@ -30,7 +30,6 @@ class KeystonePcztQrStage extends StatelessWidget {
   final String? error;
   final double size;
   final bool scanOptimized;
-  final PrettyQrQuietZone? quietZone;
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +42,6 @@ class KeystonePcztQrStage extends StatelessWidget {
           urParts: urParts,
           size: size,
           scanOptimized: scanOptimized,
-          quietZone: quietZone,
         ),
         KeystonePcztQrStagePhase.failed => Center(
           child: Text(
@@ -82,13 +80,11 @@ class _AnimatedKeystoneQr extends StatefulWidget {
     required this.urParts,
     required this.size,
     required this.scanOptimized,
-    required this.quietZone,
   });
 
   final List<String> urParts;
   final double size;
   final bool scanOptimized;
-  final PrettyQrQuietZone? quietZone;
 
   @override
   State<_AnimatedKeystoneQr> createState() => _AnimatedKeystoneQrState();
@@ -109,8 +105,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   void didUpdateWidget(covariant _AnimatedKeystoneQr oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.urParts != widget.urParts ||
-        oldWidget.scanOptimized != widget.scanOptimized ||
-        oldWidget.quietZone != widget.quietZone) {
+        oldWidget.scanOptimized != widget.scanOptimized) {
       _index = 0;
       _frames.clear();
       _startTimer();
@@ -118,13 +113,11 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   }
 
   QrImage _frameAt(int index) {
-    return _frames[index] ??= QrImage(
-      QrCode.fromData(
-        data: widget.urParts[index],
-        errorCorrectLevel: widget.scanOptimized
-            ? QrErrorCorrectLevel.M
-            : QrErrorCorrectLevel.L,
-      ),
+    return _frames[index] ??= keystoneQrImage(
+      widget.urParts[index],
+      errorCorrectLevel: widget.scanOptimized
+          ? QrErrorCorrectLevel.M
+          : QrErrorCorrectLevel.L,
     );
   }
 
@@ -148,8 +141,9 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   Widget build(BuildContext context) {
     if (widget.urParts.isEmpty) return const SizedBox.shrink();
-    // Hardware-wallet PCZT QR is scan-first: use high-contrast square modules
-    // on the QR surface with an explicit quiet zone. The decorative Figma
+    // Hardware-wallet PCZT QR is scan-first: high-contrast square modules on
+    // the QR surface, each a whole number of device pixels, inside the
+    // standard four-module quiet zone. The decorative Figma
     // treatment is retained only for explicit non-scanning previews.
     // Figma (render-measured from 4654:62168 / 4654:63922): the decorative QR
     // ink is drawn directly on the modal panel in both themes, using the
@@ -164,13 +158,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
         height: widget.size,
         child: ColoredBox(
           color: colors.surface.qrCode,
-          child: PrettyQrView(
-            qrImage: frame,
-            decoration: PrettyQrDecoration(
-              quietZone: widget.quietZone ?? const PrettyQrQuietZone.modules(3),
-              shape: const PrettyQrSquaresSymbol(color: _scanOptimizedQrInk),
-            ),
-          ),
+          child: KeystoneSnappedQr(qrImage: frame, color: _scanOptimizedQrInk),
         ),
       );
     }

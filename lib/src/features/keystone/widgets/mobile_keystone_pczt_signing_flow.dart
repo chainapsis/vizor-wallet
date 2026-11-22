@@ -8,7 +8,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/mobile_top_nav.dart'
@@ -715,7 +714,6 @@ class _MobileKeystonePcztSigningFlowState
       error: null,
       size: size,
       scanOptimized: true,
-      quietZone: const PrettyQrQuietZone.modules(3),
     );
   }
 

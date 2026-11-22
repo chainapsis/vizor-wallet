@@ -1840,7 +1840,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                     phase: KeystonePcztQrStagePhase.ready,
                     urParts: _urParts,
                     error: _error,
-                    size: 264,
+                    // A migration frame is 93 modules across with its quiet
+                    // zone; 280 gives each 3 pixels at standard density.
+                    size: 280,
                   ),
                 ),
               ),

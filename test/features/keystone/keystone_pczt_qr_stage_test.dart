@@ -4,6 +4,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_snapped_qr.dart';
 import '../../support/localized_test_scope.dart';
 
 Widget _app(Widget content) {
@@ -50,9 +51,9 @@ void main() {
         );
         await tester.pump();
         // Inspect the displayed frame to verify animation behavior.
-        QrImage frame() =>
-            // ignore: invalid_use_of_protected_member
-            tester.widget<PrettyQrView>(find.byType(PrettyQrView)).qrImage;
+        QrImage frame() => tester
+            .widget<KeystoneSnappedQr>(find.byType(KeystoneSnappedQr))
+            .qrImage;
         final first = frame();
         await tester.pump(const Duration(milliseconds: 199));
         expect(frame(), same(first));
@@ -81,9 +82,9 @@ void main() {
         ),
       );
       // Inspect the displayed frame to verify request replacement.
-      QrImage frame() =>
-          // ignore: invalid_use_of_protected_member
-          tester.widget<PrettyQrView>(find.byType(PrettyQrView)).qrImage;
+      QrImage frame() => tester
+          .widget<KeystoneSnappedQr>(find.byType(KeystoneSnappedQr))
+          .qrImage;
       await tester.pumpWidget(request(const ['UR:FIRST/A', 'UR:FIRST/B']));
       await tester.pump(const Duration(milliseconds: 200));
       final previous = frame();
@@ -108,10 +109,15 @@ void main() {
       ),
     );
 
-    expect(tester.getSize(find.byType(PrettyQrView)), const Size(230, 230));
-    final qrView = tester.widget<PrettyQrView>(find.byType(PrettyQrView));
-    final decoration = (qrView as dynamic).decoration as PrettyQrDecoration;
-    expect(decoration.quietZone, const PrettyQrQuietZone.modules(3));
+    expect(
+      tester.getSize(find.byType(KeystoneSnappedQr)),
+      const Size(230, 230),
+    );
+    final qrView = tester.widget<KeystoneSnappedQr>(
+      find.byType(KeystoneSnappedQr),
+    );
+    expect(qrView.quietZoneModules, 4);
+    expect(find.byType(PrettyQrView), findsNothing);
     expect(find.byType(CustomPaint), findsNothing);
     expect(
       find.byWidgetPredicate(
@@ -153,10 +159,15 @@ void main() {
       ),
     );
 
-    expect(tester.getSize(find.byType(PrettyQrView)), const Size(280, 280));
-    final qrView = tester.widget<PrettyQrView>(find.byType(PrettyQrView));
-    final decoration = (qrView as dynamic).decoration as PrettyQrDecoration;
-    expect(decoration.quietZone, const PrettyQrQuietZone.modules(3));
+    expect(
+      tester.getSize(find.byType(KeystoneSnappedQr)),
+      const Size(280, 280),
+    );
+    final qrView = tester.widget<KeystoneSnappedQr>(
+      find.byType(KeystoneSnappedQr),
+    );
+    expect(qrView.quietZoneModules, 4);
+    expect(find.byType(PrettyQrView), findsNothing);
     expect(find.byType(CustomPaint), findsNothing);
     expect(
       find.byWidgetPredicate(
@@ -188,10 +199,15 @@ void main() {
     );
     await tester.pump();
 
-    expect(tester.getSize(find.byType(PrettyQrView)), const Size(264, 264));
-    final qrView = tester.widget<PrettyQrView>(find.byType(PrettyQrView));
-    final decoration = (qrView as dynamic).decoration as PrettyQrDecoration;
-    expect(decoration.quietZone, const PrettyQrQuietZone.modules(3));
+    expect(
+      tester.getSize(find.byType(KeystoneSnappedQr)),
+      const Size(264, 264),
+    );
+    final qrView = tester.widget<KeystoneSnappedQr>(
+      find.byType(KeystoneSnappedQr),
+    );
+    expect(qrView.quietZoneModules, 4);
+    expect(find.byType(PrettyQrView), findsNothing);
     expect(find.byType(CustomPaint), findsNothing);
     expect(find.text('Scanning issues?'), findsOneWidget);
   });
