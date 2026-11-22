@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import '../../support/localized_test_scope.dart';
+import '../../support/keystone_qr_fixtures.dart';
 
 Widget _app(Widget content) {
   return AppTheme(
@@ -18,6 +19,34 @@ Widget _app(Widget content) {
 }
 
 void main() {
+  testWidgets('animates the original UR frames with reduced density', (
+    tester,
+  ) async {
+    final fixtures = keystoneQrDensityFixtures.take(2).toList();
+    final parts = List<String>.unmodifiable(fixtures.map((item) => item.part));
+    await tester.pumpWidget(
+      _app(
+        KeystonePcztQrStage(
+          phase: KeystonePcztQrStagePhase.ready,
+          urParts: parts,
+          error: null,
+        ),
+      ),
+    );
+    QrImage frame() =>
+        // ignore: invalid_use_of_protected_member
+        tester.widget<PrettyQrView>(find.byType(PrettyQrView)).qrImage;
+    final first = frame();
+    expect(first.moduleCount, fixtures[0].alphanumericModuleCount);
+    expect(first.errorCorrectLevel, QrErrorCorrectLevel.M);
+    await tester.pump(keystoneQrFrameInterval);
+    expect(frame().moduleCount, fixtures[1].alphanumericModuleCount);
+    await tester.pump(keystoneQrFrameInterval);
+    expect(frame(), same(first));
+    expect(parts, fixtures.map((item) => item.part).toList());
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final inModal in [false, true]) {
     testWidgets(
       '${inModal ? 'signing modal' : 'QR stage'} advances and loops at 5 fps',

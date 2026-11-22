@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../address_scan/widgets/mobile_scan_viewfinder_geometry.dart';
+import '../../../../keystone/services/keystone_qr_encoder.dart';
 import '../../../../keystone/widgets/keystone_pczt_qr_stage.dart'
     show keystoneQrFrameInterval;
 import 'particles/particle_field.dart';
@@ -36,12 +37,8 @@ class KeystoneShieldQrFrames {
   final List<String> parts;
   final Map<int, QrImage> _frames = {};
 
-  QrImage frame(int index) => _frames[index] ??= QrImage(
-    QrCode.fromData(
-      data: parts[index],
-      errorCorrectLevel: QrErrorCorrectLevel.M,
-    ),
-  );
+  QrImage frame(int index) =>
+      _frames[index] ??= encodeKeystoneQrImage(parts[index]);
 
   /// Particles fill the white surface, leaving the dark QR modules empty.
   List<ShieldParticleSample> whiteCells(int index, Rect bounds, double dpr) {

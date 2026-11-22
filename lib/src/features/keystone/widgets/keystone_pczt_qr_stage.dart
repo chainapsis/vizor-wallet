@@ -6,6 +6,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../services/keystone_qr_encoder.dart';
 
 enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 
@@ -118,14 +119,14 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   }
 
   QrImage _frameAt(int index) {
-    return _frames[index] ??= QrImage(
-      QrCode.fromData(
-        data: widget.urParts[index],
-        errorCorrectLevel: widget.scanOptimized
-            ? QrErrorCorrectLevel.M
-            : QrErrorCorrectLevel.L,
-      ),
-    );
+    return _frames[index] ??= widget.scanOptimized
+        ? encodeKeystoneQrImage(widget.urParts[index])
+        : QrImage(
+            QrCode.fromData(
+              data: widget.urParts[index],
+              errorCorrectLevel: QrErrorCorrectLevel.L,
+            ),
+          );
   }
 
   void _startTimer() {
