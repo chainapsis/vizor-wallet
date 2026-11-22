@@ -7265,6 +7265,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your Gift Card\nis almost ready!';
 
   @override
+  String paymentLinkAlreadyClaimedToAccount(String accountName) {
+    return 'This gift card was already claimed to $accountName.';
+  }
+
+  @override
   String paymentLinkAmountCurrencyDisabledSemantic(
     String currency,
     String reason,

@@ -9313,6 +9313,16 @@
   "@paymentLinkAlmostReadyReceivedHeading": {
     "description": "Two-line heading shown while a received Gift Card is being prepared; the line break is intentional."
   },
+  "paymentLinkAlreadyClaimedToAccount": "This gift card was already claimed to {accountName}.",
+  "@paymentLinkAlreadyClaimedToAccount": {
+    "description": "Error shown when the user redeems a Gift Card that this wallet already claimed. {accountName} is the name of the account that received it.",
+    "placeholders": {
+      "accountName": {
+        "type": "String",
+        "example": "Savings"
+      }
+    }
+  },
   "paymentLinkAmountCurrencyDisabledSemantic": "Enter amount in {currency}. {reason}",
   "@paymentLinkAmountCurrencyDisabledSemantic": {
     "description": "Screen reader label of a disabled currency toggle on the Gift Card amount field; {currency} is USD and {reason} explains why it is unavailable.",

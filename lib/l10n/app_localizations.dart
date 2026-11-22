@@ -11966,6 +11966,12 @@ abstract class AppLocalizations {
   /// **'Your Gift Card\nis almost ready!'**
   String get paymentLinkAlmostReadyReceivedHeading;
 
+  /// Error shown when the user redeems a Gift Card that this wallet already claimed. {accountName} is the name of the account that received it.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card was already claimed to {accountName}.'**
+  String paymentLinkAlreadyClaimedToAccount(String accountName);
+
   /// Screen reader label of a disabled currency toggle on the Gift Card amount field; {currency} is USD and {reason} explains why it is unavailable.
   ///
   /// In en, this message translates to:

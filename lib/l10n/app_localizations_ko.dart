@@ -7163,6 +7163,11 @@ class AppLocalizationsKo extends AppLocalizations {
       '기‍프‍트 카‍드‍가\n거‍의 준‍비‍됐‍어‍요!';
 
   @override
+  String paymentLinkAlreadyClaimedToAccount(String accountName) {
+    return '$accountName 계‍정‍으‍로 이‍미 받‍은 기‍프‍트 카‍드‍예‍요.';
+  }
+
+  @override
   String paymentLinkAmountCurrencyDisabledSemantic(
     String currency,
     String reason,
