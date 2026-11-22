@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -15,6 +16,34 @@ const _scanOptimizedQrInk = Color(0xFF000000);
 // Screens select their layout, but cannot override the animation timing.
 const keystoneQrFrameInterval = Duration(milliseconds: 200);
 
+/// One playback clock can drive a request's normal and enlarged QR surfaces.
+class KeystoneQrPlaybackController extends ValueNotifier<int> {
+  KeystoneQrPlaybackController(List<String> parts) : super(0) {
+    updateParts(parts);
+  }
+
+  List<String> _parts = const [];
+  Timer? _timer;
+
+  void updateParts(List<String> parts) {
+    if (listEquals(parts, _parts)) return;
+    _parts = List.unmodifiable(parts);
+    _timer?.cancel();
+    value = 0;
+    if (_parts.length > 1) {
+      _timer = Timer.periodic(keystoneQrFrameInterval, (_) {
+        value = (value + 1) % _parts.length;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+}
+
 class KeystonePcztQrStage extends StatelessWidget {
   const KeystonePcztQrStage({
     required this.phase,
@@ -23,6 +52,7 @@ class KeystonePcztQrStage extends StatelessWidget {
     this.size = 230,
     this.scanOptimized = true,
     this.quietZone,
+    this.playback,
     super.key,
   });
 
@@ -32,6 +62,7 @@ class KeystonePcztQrStage extends StatelessWidget {
   final double size;
   final bool scanOptimized;
   final PrettyQrQuietZone? quietZone;
+  final KeystoneQrPlaybackController? playback;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +76,7 @@ class KeystonePcztQrStage extends StatelessWidget {
           size: size,
           scanOptimized: scanOptimized,
           quietZone: quietZone,
+          playback: playback,
         ),
         KeystonePcztQrStagePhase.failed => Center(
           child: Text(
@@ -84,12 +116,14 @@ class _AnimatedKeystoneQr extends StatefulWidget {
     required this.size,
     required this.scanOptimized,
     required this.quietZone,
+    required this.playback,
   });
 
   final List<String> urParts;
   final double size;
   final bool scanOptimized;
   final PrettyQrQuietZone? quietZone;
+  final KeystoneQrPlaybackController? playback;
 
   @override
   State<_AnimatedKeystoneQr> createState() => _AnimatedKeystoneQrState();
@@ -103,12 +137,18 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   @override
   void initState() {
     super.initState();
+    widget.playback?.addListener(_onPlayback);
     _startTimer();
   }
 
   @override
   void didUpdateWidget(covariant _AnimatedKeystoneQr oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.playback != widget.playback) {
+      oldWidget.playback?.removeListener(_onPlayback);
+      widget.playback?.addListener(_onPlayback);
+      _startTimer();
+    }
     if (oldWidget.urParts != widget.urParts ||
         oldWidget.scanOptimized != widget.scanOptimized ||
         oldWidget.quietZone != widget.quietZone) {
@@ -131,6 +171,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
 
   void _startTimer() {
     _timer?.cancel();
+    if (widget.playback != null) return;
     if (widget.urParts.length <= 1) return;
     _timer = Timer.periodic(keystoneQrFrameInterval, (_) {
       if (!mounted) return;
@@ -142,8 +183,13 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
 
   @override
   void dispose() {
+    widget.playback?.removeListener(_onPlayback);
     _timer?.cancel();
     super.dispose();
+  }
+
+  void _onPlayback() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -158,7 +204,9 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
     // own eye pattern; the eye knockout matches the panel color.
     final colors = context.colors;
     final moduleColor = colors.icon.accent;
-    final frame = _frameAt(_index);
+    final frame = _frameAt(
+      (widget.playback?.value ?? _index) % widget.urParts.length,
+    );
     if (widget.scanOptimized) {
       return SizedBox(
         width: widget.size,

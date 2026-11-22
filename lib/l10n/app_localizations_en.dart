@@ -12125,6 +12125,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get votingEnlargeQr => 'Enlarge QR';
+
+  @override
   String get votingErrorChainCancelled => 'Chain submission was cancelled.';
 
   @override
@@ -12324,10 +12327,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingIneligibleTitle => 'Not eligible for this voting round';
 
   @override
+  String get votingKeepOpenShort => 'Keep Vizor open until voting finishes.';
+
+  @override
   String get votingKeepSigning => 'Keep signing';
 
   @override
   String get votingKeepVoting => 'Keep voting';
+
+  @override
+  String get votingKeystoneAfterApproval =>
+      'After approval, scan the signed QR displayed on Keystone.';
+
+  @override
+  String get votingKeystoneApproveTitle => 'Approve with Keystone';
 
   @override
   String votingKeystoneMemoLabel(int number, int total) {
@@ -12823,6 +12836,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get votingTokenHolderTitle => 'Token holder voting';
+
+  @override
+  String get votingUseSignedBundles => 'Use signed bundles only';
 
   @override
   String get votingViewLess => 'View less';

@@ -14,6 +14,7 @@ class VotingNavigationPreview extends StatefulWidget {
     this.initialChoices = const {},
     this.proposals,
     this.title = 'Community priorities',
+    this.votingPowerZatoshi = 37500000,
     this.introduction =
         'Help shape the next funding round. Choose the priorities '
         'you support; you can leave questions unanswered.',
@@ -21,6 +22,7 @@ class VotingNavigationPreview extends StatefulWidget {
 
   final List<VotingProposalView>? proposals;
   final String title;
+  final int votingPowerZatoshi;
   final String introduction;
 
   final Map<int, int> initialChoices;
@@ -93,7 +95,7 @@ class _VotingNavigationPreviewState extends State<VotingNavigationPreview> {
     description: widget.introduction,
     forumUri: null,
     endDate: null,
-    votingPowerZatoshi: BigInt.from(37500000),
+    votingPowerZatoshi: BigInt.from(widget.votingPowerZatoshi),
     votingPowerPreparing: false,
     votingEligibilityConfirmed: true,
     answersEditable: true,

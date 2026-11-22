@@ -11185,6 +11185,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get votingEnlargeQr => '放大二维码';
+
+  @override
   String get votingErrorChainCancelled => '链上提交已取消。';
 
   @override
@@ -11367,10 +11370,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingIneligibleTitle => '没有资格参与本轮投票';
 
   @override
+  String get votingKeepOpenShort => '投票完成前请保持 Vizor 开启。';
+
+  @override
   String get votingKeepSigning => '继续签名';
 
   @override
   String get votingKeepVoting => '继续投票';
+
+  @override
+  String get votingKeystoneAfterApproval => '批准后，扫描 Keystone 上显示的签名二维码。';
+
+  @override
+  String get votingKeystoneApproveTitle => '使用 Keystone 批准';
 
   @override
   String votingKeystoneMemoLabel(int number, int total) {
@@ -11844,6 +11856,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get votingTokenHolderTitle => '代币持有者投票';
+
+  @override
+  String get votingUseSignedBundles => '仅使用已签名票据包';
 
   @override
   String get votingViewLess => '收起';
