@@ -36,12 +36,16 @@ class SwapInlineIconButton extends StatelessWidget {
   const SwapInlineIconButton({
     required this.iconName,
     required this.onTap,
+    required this.semanticsLabel,
     this.size = 20,
     super.key,
   });
 
   final String iconName;
   final VoidCallback onTap;
+
+  /// What the button does, for screen readers; the glyph alone has no name.
+  final String semanticsLabel;
 
   /// Tap-target / glyph size. Defaults to 20 (desktop field); mobile modal
   /// fields pass [AppInputSizing.iconSize] (24).
@@ -52,6 +56,7 @@ class SwapInlineIconButton extends StatelessWidget {
     final colors = context.colors;
     return AppTappable(
       onTap: onTap,
+      semanticsLabel: semanticsLabel,
       child: SizedBox(
         width: size,
         height: size,

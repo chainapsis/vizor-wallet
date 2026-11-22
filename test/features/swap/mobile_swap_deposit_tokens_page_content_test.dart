@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/dot_qr_shape.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
@@ -287,6 +288,63 @@ void main() {
           .size,
       20,
     );
+  });
+
+  testWidgets('a timeout whose deposit the user says they sent explains it '
+      'went undetected', (tester) async {
+    await tester.pumpWidget(
+      _harness(
+        MobileSwapTimeoutContent(
+          onRestart: () {},
+          onLateDeposit: () {},
+          depositClaimed: true,
+        ),
+      ),
+    );
+
+    expect(find.text('Your deposit wasn’t detected in time'), findsOneWidget);
+    expect(
+      find.text(
+        'If it arrives late, NEAR may try to refund it to your refund address.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('This deposit address is no longer valid'), findsNothing);
+    expect(find.text('Sent a deposit?'), findsNothing);
+    final check = find.byKey(const ValueKey('swap_support_prompt'));
+    final restart = find.byKey(const ValueKey('mobile_swap_timeout_restart'));
+    expect(
+      find.descendant(of: check, matching: find.text('Get help')),
+      findsOneWidget,
+    );
+    // The same layout as any timeout: restart first, the help link under it.
+    expect(
+      tester.widget<AppButton>(restart).variant,
+      AppButtonVariant.secondary,
+    );
+    expect(tester.widget<AppButton>(check).variant, AppButtonVariant.ghost);
+    expect(tester.getRect(restart).bottom, lessThan(tester.getRect(check).top));
+  });
+
+  testWidgets('the claimed timeout keeps its text whole at 200% text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        MobileSwapTimeoutContent(
+          onRestart: () {},
+          onLateDeposit: () {},
+          depositClaimed: true,
+        ),
+        width: 320 - 2 * 20,
+        textScale: 2,
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    final headline = tester.renderObject<RenderParagraph>(
+      find.text('Your deposit wasn’t detected in time'),
+    );
+    expect(headline.didExceedMaxLines, isFalse);
   });
 }
 

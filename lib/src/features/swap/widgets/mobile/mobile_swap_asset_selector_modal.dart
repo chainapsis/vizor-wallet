@@ -148,6 +148,7 @@ class _MobileSwapAssetSelectorModalState
                       key: const ValueKey('swap_asset_search_clear_button'),
                       iconName: AppIcons.cross,
                       onTap: _clearQuery,
+                      semanticsLabel: context.l10n.addressBookClearSearch,
                       size: AppInputSizing.iconSize,
                     ),
                   )

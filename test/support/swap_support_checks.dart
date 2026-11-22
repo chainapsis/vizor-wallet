@@ -83,11 +83,15 @@ void runSwapSupportChecks() {
     final semantics = tester.ensureSemantics();
     final launched = <MethodCall>[];
     final copied = <String>[];
+    final haptics = <Object?>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async {
         if (call.method == 'Clipboard.setData') {
           copied.add((call.arguments as Map)['text'] as String);
+        }
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments);
         }
         return null;
       },
@@ -142,14 +146,70 @@ void runSwapSupportChecks() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(copied.single, 'support@vizor.cash');
+    expect(find.text('Support email copied'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('swap_support_copy')));
     await tester.pumpAndSettle();
     expect(copied, hasLength(2));
     expect(copied.last, contains('Deposit address: 0xdeposit'));
     expect(copied.last, isNot(contains('99 USDC')));
+    expect(find.text('Deposit details copied'), findsOneWidget);
+    // Each completed copy taps once on mobile; desktop has no haptics.
+    expect(haptics, hasLength(kAppFormFactor == AppFormFactor.mobile ? 2 : 0));
     expect(launched, isEmpty);
     expect(tester.takeException(), isNull);
     semantics.dispose();
+  });
+
+  testWidgets('a failed support copy says so', (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          throw PlatformException(code: 'denied');
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.pumpWidget(
+      _app(
+        (_) => SingleChildScrollView(
+          child: SwapSupportNotice(
+            intent: SwapIntent(
+              id: 'failed',
+              pair: 'USDC -> ZEC',
+              sellAmount: '99 USDC',
+              receiveEstimate: '1 ZEC',
+              provider: 'NEAR Intents',
+              status: SwapIntentStatus.failed,
+              nextAction: 'Failed',
+              depositAddress: '0xdeposit',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_support_copy')));
+    await tester.pumpAndSettle();
+
+    const message = 'Couldn’t copy the details. Try again.';
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      // Mobile uses the destructive toast, not a line inside the sheet.
+      final toast = tester.widget<AppToast>(find.byType(AppToast));
+      expect(toast.message, message);
+      expect(toast.tone, AppToastTone.destructive);
+      expect(find.text(message), findsOneWidget);
+    } else {
+      expect(find.text(message), findsOneWidget);
+      expect(find.byType(AppToast), findsNothing);
+    }
+    expect(tester.takeException(), isNull);
   });
 
   for (final locale in ['en', 'ko', 'zh']) {

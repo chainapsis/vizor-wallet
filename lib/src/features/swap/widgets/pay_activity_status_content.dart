@@ -108,7 +108,7 @@ class PayActivityStatusContent extends StatelessWidget {
             if (activeTab == SwapStatusTab.progress)
               ReviewWrapCard(
                 key: const ValueKey('pay_status_progress_card'),
-                padding: progress.explorerUri == null
+                padding: progress.explorerUri == null && !progress.confidential
                     ? kReviewWrapCardPadding
                     : kReviewWrapCardPadding.copyWith(bottom: AppSpacing.sm),
                 children: [
@@ -122,7 +122,9 @@ class PayActivityStatusContent extends StatelessWidget {
                         badgeKind: progress.badgeKind,
                       ),
                       if (progress.explorerUri case final uri?)
-                        SwapProgressExplorerFooter(uri: uri),
+                        SwapProgressExplorerFooter(uri: uri)
+                      else if (progress.confidential)
+                        const SwapProgressConfidentialNote(payment: true),
                     ],
                   ),
                 ],

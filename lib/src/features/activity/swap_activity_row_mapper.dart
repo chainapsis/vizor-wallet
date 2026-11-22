@@ -621,8 +621,8 @@ String? _relativeActivityTimestamp(AppLocalizations l10n, DateTime timestamp) {
 
 _SwapActivityProgress? _swapActivityProgress(SwapActivityRowItem item) {
   const totalSteps = 4;
-  final hasDepositTx = item.depositTxHash?.trim().isNotEmpty ?? false;
-  final depositSent = hasDepositTx || item.depositClaimedAt != null;
+  // Matches the status page: a claimed deposit alone does not advance.
+  final depositSent = item.depositTxHash?.trim().isNotEmpty ?? false;
   return switch (item.status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit => _SwapActivityProgress(

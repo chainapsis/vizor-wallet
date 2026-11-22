@@ -101,11 +101,10 @@ SwapFailureCategory _oneClickCategory(
   if (statusCode == 404 && operation == SwapFailureOperation.refreshStatus) {
     return SwapFailureCategory.depositNotFound;
   }
-  if (operation == SwapFailureOperation.submitDeposit &&
-      (statusCode == 400 || statusCode == 404 || statusCode == 422)) {
-    return SwapFailureCategory.depositRejected;
-  }
-  if (statusCode == 400 || statusCode == 422) {
+  // 1Click documents only 400 ("Invalid input data") as a submit rejection.
+  if (operation == SwapFailureOperation.submitDeposit) {
+    if (statusCode == 400) return SwapFailureCategory.depositRejected;
+  } else if (statusCode == 400 || statusCode == 422) {
     return SwapFailureCategory.invalidRouteOrAddress;
   }
   if (statusCode == 409 || statusCode == 429) {

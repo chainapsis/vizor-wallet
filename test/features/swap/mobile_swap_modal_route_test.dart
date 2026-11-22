@@ -545,7 +545,9 @@ void main() {
         ),
       );
       // The whole row flips it, its text included, with a selection tick.
-      await tester.tap(find.textContaining("can't be tracked to each other"));
+      await tester.tap(
+        find.textContaining('Hides the link between your deposit and payout'),
+      );
       await tester.pumpAndSettle();
       expect(update().onPressed, isNotNull);
       expect(feedback, ['HapticFeedbackType.selectionClick']);
@@ -563,6 +565,19 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
       expect(mark, findsOneWidget);
+
+      // Turning it off ticks once, as the row flips; Update adds none.
+      feedback.clear();
+      await tester.tap(settings);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(mark, findsNothing);
+      expect(feedback, ['HapticFeedbackType.selectionClick']);
     },
   );
 
@@ -1119,6 +1134,20 @@ void main() {
     await tester.tap(find.text('Add recipient address'));
     await tester.pumpAndSettle();
     expect(find.byType(MobileSwapAddressEditModal), findsOneWidget);
+    final semantics = tester.ensureSemantics();
+    expect(
+      tester.getSemantics(
+        find.byKey(const ValueKey('swap_address_scan_button')),
+      ),
+      isSemantics(label: 'Scan QR code', isButton: true),
+    );
+    expect(
+      tester.getSemantics(
+        find.byKey(const ValueKey('swap_address_contacts_button')),
+      ),
+      isSemantics(label: 'Open contacts', isButton: true),
+    );
+    semantics.dispose();
 
     await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
     await tester.pumpAndSettle();

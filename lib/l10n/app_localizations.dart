@@ -17910,6 +17910,12 @@ abstract class AppLocalizations {
   /// **'{symbol} sent'**
   String swapActivityStepSent(String symbol);
 
+  /// Description of the first swap progress step after the user says they sent an external deposit that NEAR Intents has not seen yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for NEAR Intents to detect your deposit.'**
+  String get swapActivityStepSentAwaitingDetection;
+
   /// Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit.
   ///
   /// In en, this message translates to:
@@ -18108,16 +18114,28 @@ abstract class AppLocalizations {
   /// **'Confidential'**
   String get swapConfidentialLabel;
 
+  /// Note at the bottom of a confidential payment's progress card, where a standard payment shows its View on NEAR Intents link: why NEAR Intents explorer links aren't offered. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite. Up to three lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidential payments hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.'**
+  String get swapConfidentialNoExplorerPay;
+
+  /// Note at the bottom of a confidential swap's progress card, where a standard swap shows its View on NEAR Intents link: why NEAR Intents explorer links aren't offered. Name NEAR Intents: the deposit and payout still show in each chain's own explorer. Keep the tone polite. Up to three lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidential swaps hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.'**
+  String get swapConfidentialNoExplorerSwap;
+
   /// Tooltip on the confidential route badge between the paying and receiving rows of a swap or Pay review or status screen.
   ///
   /// In en, this message translates to:
   /// **'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.'**
   String get swapConfidentialRouteTooltip;
 
-  /// Description under the Confidential toggle in the swap and Pay settings modal.
+  /// Description under the Confidential toggle in the swap and Pay settings modal: what the route hides, limited to NEAR Intents, since the deposit and payout still show on their own chains. The progress card explains the missing explorer link.
   ///
   /// In en, this message translates to:
-  /// **'Your deposit and payout can\'t be tracked to each other.'**
+  /// **'Hides the link between your deposit and payout on NEAR Intents.'**
   String get swapConfidentialSettingDescription;
 
   /// Toast on mobile after the user tries to save a swap address that is already in the address book.
@@ -18228,6 +18246,12 @@ abstract class AppLocalizations {
   /// **'This deposit address is no longer valid.\nPlease, start another swap transaction.'**
   String get swapDepositTimeoutBody;
 
+  /// Body on the desktop deposit screen after the deposit window ended, when the user said they sent the deposit but NEAR Intents never detected it. Contains a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may try to refund it to your refund address.'**
+  String get swapDepositTimeoutClaimedBody;
+
   /// Title of the desktop screen showing the one-time deposit address for a swap.
   ///
   /// In en, this message translates to:
@@ -18276,10 +18300,10 @@ abstract class AppLocalizations {
   /// **'Deposit is not indexed yet.\nCheck again in a few minutes.'**
   String get swapFailureDepositNotIndexed;
 
-  /// [security] Swap status panel: the provider rejected the submitted deposit transaction. Tells the user which deposit details to check.
+  /// [security] Swap status: the provider did not accept a deposit transaction hash (HTTP 400, invalid input). Asks the user to check the hash and try again.
   ///
   /// In en, this message translates to:
-  /// **'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.'**
+  /// **'Couldn’t submit this transaction hash.\nCheck it and try again.'**
   String get swapFailureDepositRejected;
 
   /// Swap status panel: telling the provider about the deposit transaction failed.
@@ -19104,7 +19128,7 @@ abstract class AppLocalizations {
   /// **'Copy deposit details'**
   String get swapSupportCopyAction;
 
-  /// Persistent inline message when copying support details fails.
+  /// Error when copying the deposit details from the swap support sheet fails: a toast on mobile, an inline line on desktop.
   ///
   /// In en, this message translates to:
   /// **'Couldn’t copy the details. Try again.'**
@@ -19121,11 +19145,29 @@ abstract class AppLocalizations {
     String routeDetails,
   );
 
+  /// Toast after the swap support sheet copies the deposit details for an email.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit details copied'**
+  String get swapSupportDetailsCopied;
+
   /// Instructions for copying deposit details into a support email the user writes.
   ///
   /// In en, this message translates to:
   /// **'If you still need help, copy the deposit details and paste them into an email to the address below.'**
   String get swapSupportDirectHelp;
+
+  /// Toast after the swap support sheet copies the support email address.
+  ///
+  /// In en, this message translates to:
+  /// **'Support email copied'**
+  String get swapSupportEmailCopied;
+
+  /// Error toast when copying the support email address from the swap support sheet fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t copy the email address. Try again.'**
+  String get swapSupportEmailCopyFailed;
 
   /// Existing swap refund-policy design: ExpiredBody text in the failed or expired deposit support flow.
   ///
@@ -19180,6 +19222,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Please, start another swap transaction.'**
   String get swapTimeoutBody;
+
+  /// Body on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it.
+  ///
+  /// In en, this message translates to:
+  /// **'If it arrives late, NEAR may try to refund it to your refund address.'**
+  String get swapTimeoutClaimedBody;
+
+  /// Serif headline on the mobile swap timeout screen when the user said they sent the deposit but NEAR Intents never detected it. Two lines at most.
+  ///
+  /// In en, this message translates to:
+  /// **'Your deposit wasn’t detected in time'**
+  String get swapTimeoutClaimedHeadline;
+
+  /// Link under the restart button on the swap timeout screen when the user said they sent the deposit; opens the support sheet with the deposit details and the support email.
+  ///
+  /// In en, this message translates to:
+  /// **'Get help'**
+  String get swapTimeoutGetHelp;
 
   /// Headline on the swap timeout screen explaining the one-time deposit address has expired.
   ///

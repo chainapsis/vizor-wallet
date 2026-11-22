@@ -10941,6 +10941,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapActivityStepSentAwaitingDetection =>
+      'Waiting for NEAR Intents to detect your deposit.';
+
+  @override
   String get swapActivityStepSourceDescription =>
       'Confirm waiting for the source chain and provider to recognise the deposit';
 
@@ -11065,12 +11069,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapConfidentialLabel => 'Confidential';
 
   @override
+  String get swapConfidentialNoExplorerPay =>
+      'Confidential payments hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.';
+
+  @override
+  String get swapConfidentialNoExplorerSwap =>
+      'Confidential swaps hide the link between deposit and payout, so NEAR Intents explorer links aren\'t available.';
+
+  @override
   String get swapConfidentialRouteTooltip =>
       'Your deposit and payout can\'t be matched on NEAR Intents or found in its explorer. Both still show on their own chains.';
 
   @override
   String get swapConfidentialSettingDescription =>
-      'Your deposit and payout can\'t be tracked to each other.';
+      'Hides the link between your deposit and payout on NEAR Intents.';
 
   @override
   String get swapContactAlreadyInAddressBook => 'Already in your address book';
@@ -11136,6 +11148,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This deposit address is no longer valid.\nPlease, start another swap transaction.';
 
   @override
+  String get swapDepositTimeoutClaimedBody =>
+      'Your deposit wasn’t detected in time.\nIf it arrives late, NEAR may try to refund it to your refund address.';
+
+  @override
   String get swapDepositTitle => 'Deposit tokens';
 
   @override
@@ -11166,7 +11182,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapFailureDepositRejected =>
-      'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.';
+      'Couldn’t submit this transaction hash.\nCheck it and try again.';
 
   @override
   String get swapFailureDepositSubmitFailed =>
@@ -11676,8 +11692,18 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapSupportDetailsCopied => 'Deposit details copied';
+
+  @override
   String get swapSupportDirectHelp =>
       'If you still need help, copy the deposit details and paste them into an email to the address below.';
+
+  @override
+  String get swapSupportEmailCopied => 'Support email copied';
+
+  @override
+  String get swapSupportEmailCopyFailed =>
+      'Couldn’t copy the email address. Try again.';
 
   @override
   String get swapSupportExpiredBody =>
@@ -11709,6 +11735,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapTimeoutBody => 'Please, start another swap transaction.';
+
+  @override
+  String get swapTimeoutClaimedBody =>
+      'If it arrives late, NEAR may try to refund it to your refund address.';
+
+  @override
+  String get swapTimeoutClaimedHeadline =>
+      'Your deposit wasn’t detected in time';
+
+  @override
+  String get swapTimeoutGetHelp => 'Get help';
 
   @override
   String get swapTimeoutHeadline => 'This deposit address is no longer valid';

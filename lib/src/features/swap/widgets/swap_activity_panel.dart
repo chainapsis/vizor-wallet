@@ -156,7 +156,12 @@ class _SwapActivityDetailSurfaceState
     final intent = persistedIntent ?? pendingIntent;
     if (intent == null) return;
     if (persistedIntent != null) {
-      ref.read(swapStateProvider.notifier).selectIntent(intentId);
+      final notifier = ref.read(swapStateProvider.notifier);
+      notifier.selectIntent(intentId);
+      // Nothing polls an expired swap, so opening one checks it once.
+      if (persistedIntent.status == SwapIntentStatus.expired) {
+        unawaited(notifier.recheckSelectedExpiredIntent());
+      }
     }
     final needsAutoSign =
         widget.autoSignZecDeposit &&
@@ -813,12 +818,14 @@ class _SwapActivityFlowContent extends StatelessWidget {
                 onLateDeposit: swapNeedsSupportNotice(intent)
                     ? onShowSupport
                     : null,
+                depositClaimed: intent.depositClaimedAt != null,
               )
             : SwapDepositTimeoutPageContent(
                 onRestart: onReviewFreshQuote,
                 onLateDeposit: swapNeedsSupportNotice(intent)
                     ? onShowSupport
                     : null,
+                depositClaimed: intent.depositClaimedAt != null,
               ),
       _ when showExternalDepositPage && depositInstruction != null =>
         SwapDepositTokensPageContent(
@@ -1179,6 +1186,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       showTabs: presentation.showTabs,
       oneTimeAddress: presentation.oneTimeAddress,
       explorerUri: presentation.explorerUri,
+      confidential: presentation.confidential,
       onTabChanged: (tab) {
         setState(() {
           _activeTab = tab;

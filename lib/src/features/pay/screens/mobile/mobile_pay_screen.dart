@@ -294,10 +294,18 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       previous,
       next,
     ) {
-      if (previous != false || !next) return;
-      unawaited(AppHaptics.privacyToggle());
-      final changed = _confidentialReveal.turnedOn(
-        settingsOpen: _payModal.value == _PayModalSurface.slippage,
+      if (previous == null || previous == next) return;
+      final settingsOpen = _payModal.value == _PayModalSurface.slippage;
+      // Only the settings turn the route off on purpose. Leaving the
+      // surface, switching accounts or Swap/Pay sessions, or retrying a
+      // standard swap turns it off quietly.
+      if (!next && !settingsOpen) return;
+      // The settings row ticked as it flipped; turning on adds the heavier
+      // tick when it applies, turning off adds none.
+      if (next) unawaited(AppHaptics.privacyToggle());
+      final changed = _confidentialReveal.changed(
+        confidential: next,
+        settingsOpen: settingsOpen,
       );
       if (changed) setState(() {});
     });
