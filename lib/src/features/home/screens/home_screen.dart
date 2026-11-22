@@ -664,9 +664,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     );
     final isImporting = initialPresentation.showImporting;
     final hasBalance = widget.showsIronwoodOnlyBalance
-        ? widget.sync.displayIronwoodBalance +
-                  widget.sync.displayIronwoodPendingBalance >
-              BigInt.zero
+        ? homeDisplayedBalance(widget.sync, ironwoodOnly: true) > BigInt.zero
         : widget.sync.displayTotalBalance > BigInt.zero;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final migrationInProgress =
