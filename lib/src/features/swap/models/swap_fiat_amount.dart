@@ -1,5 +1,6 @@
 import 'swap_models.dart';
 import 'swap_fiat_value_formatting.dart';
+import 'swap_token_amount_formatting.dart';
 
 double? swapUsdUnitPriceForAsset(SwapState state, {required SwapAsset asset}) {
   return swapUsdUnitPriceFromPrices(state.indicativeUsdPrices, asset);
@@ -39,7 +40,7 @@ String swapFiatDisplayText(
   if (amount == null || amount <= 0) return r'$0';
   final usdValue = swapUsdValueForAsset(state, asset: asset, amount: amount);
   if (usdValue == null) return r'$--';
-  return '\$${swapFormatFiatValue(usdValue)}';
+  return '\$${groupSwapAmountText(swapFormatFiatValue(usdValue))}';
 }
 
 String swapFiatInputTextFromTokenText(
@@ -71,7 +72,7 @@ String? swapTokenAmountTextFromFiatText(
 String swapTokenAmountDisplayText({required String tokenAmountText}) {
   final amount = tokenAmountText.trim();
   if (amount.isEmpty) return '0';
-  return amount;
+  return groupSwapAmountText(amount);
 }
 
 double? _usableUnitPrice(double? value) {

@@ -15,6 +15,7 @@ import '../models/swap_address_formatting.dart';
 import '../models/swap_detail_tooltips.dart';
 import '../models/swap_fiat_value_formatting.dart';
 import '../models/swap_quote_text.dart';
+import '../models/swap_token_amount_formatting.dart';
 import 'swap_amount_text.dart';
 import 'one_time_address_label.dart';
 import 'swap_review_info.dart';
@@ -144,10 +145,10 @@ class SwapReviewPageContent extends StatelessWidget {
       return SwapReviewInfoSideData(
         asset: quote.sellAsset,
         label: payMode ? l10n.commonYouPay : l10n.commonYourePaying,
-        amountText: quote.sellAmountText,
+        amountText: groupSwapAmountText(quote.sellAmountText),
         detailText: payMode
             ? l10n.commonPrivatelyFromShieldedBalance
-            : payFiatTextOverride ?? _payFiatText(quote),
+            : groupSwapAmountText(payFiatTextOverride ?? _payFiatText(quote)),
         oneTimeAddress: addressPlan.oneTimeZecAddress
             ? OneTimeAddressRole.refund
             : null,
@@ -157,7 +158,7 @@ class SwapReviewPageContent extends StatelessWidget {
     return SwapReviewInfoSideData(
       asset: quote.sellAsset,
       label: l10n.commonYourePaying,
-      amountText: quote.sellAmountText,
+      amountText: groupSwapAmountText(quote.sellAmountText),
       detailText: l10n.commonRefundToAddress(
         _contactAwareAddressText(refundAddress, quote.sellAsset),
       ),
@@ -173,8 +174,10 @@ class SwapReviewPageContent extends StatelessWidget {
       return SwapReviewInfoSideData(
         asset: quote.receiveAsset,
         label: l10n.commonYoureReceiving,
-        amountText: quote.receiveEstimateText,
-        detailText: receiveFiatTextOverride ?? _receiveFiatText(quote),
+        amountText: groupSwapAmountText(quote.receiveEstimateText),
+        detailText: groupSwapAmountText(
+          receiveFiatTextOverride ?? _receiveFiatText(quote),
+        ),
         oneTimeAddress: addressPlan.oneTimeZecAddress
             ? OneTimeAddressRole.payout
             : null,
@@ -184,7 +187,7 @@ class SwapReviewPageContent extends StatelessWidget {
     return SwapReviewInfoSideData(
       asset: quote.receiveAsset,
       label: payMode ? l10n.commonRecipientGets : l10n.commonYoureReceiving,
-      amountText: quote.receiveEstimateText,
+      amountText: groupSwapAmountText(quote.receiveEstimateText),
       detailText: l10n.commonToAddressOnChain(
         _contactAwareAddressText(recipientAddress, quote.receiveAsset),
         quote.receiveAsset.chainLabel,
@@ -535,7 +538,9 @@ class _SwapReviewDetailCard extends StatelessWidget {
         const ReviewWrapDivider(),
         ReviewListRow(
           label: context.l10n.commonSwapFee,
-          value: swapDetailValueText(context.l10n, quote.feeLabel),
+          value: groupSwapAmountText(
+            swapDetailValueText(context.l10n, quote.feeLabel),
+          ),
           trailingIconName: AppIcons.help,
           trailingIconColor: colors.icon.muted,
           trailingIconTooltip: swapFeeTooltip(context.l10n),
@@ -602,5 +607,7 @@ String swapReviewMinimumReceiveText(AppLocalizations l10n, SwapQuote quote) {
 
 String _compactDetailValueText(AppLocalizations l10n, String value) {
   final worded = swapDetailValueText(l10n, value);
-  return worded == value ? compactSwapAmountText(value) : worded;
+  return worded == value
+      ? groupSwapAmountText(compactSwapAmountText(value))
+      : worded;
 }

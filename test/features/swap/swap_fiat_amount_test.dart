@@ -2,8 +2,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_fiat_amount.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_fiat_value_formatting.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_token_amount_formatting.dart';
 
 void main() {
+  test('groups only the integer part of full swap amounts', () {
+    const grouped = '~9,007,199,254,740,993.123456780 TOKEN';
+    expect(groupSwapAmountText('~9007199254740993.123456780 TOKEN'), grouped);
+    expect(groupSwapAmountText(grouped), grouped);
+    expect(groupSwapAmountText(r'$112.95K'), r'$112.95K');
+    expect(groupSwapAmountText('1000.25 %'), '1000.25 %');
+    expect(groupSwapRateText('1 ZEC = 1125.00 USDT'), '1 ZEC = 1,125.00 USDT');
+  });
+
+  test('groups composer equivalents while preserving raw fiat input', () {
+    final state = _stateWithUsdRate(70);
+
+    expect(
+      swapFiatDisplayText(state, asset: SwapAsset.zec, tokenAmountText: '2000'),
+      r'$140,000',
+    );
+    expect(
+      swapFiatInputTextFromTokenText(
+        state,
+        asset: SwapAsset.zec,
+        tokenAmountText: '2000',
+      ),
+      '140000',
+    );
+    expect(
+      swapTokenAmountDisplayText(tokenAmountText: '113000.12345678'),
+      '113,000.12345678',
+    );
+  });
+
   test('converts ZEC token amount to fiat display text', () {
     final state = _stateWithUsdRate(70);
 

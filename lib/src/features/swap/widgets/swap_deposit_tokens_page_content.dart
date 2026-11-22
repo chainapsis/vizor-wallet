@@ -18,6 +18,7 @@ import '../../../core/widgets/dot_qr_shape.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_deposit_qr_payload.dart';
+import '../models/swap_token_amount_formatting.dart';
 import 'swap_support_notice.dart';
 
 class SwapDepositTokensPageContent extends StatelessWidget {
@@ -439,7 +440,7 @@ class _MobileDepositQrCard extends StatelessWidget {
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            amountText,
+                            groupSwapAmountText(amountText),
                             textAlign: TextAlign.center,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -787,7 +788,7 @@ class _DepositQrCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      amountText,
+                      groupSwapAmountText(amountText),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.headlineSmall.copyWith(
@@ -1141,7 +1142,7 @@ class _DepositDetailsList extends StatelessWidget {
             label: mobile
                 ? context.l10n.swapDepositAmountToDeposit
                 : context.l10n.commonAmount,
-            value: amountText,
+            value: groupSwapAmountText(amountText),
             copyText: _depositAmountCopyText(amountText, asset),
             toastMessage: mobile
                 ? context.l10n.swapDepositAmountCopiedMobile
