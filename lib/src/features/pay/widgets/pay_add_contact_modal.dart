@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/address_line_text.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_profile_picture.dart';
@@ -192,15 +193,38 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
             ),
           ),
           const SizedBox(height: AppSpacing.xxs),
-          AppTextField(
-            key: const ValueKey('pay_add_contact_address_field'),
-            label: '',
-            showLabel: false,
-            initialValue: truncatedLongAddress(widget.address),
-            enabled: false,
+          // Drawn like the input shell rather than as a text field, so the
+          // address can drop to its short form (and wrap at the largest text
+          // sizes) instead of being clipped.
+          Semantics(
+            label: context.l10n.payAddressSemantics(widget.address),
             readOnly: true,
-            textStyle: AppTypography.labelLarge.copyWith(
-              color: colors.text.accent,
+            child: ExcludeSemantics(
+              child: Container(
+                key: const ValueKey('pay_add_contact_address_field'),
+                constraints: const BoxConstraints(
+                  minHeight: AppInputSizing.height,
+                ),
+                alignment: AlignmentDirectional.centerStart,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.surface.input.primary,
+                  borderRadius: BorderRadius.circular(AppInputSizing.radius),
+                  boxShadow: appSurfaceShadow(colors),
+                ),
+                child: AddressLineText(
+                  AddressLine(
+                    address: truncatedLongAddress(widget.address),
+                    shortAddress: truncatedAddress(widget.address),
+                  ),
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
             ),
           ),
           if (_saveError != null) ...[

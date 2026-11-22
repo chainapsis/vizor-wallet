@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/address_line_text.dart';
 import '../../../../core/widgets/app_tappable.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
@@ -229,9 +230,11 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
             child: ExcludeSemantics(
               child: Container(
                 key: const ValueKey('mobile_pay_add_contact_address'),
-                height: AppInputSizing.height,
+                constraints: const BoxConstraints(
+                  minHeight: AppInputSizing.height,
+                ),
                 alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+                padding: const EdgeInsets.all(AppSpacing.s),
                 decoration: BoxDecoration(
                   color: colors.surface.input.primary,
                   borderRadius: BorderRadius.circular(AppInputSizing.radius),
@@ -250,10 +253,13 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                     BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
                   ],
                 ),
-                child: Text(
-                  truncatedLongAddress(widget.address),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                // The long form, or the short one where it would be cut; at
+                // the largest text sizes the short form wraps.
+                child: AddressLineText(
+                  AddressLine(
+                    address: truncatedLongAddress(widget.address),
+                    shortAddress: truncatedAddress(widget.address),
+                  ),
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.accent,
                   ),

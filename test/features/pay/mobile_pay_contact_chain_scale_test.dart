@@ -2,8 +2,10 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/figma_compare/scaled_mobile_rows_capture.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/l10n/l10n.dart';
 import 'package:zcash_wallet/src/core/l10n/locale_typography.dart';
@@ -15,6 +17,8 @@ import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_add_cont
 
 import '../../support/app_test_fonts.dart';
 import '../../support/scaled_row_text_checks.dart';
+
+const _address = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e';
 
 void main() {
   setUpAll(loadAppTestFonts);
@@ -59,7 +63,7 @@ void main() {
                         background: const SizedBox.expand(),
                         child: MobilePayAddContactCard(
                           network: network,
-                          address: '0x1111111111111111111111111111111111111111',
+                          address: _address,
                           profilePictureIdGenerator: () => 'pfp-07',
                           onSave: (label, picture) async =>
                               saved = (label, picture),
@@ -94,6 +98,26 @@ void main() {
                 if (scale == 1 && network == AddressBookNetwork.ethereum) {
                   expect(rect.height, AppSpacing.base);
                 }
+                // The address drops to its short form rather than being cut.
+                final address = tester.renderObject<RenderParagraph>(
+                  find.descendant(
+                    of: find.byKey(
+                      const ValueKey('mobile_pay_add_contact_address'),
+                    ),
+                    matching: find.byType(RichText),
+                  ),
+                );
+                expect(address.didExceedMaxLines, isFalse);
+                expect(
+                  address.maxLines,
+                  scale == 2 && width == 320 ? isNull : 1,
+                );
+                expect(
+                  address.text.toPlainText(),
+                  width == 360 && scale == 1
+                      ? truncatedLongAddress(_address)
+                      : truncatedAddress(_address),
+                );
                 final save = find.byKey(
                   const ValueKey('mobile_pay_add_contact_save'),
                 );
