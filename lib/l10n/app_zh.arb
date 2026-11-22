@@ -3327,7 +3327,6 @@
   "votingForumDiscussion": "论坛讨论",
   "votingGuardAccountLoadFailed": "无法加载账户",
   "votingIneligibleTitle": "没有资格参与本轮投票",
-  "votingKeepOpenShort": "投票完成前请保持 Vizor 开启。",
   "votingKeepSigning": "继续签名",
   "votingKeepVoting": "继续投票",
   "votingKeystoneAfterApproval": "批准后，扫描 Keystone 上显示的签名二维码。",

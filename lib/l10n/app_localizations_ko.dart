@@ -12137,9 +12137,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingIneligibleTitle => '이‍번 투‍표 라‍운‍드‍에 참‍여‍할 수 없‍어‍요';
 
   @override
-  String get votingKeepOpenShort => '투‍표‍가 끝‍날 때‍까‍지 Vizor‍를 열‍어 두‍세‍요.';
-
-  @override
   String get votingKeepSigning => '계‍속 서‍명';
 
   @override

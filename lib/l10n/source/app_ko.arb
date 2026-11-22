@@ -3327,7 +3327,6 @@
   "votingForumDiscussion": "포럼 토론",
   "votingGuardAccountLoadFailed": "계정을 불러오지 못했어요",
   "votingIneligibleTitle": "이번 투표 라운드에 참여할 수 없어요",
-  "votingKeepOpenShort": "투표가 끝날 때까지 Vizor를 열어 두세요.",
   "votingKeepSigning": "계속 서명",
   "votingKeepVoting": "계속 투표",
   "votingKeystoneAfterApproval": "승인 후 Keystone에 표시된 서명 QR 코드를 스캔하세요.",

@@ -11370,9 +11370,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingIneligibleTitle => '没有资格参与本轮投票';
 
   @override
-  String get votingKeepOpenShort => '投票完成前请保持 Vizor 开启。';
-
-  @override
   String get votingKeepSigning => '继续签名';
 
   @override

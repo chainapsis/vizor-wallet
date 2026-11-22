@@ -12327,9 +12327,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingIneligibleTitle => 'Not eligible for this voting round';
 
   @override
-  String get votingKeepOpenShort => 'Keep Vizor open until voting finishes.';
-
-  @override
   String get votingKeepSigning => 'Keep signing';
 
   @override

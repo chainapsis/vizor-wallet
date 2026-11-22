@@ -233,41 +233,6 @@ class _DesktopKeystoneVotingSigningState
     );
   }
 
-  Widget _footer() => Wrap(
-    spacing: AppSpacing.sm,
-    runSpacing: AppSpacing.xs,
-    alignment: WrapAlignment.center,
-    children: [
-      for (final (index, label) in [
-        context.l10n.votingStepSigningKeystone,
-        context.l10n.votingStepProving,
-        context.l10n.votingStepCasting,
-        context.l10n.votingStepFinalizing,
-      ].indexed)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppIcon(
-              index == 0 ? AppIcons.loader : AppIcons.chevronForward,
-              size: 14,
-              color: context.colors.icon.regular,
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            Flexible(
-              child: Text(
-                label,
-                style: AppTypography.bodySmall.copyWith(
-                  color: index == 0
-                      ? context.colors.text.accent
-                      : context.colors.text.secondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-    ],
-  );
-
   Widget _normal(double height, double width) {
     final paddedWidth = math.max(0.0, width - AppSpacing.md * 2);
     final horizontal =
@@ -306,37 +271,42 @@ class _DesktopKeystoneVotingSigningState
         ],
       ),
     );
-    return VotingPaneScrollbar(
-      builder: (_, controller) => SingleChildScrollView(
-        controller: controller,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: height),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      context.l10n.votingKeystoneApproveTitle,
-                      style: AppTypography.displaySmall.copyWith(
-                        color: context.colors.text.accent,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      context.l10n.commonScanWithKeystone,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: context.colors.text.secondary,
-                      ),
-                    ),
-                  ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.md,
+            AppSpacing.md,
+            0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                context.l10n.votingKeystoneApproveTitle,
+                style: AppTypography.displaySmall.copyWith(
+                  color: context.colors.text.accent,
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                context.l10n.commonScanWithKeystone,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: VotingPaneScrollbar(
+            builder: (_, controller) => Center(
+              child: SingleChildScrollView(
+                controller: controller,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
                   child: horizontal
                       ? Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -354,24 +324,11 @@ class _DesktopKeystoneVotingSigningState
                           ],
                         ),
                 ),
-                Column(
-                  children: [
-                    _footer(),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      context.l10n.votingKeepOpenShort,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: context.colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 

@@ -15766,10 +15766,6 @@
   "@votingIneligibleTitle": {
     "description": "Title of the dialog explaining that the account cannot vote in this round."
   },
-  "votingKeepOpenShort": "Keep Vizor open until voting finishes.",
-  "@votingKeepOpenShort": {
-    "description": "Compact reminder on the desktop Keystone voting approval screen."
-  },
   "votingKeepSigning": "Keep signing",
   "@votingKeepSigning": {
     "description": "Dialog button that goes back to signing the remaining bundles on Keystone."

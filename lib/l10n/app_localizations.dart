@@ -20145,12 +20145,6 @@ abstract class AppLocalizations {
   /// **'Not eligible for this voting round'**
   String get votingIneligibleTitle;
 
-  /// Compact reminder on the desktop Keystone voting approval screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep Vizor open until voting finishes.'**
-  String get votingKeepOpenShort;
-
   /// Dialog button that goes back to signing the remaining bundles on Keystone.
   ///
   /// In en, this message translates to:
