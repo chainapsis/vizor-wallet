@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
@@ -47,7 +48,11 @@ const _quote = SwapQuote(
   receiveEstimateTextOverride: '990 USDC',
 );
 
-Widget _harness(Widget child, {AppThemeData theme = AppThemeData.light}) {
+Widget _harness(
+  Widget child, {
+  AppThemeData theme = AppThemeData.light,
+  double width = 361,
+}) {
   return MaterialApp(
     localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
@@ -56,7 +61,7 @@ Widget _harness(Widget child, {AppThemeData theme = AppThemeData.light}) {
         data: const MediaQueryData(size: Size(393, 852)),
         child: Center(
           child: SizedBox(
-            width: 361,
+            width: width,
             child: SingleChildScrollView(child: child),
           ),
         ),
@@ -273,6 +278,19 @@ void main() {
       find.byKey(const ValueKey('mobile_pay_review_refresh_quote_button')),
     );
     expect(refreshed, 1);
+  });
+  testWidgets('an address headline fits a 320pt phone', (tester) async {
+    await tester.runAsync(loadAppTestFonts);
+    // A 320pt phone leaves 288 for the card.
+    await tester.pumpWidget(_harness(_content(contact: null), width: 288));
+
+    final headline = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_pay_review_recipient_row')),
+        matching: find.text(truncatedAddress(_recipientAddress)),
+      ),
+    );
+    expect(headline.didExceedMaxLines, isFalse);
   });
 }
 

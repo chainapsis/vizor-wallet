@@ -41,6 +41,7 @@ Future<void> _pump(
   Widget Function(BuildContext context) builder, {
   required String locale,
   required double width,
+  double textScale = 1,
 }) async {
   await loadFigmaCompareFonts();
   tester.view.physicalSize = Size(width, 900);
@@ -51,10 +52,15 @@ Future<void> _pump(
       locale: Locale(locale),
       supportedLocales: appSupportedLocales(preview: true),
       localizationsDelegates: appLocalizationsDelegates,
-      builder: (_, navigator) => AppTheme(
-        data: AppThemeData.light,
-        // The language's own fonts, as the app sets them.
-        child: LocaleTypography(child: navigator!),
+      builder: (context, navigator) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: AppTheme(
+          data: AppThemeData.light,
+          // The language's own fonts, as the app sets them.
+          child: LocaleTypography(child: navigator!),
+        ),
       ),
       home: SingleChildScrollView(child: Builder(builder: builder)),
     ),
@@ -161,6 +167,48 @@ void main() {
           _expectAddressWhole(tester, compact, name: label);
         });
       }
+    }
+  }
+
+  // The Pay review's recipient pill shortens a long chain name, never the
+  // address.
+  for (final chain in const ['bsc', 'hood']) {
+    for (final scale in const [1.0, 1.3]) {
+      testWidgets('Pay review pill, $chain, ${scale}x', (tester) async {
+        final asset = SwapAsset.live(
+          assetId: 'pay-$chain',
+          symbol: 'USDC',
+          blockchain: chain,
+          decimals: 6,
+        );
+        const direction = SwapDirection.zecToExternal;
+        await _pump(
+          tester,
+          (_) => SwapReviewPageContent(
+            quote: SwapQuote.estimate(
+              direction: direction,
+              externalAsset: asset,
+              amount: 1.12,
+            ),
+            addressPlan: SwapAddressPlan.fromUserInput(
+              direction: direction,
+              externalAsset: asset,
+              userExternalAddress: _externalAddress,
+              walletZecAddress: _walletAddress,
+              oneTimeZecAddress: false,
+            ),
+            onCopy: (_) {},
+            payMode: true,
+            expired: false,
+            amountWarning: null,
+            startError: null,
+          ),
+          locale: 'en',
+          width: 420,
+          textScale: scale,
+        );
+        _expectAddressWhole(tester, compact);
+      });
     }
   }
 }

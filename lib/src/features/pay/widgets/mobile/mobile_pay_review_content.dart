@@ -90,6 +90,9 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
                 key: const ValueKey('mobile_pay_review_recipient_row'),
                 label: context.l10n.commonTo,
                 value: contact?.label ?? compactRecipient,
+                // An address headline shrinks to fit a narrow phone rather
+                // than losing its tail.
+                valueFit: contact == null ? BoxFit.scaleDown : null,
                 leading: contact == null
                     ? const ReviewInfoIconCircle(iconName: AppIcons.wallet)
                     : AppProfilePicture(

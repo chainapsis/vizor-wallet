@@ -386,10 +386,9 @@ class _PayRecipientPill extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Flexible(
-                child: Text(
-                  '${asset.chainLabel} · ${truncatedAddress(address)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: _ChainAddressText(
+                  chain: asset.chainLabel,
+                  address: truncatedAddress(address),
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -406,6 +405,50 @@ class _PayRecipientPill extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// "Chain · address" on one line. A chain name too long for the room is
+/// shortened first, so the address keeps every character.
+class _ChainAddressText extends StatelessWidget {
+  const _ChainAddressText({
+    required this.chain,
+    required this.address,
+    required this.style,
+  });
+
+  final String chain;
+  final String address;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              chain,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              // A shortened name ends at its ellipsis, not at the room's edge.
+              textWidthBasis: TextWidthBasis.longestLine,
+              style: style,
+            ),
+          ),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+            child: Text(
+              ' · $address',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+          ),
+        ],
       ),
     );
   }
