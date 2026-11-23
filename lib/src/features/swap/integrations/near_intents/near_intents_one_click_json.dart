@@ -242,13 +242,12 @@ String _rateText({
   required SwapAsset receiveAsset,
   required double receiveAmount,
 }) {
-  if (sellAmount <= 0) {
+  if (sellAmount <= 0 || receiveAmount <= 0) {
     return kSwapRatePendingToken;
   }
-  final precision = receiveAsset == SwapAsset.zec ? 4 : 2;
-  final rate = receiveAmount / sellAmount;
-  return '1 ${sellAsset.symbol} = ' // l10n-ignore: rate format
-      '${rate.toStringAsFixed(precision)} ${receiveAsset.symbol}';
+  return sellAsset == SwapAsset.zec
+      ? swapZecRateText(receiveAsset, receiveAmount / sellAmount)
+      : swapZecRateText(sellAsset, sellAmount / receiveAmount);
 }
 
 SwapIntentStatus _statusFromOneClick(String status, SwapDirection direction) {

@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import '../../../core/formatting/number_format.dart';
 import 'swap_asset.dart';
 import 'swap_direction.dart';
 import 'swap_fiat_value_basis.dart';
@@ -70,6 +73,39 @@ const kSwapIncludedInRateToken =
     'Included in shown rate'; // l10n-ignore: stored token
 const kSwapNotReportedToken = 'Not reported'; // l10n-ignore: stored token
 const kSwapRatePendingToken = 'Rate pending'; // l10n-ignore: stored token
+
+/// A ZEC pair's rate, always priced per ZEC so both swap directions and Pay
+/// read alike: `1 ZEC = 796.73 USDC`, `1 ZEC = 229.4M PEPE`.
+String swapZecRateText(SwapAsset externalAsset, double externalPerZec) =>
+    '1 ZEC = ${formatSwapRateAmount(externalPerZec)} ' // l10n-ignore: rate format
+    '${externalAsset.symbol}';
+
+/// At least four significant digits and two decimals, grouped, below 10,000,
+/// so a stablecoin keeps its cents; from 10,000, K, M or B truncated to four
+/// significant digits.
+String formatSwapRateAmount(double value) {
+  if (!value.isFinite || value <= 0) return '--'; // l10n-ignore: placeholder
+  if (value < 10000) {
+    var fractionDigits = 2;
+    for (var bound = 10.0; value < bound && fractionDigits < 20; bound /= 10) {
+      fractionDigits++;
+    }
+    final fixed = value.toStringAsFixed(fractionDigits);
+    if (double.parse(fixed) < 10000) {
+      final [whole, fraction] = fixed.split('.');
+      return '${formatGroupedIntegerDigits(whole)}.$fraction';
+    }
+  }
+  const markers = ['K', 'M', 'B']; // l10n-ignore: amount suffixes
+  final digits = BigInt.from(value < 10000 ? 10000 : value).toString();
+  final group = math.min((digits.length - 1) ~/ 3, markers.length);
+  final lead = digits.length - group * 3;
+  final fraction = digits
+      .substring(lead, lead + math.max(0, 4 - lead))
+      .replaceFirst(RegExp(r'0+$'), '');
+  final whole = digits.substring(0, lead);
+  return '$whole${fraction.isEmpty ? '' : '.$fraction'}${markers[group - 1]}';
+}
 
 class SwapDepositInstruction {
   const SwapDepositInstruction({
@@ -203,9 +239,6 @@ class SwapQuote {
         direction.sendsZec ? quoteAmount * rate : quoteAmount / rate,
       SwapQuoteMode.exactOutput => quoteAmount,
     };
-    final rateText = direction.sendsZec
-        ? '1 ZEC = ${rate.toStringAsFixed(2)} ${externalAsset.symbol}' // l10n-ignore: rate format
-        : '1 ${externalAsset.symbol} = ${(1 / rate).toStringAsFixed(4)} ZEC'; // l10n-ignore: rate format
     return SwapQuote(
       direction: direction,
       sellAsset: sellAsset,
@@ -225,7 +258,7 @@ class SwapQuote {
             'one-time-${sellAsset.symbol.toLowerCase()}-deposit-placeholder',
         deadline: depositDeadline,
       ),
-      rateTextOverride: rateText,
+      rateTextOverride: swapZecRateText(externalAsset, rate),
     );
   }
 
@@ -355,10 +388,6 @@ class SwapQuote {
     if (override != null) {
       return override;
     }
-    final rate = externalAsset.fallbackExternalPerZec;
-    if (direction.sendsZec) {
-      return '1 ZEC = ${rate.toStringAsFixed(2)} ${externalAsset.symbol}'; // l10n-ignore: rate format
-    }
-    return '1 ${externalAsset.symbol} = ${(1 / rate).toStringAsFixed(4)} ZEC'; // l10n-ignore: rate format
+    return swapZecRateText(externalAsset, externalAsset.fallbackExternalPerZec);
   }
 }
