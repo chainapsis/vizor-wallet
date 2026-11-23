@@ -73,6 +73,7 @@ import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../services/home_displayed_balance.dart';
 import '../../services/transparent_balance_display.dart';
 import '../../widgets/mobile/shield/mobile_shield_backdrop.dart';
 import '../../providers/backup_reminder_provider.dart';
@@ -101,6 +102,9 @@ class MobileHomeScreen extends ConsumerWidget {
     final ironwoodMigrationCta = ref.watch(
       ironwoodHomeMigrationPresentationProvider,
     );
+    final showsIronwoodOnlyBalance =
+        ref.watch(ironwoodHomeBalancePresentationProvider) ==
+        IronwoodHomeBalancePresentationMode.ironwoodOnly;
     final isCurrentHomeRoute = GoRouterState.of(context).uri.path == '/home';
 
     final isImporting = ref
@@ -141,6 +145,7 @@ class MobileHomeScreen extends ConsumerWidget {
                             activeAccountUuid: activeAccountUuid,
                             privacyModeEnabled: privacyModeEnabled,
                             ironwoodMigrationCta: ironwoodMigrationCta,
+                            showsIronwoodOnlyBalance: showsIronwoodOnlyBalance,
                             onTogglePrivacyMode: () =>
                                 ref.read(privacyModeProvider.notifier).toggle(),
                           ),
@@ -924,6 +929,7 @@ class _HomeContent extends ConsumerStatefulWidget {
     required this.activeAccountUuid,
     required this.privacyModeEnabled,
     required this.ironwoodMigrationCta,
+    required this.showsIronwoodOnlyBalance,
     required this.onTogglePrivacyMode,
   });
 
@@ -931,6 +937,7 @@ class _HomeContent extends ConsumerStatefulWidget {
   final String? activeAccountUuid;
   final bool privacyModeEnabled;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
+  final bool showsIronwoodOnlyBalance;
   final VoidCallback onTogglePrivacyMode;
 
   @override
@@ -1126,12 +1133,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     // the payment-URI drain in `app.dart` cannot drift away from what this
     // button does.
     final sendDisabled = ref.watch(migrationSendGateProvider);
-    final shieldedBalance = migrationRequired
-        ? sync.displayOrchardBalance + sync.displayOrchardPendingBalance
-        : sync.displayShieldedBalance;
+    // Shared with desktop Home and the sidebar, so the platforms agree.
+    final shieldedBalance = homeDisplayedBalance(
+      sync,
+      ironwoodOnly: widget.showsIronwoodOnlyBalance,
+    );
     final transparentBalance = TransparentBalanceDisplay.of(sync);
+    // Orchard still migrating keeps Send and Receive in place of the
+    // first-receive prompt, although the card leaves it out.
     final hasBalance =
-        shieldedBalance > BigInt.zero ||
+        sync.displayShieldedBalance > BigInt.zero ||
         (transparentBalance.amount ?? BigInt.zero) > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final fiatBalanceText = _mobileHomeFiatTextForZatoshi(

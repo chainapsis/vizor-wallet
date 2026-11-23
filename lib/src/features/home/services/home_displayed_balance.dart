@@ -6,7 +6,8 @@ import '../../../providers/sync_provider.dart';
 /// migrating). Sapling funds stay in both: the migration leaves them where
 /// they are, and Send and Swap count them as available.
 ///
-/// The desktop sidebar shows this same value, so the two cannot disagree.
+/// Desktop Home, mobile Home and the desktop sidebar all show this value, so
+/// they cannot disagree.
 /// Transparent funds and funds a pending transaction holds are not part of
 /// it.
 BigInt homeDisplayedBalance(SyncState sync, {required bool ironwoodOnly}) {

@@ -4041,6 +4041,11 @@ Widget _buildMobileHomeUseCase({
         return migrationCta;
       }),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
+      ironwoodHomeBalancePresentationProvider.overrideWithValue(
+        migrationCta.mode == IronwoodHomeMigrationCtaMode.resume
+            ? IronwoodHomeBalancePresentationMode.ironwoodOnly
+            : IronwoodHomeBalancePresentationMode.allShielded,
+      ),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
