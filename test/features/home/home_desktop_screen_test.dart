@@ -788,7 +788,7 @@ void main() {
   );
 
   testWidgets(
-    'home desktop shows the shielded balance and enables actions during migration',
+    'home desktop uses Ironwood balance and enables actions during migration',
     (tester) async {
       await tester.pumpWidget(
         _appHarness(
@@ -837,9 +837,7 @@ void main() {
       );
 
       expect(find.text('100 ZEC still migrating'), findsOneWidget);
-      // 2.21 spendable Orchard plus 40.11 Ironwood; the locked Orchard is
-      // part of the migrating amount only.
-      expect(find.text('42.32'), findsOneWidget);
+      expect(find.text('40.11'), findsOneWidget);
       expect(find.text('Shielded balance'), findsOneWidget);
       expect(find.text('Shielded balance (Ironwood)'), findsNothing);
       expect(find.text('Migration Required'), findsNothing);
@@ -968,7 +966,7 @@ void main() {
       find.byKey(const ValueKey('home_desktop_send_button')),
     );
 
-    expect(find.text('42.11'), findsOneWidget);
+    expect(find.text('40.11'), findsOneWidget);
     expect(find.text('10 ZEC still migrating'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('home_desktop_send_button')),
@@ -1013,6 +1011,8 @@ void main() {
     await tester.pumpWidget(
       _appHarness(
         '/home',
+        ironwoodHomeBalancePresentationMode:
+            IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -1034,10 +1034,12 @@ void main() {
     tester,
   ) async {
     // Ironwood is empty; the account still holds Sapling funds the migration
-    // does not move.
+    // does not move, and Send can spend them.
     await tester.pumpWidget(
       _appHarness(
         '/home',
+        ironwoodHomeBalancePresentationMode:
+            IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -1059,6 +1061,36 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'home desktop shows only the Orchard to migrate while migration is required',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          ironwoodHomeMigrationCtaState:
+              const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            saplingBalance: BigInt.from(30_000_000),
+            orchardBalance: BigInt.from(150_000_000),
+            ironwoodBalance: BigInt.from(50_000_000),
+            spendableBalance: BigInt.from(230_000_000),
+            totalBalance: BigInt.from(230_000_000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Migration Required'), findsOneWidget);
+      expect(find.text('1.50'), findsOneWidget);
+      expect(find.text('2.30'), findsNothing);
+    },
+  );
 
   testWidgets('home desktop keeps transparent funds a pending spend holds', (
     tester,
@@ -1113,11 +1145,13 @@ void main() {
   });
 
   testWidgets(
-    'home desktop keeps Orchard left after a migration in the balance',
+    'home desktop completed Ironwood mode labels and shows only Ironwood',
     (tester) async {
       await tester.pumpWidget(
         _appHarness(
           '/home',
+          ironwoodHomeBalancePresentationMode:
+              IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
           syncState: SyncState(
             accountUuid: 'account-1',
             hasAccountScopedData: true,
@@ -1132,8 +1166,8 @@ void main() {
 
       expect(find.text('Shielded balance'), findsOneWidget);
       expect(find.text('Shielded balance (Ironwood)'), findsNothing);
-      expect(find.text('40.12'), findsOneWidget);
-      expect(find.text('40.11'), findsNothing);
+      expect(find.text('40.11'), findsOneWidget);
+      expect(find.text('40.12'), findsNothing);
     },
   );
 
@@ -2323,6 +2357,7 @@ Widget _appHarness(
   ThemeMode themeMode = ThemeMode.system,
   IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
       const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodHomeBalancePresentationMode? ironwoodHomeBalancePresentationMode,
   rust_sync.MigrationStatus? migrationCoordinatorStatus,
   ProviderListenable<IronwoodMigrationAnnouncementState>?
   ironwoodMigrationAnnouncementStateListenable,
@@ -2397,6 +2432,17 @@ Widget _appHarness(
       }),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(
         ironwoodHomeMigrationCtaState,
+      ),
+      // Pairs the balance with the migration state the way the app does.
+      ironwoodHomeBalancePresentationProvider.overrideWithValue(
+        ironwoodHomeBalancePresentationMode ??
+            switch (ironwoodHomeMigrationCtaState.mode) {
+              IronwoodHomeMigrationCtaMode.start =>
+                IronwoodHomeBalancePresentationMode.orchardOnly,
+              IronwoodHomeMigrationCtaMode.resume =>
+                IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
+              _ => IronwoodHomeBalancePresentationMode.allShielded,
+            },
       ),
       if (migrationCoordinatorStatus != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(

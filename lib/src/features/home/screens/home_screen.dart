@@ -314,8 +314,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     final isMigrationRequired =
         ironwoodHomeMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
+    final balancePresentation = ref.watch(
+      ironwoodHomeBalancePresentationProvider,
+    );
     // Shared with mobile Home and the sidebar, which show this same number.
-    final displayedShieldedBalance = homeDisplayedBalance(sync);
+    final displayedShieldedBalance = homeDisplayedBalance(
+      sync,
+      balancePresentation,
+    );
     final migratingBalance = sync.displayOrchardHoldingsBalance;
     final waitingForMigrationConfirmation =
         migratingBalance == BigInt.zero &&
@@ -405,6 +411,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 passwordRotationRecoveryFailed:
                     bootstrap.passwordRotationRecoveryFailed,
                 privacyModeEnabled: privacyModeEnabled,
+                balancePresentation: balancePresentation,
                 shieldedBalanceText: _formatZec(displayedShieldedBalance),
                 shieldedFiatBalanceText: shieldedFiatBalanceText,
                 priceChange24hPct: priceChange24hPct,
@@ -485,6 +492,7 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.hasActivitySyncData,
     required this.passwordRotationRecoveryFailed,
     required this.privacyModeEnabled,
+    required this.balancePresentation,
     required this.shieldedBalanceText,
     required this.shieldedFiatBalanceText,
     required this.priceChange24hPct,
@@ -509,6 +517,7 @@ class _HomePane extends ConsumerStatefulWidget {
   final bool hasActivitySyncData;
   final bool passwordRotationRecoveryFailed;
   final bool privacyModeEnabled;
+  final IronwoodHomeBalancePresentationMode balancePresentation;
   final String shieldedBalanceText;
   final String? shieldedFiatBalanceText;
   final double? priceChange24hPct;
@@ -652,7 +661,12 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       homeInitializationPresentationProvider,
     );
     final isImporting = initialPresentation.showImporting;
-    final hasBalance = widget.sync.displayTotalBalance > BigInt.zero;
+    final hasBalance =
+        widget.balancePresentation ==
+            IronwoodHomeBalancePresentationMode.allShielded
+        ? widget.sync.displayTotalBalance > BigInt.zero
+        : homeDisplayedBalance(widget.sync, widget.balancePresentation) >
+              BigInt.zero;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;

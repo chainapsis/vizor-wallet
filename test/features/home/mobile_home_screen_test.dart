@@ -260,6 +260,7 @@ Widget _app(
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodHomeMigrationCtaState? migrationPresentationCta,
+  IronwoodHomeBalancePresentationMode? balancePresentation,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
   AsyncValue<IronwoodMigrationCompletionState>? migrationCompletion,
@@ -443,6 +444,17 @@ Widget _app(
       ),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(
         migrationPresentationCta ?? migrationCta,
+      ),
+      // Pairs the balance with the migration state the way the app does.
+      ironwoodHomeBalancePresentationProvider.overrideWithValue(
+        balancePresentation ??
+            switch ((migrationPresentationCta ?? migrationCta).mode) {
+              IronwoodHomeMigrationCtaMode.start =>
+                IronwoodHomeBalancePresentationMode.orchardOnly,
+              IronwoodHomeMigrationCtaMode.resume =>
+                IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
+              _ => IronwoodHomeBalancePresentationMode.allShielded,
+            },
       ),
       ironwoodMigrationAnnouncementProvider.overrideWith(
         (ref) async => ironwoodAnnouncementStore.seen
@@ -2032,7 +2044,7 @@ void main() {
     expect(feedback, ['HapticFeedbackType.lightImpact']);
   });
 
-  testWidgets('shows total balance and remaining amount while migrating', (
+  testWidgets('shows the balance without migrating Orchard while migrating', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -2095,7 +2107,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(_mobileHomeBalanceText(tester), '4 ZEC');
+    expect(_mobileHomeBalanceText(tester), '2 ZEC');
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_home_ironwood_migration_loader')),
@@ -2132,11 +2144,34 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(_mobileHomeBalanceText(tester), '3.30 ZEC');
+    expect(_mobileHomeBalanceText(tester), '1.30 ZEC');
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
   });
 
-  testWidgets('counts every shielded pool while migration is required', (
+  testWidgets('keeps wallet actions while every fund is still migrating', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(200_000_000)),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(
+            kIronwoodMigrationWaitingConfirmationsPhase,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('2 ZEC still migrating'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_home_send')), findsOneWidget);
+    expect(find.text('Receive your first ZEC'), findsNothing);
+  });
+
+  testWidgets('shows only the Orchard to migrate while migration is required', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -2156,7 +2191,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Migration required'), findsOneWidget);
-    expect(_mobileHomeBalanceText(tester), '1.80 ZEC');
+    expect(_mobileHomeBalanceText(tester), '1 ZEC');
   });
 
   testWidgets('includes locked Orchard holdings in the migrating amount', (
@@ -2252,81 +2287,81 @@ void main() {
     expect(find.text('Migration in progress'), findsNothing);
   });
 
-  testWidgets(
-    'keeps the Orchard balance visible before any Ironwood funds arrive',
-    (tester) async {
-      final status = rust_sync.MigrationStatus(
-        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
-        activeRunId: 'run-1',
-        targetValuesZatoshi: frb.Uint64List.fromList([500000000, 200000000]),
-        preparedNoteCount: 2,
-        denominationConfirmationCount: 1,
-        denominationConfirmationTarget: 3,
-        denominationSplitCompletedCount: 0,
-        denominationSplitTotalCount: 1,
-        pendingTxCount: 0,
-        broadcastedTxCount: 0,
-        confirmedTxCount: 0,
-        totalCount: 2,
-        signedChildPcztCount: 0,
-        pendingSplitStageCount: 1,
-        canAbandon: false,
-        signingBatchLimit: 50,
-        scheduleMeanDelayBlocks: 144,
-        scheduleMaxDelayBlocks: 576,
-        scheduledBroadcasts: const [],
-        parts: [
-          rust_sync.MigrationPartStatus(
-            partIndex: 0,
-            valueZatoshi: BigInt.from(500000000),
-            state: rust_sync.MigrationPartState.completed,
-            confirmationCount: 3,
-            confirmationTarget: 3,
-          ),
-          rust_sync.MigrationPartStatus(
-            partIndex: 1,
-            valueZatoshi: BigInt.from(200000000),
-            state: rust_sync.MigrationPartState.migrating,
-            confirmationCount: 0,
-            confirmationTarget: 3,
-          ),
-        ],
-      );
-
-      await tester.pumpWidget(
-        _app(
-          _syncedState(orchardBalance: BigInt.from(700000000)),
-          migrationCta: IronwoodHomeMigrationCtaState.resume(
-            network: 'main',
-            accountUuid: 'account-1',
-            status: status,
-          ),
-          swapEnabled: true,
+  testWidgets('keeps actions in place before any Ironwood funds arrive', (
+    tester,
+  ) async {
+    final status = rust_sync.MigrationStatus(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: frb.Uint64List.fromList([500000000, 200000000]),
+      preparedNoteCount: 2,
+      denominationConfirmationCount: 1,
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 0,
+      denominationSplitTotalCount: 1,
+      pendingTxCount: 0,
+      broadcastedTxCount: 0,
+      confirmedTxCount: 0,
+      totalCount: 2,
+      signedChildPcztCount: 0,
+      pendingSplitStageCount: 1,
+      canAbandon: false,
+      signingBatchLimit: 50,
+      scheduleMeanDelayBlocks: 144,
+      scheduleMaxDelayBlocks: 576,
+      scheduledBroadcasts: const [],
+      parts: [
+        rust_sync.MigrationPartStatus(
+          partIndex: 0,
+          valueZatoshi: BigInt.from(500000000),
+          state: rust_sync.MigrationPartState.completed,
+          confirmationCount: 3,
+          confirmationTarget: 3,
         ),
-      );
-      await tester.pump();
+        rust_sync.MigrationPartStatus(
+          partIndex: 1,
+          valueZatoshi: BigInt.from(200000000),
+          state: rust_sync.MigrationPartState.migrating,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+      ],
+    );
 
-      expect(
-        tester
-            .widget<Text>(
-              find.byKey(const ValueKey('mobile_home_shielded_balance')),
-            )
-            .textSpan
-            ?.toPlainText(),
-        '7 ZEC',
-      );
-      expect(find.text('Receive your first ZEC'), findsNothing);
-      expect(find.text('Preparing migration'), findsOneWidget);
-      expect(find.text('2 ZEC still migrating'), findsNothing);
-      expect(
-        tester
-            .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
-            .onPressed,
-        isNull,
-      );
-      expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
-    },
-  );
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(700000000)),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+        swapEnabled: true,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_home_shielded_balance')),
+          )
+          .textSpan
+          ?.toPlainText(),
+      // Every fund is still migrating, so nothing has arrived yet.
+      '0 ZEC',
+    );
+    expect(find.text('Receive your first ZEC'), findsNothing);
+    expect(find.text('Preparing migration'), findsOneWidget);
+    expect(find.text('2 ZEC still migrating'), findsNothing);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
+          .onPressed,
+      isNull,
+    );
+    expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
+  });
 
   testWidgets('stops calling a run that is ready to migrate preparation', (
     tester,

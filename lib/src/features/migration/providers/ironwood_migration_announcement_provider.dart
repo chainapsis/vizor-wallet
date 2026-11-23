@@ -847,6 +847,82 @@ final _ironwoodHomeMigrationPresentationCacheProvider =
       (_) => _IronwoodHomeMigrationPresentationCache(),
     );
 
+/// Which funds Home's balance counts; `homeDisplayedBalance` turns this into
+/// the amount.
+enum IronwoodHomeBalancePresentationMode {
+  /// Every shielded pool.
+  allShielded,
+
+  /// The Orchard funds a required migration will move.
+  orchardOnly,
+
+  /// Every shielded pool except the Orchard funds a migration is moving.
+  ironwoodAndSapling,
+}
+
+final _ironwoodHomeBalancePresentationCacheProvider =
+    Provider<_IronwoodHomeBalancePresentationCache>(
+      (_) => _IronwoodHomeBalancePresentationCache(),
+    );
+
+/// Stable pool selection for the Home shielded-balance card.
+///
+/// While Home asks for a migration, it shows the Orchard funds to move. Once
+/// migration is running, waiting for Ironwood spendability, or complete, Home
+/// leaves out the Orchard funds still moving. Preserve that selection through
+/// transient sync/status gaps so the amount does not flicker back to the
+/// combined shielded balance.
+final ironwoodHomeBalancePresentationProvider =
+    Provider<IronwoodHomeBalancePresentationMode>((ref) {
+      // Follows the card's "Migration required" heading, so the amount and
+      // the heading change together.
+      if (ref.watch(ironwoodHomeMigrationPresentationProvider).mode ==
+          IronwoodHomeMigrationCtaMode.start) {
+        return IronwoodHomeBalancePresentationMode.orchardOnly;
+      }
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      final postMigrationState = ref
+          .watch(ironwoodPostMigrationStateProvider)
+          .value;
+      final cache = ref.watch(_ironwoodHomeBalancePresentationCacheProvider);
+      final scopedPostMigrationMode =
+          postMigrationState != null &&
+              _postMigrationStateMatchesInputs(postMigrationState, inputs)
+          ? postMigrationState.mode
+          : null;
+
+      final confirmedMode = switch (scopedPostMigrationMode) {
+        IronwoodPostMigrationMode.inProgress ||
+        IronwoodPostMigrationMode.pendingIronwoodSpendability ||
+        IronwoodPostMigrationMode.complete =>
+          IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
+        IronwoodPostMigrationMode.inactive ||
+        IronwoodPostMigrationMode.notNeeded ||
+        IronwoodPostMigrationMode.required =>
+          IronwoodHomeBalancePresentationMode.allShielded,
+        IronwoodPostMigrationMode.unavailable || null => null,
+      };
+
+      if (confirmedMode != null) {
+        cache
+          ..network = inputs.network
+          ..accountUuid = inputs.accountUuid
+          ..mode = confirmedMode;
+        return confirmedMode;
+      }
+
+      if (cache.matches(inputs) &&
+          _shouldPreserveHomeMigrationPresentation(
+            inputs,
+            postMigrationState,
+          )) {
+        return cache.mode!;
+      }
+
+      cache.clear();
+      return IronwoodHomeBalancePresentationMode.allShielded;
+    });
+
 /// Stable Home/sidebar presentation state.
 ///
 /// The fresh CTA intentionally hides new migration requirements while sync is
@@ -966,6 +1042,24 @@ class _IronwoodHomeMigrationPresentationCache {
   IronwoodHomeMigrationCtaState? lastVisible;
 }
 
+class _IronwoodHomeBalancePresentationCache {
+  String? network;
+  String? accountUuid;
+  IronwoodHomeBalancePresentationMode? mode;
+
+  bool matches(IronwoodMigrationInputs inputs) =>
+      mode != null &&
+      network == inputs.network &&
+      accountUuid != null &&
+      accountUuid == inputs.accountUuid;
+
+  void clear() {
+    network = null;
+    accountUuid = null;
+    mode = null;
+  }
+}
+
 IronwoodHomeMigrationCtaState _homeMigrationCtaForPostMigrationState(
   IronwoodPostMigrationState postMigrationState,
 ) {
@@ -1011,6 +1105,18 @@ bool _ctaMatchesInputs(
   IronwoodMigrationInputs inputs,
 ) {
   return cta.network == inputs.network && cta.accountUuid == inputs.accountUuid;
+}
+
+bool _postMigrationStateMatchesInputs(
+  IronwoodPostMigrationState state,
+  IronwoodMigrationInputs inputs,
+) {
+  if (state.mode == IronwoodPostMigrationMode.inactive) {
+    return !inputs.ironwoodActiveAtTip;
+  }
+  return state.network == inputs.network &&
+      state.accountUuid != null &&
+      state.accountUuid == inputs.accountUuid;
 }
 
 bool _shouldPreserveHomeMigrationPresentation(
