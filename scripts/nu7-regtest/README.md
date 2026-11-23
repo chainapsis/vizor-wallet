@@ -47,6 +47,16 @@ is open. The zcashd background-restart runner checks that iOS can broadcast
 persisted proofs after relaunch. The 20-note, immediate migration and reorg
 scenarios can be run individually on iOS.
 
-The only standalone macOS migration E2E is
+The macOS fee regression runs with
 `scripts/e2e/flutter-macos-ironwood-migration-nu7.sh`. It migrates the same
 0.0105 ZEC fixture on Zebra through the desktop Home screen.
+
+To watch a many-note migration on macOS, run
+`migration_sim_test/run_full_migration.sh` from the repository root. This
+manual scenario funds 20 Orchard notes with 10.0002 regtest ZEC in total on
+the same Zebra stack. The desktop window stays visible through preparation,
+scheduled transfers and confirmation, then shows the migration in Activity
+for 15 seconds. The runner prints the directory under
+`migration_sim_test/artifacts/` containing the run log. The log records the
+regtest wallet DB path, transfer progress and final pool balances. Both
+full-suite runners omit this scenario.

@@ -86,6 +86,8 @@ echo "running Flutter Ironwood migration integration test under NU7: $TEST_FILE"
 flutter_args=("$TEST_FILE" -d "$FLUTTER_DEVICE")
 if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
   flutter_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+elif [[ "$FLUTTER_DEVICE" == "macos" ]]; then
+  flutter_args+=(--dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true)
 fi
 set +e
 fvm flutter test "${flutter_args[@]}" \
