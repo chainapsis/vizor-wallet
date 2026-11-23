@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Pass local simulator requests to the fixed-key Keystone firmware harness."""
+import argparse
+import base64
+import gzip
+import json
+import subprocess
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--signer', required=True)
+parser.add_argument('--fixture-dir', required=True, type=Path)
+parser.add_argument('--fixture-tool', required=True)
+parser.add_argument('--port-file', required=True, type=Path)
+args = parser.parse_args()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/voting-fixture':
+            fixture = json.loads((args.fixture_dir / 'voting.json').read_bytes())
+            sidecar = (args.fixture_dir / 'wallet.db.voting').read_bytes()
+            fixture['db'] = base64.b64encode(gzip.compress(sidecar)).decode()
+            return self.respond(200, json.dumps(fixture).encode())
+        if self.path != '/account':
+            return self.send_error(404)
+        self.run_signer('account', '')
+
+    def do_POST(self):
+        if self.path not in ('/sign', '/verify-votes'):
+            return self.send_error(404)
+        if self.headers.get_content_type() != 'application/json':
+            return self.send_error(415)
+        try:
+            size = int(self.headers.get('Content-Length', '0'))
+            if not 0 < size <= 1_048_576:
+                return self.send_error(413)
+            request = json.loads(self.rfile.read(size))
+            if self.path == '/verify-votes':
+                command = [args.fixture_tool, 'verify-votes', str(args.fixture_dir / 'voting.json')]
+                return self.run_tool(command, json.dumps(request), frames=False)
+            mode = request['mode']
+            prefix = {'single': 'ur:zcash-pczt/', 'batch': 'ur:zcash-sign-batch/'}[mode]
+            parts = request['parts']
+            if not isinstance(parts, list) or not parts:
+                raise ValueError('Expected request frames')
+            if not all(isinstance(p, str) and p.isascii() and p.isprintable()
+                       and p.lower().startswith(prefix) for p in parts):
+                raise ValueError('Invalid PCZT frame')
+        except (KeyError, TypeError, ValueError) as error:
+            return self.send_error(400, str(error))
+        self.run_signer(mode, '\n'.join(parts))
+
+    def run_signer(self, mode, frames):
+        self.run_tool([args.signer, mode], frames, frames=True)
+
+    def run_tool(self, command, input_text, *, frames):
+        try:
+            run = subprocess.run(command, input=input_text, text=True,
+                                 capture_output=True, check=True, timeout=60)
+            result = {'parts': run.stdout.splitlines()} if frames else {'verified': True}
+            body = json.dumps(result).encode()
+            status = 200
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            status = 422
+            body = json.dumps({'error': str(error.stderr or error)}).encode()
+        self.respond(status, body)
+
+    def respond(self, status, body):
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+with HTTPServer(('127.0.0.1', 0), Handler) as server:
+    args.port_file.write_text(str(server.server_port))
+    server.serve_forever()

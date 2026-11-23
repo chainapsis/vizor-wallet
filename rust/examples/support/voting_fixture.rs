@@ -1,5 +1,5 @@
 //! Synthetic eligible notes, but real SDK delegation setup and signing requests.
-//! Do not replace these with a hand-built self-transfer: Ledger must review the
+//! Do not replace these with a hand-built self-transfer: The device must review the
 //! SDK's zero-value output to a separate voting hotkey and its authorization memo.
 
 use orchard::{
@@ -19,21 +19,29 @@ use zcash_voting::{
     Network, NoopProgressReporter, NoteInfo, VotingHotkey, VotingRoundParams, BUNDLE_NOTE_SLOTS,
 };
 
+pub(super) fn round_id() -> String {
+    "01".repeat(32)
+}
+
 pub(super) fn signing_requests(
     ufvk: &str,
     seed_fingerprint: &[u8],
+    db: &VotingDb,
+    ledger_review: bool,
 ) -> Result<Vec<KeystoneSigningRequest>, String> {
-    build_requests(ufvk, seed_fingerprint)
+    build_requests(ufvk, seed_fingerprint, db, ledger_review)
         .map_err(|error| format!("Build SDK voting requests: {error}"))
 }
 
 fn build_requests(
     ufvk: &str,
     seed_fingerprint: &[u8],
+    db: &VotingDb,
+    ledger_review: bool,
 ) -> Result<Vec<KeystoneSigningRequest>, Box<dyn std::error::Error>> {
     let network = Network::Mainnet;
     let ufvk = UnifiedFullViewingKey::decode(&network, ufvk)?;
-    let fvk = ufvk.orchard().ok_or("Speculos UFVK has no Orchard FVK")?;
+    let fvk = ufvk.orchard().ok_or("Fixture UFVK has no Orchard FVK")?;
     let mut notes = Vec::new();
     for position in 0..2 * BUNDLE_NOTE_SLOTS {
         let note = synthetic_note(fvk, position as u64)?;
@@ -46,30 +54,36 @@ fn build_requests(
         )?);
     }
     let params = VotingRoundParams {
-        vote_round_id: "01".repeat(32),
+        vote_round_id: round_id(),
         // The SDK votes only on NU6.3 snapshots, so this sits before NU7.
         snapshot_height: 3_500_000,
         ea_pk: vec![0xEA; 32],
         nc_root: vec![0xAA; 32],
         nullifier_imt_root: vec![0xBB; 32],
     };
-    let db = VotingDb::open(":memory:")?;
-    db.set_wallet_id("speculos-ledger-voting");
     db.init_round(network, &params, None)?;
     let layout = db.ensure_bundles(&params.vote_round_id, &notes)?;
     if layout.bundle_count != 2 {
         return Err("SDK fixture must produce two delegation bundles".into());
     }
     let hotkey = VotingHotkey::from_stored_secret(&[0x43; 64], network)?;
-    let round_name = "Ledger voting E2E";
+    let round_name = if ledger_review {
+        "Ledger voting E2E"
+    } else {
+        "Keystone voting E2E"
+    };
     let keys = DelegationKeys::with_voting_hotkey(
         fvk.to_bytes().to_vec(),
         &hotkey,
         seed_fingerprint.try_into()?,
         0,
         round_name.into(),
-    )?
-    .with_ledger_output_review();
+    )?;
+    let keys = if ledger_review {
+        keys.with_ledger_output_review()
+    } else {
+        keys
+    };
     (0..layout.bundle_count)
         .map(|bundle_index| {
             let prepared = PreparedDelegationBundle {
@@ -81,7 +95,7 @@ fn build_requests(
                     &notes,
                     &layout,
                     bundle_index,
-                    &db,
+                    db,
                     &params.vote_round_id,
                 )?,
                 delegation_keys: keys.clone(),
@@ -96,7 +110,7 @@ fn build_requests(
             // This performs the same SDK setup, persistence, memo extraction and
             // redaction as the production hardware-signing boundary. Proof/PIR and
             // chain submission are deliberately outside this device signing test.
-            let request = prepared.keystone_request(&db, &NoopProgressReporter)?;
+            let request = prepared.keystone_request(db, &NoopProgressReporter)?;
             if request.display_memo.is_empty()
                 || request.bundle_count != 2
                 || request.bundle_index != bundle_index

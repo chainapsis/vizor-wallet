@@ -6,14 +6,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
-import 'package:grpc/grpc.dart' as grpc;
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -54,8 +52,6 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimat
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_ledger_sign_screen.dart';
-import 'package:zcash_wallet/src/generated/service.pb.dart' as service;
-import 'package:zcash_wallet/src/generated/service.pbgrpc.dart' as service_grpc;
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
@@ -68,6 +64,7 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../test/support/wallet_path_read_blocker.dart';
+import 'support/accepting_lightwalletd.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -207,7 +204,7 @@ Future<void> _migrateOrchardImmediately(
   FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: 'wallet.db'});
   addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
   final status = await rust_sync.getSyncStatus(dbPath: dbPath, network: 'main');
-  final lightwalletd = _AcceptingLightwalletd(
+  final lightwalletd = AcceptingLightwalletd(
     chainHeight: status.chainTipHeight.toInt(),
   );
   await lightwalletd.start();
@@ -463,7 +460,7 @@ Future<void> _enterMobilePasscode(WidgetTester tester, String passcode) async {
 Future<void> _runMobileShieldScenario(WidgetTester tester) async {
   final fixture = _Fixture.load();
   final dbPath = await _copyFixtureDb(fixture);
-  final lightwalletd = _AcceptingLightwalletd();
+  final lightwalletd = AcceptingLightwalletd();
   await lightwalletd.start();
   addTearDown(lightwalletd.stop);
   final operationService = _TrackingLedgerSignedOperationService(
@@ -559,7 +556,7 @@ Future<void> _runMobileShieldScenario(WidgetTester tester) async {
 Future<void> _runMobileSendScenario(WidgetTester tester) async {
   final fixture = _Fixture.load();
   final dbPath = await _copyFixtureDb(fixture);
-  final lightwalletd = _AcceptingLightwalletd();
+  final lightwalletd = AcceptingLightwalletd();
   await lightwalletd.start();
   addTearDown(lightwalletd.stop);
   final operationService = _TrackingLedgerSignedOperationService(
@@ -832,7 +829,7 @@ Future<void> _runMobileTexSendScenario(
 }) async {
   final fixture = _Fixture.load();
   final dbPath = await _copyFixtureDb(fixture);
-  final lightwalletd = _AcceptingLightwalletd();
+  final lightwalletd = AcceptingLightwalletd();
   await lightwalletd.start();
   addTearDown(lightwalletd.stop);
   final operationService = _TrackingLedgerSignedOperationService(
@@ -1071,7 +1068,7 @@ Future<void> _runMobileSwapScenario(
 ) async {
   final fixture = _Fixture.load();
   final dbPath = await _copyFixtureDb(fixture);
-  final lightwalletd = _AcceptingLightwalletd();
+  final lightwalletd = AcceptingLightwalletd();
   await lightwalletd.start();
   addTearDown(lightwalletd.stop);
   final intent = _mobileSwapIntent(fixture, scenario);
@@ -1988,52 +1985,6 @@ class _TrackingLedgerSignedOperationService
     lastOperationId = operationId;
     await delegate.acknowledge(operationId);
   }
-}
-
-class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
-  _AcceptingLightwalletd({this.chainHeight = 1});
-
-  final int chainHeight;
-  grpc.Server? _server;
-  int sendTransactionCount = 0;
-  List<int> lastRawTransaction = const [];
-
-  String get url {
-    final port = _server?.port;
-    if (port == null) throw StateError('Test lightwalletd is not running.');
-    return 'http://127.0.0.1:$port';
-  }
-
-  Future<void> start() async {
-    _server = grpc.Server.create(services: [this]);
-    await _server!.serve(address: InternetAddress.loopbackIPv4, port: 0);
-  }
-
-  Future<void> stop() async {
-    await _server?.shutdown();
-    _server = null;
-  }
-
-  @override
-  Future<service.BlockID> getLatestBlock(
-    grpc.ServiceCall call,
-    service.ChainSpec request,
-  ) async {
-    return service.BlockID(height: Int64(chainHeight));
-  }
-
-  @override
-  Future<service.SendResponse> sendTransaction(
-    grpc.ServiceCall call,
-    service.RawTransaction request,
-  ) async {
-    sendTransactionCount++;
-    lastRawTransaction = List<int>.unmodifiable(request.data);
-    return service.SendResponse(errorCode: 0, errorMessage: '');
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
