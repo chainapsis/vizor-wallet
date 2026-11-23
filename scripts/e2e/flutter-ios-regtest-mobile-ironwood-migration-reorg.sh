@@ -19,4 +19,4 @@ VIZOR_FORM_FACTOR=mobile \
 E2E_DRIVER_PORT="${E2E_DRIVER_PORT:-39088}" \
 E2E_TEST_FILE=integration_test/regtest_mobile_ironwood_migration_reorg_test.dart \
 E2E_ORCHARD_FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-0.011}" \
-  exec "$ROOT_DIR/scripts/e2e/flutter-macos-ironwood-migration.sh"
+  exec "$ROOT_DIR/scripts/ironwood-regtest/run-flutter-test.sh"

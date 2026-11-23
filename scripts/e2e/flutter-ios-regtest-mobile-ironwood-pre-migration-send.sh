@@ -24,4 +24,4 @@ export E2E_SEND_RECIPIENT_ADDRESS="$recipient_address"
 FLUTTER_DEVICE="$UDID" \
 VIZOR_FORM_FACTOR=mobile \
 E2E_ORCHARD_FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-0.01095}" \
-  exec scripts/e2e/flutter-macos-ironwood-migration.sh
+  exec scripts/ironwood-regtest/run-flutter-test.sh

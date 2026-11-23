@@ -9,7 +9,7 @@ FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
 VIZOR_FORM_FACTOR="${VIZOR_FORM_FACTOR:-desktop}"
 DRIVER_PORT="${E2E_DRIVER_PORT:-39078}"
 DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
-TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_ironwood_migration_test.dart}"
+TEST_FILE="${E2E_TEST_FILE:?set E2E_TEST_FILE to the Flutter integration test}"
 TEST_NAME="$(basename "$TEST_FILE" .dart)"
 DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/${TEST_NAME}-driver.log"
 FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-0.011}"
@@ -164,7 +164,7 @@ for _ in range(100):
 raise SystemExit("Timed out waiting for Ironwood E2E driver")
 PY
 
-echo "running Flutter Ironwood migration integration test: $TEST_FILE"
+echo "running Flutter Ironwood regtest: $TEST_FILE"
 flutter_args=(
   "$TEST_FILE"
   -d "$FLUTTER_DEVICE"
@@ -194,31 +194,6 @@ fi
 if [[ -n "${E2E_EXPECTED_MIGRATION_BATCH_COUNT:-}" ]]; then
   scenario_define_args+=(
     --dart-define=ZCASH_E2E_EXPECTED_MIGRATION_BATCH_COUNT="$E2E_EXPECTED_MIGRATION_BATCH_COUNT"
-  )
-fi
-if [[ -n "${E2E_MIGRATION_SIM_BLOCK_INTERVAL_MS:-}" ]]; then
-  scenario_define_args+=(
-    --dart-define=ZCASH_MIGRATION_SIM_BLOCK_INTERVAL_MS="$E2E_MIGRATION_SIM_BLOCK_INTERVAL_MS"
-  )
-fi
-if [[ -n "${E2E_MIGRATION_SIM_MAX_BLOCKS:-}" ]]; then
-  scenario_define_args+=(
-    --dart-define=ZCASH_MIGRATION_SIM_MAX_BLOCKS="$E2E_MIGRATION_SIM_MAX_BLOCKS"
-  )
-fi
-if [[ -n "${E2E_MIGRATION_SIM_HOME_HOLD_MS:-}" ]]; then
-  scenario_define_args+=(
-    --dart-define=ZCASH_MIGRATION_SIM_HOME_HOLD_MS="$E2E_MIGRATION_SIM_HOME_HOLD_MS"
-  )
-fi
-if [[ -n "${E2E_MIGRATION_SIM_REVIEW_HOLD_MS:-}" ]]; then
-  scenario_define_args+=(
-    --dart-define=ZCASH_MIGRATION_SIM_REVIEW_HOLD_MS="$E2E_MIGRATION_SIM_REVIEW_HOLD_MS"
-  )
-fi
-if [[ -n "${E2E_IRONWOOD_MIGRATION_PRIVACY_LOCK:-}" ]]; then
-  scenario_define_args+=(
-    --dart-define=VIZOR_IRONWOOD_MIGRATION_PRIVACY_LOCK="$E2E_IRONWOOD_MIGRATION_PRIVACY_LOCK"
   )
 fi
 flutter_args+=(

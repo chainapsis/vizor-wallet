@@ -16,7 +16,7 @@ scripts/nu7-regtest/down.sh
 
 - Heights default to NU6.3 at 300 and NU7 at 600. The first `up.sh` pins them
   in `.nu7-regtest/`; reset before changing them. The stack accepts any NU7
-  above NU6.3, but the Rust scenarios and the macOS E2E need a wider gap and
+  above NU6.3, but the Rust scenarios and the iOS migration-stop E2E need a wider gap and
   refuse heights they cannot use.
 - Funding pays block coinbase to the address with `generatetoaddress`: Orchard
   before NU6.3, Ironwood from it. Coinbase needs 100 confirmations.
@@ -35,9 +35,8 @@ scripts/nu7-regtest/down.sh
 - Zebra regtest reports a meaningless `estimatedheight`, so the app's stalled
   endpoint checks treat a custom endpoint on this chain as stalled.
 
-Run the Rust scenario with `scripts/nu7-regtest/run-rust-test.sh`, the
-macOS app scenario with `scripts/e2e/flutter-macos-nu7-migration-stop.sh`, and
-its iOS simulator counterpart with
+Run the Rust scenario with `scripts/nu7-regtest/run-rust-test.sh`. The iOS
+migration-stop scenario runs with
 `scripts/e2e/flutter-ios-regtest-mobile-nu7-migration-stop.sh` (one booted
 simulator, or `SIMULATOR_UDID`).
 
@@ -46,5 +45,8 @@ runner (`scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-nu7.sh`)
 funds 0.0105 ZEC and mines through NU6.3 at 500 and NU7 at 520 while the app
 is open. The zcashd background-restart runner checks that iOS can broadcast
 persisted proofs after relaunch. The 20-note, immediate migration and reorg
-scenarios can be run individually. The macOS Zebra runner is
-`scripts/e2e/flutter-macos-ironwood-migration-nu7.sh`.
+scenarios can be run individually on iOS.
+
+The only standalone macOS migration E2E is
+`scripts/e2e/flutter-macos-ironwood-migration-nu7.sh`. It migrates the same
+0.0105 ZEC fixture on Zebra through the desktop Home screen.

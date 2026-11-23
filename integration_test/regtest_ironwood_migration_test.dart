@@ -15,14 +15,11 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_regtest_flow.dart';
 
-const _driverUrl = String.fromEnvironment(
-  'ZCASH_E2E_DRIVER_URL',
-  defaultValue: 'http://127.0.0.1:39078',
-);
+const _driverUrl = String.fromEnvironment('ZCASH_E2E_DRIVER_URL');
 const _network = 'regtest';
 const _fundedAmountZatoshi = int.fromEnvironment(
   'ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI',
-  defaultValue: 1100000,
+  defaultValue: 1050000,
 );
 final _fundedAmount = BigInt.from(_fundedAmountZatoshi);
 final _fundedAmountText = ZecAmount.fromZatoshi(
@@ -70,17 +67,10 @@ void main() {
 
       e2eLog('activating Ironwood while the Flutter app is running');
       await ironwoodDriverPost(_driverUrl, '/activate');
-      // The zcashd chain activates NU6.3 here; the Zebra chain NU6.3 and NU7.
       final activeChain = await ironwoodDriverGet(_driverUrl, '/status');
       expect(activeChain['ironwoodActive'], isTrue);
-      const expectNu7 = bool.hasEnvironment(
-        'ZCASH_REGTEST_NU7_ACTIVATION_HEIGHT',
-      );
-      expect(activeChain['nu7Active'] == true, expectNu7);
-      expect(
-        activeChain['consensusBranchId'],
-        expectNu7 ? '77190ad9' : '37a5165b',
-      );
+      expect(activeChain['nu7Active'], isTrue);
+      expect(activeChain['consensusBranchId'], '77190ad9');
       final activatedHeight = (activeChain['zcashdHeight'] as num).toInt();
 
       final providerContainer = ProviderScope.containerOf(
@@ -126,27 +116,8 @@ void main() {
       final modal = find.byKey(
         const ValueKey('ironwood_migration_announcement_modal'),
       );
-      if (expectNu7) {
-        expect(announcement.visible, isFalse);
-        expect(modal, findsNothing);
-      } else {
-        await pumpUntil(
-          tester,
-          () => tester.any(modal),
-          description: 'Ironwood announcement after activation',
-          timeout: const Duration(minutes: 5),
-        );
-        final overlay = find.byKey(
-          const ValueKey('ironwood_migration_announcement_overlay'),
-        );
-        await tester.tapAt(tester.getTopLeft(overlay) + const Offset(16, 16));
-        await tester.pump(const Duration(milliseconds: 250));
-        await pumpUntil(
-          tester,
-          () => !tester.any(modal),
-          description: 'dismissed announcement to disappear',
-        );
-      }
+      expect(announcement.visible, isFalse);
+      expect(modal, findsNothing);
       await openPrivateMigrationReview(tester);
       final approvedPlan = await providerContainer.read(
         ironwoodMigrationPrivatePlanProvider.future,
@@ -161,7 +132,7 @@ void main() {
         ),
         description: 'migration review start button',
       );
-      final expectedFee = BigInt.from(expectNu7 ? 19000 : 95000);
+      final expectedFee = BigInt.from(19000);
       expect(approvedPlan!.estimatedTotalFeeZatoshi, expectedFee);
       final displayedSchedule = approvedPlan.scheduledTransfers;
       await tapAppButton(
