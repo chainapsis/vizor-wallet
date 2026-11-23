@@ -3,9 +3,19 @@ set -euo pipefail
 
 : "${FLUTTER_DEVICE:?set FLUTTER_DEVICE to macos or a booted iOS simulator UDID}"
 cd "$(dirname "$0")/../.."
+gui=false
+if [[ $# -gt 0 ]]; then
+  if [[ $# != 1 || "$1" != --gui || "$FLUTTER_DEVICE" != macos ]]; then
+    echo "Use --gui with FLUTTER_DEVICE=macos to scan the voting QR on screen" >&2
+    exit 2
+  fi
+  gui=true
+fi
 if [[ "$FLUTTER_DEVICE" == macos ]]; then
   target=desktop
-  flags=(--tags desktop --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}")
+  hidden="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
+  if "$gui"; then hidden=false; fi
+  flags=(--tags desktop --dart-define=VIZOR_E2E_HIDDEN_WINDOW="$hidden" --dart-define=KEYSTONE_GUI_SCAN="$gui")
 else
   target=mobile
   xcrun simctl list devices booted -j | jq -e --arg id "$FLUTTER_DEVICE" \
@@ -25,6 +35,11 @@ cleanup() {
 }
 trap cleanup EXIT
 scripts/e2e/keystone-signer/build.sh "$work/voting-signer"
+server_args=(--fixture-dir "$work/voting" --port-file "$work/port")
+if "$gui"; then
+  scripts/e2e/keystone-signer/gui/build.sh "$work/gui"
+  server_args+=(--gui-dir "$work/gui")
+fi
 scripts/e2e/keystone-signer/build.sh "$work/send-signer" --regtest
 fixture_tool="$(cargo build --locked --quiet --manifest-path rust/Cargo.toml --example keystone_signer_fixture --message-format=json-render-diagnostics |
   jq -r 'select(.target.name == "keystone_signer_fixture" and .executable != null) | .executable')"
@@ -50,7 +65,7 @@ lwd="http://127.0.0.1:$NU7_REGTEST_LIGHTWALLETD_PORT"
 mkdir -p "$work/voting"
 "$work/voting-signer" account | "$fixture_tool" prepare-voting "$work/voting/wallet.db"
 python3 scripts/e2e/keystone-signer/server.py --send-signer "$work/send-signer" --voting-signer "$work/voting-signer" --fixture-tool "$fixture_tool" \
-  --fixture-dir "$work/voting" --port-file "$work/port" &
+  "${server_args[@]}" &
 pid=$!
 for ((i=0; i<100; i++)); do
   [[ -s "$work/port" ]] && break

@@ -1,0 +1,60 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -412,7 +412,10 @@
+         ${UTILS}
+         ${CRYPTO_SLIP39}
+     )
+-    add_dependencies(${PROJECT_NAME} rust_c)
++    # The runner builds the pinned simulator Rust archive with the host signer.
++    enable_language(OBJC)
++    target_sources(${PROJECT_NAME} PRIVATE "${VIZOR_GUI_DRIVER}")
++    target_link_libraries(${PROJECT_NAME} PRIVATE "-framework AppKit" "-framework Vision")
+     target_link_libraries(${PROJECT_NAME} PRIVATE SDL2 ${CMAKE_SOURCE_DIR}/ui_simulator/lib/rust-builds/librust_c.a)
+     if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
+       target_link_libraries(${PROJECT_NAME} PRIVATE m dl pthread )
+@@ -430,6 +433,4 @@
+-        set(CODESIGN_IDENTITY "keystone simulator")
+-        set(ENTITLEMENTS_FILE "${CMAKE_SOURCE_DIR}/entitlements.plist")
+-        set(CODESIGN_COMMAND codesign --force --options runtime --entitlements ${ENTITLEMENTS_FILE} --sign "${CODESIGN_IDENTITY}")
++        set(CODESIGN_COMMAND codesign --force --sign -)
+         add_custom_command(TARGET ${PROJECT_NAME}
+             POST_BUILD
+             COMMAND ${CODESIGN_COMMAND} ${PROJECT_NAME}
+--- a/ui_simulator/main.c
++++ b/ui_simulator/main.c
+@@ -81,6 +81,9 @@
+     return count;
+ }
+
++extern int ProvisionVoteFixture(void);
++extern void DriveVoteScan(void);
++
+ int main(int argc, char **argv)
+ {
+     (void)argc; /*Unused*/
+@@ -98,6 +101,7 @@
+     GuiStyleInit();
+     LanguageInit();
+
++    if (argc == 2 && strcmp(argv[1], "--provision") == 0) return ProvisionVoteFixture();
+     GuiFrameOpenView(&g_initView);
+     //  lv_example_calendar_1();
+     //  lv_example_btnmatrix_2();
+@@ -121,6 +125,7 @@
+         /* Periodically call the lv_task handler.
+          * It could be done in a timer interrupt or an OS task too.*/
+         lv_timer_handler();
++        DriveVoteScan();
+         if (g_reboot) {
+             SDL_Quit();
+             execvp(argv[0], argv);
+--- a/ui_simulator/simulator_storage.c
++++ b/ui_simulator/simulator_storage.c
+@@ -141,5 +141,7 @@
+         lv_fs_close(&fd);
+         return -1;
+     }
++    // Device settings persist a trailing NUL outside the flash size header.
++    if (addr == SPI_FLASH_ADDR_NORMAL_PARAM && readBytes > 0 && tmpBuff[readBytes - 1] == 0) readBytes--;
+     *(uint32_t *)buffer = readBytes;
+     lv_fs_close(&fd);

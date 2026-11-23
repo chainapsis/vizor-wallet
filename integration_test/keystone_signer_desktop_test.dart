@@ -2,12 +2,14 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
@@ -113,7 +115,29 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
 }
 
 Future<void> _runVoting(WidgetTester tester) async {
-  await _prepareViewport(tester);
+  const gui = bool.fromEnvironment('KEYSTONE_GUI_SCAN');
+  if (gui) {
+    final binding = IntegrationTestWidgetsFlutterBinding.instance;
+    final previous = binding.framePolicy;
+    binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+    addTearDown(() => binding.framePolicy = previous);
+    final display = tester.view.display;
+    final size = display.size / display.devicePixelRatio;
+    // Keystone occupies the left 480 logical pixels of the primary display.
+    await windowManager.setBounds(
+      Rect.fromLTWH(
+        496,
+        40,
+        math.min(1080, size.width - 512),
+        math.min(940, size.height - 90),
+      ),
+    );
+    await windowManager.show();
+    await windowManager.setAlwaysOnTop(true);
+    addTearDown(() => windowManager.setAlwaysOnTop(false));
+  } else {
+    await _prepareViewport(tester);
+  }
   final fixture = await KeystoneVoteFixture.create();
   final scanned = Completer<List<int>>();
   final router = GoRouter(
@@ -164,6 +188,10 @@ Future<void> _runVoting(WidgetTester tester) async {
   await tapWhenReady(tester, find.byTooltip('Next bundle memo'));
   await tester.pump();
   expect(find.text('Bundle 2 of 2 memo'), findsOneWidget);
+  if (gui) {
+    await Scrollable.ensureVisible(tester.element(qr), alignment: 0.5);
+    await tester.pump();
+  }
   final signed = await signWithFirmware(
     tester.widget<KeystonePcztQrStage>(qr).urParts,
     batch: true,
