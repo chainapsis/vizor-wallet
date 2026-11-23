@@ -1,0 +1,34 @@
+# Signs Orchard funding before NU6.3 for the regtest migration scenarios. The
+# wallet's SDK builds Orchard only from NU6.3, so this tool stays on 2.0.
+[package]
+name = "regtest-orchard-funder"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "regtest_orchard_funder"
+path = "src/main.rs"
+
+[workspace]
+
+[dependencies]
+hex = "0.4"
+secp256k1 = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+voting-crypto-deps = { version = "=0.2.4" }
+bls12_381 = { package = "zakura-bls12-381", version = "=2.0.0" }
+jubjub = { package = "zakura-jubjub", version = "=2.0.0" }
+orchard = { package = "zakura-orchard", version = "=2.0.0" }
+sapling-crypto = { package = "zakura-sapling-crypto", version = "=2.0.0", default-features = false, features = ["circuit"] }
+transparent = { package = "zakura-transparent", version = "=2.0.0", features = ["transparent-inputs"] }
+zcash_keys = { package = "zakura-keys", version = "=2.0.0", features = ["orchard", "sapling"] }
+zcash_primitives = { package = "zakura-primitives", version = "=2.0.0", features = ["circuits", "transparent-inputs"] }
+zcash_protocol = { package = "zakura-protocol", version = "=2.0.0" }
+
+[profile.dev]
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 3

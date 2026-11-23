@@ -51,13 +51,15 @@ class DriverHandler(BaseHTTPRequestHandler):
                 }
                 height = info["blocks"]
                 nu7 = upgrades["NU7"]
-                # zcashdHeight keeps the key the shared desktop helpers read.
+                # zcashdHeight and ironwoodActive keep the keys the shared
+                # helpers and the Ironwood driver use.
                 self.respond(
                     200,
                     {
                         "zcashdHeight": height,
                         "nu63ActivationHeight": upgrades["NU6.3"],
                         "nu7ActivationHeight": nu7,
+                        "ironwoodActive": height >= upgrades["NU6.3"],
                         "nu7Active": height >= nu7,
                         "consensusBranchId": info["consensus"]["chaintip"],
                     },
@@ -85,6 +87,21 @@ class DriverHandler(BaseHTTPRequestHandler):
                         timeout=240,
                     )
                 self.respond(200, {"height": int(height)})
+                return
+            if self.path == "/activate":
+                # Mines through NU6.3 and NU7, so the next migration pays the NU7 fee.
+                with self.chain_operation_lock:
+                    info = self.rpc("getblockchaininfo")
+                    nu7 = next(upgrade["activationheight"]
+                               for upgrade in info["upgrades"].values()
+                               if upgrade["name"] == "NU7")
+                    if info["blocks"] < nu7:
+                        run_command(
+                            self.repo_root,
+                            ["scripts/nu7-regtest/mine.sh", str(nu7 - info["blocks"])],
+                            timeout=600,
+                        )
+                self.respond(200, {"ok": True})
                 return
             self.respond(404, {"error": "not found"})
         except Exception as exc:

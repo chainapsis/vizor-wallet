@@ -10,7 +10,7 @@ services:
       - "127.0.0.1:${NU7_REGTEST_RPC_PORT:-48232}:18232"
       - "127.0.0.1:${NU7_REGTEST_LIGHTWALLETD_PORT:-49067}:9067"
     volumes:
-      - ./.nu7-regtest/zebrad.toml:/etc/zebrad/zebrad.toml:ro
+      - ${NU7_REGTEST_ZEBRA_CONFIG:-./.nu7-regtest/zebrad.toml}:/etc/zebrad/zebrad.toml:ro
       - zebra-state:/var/cache/zebrad-cache
 
   lightwalletd:

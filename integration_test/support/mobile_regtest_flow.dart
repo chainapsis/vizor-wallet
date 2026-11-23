@@ -1159,8 +1159,11 @@ prepareMobilePrivateMigrationScheduleWithReader(
   }
   fail(
     'Timed out waiting for $description after explicit proof approval. '
-    'Last phase: ${lastStatus?.phase}, run: ${lastStatus?.activeRunId}. '
-    'Last error: $lastError',
+    'Last phase: ${lastStatus?.phase}, run: ${lastStatus?.activeRunId}, '
+    'proofReady: ${lastStatus?.proofReady}, '
+    'proofWindow: ${lastStatus?.nextProofWindowHeight}, '
+    'nextAction: ${lastStatus?.nextActionHeight}, '
+    'message: ${lastStatus?.message}. Last error: $lastError',
   );
 }
 
