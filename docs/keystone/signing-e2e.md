@@ -31,7 +31,7 @@ The runner removes its Compose project and volumes on exit. To change the
 default loopback ports, set `NU7_REGTEST_RPC_PORT` (49242) and
 `NU7_REGTEST_LIGHTWALLETD_PORT` (49177).
 
-## Scanning signing requests with the Keystone GUI
+## Scanning with the Keystone GUI
 
 On Apple Silicon macOS, `--gui` runs the same three desktop tests and opens
 Vizor and the Keystone 3.2.2 SDL simulator for each signing request. Install CMake and SDL2
@@ -52,11 +52,17 @@ expected title, amount, fee and a ZEC value.
 | Ordinary payment | **Confirm Transaction** for the single-item batch | The txid is mined. |
 | Voting | **Confirm Transaction (1/2)** | Both signatures verify against the SDK bundles. |
 
-Every observed UR frame must belong to the current request. Only frames
-decoded by that GUI are forwarded to the matching host signer. A missing
-review, foreign frame or incomplete request fails the test.
+Every observed request frame must belong to the current request. For payments,
+the driver swipes the approval slider and enters the fixture PIN on the
+Keystone review screen. The simulator signs and displays its response QR.
+The loopback service captures PNGs of that window while it is open. Vizor
+passes each image to its native macOS `mobile_scanner` barcode detector and
+feeds the detector's event to the active scan screen. The scan screen must
+reconstruct the response before the test can check the transaction on Zebra.
+The PNGs supply the camera input in this lane.
 
-The default desktop and iOS runs pass outbound URs from the widget to the
-host signer. In every mode, signed responses enter Vizor through its barcode
-detection callback. Physical camera optics and ballot submission require
+For voting, the GUI reads the request and reaches review. The stock host
+signer signs those observed frames and the test supplies its URs to the
+barcode callback. The default desktop and iOS runs use that host exchange
+for payments as well. Physical camera optics and ballot submission require
 separate verification.

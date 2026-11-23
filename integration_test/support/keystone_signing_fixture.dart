@@ -307,6 +307,78 @@ Future<List<String>> signWithFirmware(
   return parts;
 }
 
+Future<void> approveGuiPayment(
+  List<String> parts, {
+  required bool batch,
+}) async {
+  await _request(
+    '/approve-payment',
+    body: {'mode': batch ? 'batch' : 'single', 'parts': parts},
+  );
+}
+
+Future<void> closeGuiPayment() async {
+  await _request('/close-payment', body: {});
+}
+
+// Use the real macOS mobile_scanner plugin in Vizor to recognize pixels.
+// Feed its native barcode event to the mounted camera listener so normal
+// scan, UR reconstruction and signature handling drive the route transition.
+Future<void> scanGuiPayment(WidgetTester tester) async {
+  final scanner = find.byType(MobileScanner);
+  await waitForWidget(tester, scanner);
+  final route = ModalRoute.of(tester.element(scanner))!;
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  const codec = StandardMethodCodec();
+  const plugin = 'dev.steenbakker.mobile_scanner/scanner';
+  final native = MethodChannel('$plugin/method', codec, messenger.delegate);
+  final directory = await Directory.systemTemp.createTemp('vizor-keystone-qr.');
+  final frame = File('${directory.path}/signature.png');
+  final elapsed = Stopwatch()..start();
+  var detections = 0;
+  try {
+    while (route.isCurrent && elapsed.elapsed < const Duration(seconds: 60)) {
+      final image = await _request('/payment-frame');
+      await frame.writeAsBytes(
+        base64Decode(image['png'] as String),
+        flush: true,
+      );
+      final event = await native.invokeMapMethod<Object?, Object?>(
+        'analyzeImage',
+        {
+          'filePath': frame.path,
+          'formats': [BarcodeFormat.qrCode.rawValue],
+        },
+      );
+      if (event != null && (event['data'] as List).isNotEmpty) {
+        detections++;
+        await messenger.handlePlatformMessage(
+          '$plugin/event',
+          codec.encodeSuccessEnvelope(event),
+          null,
+        );
+      }
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(
+      detections,
+      greaterThan(0),
+      reason: 'No QR detected on the Keystone signature screen',
+    );
+    expect(
+      route.isCurrent,
+      isFalse,
+      reason: 'Vizor did not reconstruct the signed response',
+    );
+    debugPrint(
+      'Vizor read the Keystone signature QR in $detections native detections',
+    );
+  } finally {
+    await directory.delete(recursive: true);
+  }
+}
+
 // The native camera would report these same UR strings as barcode detections.
 // Leave UR session management, decoding and navigation to the active screen.
 Future<void> scanFirmwareFrames(

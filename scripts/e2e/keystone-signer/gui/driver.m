@@ -8,6 +8,14 @@
 #include "gui_views.h"
 #include "secret_cache.h"
 
+// Keep optical observations separate from interleaved C and Rust debug logs.
+void RecordGuiEvent(const char *label, const char *value)
+{
+    FILE *events = fopen("scan.events", "a");
+    if (!events) exit(EXIT_FAILURE);
+    if (fprintf(events, "%s: %s\n", label, value) < 0 || fclose(events) != 0) exit(EXIT_FAILURE);
+}
+
 int ProvisionFixture(void)
 {
     // BIP39 entropy of the public Speculos mnemonic used by signer.c.
@@ -64,13 +72,64 @@ static bool ReviewIsReady(NSWindow *window, NSString *title)
            [content rangeOfString:zecAmount options:NSRegularExpressionSearch].location != NSNotFound;
 }
 
+static void MouseEvent(Uint32 type, int x, int y)
+{
+    SDL_Event event = {0};
+    event.type = type;
+    if (type == SDL_MOUSEMOTION) {
+        event.motion.state = SDL_BUTTON_LMASK;
+        event.motion.x = x;
+        event.motion.y = y;
+    } else {
+        event.button.button = SDL_BUTTON_LEFT;
+        event.button.x = x;
+        event.button.y = y;
+    }
+    if (SDL_PushEvent(&event) < 0) exit(EXIT_FAILURE);
+}
+
+// The normal review slider opens a PIN sheet whose keyboard starts at y=490.
+static void ApprovePayment(unsigned step)
+{
+    static const int swipe[] = {91, 145, 215, 285, 355, 393, 393};
+    if (step < sizeof(swipe) / sizeof(swipe[0])) {
+        Uint32 type = step == 0 ? SDL_MOUSEBUTTONDOWN :
+                      step == 6 ? SDL_MOUSEBUTTONUP : SDL_MOUSEMOTION;
+        MouseEvent(type, swipe[step], 743);
+    } else {
+        unsigned digit = (step - 7) / 2;
+        if (digit < 6) {
+            MouseEvent((step - 7) % 2 == 0 ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP,
+                       83 + (digit % 3) * 156, 530 + (digit / 3) * 77);
+        }
+    }
+}
+
 void DriveScan(const char *kind)
 {
     static unsigned eventIndex;
     static Uint64 nextEvent;
     static bool scanStarted;
+    static bool reviewed;
+    static unsigned approvalStep;
+    static bool responseReady;
     Uint64 now = SDL_GetTicks64();
     if (now < nextEvent) return;
+
+    if (reviewed) {
+        if (GuiCheckIfTopView(&g_transactionSignatureView)) {
+            if (!responseReady) {
+                RecordGuiEvent("signature window", @(SimulatorWindow().windowNumber).stringValue.UTF8String);
+                responseReady = true;
+            }
+            return;
+        }
+        if (approvalStep < 19) {
+            ApprovePayment(approvalStep++);
+            nextEvent = now + (approvalStep == 7 ? 400 : 100);
+        }
+        return;
+    }
 
     GUI_VIEW *review = strcmp(kind, "single") == 0 ? &g_transactionDetailView : &g_zcashBatchView;
     if (scanStarted && GuiCheckIfTopView(review)) {
@@ -81,8 +140,10 @@ void DriveScan(const char *kind)
             return;
         }
         if (rename("scan-window.png", "review.png") != 0) exit(EXIT_FAILURE);
-        printf("Keystone GUI review: %s\n", title.UTF8String);
-        exit(EXIT_SUCCESS);
+        RecordGuiEvent("review", title.UTF8String);
+        if (strcmp(kind, "vote") == 0) exit(EXIT_SUCCESS);
+        reviewed = true;
+        return;
     }
 
     // Press and release the six fixture PIN digits, then the orange Scan button.
@@ -104,12 +165,8 @@ void DriveScan(const char *kind)
         if (!GuiCheckIfTopView(&g_homeView)) return;
         scanStarted = true;
     }
-    SDL_Event event = {0};
-    event.type = eventIndex % 2 == 0 ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.x = taps[tap].x;
-    event.button.y = taps[tap].y;
-    if (SDL_PushEvent(&event) < 0) exit(EXIT_FAILURE);
+    MouseEvent(eventIndex % 2 == 0 ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP,
+               taps[tap].x, taps[tap].y);
     eventIndex++;
     nextEvent = now + 100;
 }

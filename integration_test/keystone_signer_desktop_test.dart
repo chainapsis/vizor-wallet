@@ -123,10 +123,21 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
     final qr = find.byType(KeystonePcztQrStage);
     await _showQr(tester, qr);
     final stage = tester.widget<KeystonePcztQrStage>(qr);
-    final signed = await signWithFirmware(stage.urParts, batch: !tex);
-    await tapWhenReady(tester, action);
-    await fixture.expectNoBroadcast();
-    await scanFirmwareFrames(tester, signed);
+    if (_gui) {
+      await approveGuiPayment(stage.urParts, batch: !tex);
+      try {
+        await tapWhenReady(tester, action);
+        await fixture.expectNoBroadcast();
+        await scanGuiPayment(tester);
+      } finally {
+        await closeGuiPayment();
+      }
+    } else {
+      final signed = await signWithFirmware(stage.urParts, batch: !tex);
+      await tapWhenReady(tester, action);
+      await fixture.expectNoBroadcast();
+      await scanFirmwareFrames(tester, signed);
+    }
     // A popped scan route remains mounted until its exit animation completes.
     // Wait for it to leave before opening the next TEX scanner.
     final scanRoute = find.byType(KeystoneSendScanScreen, skipOffstage: false);

@@ -58,3 +58,14 @@
 +    if (addr == SPI_FLASH_ADDR_NORMAL_PARAM && readBytes > 0 && tmpBuff[readBytes - 1] == 0) readBytes--;
      *(uint32_t *)buffer = readBytes;
      lv_fs_close(&fd);
+--- a/ui_simulator/simulator_model.c
++++ b/ui_simulator/simulator_model.c
+@@ -605,6 +605,7 @@
+ static bool on_qr_detected(const char *qrString)
+ {
+-    printf("qrString: %s\r\n", qrString);
++    extern void RecordGuiEvent(const char *label, const char *value);
++    RecordGuiEvent("request", qrString);
+     if (firstQrFlag) {
+         QRProtocol t = infer_qrcode_type(qrString);
+         switch (t) {
