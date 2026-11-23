@@ -11,43 +11,30 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--send-signer', required=True)
-parser.add_argument('--voting-signer', required=True)
+parser.add_argument('--send-signer')
+parser.add_argument('--voting-signer')
 parser.add_argument('--fixture-dir', required=True, type=Path)
 parser.add_argument('--fixture-tool', required=True)
 parser.add_argument('--gui-dir', type=Path, help='Isolated Keystone SDL simulator and fixture wallet')
 parser.add_argument('--port-file', required=True, type=Path)
 args = parser.parse_args()
+if not args.gui_dir and not (args.send_signer and args.voting_signer):
+    parser.error('Host mode requires both firmware signers')
 
 
-def scan_signing_screen(directory, kind, expected):
-    # Keep the expected URs on the host. The GUI only receives screen pixels.
-    events = directory / 'scan.events'
-    events.write_text('')
-    try:
-        run = subprocess.run([directory / 'simulator', kind], cwd=directory, stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL, timeout=60)
-    except subprocess.TimeoutExpired as error:
-        raise ValueError('Keystone GUI scan timed out after 60 seconds. Check that the signing QR '
-                         'is visible on the primary display and Screen Recording is enabled.') from error
-    if run.returncode:
-        raise ValueError('Keystone GUI exited before completing review')
-    return reviewed_frames(events.read_text().splitlines(), kind, expected)
-
-
-def reviewed_frames(lines, kind, expected):
-    title = 'Confirm Transaction (1/2)' if kind == 'vote' else 'Confirm Transaction'
-    if f'review: {title}' not in lines:
-        raise ValueError(f'Keystone GUI did not display {title}. '
-                         'Check the unlocked primary display and Screen Recording permission.')
+def check_review(lines, kind, expected):
+    titles = (['Confirm Transaction (1/2)', 'Confirm Transaction (2/2)']
+              if kind == 'vote' else ['Confirm Transaction'])
+    reviews = [line.removeprefix('review: ') for line in lines if line.startswith('review: ')]
+    if reviews != titles:
+        raise ValueError(f'Expected Keystone reviews {titles}, saw {reviews}')
     observed = [line.removeprefix('request: ') for line in lines if line.startswith('request: ')]
     if not observed or not set(observed).issubset(expected):
         raise ValueError('Keystone GUI decoded frames outside the displayed signing request')
-    print(f'Keystone GUI scanned {len(set(observed))} distinct {kind} frames and displayed {title}', flush=True)
-    return observed
+    print(f'Keystone GUI scanned {len(set(observed))} distinct {kind} frames and displayed {", ".join(reviews)}', flush=True)
 
 
-class PaymentWindow:
+class SigningWindow:
     """Own one live signing window until Vizor finishes scanning its response."""
     def __init__(self, directory, kind, expected):
         self.snapshot = directory / 'signature.png'
@@ -60,7 +47,7 @@ class PaymentWindow:
             while time.monotonic() < deadline and self.process.poll() is None:
                 lines = events.read_text().splitlines()
                 if lines and lines[-1].startswith('signature window: '):
-                    reviewed_frames(lines, kind, expected)
+                    check_review(lines, kind, expected)
                     self.window_id = str(int(lines[-1].removeprefix('signature window: ')))
                     return
                 time.sleep(0.1)
@@ -84,9 +71,9 @@ class PaymentWindow:
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/payment-frame' and self.server.payment is not None:
+        if self.path == '/signature-frame' and self.server.signing_window is not None:
             try:
-                image = self.server.payment.frame()
+                image = self.server.signing_window.frame()
                 return self.respond(200, json.dumps({'png': base64.b64encode(image).decode()}).encode())
             except (ValueError, OSError, subprocess.SubprocessError) as error:
                 return self.send_error(422, str(error))
@@ -98,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_error(404)
 
     def do_POST(self):
-        if self.path not in ('/sign', '/approve-payment', '/close-payment', '/sign-votes', '/verify-votes'):
+        if self.path not in ('/sign', '/approve-payment', '/approve-votes', '/close-signing', '/sign-votes', '/verify-votes'):
             return self.send_error(404)
         if self.headers.get_content_type() != 'application/json':
             return self.send_error(415)
@@ -107,10 +94,10 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < size <= 1_048_576:
                 return self.send_error(413)
             request = json.loads(self.rfile.read(size))
-            if self.path == '/close-payment':
-                if self.server.payment is not None:
-                    self.server.payment.close()
-                    self.server.payment = None
+            if self.path == '/close-signing':
+                if self.server.signing_window is not None:
+                    self.server.signing_window.close()
+                    self.server.signing_window = None
                 return self.respond(200, b'{}')
             if self.path == '/verify-votes':
                 command = [args.fixture_tool, 'verify-votes', str(args.fixture_dir / 'voting.json')]
@@ -125,23 +112,21 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid PCZT frame')
         except (KeyError, TypeError, ValueError) as error:
             return self.send_error(400, str(error))
-        voting = self.path == '/sign-votes'
-        if self.path == '/approve-payment':
-            if not args.gui_dir or self.server.payment is not None:
+        if self.path in ('/approve-payment', '/approve-votes'):
+            if not args.gui_dir or self.server.signing_window is not None:
                 return self.send_error(409, 'Expected an idle Keystone GUI')
+            voting = self.path == '/approve-votes'
+            if voting and mode != 'batch':
+                return self.send_error(400, 'Expected a voting batch')
+            directory = args.gui_dir / ('vote' if voting else 'payment')
             try:
-                self.server.payment = PaymentWindow(args.gui_dir / 'payment', mode, parts)
+                self.server.signing_window = SigningWindow(directory, 'vote' if voting else mode, parts)
                 return self.respond(200, b'{}')
             except (OSError, ValueError) as error:
                 return self.send_error(422, str(error))
         if args.gui_dir:
-            if not voting:
-                return self.send_error(409, 'Payment requires approval on the Keystone GUI')
-            try:
-                parts = scan_signing_screen(args.gui_dir / 'vote', 'vote', parts)
-            except (OSError, ValueError) as error:
-                return self.send_error(422, str(error))
-        signer = args.voting_signer if voting else args.send_signer
+            return self.send_error(409, 'Signing requires approval on the Keystone GUI')
+        signer = args.voting_signer if self.path == '/sign-votes' else args.send_signer
         self.run_tool([signer, mode], '\n'.join(parts), frames=True)
 
     def run_tool(self, command, input_text, *, frames):
@@ -172,9 +157,9 @@ def stop_server(_signum, _frame):
 signal.signal(signal.SIGTERM, stop_server)
 with HTTPServer(('127.0.0.1', 0), Handler) as server:
     args.port_file.write_text(str(server.server_port))
-    server.payment = None
+    server.signing_window = None
     try:
         server.serve_forever()
     finally:
-        if server.payment is not None:
-            server.payment.close()
+        if server.signing_window is not None:
+            server.signing_window.close()

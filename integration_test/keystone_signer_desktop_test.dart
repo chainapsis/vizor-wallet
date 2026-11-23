@@ -123,21 +123,16 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
     final qr = find.byType(KeystonePcztQrStage);
     await _showQr(tester, qr);
     final stage = tester.widget<KeystonePcztQrStage>(qr);
-    if (_gui) {
-      await approveGuiPayment(stage.urParts, batch: !tex);
-      try {
+    await exchangeDesktopSignature(
+      tester,
+      stage.urParts,
+      gui: _gui,
+      batch: !tex,
+      openScanner: () async {
         await tapWhenReady(tester, action);
         await fixture.expectNoBroadcast();
-        await scanGuiPayment(tester);
-      } finally {
-        await closeGuiPayment();
-      }
-    } else {
-      final signed = await signWithFirmware(stage.urParts, batch: !tex);
-      await tapWhenReady(tester, action);
-      await fixture.expectNoBroadcast();
-      await scanFirmwareFrames(tester, signed);
-    }
+      },
+    );
     // A popped scan route remains mounted until its exit animation completes.
     // Wait for it to leave before opening the next TEX scanner.
     final scanRoute = find.byType(KeystoneSendScanScreen, skipOffstage: false);
@@ -208,13 +203,14 @@ Future<void> _runVoting(WidgetTester tester) async {
   await tester.pump();
   expect(find.text('Bundle 2 of 2 memo'), findsOneWidget);
   await _showQr(tester, qr);
-  final signed = await signWithFirmware(
+  await exchangeDesktopSignature(
+    tester,
     tester.widget<KeystonePcztQrStage>(qr).urParts,
+    gui: _gui,
     batch: true,
     voting: true,
+    openScanner: () => tapWhenReady(tester, find.text('Scan signature')),
   );
-  await tapWhenReady(tester, find.text('Scan signature'));
-  await scanFirmwareFrames(tester, signed);
   await tester.pump();
   await fixture.verifySignatures(
     await scanned.future.timeout(const Duration(seconds: 15)),

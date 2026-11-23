@@ -290,6 +290,9 @@ class KeystoneVoteFixture {
       },
     );
     expect(verification['verified'], isTrue);
+    debugPrint(
+      'Verified both stored voting signatures against their original bundle keys and sighashes',
+    );
   }
 }
 
@@ -307,24 +310,36 @@ Future<List<String>> signWithFirmware(
   return parts;
 }
 
-Future<void> approveGuiPayment(
+Future<void> exchangeDesktopSignature(
+  WidgetTester tester,
   List<String> parts, {
   required bool batch,
+  required bool gui,
+  bool voting = false,
+  required Future<void> Function() openScanner,
 }) async {
+  if (!gui) {
+    final signed = await signWithFirmware(parts, batch: batch, voting: voting);
+    await openScanner();
+    await scanFirmwareFrames(tester, signed);
+    return;
+  }
   await _request(
-    '/approve-payment',
+    voting ? '/approve-votes' : '/approve-payment',
     body: {'mode': batch ? 'batch' : 'single', 'parts': parts},
   );
-}
-
-Future<void> closeGuiPayment() async {
-  await _request('/close-payment', body: {});
+  try {
+    await openScanner();
+    await _scanGuiSignature(tester);
+  } finally {
+    await _request('/close-signing', body: {});
+  }
 }
 
 // Use the real macOS mobile_scanner plugin in Vizor to recognize pixels.
 // Feed its native barcode event to the mounted camera listener so normal
 // scan, UR reconstruction and signature handling drive the route transition.
-Future<void> scanGuiPayment(WidgetTester tester) async {
+Future<void> _scanGuiSignature(WidgetTester tester) async {
   final scanner = find.byType(MobileScanner);
   await waitForWidget(tester, scanner);
   final route = ModalRoute.of(tester.element(scanner))!;
@@ -339,7 +354,7 @@ Future<void> scanGuiPayment(WidgetTester tester) async {
   var detections = 0;
   try {
     while (route.isCurrent && elapsed.elapsed < const Duration(seconds: 60)) {
-      final image = await _request('/payment-frame');
+      final image = await _request('/signature-frame');
       await frame.writeAsBytes(
         base64Decode(image['png'] as String),
         flush: true,

@@ -50,19 +50,19 @@ expected title, amount, fee and a ZEC value.
 | --- | --- | --- |
 | TEX parent, then child | **Confirm Transaction** for each full PCZT | Both txids are mined and a child input references the parent txid. |
 | Ordinary payment | **Confirm Transaction** for the single-item batch | The txid is mined. |
-| Voting | **Confirm Transaction (1/2)** | Both signatures verify against the SDK bundles. |
+| Voting | **Confirm Transaction (1/2)**, then **(2/2)** after **Next** | A single batch approval produces the response QR. Both persisted signatures verify against their respective SDK bundles. |
 
-Every observed request frame must belong to the current request. For payments,
+Every observed request frame must belong to the current request. After the final review,
 the driver swipes the approval slider and enters the fixture PIN on the
 Keystone review screen. The simulator signs and displays its response QR.
 The loopback service captures PNGs of that window while it is open. Vizor
 passes each image to its native macOS `mobile_scanner` barcode detector and
 feeds the detector's event to the active scan screen. The scan screen must
-reconstruct the response before the test can check the transaction on Zebra.
+reconstruct the response before the test checks the transaction on Zebra or
+verifies both voting signatures against their original randomized keys and sighashes.
 The PNGs supply the camera input in this lane.
 
-For voting, the GUI reads the request and reaches review. The stock host
-signer signs those observed frames and the test supplies its URs to the
-barcode callback. The default desktop and iOS runs use that host exchange
-for payments as well. Physical camera optics and ballot submission require
-separate verification.
+The GUI server has no host signer configured. The runner uses the host tools
+to export fixture account information during setup. Default desktop and iOS
+tests use the host signers and supply the returned URs to the barcode callback.
+Physical camera optics and ballot submission require separate verification.

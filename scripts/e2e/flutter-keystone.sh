@@ -42,6 +42,8 @@ if "$gui"; then
   vote_gui="$work/gui/vote"
   send_gui="$work/gui/payment"
   server_args+=(--gui-dir "$work/gui")
+else
+  server_args+=(--send-signer "$work/send-signer" --voting-signer "$work/voting-signer")
 fi
 scripts/e2e/keystone-signer/build.sh "$work/voting-signer" stock "$vote_gui"
 scripts/e2e/keystone-signer/build.sh "$work/send-signer" --regtest "$send_gui"
@@ -68,7 +70,7 @@ lwd="http://127.0.0.1:$NU7_REGTEST_LIGHTWALLETD_PORT"
 "$fixture_tool" regtest-sync "$work/wallet.db" "$lwd" "$NU7_REGTEST_NU63_HEIGHT" "$NU7_REGTEST_NU7_HEIGHT"
 mkdir -p "$work/voting"
 "$work/voting-signer" account | "$fixture_tool" prepare-voting "$work/voting/wallet.db"
-python3 scripts/e2e/keystone-signer/server.py --send-signer "$work/send-signer" --voting-signer "$work/voting-signer" --fixture-tool "$fixture_tool" \
+python3 scripts/e2e/keystone-signer/server.py --fixture-tool "$fixture_tool" \
   "${server_args[@]}" &
 pid=$!
 for ((i=0; i<100; i++)); do

@@ -89,7 +89,7 @@ static void MouseEvent(Uint32 type, int x, int y)
 }
 
 // The normal review slider opens a PIN sheet whose keyboard starts at y=490.
-static void ApprovePayment(unsigned step)
+static void ApproveTransaction(unsigned step)
 {
     static const int swipe[] = {91, 145, 215, 285, 355, 393, 393};
     if (step < sizeof(swipe) / sizeof(swipe[0])) {
@@ -111,6 +111,8 @@ void DriveScan(const char *kind)
     static Uint64 nextEvent;
     static bool scanStarted;
     static bool reviewed;
+    static bool nextButtonDown;
+    static bool secondBundle;
     static unsigned approvalStep;
     static bool responseReady;
     Uint64 now = SDL_GetTicks64();
@@ -125,23 +127,39 @@ void DriveScan(const char *kind)
             return;
         }
         if (approvalStep < 19) {
-            ApprovePayment(approvalStep++);
+            ApproveTransaction(approvalStep++);
             nextEvent = now + (approvalStep == 7 ? 400 : 100);
         }
         return;
     }
 
+    if (nextButtonDown) {
+        MouseEvent(SDL_MOUSEBUTTONUP, 348, 750);
+        nextButtonDown = false;
+        secondBundle = true;
+        nextEvent = now + 100;
+        return;
+    }
+
     GUI_VIEW *review = strcmp(kind, "single") == 0 ? &g_transactionDetailView : &g_zcashBatchView;
     if (scanStarted && GuiCheckIfTopView(review)) {
-        NSString *title = strcmp(kind, "vote") == 0 ? @"Confirm Transaction (1/2)" : @"Confirm Transaction";
+        bool voting = strcmp(kind, "vote") == 0;
+        NSString *title = @"Confirm Transaction";
+        if (voting) title = secondBundle ? @"Confirm Transaction (2/2)" : @"Confirm Transaction (1/2)";
         lv_refr_now(NULL);
         if (!ReviewIsReady(SimulatorWindow(), title)) {
             nextEvent = SDL_GetTicks64() + 200;
             return;
         }
-        if (rename("scan-window.png", "review.png") != 0) exit(EXIT_FAILURE);
+        const char *snapshot = voting ? (secondBundle ? "review-2.png" : "review-1.png") : "review.png";
+        if (rename("scan-window.png", snapshot) != 0) exit(EXIT_FAILURE);
         RecordGuiEvent("review", title.UTF8String);
-        if (strcmp(kind, "vote") == 0) exit(EXIT_SUCCESS);
+        if (voting && !secondBundle) {
+            MouseEvent(SDL_MOUSEBUTTONDOWN, 348, 750);
+            nextButtonDown = true;
+            nextEvent = now + 100;
+            return;
+        }
         reviewed = true;
         return;
     }
