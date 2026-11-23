@@ -15,9 +15,60 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/test_l10n.dart';
+import '../../support/voting_display_profiles.dart';
+import '../../support/voting_qr_capture.dart';
+import '../../support/voting_qr_frames.dart';
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+
+  for (final profile in mobileVotingProfiles) {
+    testWidgets('decodes integer-grid voting frames on ${profile.name}', (
+      tester,
+    ) async {
+      final key = GlobalKey();
+      await _pumpSigningScreen(
+        tester,
+        profile: profile,
+        captureKey: key,
+        urParts: votingQrFrames,
+      );
+      await checkVotingQrFrames(
+        tester,
+        key,
+        profile.ratio,
+        qr: find.byKey(const ValueKey('mobile_voting_keystone_qr_stage')),
+        // Former 120px SE / 320px Pro Max surfaces painted ~108px / 288px
+        // data patterns. Paying for the border must not shrink those patterns.
+        minimumPatternSize: profile == mobileVotingProfiles.first
+            ? 108
+            : profile == mobileVotingProfiles[4]
+            ? 288
+            : 0,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('large text scrolls QR into view without squeezing its pitch', (
+    tester,
+  ) async {
+    final profile = mobileVotingProfiles[1];
+    final key = GlobalKey();
+    await _pumpSigningScreen(
+      tester,
+      profile: profile,
+      captureKey: key,
+      urParts: votingQrFrames,
+      textScale: 2,
+    );
+    final qr = find.byKey(const ValueKey('mobile_voting_keystone_qr_stage'));
+    expect(tester.getSize(qr).width, greaterThanOrEqualTo(120));
+    await checkVotingQrFrames(tester, key, profile.ratio, qr: qr);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('uses the mobile Keystone two-step signing presentation', (
     tester,
@@ -253,24 +304,34 @@ Future<void> _pumpSigningScreen(
   double textScale = 1,
   List<VotingKeystoneBatchMemo>? memos,
   VoidCallback? onSkipRemainingBundles,
+  VotingDisplayProfile? profile,
+  GlobalKey? captureKey,
+  List<String> urParts = const [_previewVotingUr],
 }) async {
   tester.platformDispatcher.textScaleFactorTestValue = textScale;
   addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-  tester.view.devicePixelRatio = 1;
-  tester.view.physicalSize = viewport;
-  addTearDown(tester.view.reset);
+  if (profile != null) {
+    await profile.apply(tester);
+  } else {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = viewport;
+    addTearDown(tester.view.reset);
+  }
 
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
         localizationsDelegates: appLocalizationsDelegates,
+        builder: (_, child) => captureKey == null
+            ? child!
+            : RepaintBoundary(key: captureKey, child: child!),
         theme: ThemeData.dark(),
         home: AppTheme(
           data: AppThemeData.dark,
           child: MobileKeystoneVotingSigningScreen(
             presentation: VotingKeystoneStatusPresentation(
               bundleIndex: memos?.first.bundleIndex ?? 1,
-              urParts: const [_previewVotingUr],
+              urParts: urParts,
               batchMemos:
                   memos ??
                   [
