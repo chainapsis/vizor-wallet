@@ -3,8 +3,8 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,12 +64,13 @@ void main() {
     (tester) => _runSend(tester, tex: false),
     timeout: const Timeout(Duration(minutes: 6)),
   );
-  if (_zebraUrl.isEmpty)
+  if (_zebraUrl.isEmpty) {
     testWidgets(
       'signs two delegation bundles in one Keystone voting batch',
       _runVoting,
       timeout: const Timeout(Duration(minutes: 3)),
     );
+  }
 }
 
 Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
@@ -241,12 +242,13 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
       tester,
       find.byKey(const ValueKey('mobile_keystone_sign_scanner_card')),
     );
-    if (server != null)
+    if (server != null) {
       expect(
         server.sendTransactionCount,
         0,
         reason: 'All required approvals must precede submission',
       );
+    }
     deliverScan!(result);
   }
   await _waitFor(
