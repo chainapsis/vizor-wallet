@@ -43,7 +43,7 @@ void main() {
       expect(quote.receiveAsset, SwapAsset.zec);
       expect(quote.pairText, 'USDC -> ZEC');
       expect(quote.receiveEstimateText, '2.0000 ZEC');
-      expect(quote.rateText, '1 USDC = 0.0143 ZEC');
+      expect(quote.rateText, '1 ZEC = 70.17 USDC');
       expect(quote.depositInstruction.asset, SwapAsset.usdc);
     },
   );

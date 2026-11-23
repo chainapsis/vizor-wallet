@@ -885,10 +885,7 @@ String _rateTextForState(AppLocalizations l10n, SwapState state) {
       state.indicativeExternalPerZec[state.externalAsset] ??
       state.externalAsset.fallbackExternalPerZec;
   if (externalPerZec <= 0) return '--'; // l10n-ignore: placeholder glyph
-  if (state.direction.sendsZec) {
-    return '1 ZEC = ${externalPerZec.toStringAsFixed(2)} ${state.externalAsset.symbol}'; // l10n-ignore: rate format
-  }
-  return '1 ${state.externalAsset.symbol} = ${(1 / externalPerZec).toStringAsFixed(4)} ZEC'; // l10n-ignore: rate format
+  return swapZecRateText(state.externalAsset, externalPerZec);
 }
 
 bool _zecAmountOverAvailable(SwapState state, BigInt availableZatoshi) {

@@ -1312,7 +1312,7 @@ void main() {
     expect(request.body?['recipient'], 'u1fresh-shielded-recipient');
     expect(quote.pairText, 'USDC -> ZEC');
     expect(quote.receiveEstimateText, '2 ZEC');
-    expect(quote.rateText, '1 USDC = 0.0143 ZEC');
+    expect(quote.rateText, '1 ZEC = 70.17 USDC');
     expect(intent.id, '0xexternal-deposit');
     expect(intent.status, SwapIntentStatus.awaitingExternalDeposit);
   });

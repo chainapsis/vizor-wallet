@@ -2493,6 +2493,36 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSwapReviewDefaultUseCase,
   ),
   FigmaCompareScenario(
+    id: 'swap-rate-composer-zec-btc',
+    description: 'Desktop Swap rate line selling ZEC for BTC',
+    builder: buildSwapRateComposerZecToBtcUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-rate-composer-usdc-zec',
+    description: 'Desktop Swap rate line buying ZEC with USDC',
+    builder: buildSwapRateComposerUsdcToZecUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-rate-composer-pepe-zec',
+    description: 'Desktop Swap rate line buying ZEC with PEPE',
+    builder: buildSwapRateComposerPepeToZecUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-rate-composer-doge-zec',
+    description: 'Desktop Swap rate line buying ZEC with DOGE',
+    builder: buildSwapRateComposerDogeToZecUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-pay-rate-usdc',
+    description: 'Incomplete-deposit Pay record rate row paying USDC',
+    builder: buildPayActivityRateUsdcCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-pay-rate-doge',
+    description: 'Incomplete-deposit Pay record rate row paying DOGE',
+    builder: buildPayActivityRateDogeCapture,
+  ),
+  FigmaCompareScenario(
     id: 'swap-status-completed',
     description: 'Desktop swap completed status',
     builder: buildSwapStatusCompletedUseCase,

@@ -399,7 +399,7 @@ void main() {
       'USDC delivery tx',
     ]);
     expect(_detailValue(presentation.details, 'You paid'), '4.0000 ZEC');
-    expect(_detailValue(presentation.details, 'Rate'), '1 ZEC = 25 USDC');
+    expect(_detailValue(presentation.details, 'Rate'), '1 ZEC = 25.00 USDC');
     expect(
       _detailRow(presentation.details, 'ZEC tx (shielded)').copyText,
       'zec-shielded-spend-txid',
@@ -1504,7 +1504,7 @@ void main() {
     expect(pay.payStatus!.convertedFromText, '•••••• ZEC');
     // No confirmed deposit fee yet: fixed copy, nothing to mask.
     expect(pay.payStatus!.transactionFeeText, 'Not reported');
-    expect(_detailValue(pay.details, 'Rate'), '1 ZEC = 70 USDC');
+    expect(_detailValue(pay.details, 'Rate'), '1 ZEC = 70.00 USDC');
     expect(_detailValue(pay.details, 'You paid'), '•••••• ZEC');
     expect(
       _detailValue(pay.details, 'Network + conversion fees'),

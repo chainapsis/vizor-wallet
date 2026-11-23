@@ -1439,8 +1439,7 @@ String? _swapActivityPayRateText(SwapIntent intent, SwapAsset? receiveAsset) {
   }
   final rate = receiveAmount / sellAmount;
   if (!rate.isFinite || rate <= 0) return null;
-  return '1 ZEC = ${swapPreciseAmountText(receiveAsset, rate)} ' // l10n-ignore: amount format
-      '${receiveAsset.symbol}';
+  return swapZecRateText(receiveAsset, rate);
 }
 
 String? _firstNonEmpty(Iterable<String?> values) {

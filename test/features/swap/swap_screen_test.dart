@@ -6010,7 +6010,7 @@ void main() {
 
     expect(_fieldText(tester, 'swap_amount_field'), '100.00');
     expect(_fieldText(tester, 'swap_receive_amount_field'), '1.0000');
-    expect(find.text('1 USDC = 0.0100 ZEC'), findsOneWidget);
+    expect(find.text('1 ZEC = 100.00 USDC'), findsOneWidget);
   });
 
   testWidgets('draft conversion refreshes token prices automatically', (
@@ -11031,7 +11031,7 @@ void main() {
       findsNothing,
     );
     expect(_fieldText(tester, 'swap_receive_amount_field'), '2.0000');
-    expect(find.text('1 USDC = 0.0143 ZEC'), findsOneWidget);
+    expect(find.text('1 ZEC = 70.17 USDC'), findsOneWidget);
     expect(find.text('USDC -> ZEC'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
