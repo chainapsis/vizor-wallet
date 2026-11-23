@@ -16,8 +16,7 @@ scripts/nu7-regtest/down.sh
 
 - Heights default to NU6.3 at 300 and NU7 at 600. The first `up.sh` pins them
   in `.nu7-regtest/`; reset before changing them. The stack accepts any NU7
-  above NU6.3, but the Rust scenarios and the iOS migration-stop E2E need a wider gap and
-  refuse heights they cannot use.
+  above NU6.3, but the Rust scenarios need a wider gap and refuse heights they cannot use.
 - Funding pays block coinbase to the address with `generatetoaddress`: Orchard
   before NU6.3, Ironwood from it. Coinbase needs 100 confirmations.
 - `fund-orchard.py` funds exact Orchard amounts before NU6.3, one note per
@@ -35,17 +34,16 @@ scripts/nu7-regtest/down.sh
 - Zebra regtest reports a meaningless `estimatedheight`, so the app's stalled
   endpoint checks treat a custom endpoint on this chain as stalled.
 
-Run the Rust scenario with `scripts/nu7-regtest/run-rust-test.sh`. The iOS
-migration-stop scenario runs with
-`scripts/e2e/flutter-ios-regtest-mobile-nu7-migration-stop.sh` (one booted
-simulator, or `SIMULATOR_UDID`).
+Run the Rust scenario with `scripts/nu7-regtest/run-rust-test.sh`.
 
-The iOS full regtest suite runs two migration scenarios by default. The Zebra
-runner (`scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-nu7.sh`)
-funds 0.0105 ZEC and mines through NU6.3 at 500 and NU7 at 520 while the app
-is open. The zcashd background-restart runner checks that iOS can broadcast
-persisted proofs after relaunch. The 20-note, immediate migration and reorg
-scenarios can be run individually on iOS.
+The iOS full regtest suite runs both mobile migration scenarios on a booted
+simulator. Set `SIMULATOR_UDID` to select a specific simulator.
+
+- `scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-nu7.sh` funds
+  0.0105 ZEC on Zebra and mines through NU6.3 at 500 and NU7 at 520 while
+  the app is open.
+- `scripts/e2e/flutter-ios-regtest-mobile-ironwood-background-restart.sh`
+  checks that iOS can broadcast persisted proofs after relaunch on zcashd.
 
 The macOS fee regression runs with
 `scripts/e2e/flutter-macos-ironwood-migration-nu7.sh`. It migrates the same

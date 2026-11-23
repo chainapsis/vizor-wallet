@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-INCLUDE_ACCOUNT_REIMPORT_MIGRATION="${E2E_INCLUDE_ACCOUNT_REIMPORT_MIGRATION:-0}"
 
 source "$ROOT_DIR/scripts/e2e/lib-mobile.sh"
 
@@ -20,14 +19,6 @@ require_cmd docker
 require_cmd fvm
 require_cmd python3
 require_cmd xcrun
-
-case "$INCLUDE_ACCOUNT_REIMPORT_MIGRATION" in
-  0 | 1) ;;
-  *)
-    echo "E2E_INCLUDE_ACCOUNT_REIMPORT_MIGRATION must be 0 or 1" >&2
-    exit 2
-    ;;
-esac
 
 cd "$ROOT_DIR"
 
@@ -69,14 +60,6 @@ run_test "11/12 answer a zcash: payment URI and send from its request card" \
 
 run_test "12/12 redeem a Gift Card during first-wallet setup and complete Home setup" \
   "scripts/e2e/flutter-ios-regtest-mobile-gift-onboarding.sh"
-
-if [[ "$INCLUDE_ACCOUNT_REIMPORT_MIGRATION" == "1" ]]; then
-  run_test "optional: recover migrated balances after account re-import" \
-    "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-account-reimport.sh"
-else
-  echo
-  echo "skipping optional account re-import recovery; set E2E_INCLUDE_ACCOUNT_REIMPORT_MIGRATION=1 to run it"
-fi
 
 echo
 echo "all iOS mobile regtest E2E tests passed"

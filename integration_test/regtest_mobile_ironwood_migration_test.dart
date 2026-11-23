@@ -187,8 +187,7 @@ void main() {
 /// Lets the status screen approve proofs until the run has a broadcast
 /// schedule. A proof needs the prepared notes deep enough to anchor it, which
 /// under NU7 can take more blocks than were mined above, so a run waiting for
-/// that gets one block at a time, as `regtest_mobile_nu7_migration_stop_test`
-/// does.
+/// that gets one block at a time.
 Future<rust_sync.MigrationStatus> _prepareSchedule(
   WidgetTester tester,
   ProviderContainer container,

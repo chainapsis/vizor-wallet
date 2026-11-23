@@ -458,39 +458,6 @@ Future<void> waitForHome(WidgetTester tester) async {
 Future<void> openMobilePrivateMigrationOptions(WidgetTester tester) =>
     openMobileMigrationOptions(tester);
 
-/// Leaves the real completed migration surface through its visible Done action.
-Future<void> finishMobilePrivateMigrationForHome(
-  WidgetTester tester, {
-  Duration timeout = const Duration(minutes: 1),
-}) async {
-  final deadline = DateTime.now().add(timeout);
-  final scope = find.byKey(
-    const ValueKey('mobile_ironwood_migration_back_scope'),
-  );
-  final title = find
-      .descendant(of: scope, matching: find.text('You’re all set!'))
-      .hitTestable();
-  await pumpUntil(
-    tester,
-    () => scope.evaluate().length == 1 && title.evaluate().length == 1,
-    description: 'completed migration result before Done',
-    timeout: timeout,
-  );
-  final lifecycle = tester.binding.lifecycleState;
-  if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
-    fail('Cannot finish a mobile migration while the app is backgrounded.');
-  }
-  await tapUntilVisible(
-    tester,
-    trigger: find
-        .descendant(of: scope, matching: find.text('Done'))
-        .hitTestable(),
-    outcome: find.byKey(const ValueKey('mobile_home_shielded_balance')),
-    description: 'completed migration result to return home',
-    timeout: deadline.difference(DateTime.now()),
-  );
-}
-
 Future<void> startMobilePrivateMigration(WidgetTester tester) async {
   await tapAppButton(
     tester,
@@ -1048,65 +1015,6 @@ Future<bool> _dismissKnownMigrationPreparationModal(
   return true;
 }
 
-/// Leaves the current migration status through its actual top-nav Back control.
-/// No proof approval, coordinator permit or direct route operation is performed.
-Future<void> leaveMobilePrivateMigrationStatusForHome(
-  WidgetTester tester, {
-  Duration timeout = const Duration(seconds: 45),
-}) async {
-  final deadline = DateTime.now().add(timeout);
-  final scope = find.byKey(
-    const ValueKey('mobile_ironwood_migration_back_scope'),
-  );
-  final navigation = find.descendant(
-    of: scope,
-    matching: find.byWidgetPredicate(
-      (widget) =>
-          widget is MobileTopNav &&
-          widget.onBack != null &&
-          (widget.title == 'Preparing your migration' ||
-              widget.title == 'Ironwood Migration'),
-    ),
-  );
-  final back = find.descendant(
-    of: navigation,
-    matching: find.bySemanticsLabel('Back'),
-  );
-  var dismissed = false;
-  var tapped = false;
-  while (DateTime.now().isBefore(deadline)) {
-    final lifecycle = tester.binding.lifecycleState;
-    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
-      fail('Leaving a private migration status requires the foreground UI.');
-    }
-    if (tapped &&
-        tester.any(
-          find
-              .byKey(const ValueKey('mobile_home_shielded_balance'))
-              .hitTestable(),
-        )) {
-      logE2e('left private migration status through its top-nav Back');
-      return;
-    }
-    if (tester.any(find.text('Preparation is done'))) {
-      dismissed =
-          await _dismissKnownMigrationPreparationModal(
-            tester,
-            alreadyDismissed: dismissed,
-          ) ||
-          dismissed;
-    } else if (!tapped &&
-        navigation.evaluate().length == 1 &&
-        back.hitTestable().evaluate().length == 1) {
-      await tester.tap(back.hitTestable());
-      tapped = true;
-    }
-    await tester.pump(const Duration(milliseconds: 100));
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-  }
-  fail('Timed out leaving private migration status through its top-nav Back.');
-}
-
 /// An explicit proof-producing workflow. The generic status observer above
 /// remains read-only; only callers intending to prepare a schedule use this.
 Future<rust_sync.MigrationStatus> prepareMobilePrivateMigrationSchedule(
@@ -1252,22 +1160,6 @@ Future<rust_sync.MigrationStatus> advanceMobileRegtestMigrationSchedule(
     );
   }
   fail('Timed out advancing the mobile regtest migration schedule.');
-}
-
-Future<Map<String, Object?>> waitForMobileRegtestMempoolSize(
-  WidgetTester tester,
-  int expected, {
-  Duration timeout = const Duration(minutes: 2),
-}) async {
-  final deadline = DateTime.now().add(timeout);
-  Map<String, Object?>? last;
-  while (DateTime.now().isBefore(deadline)) {
-    last = await getDriver('/mempool');
-    if (last['size'] == expected) return last;
-    await tester.pump(const Duration(milliseconds: 100));
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-  }
-  fail('Timed out waiting for mempool size $expected. Last: $last');
 }
 
 Future<void> waitForHistoryEntry(
