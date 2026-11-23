@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:zxing2/qrcode.dart' as zxing;
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -310,13 +312,14 @@ Future<List<String>> signWithFirmware(
   return parts;
 }
 
-Future<void> exchangeDesktopSignature(
+Future<void> exchangeKeystoneSignature(
   WidgetTester tester,
   List<String> parts, {
   required bool batch,
   required bool gui,
   bool voting = false,
   required Future<void> Function() openScanner,
+  bool Function()? scanComplete,
 }) async {
   if (!gui) {
     final signed = await signWithFirmware(parts, batch: batch, voting: voting);
@@ -330,42 +333,85 @@ Future<void> exchangeDesktopSignature(
   );
   try {
     await openScanner();
-    await _scanGuiSignature(tester);
+    await _scanGuiSignature(tester, scanComplete);
   } finally {
     await _request('/close-signing', body: {});
   }
 }
 
-// Use the real macOS mobile_scanner plugin in Vizor to recognize pixels.
-// Feed its native barcode event to the mounted camera listener so normal
-// scan, UR reconstruction and signature handling drive the route transition.
-Future<void> _scanGuiSignature(WidgetTester tester) async {
+// iOS Simulator disables mobile_scanner's Vision image analyzer. Decode the
+// Keystone window pixels with ZXing inside the iOS test app instead.
+Future<Map<Object?, Object?>?> _iosBarcodeEvent(Uint8List png) async {
+  final codec = await ui.instantiateImageCodec(png);
+  try {
+    final image = (await codec.getNextFrame()).image;
+    try {
+      final rgba = (await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      ))!;
+      final pixels = rgba.buffer.asInt32List(
+        rgba.offsetInBytes,
+        image.width * image.height,
+      );
+      final source = zxing.RGBLuminanceSource(
+        image.width,
+        image.height,
+        pixels,
+      );
+      final result = zxing.QRCodeReader().decode(
+        zxing.BinaryBitmap(zxing.HybridBinarizer(source)),
+      );
+      return {
+        'name': 'barcode',
+        'data': [
+          {'rawValue': result.text, 'format': BarcodeFormat.qrCode.rawValue},
+        ],
+      };
+    } on zxing.ReaderException {
+      return null;
+    } finally {
+      image.dispose();
+    }
+  } finally {
+    codec.dispose();
+  }
+}
+
+Future<void> _scanGuiSignature(
+  WidgetTester tester,
+  bool Function()? scanComplete,
+) async {
   final scanner = find.byType(MobileScanner);
   await waitForWidget(tester, scanner);
   final route = ModalRoute.of(tester.element(scanner))!;
+  final complete = scanComplete ?? () => !route.isCurrent;
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   const codec = StandardMethodCodec();
   const plugin = 'dev.steenbakker.mobile_scanner/scanner';
   final native = MethodChannel('$plugin/method', codec, messenger.delegate);
-  final directory = await Directory.systemTemp.createTemp('vizor-keystone-qr.');
-  final frame = File('${directory.path}/signature.png');
+  final directory = Platform.isMacOS
+      ? await Directory.systemTemp.createTemp('vizor-keystone-qr.')
+      : null;
+  final frame = directory == null
+      ? null
+      : File('${directory.path}/signature.png');
   final elapsed = Stopwatch()..start();
   var detections = 0;
   try {
-    while (route.isCurrent && elapsed.elapsed < const Duration(seconds: 60)) {
+    while (!complete() && elapsed.elapsed < const Duration(seconds: 60)) {
       final image = await _request('/signature-frame');
-      await frame.writeAsBytes(
-        base64Decode(image['png'] as String),
-        flush: true,
-      );
-      final event = await native.invokeMapMethod<Object?, Object?>(
-        'analyzeImage',
-        {
+      final pixels = base64Decode(image['png'] as String);
+      Map<Object?, Object?>? event;
+      if (frame == null) {
+        event = await _iosBarcodeEvent(pixels);
+      } else {
+        await frame.writeAsBytes(pixels, flush: true);
+        event = await native.invokeMapMethod<Object?, Object?>('analyzeImage', {
           'filePath': frame.path,
           'formats': [BarcodeFormat.qrCode.rawValue],
-        },
-      );
+        });
+      }
       if (event != null && (event['data'] as List).isNotEmpty) {
         detections++;
         await messenger.handlePlatformMessage(
@@ -382,15 +428,15 @@ Future<void> _scanGuiSignature(WidgetTester tester) async {
       reason: 'No QR detected on the Keystone signature screen',
     );
     expect(
-      route.isCurrent,
-      isFalse,
+      complete(),
+      isTrue,
       reason: 'Vizor did not reconstruct the signed response',
     );
     debugPrint(
-      'Vizor read the Keystone signature QR in $detections native detections',
+      'Vizor read the Keystone signature QR in $detections ${Platform.isIOS ? "ZXing" : "Vision"} detections',
     );
   } finally {
-    await directory.delete(recursive: true);
+    await directory?.delete(recursive: true);
   }
 }
 

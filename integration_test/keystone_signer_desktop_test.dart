@@ -123,7 +123,7 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
     final qr = find.byType(KeystonePcztQrStage);
     await _showQr(tester, qr);
     final stage = tester.widget<KeystonePcztQrStage>(qr);
-    await exchangeDesktopSignature(
+    await exchangeKeystoneSignature(
       tester,
       stage.urParts,
       gui: _gui,
@@ -203,7 +203,7 @@ Future<void> _runVoting(WidgetTester tester) async {
   await tester.pump();
   expect(find.text('Bundle 2 of 2 memo'), findsOneWidget);
   await _showQr(tester, qr);
-  await exchangeDesktopSignature(
+  await exchangeKeystoneSignature(
     tester,
     tester.widget<KeystonePcztQrStage>(qr).urParts,
     gui: _gui,

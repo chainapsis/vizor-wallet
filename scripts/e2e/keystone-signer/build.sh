@@ -34,6 +34,10 @@ if [[ "$mode" == --regtest ]]; then
   rust_firmware="$firmware"
   set -- -DKEYSTONE_ZEBRA_REGTEST
 fi
+if [[ -n "$gui_out" && -n "${KEYSTONE_IOS_SIMULATOR_UDID:-}" ]]; then
+  git -C "$firmware" apply "$here/gui/ios-camera.patch"
+  rust_firmware="$firmware"
+fi
 # Keep the firmware archive separate from the wallet fixture's Cargo target.
 (cd "$rust_firmware/rust" && CARGO_TARGET_DIR=target cargo build --locked --release -p rust_c --no-default-features --features simulator-cypherpunk)
 cc "$@" -Wall -Wextra -Werror -I"$rust_firmware/rust/rust_c/bindings/simulator-cypherpunk" \

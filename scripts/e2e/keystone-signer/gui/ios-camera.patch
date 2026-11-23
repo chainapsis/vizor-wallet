@@ -1,0 +1,27 @@
+--- a/rust/sim_qr_reader/src/lib.rs
++++ b/rust/sim_qr_reader/src/lib.rs
+@@ -45,4 +45,24 @@
+     G: Fn(&str) -> bool,
+ {
++    // The simulated camera reads the selected iPhone display. Keep the same
++    // image detector and firmware callback as the desktop screen reader.
++    if let Some(device) = std::env::var_os("KEYSTONE_IOS_SIMULATOR_UDID") {
++        let frame = "ios-camera.png";
++        for _ in 0..max_loop_count {
++            let capture = std::process::Command::new("/usr/bin/xcrun")
++                .args(["simctl", "io"])
++                .arg(&device)
++                .args(["screenshot", "--type=png", frame])
++                .output()?;
++            anyhow::ensure!(capture.status.success(), "{}", String::from_utf8_lossy(&capture.stderr));
++            if let Ok((content, _)) = decode_image(&image::open(frame)?) {
++                if on_qr_code_detected(&content) {
++                    break;
++                }
++            }
++            thread::sleep(Duration::from_millis(100));
++        }
++        return Ok(());
++    }
+     let screens = Screen::all()?;
+     let screen = screens.first().ok_or(anyhow::anyhow!("No screen found"))?;

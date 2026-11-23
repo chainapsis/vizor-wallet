@@ -3,10 +3,11 @@ set -euo pipefail
 
 : "${FLUTTER_DEVICE:?set FLUTTER_DEVICE to macos or a booted iOS simulator UDID}"
 cd "$(dirname "$0")/../.."
+unset KEYSTONE_IOS_SIMULATOR_UDID
 gui=false
 if [[ $# -gt 0 ]]; then
-  if [[ $# != 1 || "$1" != --gui || "$FLUTTER_DEVICE" != macos ]]; then
-    echo "Use --gui with FLUTTER_DEVICE=macos to scan the signing QRs on screen" >&2
+  if [[ $# != 1 || "$1" != --gui ]]; then
+    echo "Use --gui to scan the signing QRs on screen" >&2
     exit 2
   fi
   gui=true
@@ -15,13 +16,16 @@ if [[ "$FLUTTER_DEVICE" == macos ]]; then
   target=desktop
   hidden="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
   if "$gui"; then hidden=false; fi
-  flags=(--tags desktop --dart-define=VIZOR_E2E_HIDDEN_WINDOW="$hidden" --dart-define=KEYSTONE_GUI_SCAN="$gui")
+  flags=(--tags desktop --dart-define=VIZOR_E2E_HIDDEN_WINDOW="$hidden")
 else
   target=mobile
   xcrun simctl list devices booted -j | jq -e --arg id "$FLUTTER_DEVICE" \
     'any(.devices | to_entries[] | select(.key | contains("iOS")) | .value[]; .udid == $id)' >/dev/null
+  gui=true
+  export KEYSTONE_IOS_SIMULATOR_UDID="$FLUTTER_DEVICE"
   flags=(--tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile)
 fi
+flags+=(--dart-define=KEYSTONE_GUI_SCAN="$gui")
 work="$(mktemp -d "${TMPDIR:-/tmp}/vizor-keystone.XXXXXX")"
 pid=""
 chain="$work/chain"

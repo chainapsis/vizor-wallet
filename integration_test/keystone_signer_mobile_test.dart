@@ -21,7 +21,8 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.da
 import 'support/keystone_signing_fixture.dart';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
   setUpAll(initializeZcashWalletRuntime);
   setUp(installFixtureCamera);
   tearDownAll(releaseKeystoneWallet);
@@ -101,17 +102,25 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
     );
     await waitForWidget(tester, qr);
     final frames = tester.widget<KeystonePcztQrStage>(qr).urParts;
-    final result = await signWithFirmware(frames, batch: !tex);
-    await tapWhenReady(
-      tester,
-      find.byKey(const ValueKey('mobile_keystone_sign_get_signature')),
+    await Scrollable.ensureVisible(tester.element(qr), alignment: 0.5);
+    final scanner = find.byKey(
+      const ValueKey('mobile_keystone_sign_scanner_card'),
     );
-    await waitForWidget(
+    await exchangeKeystoneSignature(
       tester,
-      find.byKey(const ValueKey('mobile_keystone_sign_scanner_card')),
+      frames,
+      batch: !tex,
+      gui: true,
+      openScanner: () async {
+        await tapWhenReady(
+          tester,
+          find.byKey(const ValueKey('mobile_keystone_sign_get_signature')),
+        );
+        await waitForWidget(tester, scanner);
+        await fixture.expectNoBroadcast();
+      },
+      scanComplete: () => !tester.any(scanner),
     );
-    await fixture.expectNoBroadcast();
-    await scanFirmwareFrames(tester, result);
   }
   await waitForWidget(
     tester,
@@ -150,20 +159,25 @@ Future<void> _runVoting(WidgetTester tester) async {
   await tapWhenReady(tester, find.bySemanticsLabel('Next voting bundle'));
   await tester.pump();
   expect(find.text('Bundle 2 of 2'), findsOneWidget);
-  final result = await signWithFirmware(
+  await Scrollable.ensureVisible(tester.element(qr), alignment: 0.5);
+  await exchangeKeystoneSignature(
+    tester,
     tester.widget<KeystonePcztQrStage>(qr).urParts,
     batch: true,
+    gui: true,
     voting: true,
+    openScanner: () async {
+      await tapWhenReady(
+        tester,
+        find.byKey(const ValueKey('mobile_voting_keystone_get_signature')),
+      );
+      await waitForWidget(
+        tester,
+        find.byKey(const ValueKey('mobile_voting_keystone_scanner_card')),
+      );
+    },
+    scanComplete: () => scanned.isCompleted,
   );
-  await tapWhenReady(
-    tester,
-    find.byKey(const ValueKey('mobile_voting_keystone_get_signature')),
-  );
-  await waitForWidget(
-    tester,
-    find.byKey(const ValueKey('mobile_voting_keystone_scanner_card')),
-  );
-  await scanFirmwareFrames(tester, result);
   await fixture.verifySignatures(
     await scanned.future.timeout(const Duration(seconds: 15)),
   );

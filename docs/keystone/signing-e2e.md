@@ -33,16 +33,18 @@ default loopback ports, set `NU7_REGTEST_RPC_PORT` (49242) and
 
 ## Scanning with the Keystone GUI
 
-On Apple Silicon macOS, `--gui` runs the same three desktop tests and opens
-Vizor and the Keystone 3.2.2 SDL simulator for each signing request. Install CMake and SDL2
+The iOS Simulator run and the macOS `--gui` run open the Keystone 3.2.2 SDL
+simulator for every payment and voting request. Install CMake and SDL2
 (`brew install cmake sdl2`). Keep the primary display unlocked with room for
 both windows and grant Screen Recording permission to the process macOS
 prompts for. The runner provisions separate payment and voting simulator wallets with the
 public Speculos mnemonic. The payment GUI uses the same regtest firmware
-archive as the payment signer. The voting GUI uses the stock archive.
+archive as the payment signer. The voting GUI uses the stock signing code.
 
 The driver enters the fixture PIN and clicks **Scan**. Keystone reads the
-animated QR from the desktop through its own screen reader. The test checks
+animated QR with its own image detector. On macOS the camera source is the
+primary display. On iOS the runner supplies the selected simulator’s rendered
+display via `simctl io screenshot`, independent of other simulator windows. The test checks
 the captured Keystone window with macOS Vision. A completed review shows the
 expected title, amount, fee and a ZEC value.
 
@@ -56,13 +58,14 @@ Every observed request frame must belong to the current request. After the final
 the driver swipes the approval slider and enters the fixture PIN on the
 Keystone review screen. The simulator signs and displays its response QR.
 The loopback service captures PNGs of that window while it is open. Vizor
-passes each image to its native macOS `mobile_scanner` barcode detector and
-feeds the detector's event to the active scan screen. The scan screen must
+decodes those pixels inside the app. macOS uses the native `mobile_scanner`
+image analyzer. The plugin disables that analyzer on iOS Simulator, so the
+iOS test app uses ZXing and sends its detections to the active scanner stream. The scan screen must
 reconstruct the response before the test checks the transaction on Zebra or
 verifies both voting signatures against their original randomized keys and sighashes.
 The PNGs supply the camera input in this lane.
 
 The GUI server has no host signer configured. The runner uses the host tools
-to export fixture account information during setup. Default desktop and iOS
+to export fixture account information during setup. The default hidden macOS
 tests use the host signers and supply the returned URs to the barcode callback.
 Physical camera optics and ballot submission require separate verification.
