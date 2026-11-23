@@ -3720,8 +3720,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'desktop-home-ironwood-migration-in-progress',
-    description:
-        'Desktop home showing spendable Ironwood balance during migration',
+    description: 'Desktop home during an Ironwood migration',
     builder: buildDesktopHomeIronwoodMigrationInProgressUseCase,
   ),
   FigmaCompareScenario(
