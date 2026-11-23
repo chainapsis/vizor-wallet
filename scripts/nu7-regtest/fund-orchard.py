@@ -2,7 +2,7 @@
 """Fund Orchard notes before NU6.3 on the Zebra NU7 regtest chain.
 
 Zebra has no wallet, so coinbase is mined to the offline signer in
-rust/regtest-orchard-funder, matured, and spent into Orchard. The total splits
+rust/examples/regtest-orchard-funder, matured, and spent into Orchard. The total splits
 evenly across the given addresses, one note each, in one transaction.
 """
 import argparse
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COINBASE_MATURITY = 100
-# The signer pins NU6.3 at this height (rust/regtest-orchard-funder).
+# The signer pins NU6.3 at this height (rust/examples/regtest-orchard-funder).
 SIGNER_NU63_HEIGHT = 500
 MAX_INPUTS = 64
 MAX_PAYMENTS = 500

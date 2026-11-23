@@ -22,7 +22,7 @@ scripts/nu7-regtest/down.sh
   before NU6.3, Ironwood from it. Coinbase needs 100 confirmations.
 - `fund-orchard.py` funds exact Orchard amounts before NU6.3, one note per
   address, which Zebra cannot do without a wallet. It mines coinbase to the
-  offline signer in `rust/regtest-orchard-funder` (taken from the Zakura E2E
+  offline signer in `rust/examples/regtest-orchard-funder` (taken from the Zakura E2E
   branch), which pins NU6.3 at 500, so the chain must use that height.
 - Ports bind loopback only: Zebra RPC on 48232 (`NU7_REGTEST_RPC_PORT`) and
   lightwalletd on 49067 (`NU7_REGTEST_LIGHTWALLETD_PORT`). RPC auth is off.
@@ -41,11 +41,10 @@ its iOS simulator counterpart with
 `scripts/e2e/flutter-ios-regtest-mobile-nu7-migration-stop.sh` (one booted
 simulator, or `SIMULATOR_UDID`).
 
-The base Ironwood migration runs here too, so it pays the NU7 fee:
-`scripts/e2e/flutter-macos-ironwood-migration-nu7.sh` and
-`scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-nu7.sh`. They use
-disposable Compose projects and the same test files as the zcashd runners.
-The driver's `/activate` mines through NU6.3 at 500 and NU7 at 520 while the
-app runs. They fund
-0.0105 ZEC, which only the NU7 start gate admits. The other migration
-scenarios still run on `scripts/ironwood-regtest/`.
+The iOS full regtest suite runs two migration scenarios by default. The Zebra
+runner (`scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-nu7.sh`)
+funds 0.0105 ZEC and mines through NU6.3 at 500 and NU7 at 520 while the app
+is open. The zcashd background-restart runner checks that iOS can broadcast
+persisted proofs after relaunch. The 20-note, immediate migration and reorg
+scenarios can be run individually. The macOS Zebra runner is
+`scripts/e2e/flutter-macos-ironwood-migration-nu7.sh`.

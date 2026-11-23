@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the Ironwood migration E2E on the Zebra chain, where NU6.3 and NU7 both
 # activate while the app runs, so the migration pays the NU7 fee. Orchard is
-# funded before NU6.3 by the offline signer in rust/regtest-orchard-funder.
+# funded before NU6.3 by the offline signer in rust/examples/regtest-orchard-funder.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -20,7 +20,8 @@ TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_ironwood_migration_test.dar
 FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-0.0105}"
 FUNDING_NOTE_COUNT="${E2E_ORCHARD_FUNDING_NOTE_COUNT:-1}"
 FUNDING_CONFIRMATIONS="${E2E_ORCHARD_FUNDING_CONFIRMATIONS:-10}"
-FUNDER_TARGET="${CARGO_TARGET_DIR:-$ROOT_DIR/rust/regtest-orchard-funder/target}"
+FUNDER_DIR="$ROOT_DIR/rust/examples/regtest-orchard-funder"
+FUNDER_TARGET="${CARGO_TARGET_DIR:-$FUNDER_DIR/target}"
 FUNDER="$FUNDER_TARGET/debug/regtest_orchard_funder"
 
 for cmd in cargo docker fvm python3; do
@@ -31,7 +32,7 @@ for cmd in cargo docker fvm python3; do
 done
 
 cd "$ROOT_DIR"
-cargo build --quiet --locked --manifest-path rust/regtest-orchard-funder/Cargo.toml \
+cargo build --quiet --locked --manifest-path "$FUNDER_DIR/Cargo.toml" \
   --target-dir "$FUNDER_TARGET" --bin regtest_orchard_funder
 
 export NU7_REGTEST_NU63_HEIGHT="$NU63_HEIGHT" NU7_REGTEST_NU7_HEIGHT="$NU7_HEIGHT"
