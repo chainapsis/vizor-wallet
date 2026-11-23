@@ -285,6 +285,90 @@ Widget buildSwapReviewZecToExternalUseCase(BuildContext context) {
   );
 }
 
+// Rate-line captures, priced from the NEAR Intents token list of
+// 2026-11-23 (ZEC $796.27).
+final _ratePepe = SwapAsset.live(
+  assetId: 'nep141:eth-0x6982508145454ce325ddbe47a25d4ec3d2311933.omft.near',
+  symbol: 'PEPE',
+  blockchain: 'eth',
+  decimals: 18,
+);
+
+SwapState _rateCaptureState({
+  required SwapDirection direction,
+  required SwapAsset asset,
+  required double externalPerZec,
+  required String amountText,
+  required String receiveAmountText,
+}) => SwapState(
+  direction: direction,
+  amountText: amountText,
+  receiveAmountText: receiveAmountText,
+  destinationText: '',
+  externalAsset: asset,
+  reviewVisible: false,
+  intents: [],
+  slippageBps: 50,
+  supportedExternalAssets: [asset],
+  indicativeExternalPerZec: {asset: externalPerZec},
+);
+
+Widget buildSwapRateComposerZecToBtcUseCase(BuildContext context) =>
+    _SwapPageFrame(
+      child: _SwapComposerPreview(
+        initialState: _rateCaptureState(
+          direction: SwapDirection.zecToExternal,
+          asset: SwapAsset.btc,
+          externalPerZec: 0.012910742,
+          amountText: '1',
+          receiveAmountText: '0.01291074',
+        ),
+        actionLabel: 'Add recipient address',
+      ),
+    );
+
+Widget buildSwapRateComposerUsdcToZecUseCase(BuildContext context) =>
+    _SwapPageFrame(
+      child: _SwapComposerPreview(
+        initialState: _rateCaptureState(
+          direction: SwapDirection.externalToZec,
+          asset: SwapAsset.usdc,
+          externalPerZec: 796.73,
+          amountText: '100',
+          receiveAmountText: '0.125513',
+        ),
+        actionLabel: 'Add refund address',
+      ),
+    );
+
+Widget buildSwapRateComposerPepeToZecUseCase(BuildContext context) =>
+    _SwapPageFrame(
+      child: _SwapComposerPreview(
+        initialState: _rateCaptureState(
+          direction: SwapDirection.externalToZec,
+          asset: _ratePepe,
+          externalPerZec: 229472622.48,
+          amountText: '25000000',
+          receiveAmountText: '0.108946',
+        ),
+        actionLabel: 'Add refund address',
+      ),
+    );
+
+Widget buildSwapRateComposerDogeToZecUseCase(BuildContext context) =>
+    _SwapPageFrame(
+      child: _SwapComposerPreview(
+        initialState: _rateCaptureState(
+          direction: SwapDirection.externalToZec,
+          asset: SwapAsset.doge,
+          externalPerZec: 14270.84,
+          amountText: '5000',
+          receiveAmountText: '0.350366',
+        ),
+        actionLabel: 'Add refund address',
+      ),
+    );
+
 Widget buildSwapReviewLargeLeftAmountUseCase(BuildContext context) {
   return _SwapReviewPageFrame(
     backLabel: 'Swap',
