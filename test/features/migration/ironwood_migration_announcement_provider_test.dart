@@ -157,6 +157,38 @@ void main() {
     },
   );
 
+  test('uses the fee at the migration target height', () async {
+    const activation = 3_500_000;
+    Future<bool> canStart(int tip, int balance) async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        nu7ActivationHeight: activation,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: tip,
+          chainTipHeight: tip,
+          orchardBalance: BigInt.from(balance),
+          spendableBalance: BigInt.from(balance),
+          totalBalance: BigInt.from(balance),
+        ),
+      );
+      addTearDown(container.dispose);
+      await _settleCoreProviders(container);
+      final state = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      return state.mode == IronwoodPostMigrationMode.required;
+    }
+
+    expect(await canStart(activation - 2, 1_094_999), isFalse);
+    expect(await canStart(activation - 2, 1_095_000), isTrue);
+    expect(await canStart(activation - 1, 1_018_999), isFalse);
+    expect(await canStart(activation - 1, 1_019_000), isTrue);
+    expect(await canStart(activation, 1_019_000), isTrue);
+  });
+
   test('completion surfaces a settled migration receipt once', () async {
     final completionStore = _FakeCompletionStore();
     final container = _container(
