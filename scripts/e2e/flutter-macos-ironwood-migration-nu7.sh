@@ -12,8 +12,6 @@ NU7_HEIGHT="${NU7_REGTEST_NU7_HEIGHT:-520}"
 LIGHTWALLETD_URL="http://127.0.0.1:${NU7_REGTEST_LIGHTWALLETD_PORT:-49067}"
 FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
 VIZOR_FORM_FACTOR="${VIZOR_FORM_FACTOR:-desktop}"
-DRIVER_PORT="${E2E_DRIVER_PORT:-39078}"
-DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
 TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_ironwood_migration_test.dart}"
 # 0.0105 ZEC clears the NU7 start gate (1,019,000 zatoshis) but not the
 # pre-NU7 one (1,095,000), so the run fails if the gate ignores NU7 fees.
@@ -67,24 +65,22 @@ print(int(value))' "$FUNDING_AMOUNT")"
 scripts/nu7-regtest/fund-orchard.py --funder "$FUNDER" \
   --amount-zatoshi "$funding_zatoshi" --confirmations "$FUNDING_CONFIRMATIONS" $addresses
 
-: >"$DRIVER_LOG"
-python3 -u scripts/e2e/nu7-regtest-driver.py --repo-root "$ROOT_DIR" --port "$DRIVER_PORT" \
+port_file="$NU7_REGTEST_RUN_DIR/driver.port"
+python3 -u scripts/e2e/nu7-regtest-driver.py --repo-root "$ROOT_DIR" \
+  --port "${E2E_DRIVER_PORT:-0}" --port-file "$port_file" \
   >"$DRIVER_LOG" 2>&1 &
 driver_pid="$!"
-python3 - "$DRIVER_URL" <<'PY'
-import sys
-import time
-import urllib.request
-
-for _ in range(100):
-    try:
-        with urllib.request.urlopen(sys.argv[1] + "/health", timeout=1) as response:
-            if response.status == 200:
-                raise SystemExit(0)
-    except Exception:
-        time.sleep(0.1)
-raise SystemExit("Timed out waiting for the NU7 E2E driver")
-PY
+for ((attempt = 0; attempt < 100; attempt++)); do
+  [[ -s "$port_file" ]] && break
+  kill -0 "$driver_pid" 2>/dev/null || break
+  sleep 0.1
+done
+if [[ ! -s "$port_file" ]]; then
+  echo "NU7 E2E driver failed to start" >&2
+  cat "$DRIVER_LOG" >&2
+  exit 1
+fi
+DRIVER_URL="http://127.0.0.1:$(<"$port_file")"
 
 echo "running Flutter Ironwood migration integration test under NU7: $TEST_FILE"
 flutter_args=("$TEST_FILE" -d "$FLUTTER_DEVICE")

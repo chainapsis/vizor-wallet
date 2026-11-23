@@ -83,14 +83,19 @@ def main():
 
     miner = funder(args.funder, "identity")["miner_address"]
     inputs, value = [], 0
-    # One coinbase per block; a margin over the amount leaves room for the fee.
-    while value < args.amount_zatoshi + 100_000:
-        if len(inputs) == MAX_INPUTS:
-            raise SystemExit("amount needs more coinbase inputs than one transaction takes")
+    # Pre-NU6.3 ZIP 317: one action per P2PKH input (one change output),
+    # plus one per Orchard payment, padded to at least two Orchard actions.
+    orchard_actions = max(2, len(addresses))
+    for input_count in range(1, MAX_INPUTS + 1):
         rpc("generatetoaddress", [1, miner])
         source, source_value = coinbase_source(rpc("getblockcount"), miner)
         inputs.append(source)
         value += source_value
+        fee = 5_000 * (input_count + orchard_actions)
+        if value > args.amount_zatoshi + fee:  # The signer requires positive change.
+            break
+    else:
+        raise SystemExit("amount needs more coinbase inputs than one transaction takes")
     mine(COINBASE_MATURITY)
 
     target = rpc("getblockcount") + 1

@@ -129,11 +129,17 @@ def main() -> None:
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--port-file", type=Path)
     args = parser.parse_args()
 
     DriverHandler.repo_root = Path(args.repo_root).resolve()
     server = ThreadingHTTPServer((args.host, args.port), DriverHandler)
-    print(f"[nu7-driver] listening on http://{args.host}:{args.port}")
+    if args.port_file:
+        # Publish the port only after this process has bound its listening socket.
+        pending = args.port_file.with_suffix(".tmp")
+        pending.write_text(f"{server.server_port}\n")
+        pending.replace(args.port_file)
+    print(f"[nu7-driver] listening on http://{args.host}:{server.server_port}")
     server.serve_forever()
 
 
