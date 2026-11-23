@@ -9,7 +9,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--signer', required=True)
+parser.add_argument('--send-signer', required=True)
+parser.add_argument('--voting-signer', required=True)
 parser.add_argument('--fixture-dir', required=True, type=Path)
 parser.add_argument('--fixture-tool', required=True)
 parser.add_argument('--port-file', required=True, type=Path)
@@ -23,12 +24,10 @@ class Handler(BaseHTTPRequestHandler):
             sidecar = (args.fixture_dir / 'wallet.db.voting').read_bytes()
             fixture['db'] = base64.b64encode(gzip.compress(sidecar)).decode()
             return self.respond(200, json.dumps(fixture).encode())
-        if self.path != '/account':
-            return self.send_error(404)
-        self.run_signer('account', '')
+        return self.send_error(404)
 
     def do_POST(self):
-        if self.path not in ('/sign', '/verify-votes'):
+        if self.path not in ('/sign', '/sign-votes', '/verify-votes'):
             return self.send_error(404)
         if self.headers.get_content_type() != 'application/json':
             return self.send_error(415)
@@ -50,10 +49,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid PCZT frame')
         except (KeyError, TypeError, ValueError) as error:
             return self.send_error(400, str(error))
-        self.run_signer(mode, '\n'.join(parts))
-
-    def run_signer(self, mode, frames):
-        self.run_tool([args.signer, mode], frames, frames=True)
+        signer = args.voting_signer if self.path == '/sign-votes' else args.send_signer
+        self.run_tool([signer, mode], '\n'.join(parts), frames=True)
 
     def run_tool(self, command, input_text, *, frames):
         try:

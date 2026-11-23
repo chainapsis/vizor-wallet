@@ -1,6 +1,4 @@
-//! Import the firmware's account export, then fund it on an isolated synthetic chain.
-#[path = "support/ironwood_fixture.rs"]
-mod ironwood_fixture;
+//! Prepare a funded-account import for Zebra or a two-bundle SDK voting fixture.
 #[path = "support/voting_fixture.rs"]
 mod voting_fixture;
 
@@ -22,15 +20,14 @@ use std::{
     io::{self, BufRead},
 };
 use zcash_address::{ToAddress, ZcashAddress};
-use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::NetworkType;
 
 fn main() -> Result<(), String> {
     let mut args = env::args().skip(1);
-    let mode = args.next().ok_or("expected prepare or verify-votes")?;
+    let mode = args.next().ok_or("expected a fixture command")?;
     let path = args.next().ok_or("expected fixture path")?;
     match mode.as_str() {
-        "prepare" => prepare(&path, false),
+        "prepare-voting" => prepare(&path, false),
         "regtest-account" => prepare(&path, true),
         "regtest-sync" => {
             let url = args.next().ok_or("expected lightwalletd URL")?;
@@ -69,18 +66,22 @@ fn prepare(path: &str, regtest: bool) -> Result<(), String> {
     let [account] = accounts.as_slice() else {
         return Err("Expected one firmware account".into());
     };
+    let network = if regtest {
+        WalletNetwork::Regtest
+    } else {
+        WalletNetwork::Main
+    };
+    let (uuid, funding) = import_hardware_account(
+        path,
+        network,
+        &account.name,
+        &account.ufvk,
+        &account.seed_fingerprint,
+        account.index,
+        Some(1),
+        HardwareSignerKind::Keystone,
+    )?;
     if regtest {
-        let network = WalletNetwork::Regtest;
-        let (uuid, funding) = import_hardware_account(
-            path,
-            network,
-            &account.name,
-            &account.ufvk,
-            &account.seed_fingerprint,
-            account.index,
-            Some(1),
-            HardwareSignerKind::Keystone,
-        )?;
         let tex = ZcashAddress::from_tex(NetworkType::Regtest, [0x42; 20]);
         let address = ZcashAddress::from_transparent_p2pkh(NetworkType::Regtest, [0x43; 20]);
         println!(
@@ -92,20 +93,6 @@ fn prepare(path: &str, regtest: bool) -> Result<(), String> {
         );
         return Ok(());
     }
-    let height = ironwood_fixture::funding_height()?;
-    let (uuid, _) = import_hardware_account(
-        path,
-        WalletNetwork::Main,
-        &account.name,
-        &account.ufvk,
-        &account.seed_fingerprint,
-        account.index,
-        Some(u32::from(height).into()),
-        HardwareSignerKind::Keystone,
-    )?;
-    let ufvk = UnifiedFullViewingKey::decode(&WalletNetwork::Main, &account.ufvk)
-        .map_err(|e| e.to_string())?;
-    ironwood_fixture::fund_wallet(path, &ufvk, &uuid, height)?;
     let db = VotingDb::open_wallet_sidecar(Path::new(path), &uuid).map_err(|e| e.to_string())?;
     let requests =
         voting_fixture::signing_requests(&account.ufvk, &account.seed_fingerprint, &db, false)?;
@@ -126,23 +113,19 @@ fn prepare(path: &str, regtest: bool) -> Result<(), String> {
     fs::write(
         Path::new(path).with_file_name("voting.json"),
         serde_json::to_vec(&VotingFixture {
+            account_uuid: uuid,
             round_id: voting_fixture::round_id(),
             bundles,
         })
         .map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    let address = ZcashAddress::from_transparent_p2pkh(NetworkType::Main, [0x42; 20]).encode();
-    let tex = ZcashAddress::from_tex(NetworkType::Main, [0x42; 20]).encode();
-    println!(
-        "{}",
-        serde_json::json!({"accountUuid": uuid, "texAddress": tex, "address": address})
-    );
     Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
 struct VotingFixture {
+    account_uuid: String,
     round_id: String,
     bundles: Vec<Bundle>,
 }

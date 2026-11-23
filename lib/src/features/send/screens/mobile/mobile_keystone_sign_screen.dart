@@ -30,11 +30,9 @@ class MobileKeystoneSignScreen extends ConsumerStatefulWidget {
   const MobileKeystoneSignScreen({
     required this.args,
     this.loadWalletDbPath = getWalletDbPath,
-    this.scannerBuilder,
     super.key,
   });
 
-  final MobileKeystonePcztScannerBuilder? scannerBuilder;
   final SendReviewArgs args;
   final Future<String> Function() loadWalletDbPath;
 
@@ -131,7 +129,6 @@ class _MobileKeystoneSignScreenState
             description: widget.args.addressType == 'tex'
                 ? context.l10n.sendKeystoneTexTwoApprovals(_rounds.index + 1)
                 : context.l10n.commonKeystoneScanTransaction,
-            scannerBuilder: widget.scannerBuilder,
             preparePczt: _preparePczt,
             onSigned: _handleSignedPczt,
             signedPcztDecoder: _decodeKeystoneResponse,
