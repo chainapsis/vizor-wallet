@@ -25,8 +25,6 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 
 import 'support/keystone_signing_fixture.dart';
 
-const _gui = bool.fromEnvironment('KEYSTONE_GUI_SCAN', defaultValue: true);
-
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(initializeZcashWalletRuntime);
@@ -55,36 +53,29 @@ Widget _app(GoRouter router) => MaterialApp.router(
 );
 
 Future<void> _prepareViewport(WidgetTester tester) async {
-  if (_gui) {
-    final binding = IntegrationTestWidgetsFlutterBinding.instance;
-    final previous = binding.framePolicy;
-    binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
-    addTearDown(() => binding.framePolicy = previous);
-    final display = tester.view.display;
-    final size = display.size / display.devicePixelRatio;
-    // Keystone occupies the left 480 logical pixels of the primary display.
-    await windowManager.setBounds(
-      Rect.fromLTWH(
-        496,
-        40,
-        math.min(1080, size.width - 512),
-        math.min(940, size.height - 90),
-      ),
-    );
-    await windowManager.show();
-    await windowManager.setAlwaysOnTop(true);
-    addTearDown(() => windowManager.setAlwaysOnTop(false));
-    return;
-  }
-  await tester.binding.setSurfaceSize(const Size(1280, 900));
-  addTearDown(() => tester.binding.setSurfaceSize(null));
+  final binding = IntegrationTestWidgetsFlutterBinding.instance;
+  final previous = binding.framePolicy;
+  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+  addTearDown(() => binding.framePolicy = previous);
+  final display = tester.view.display;
+  final size = display.size / display.devicePixelRatio;
+  // Keystone occupies the left 480 logical pixels of the primary display.
+  await windowManager.setBounds(
+    Rect.fromLTWH(
+      496,
+      40,
+      math.min(1080, size.width - 512),
+      math.min(940, size.height - 90),
+    ),
+  );
+  await windowManager.show();
+  await windowManager.setAlwaysOnTop(true);
+  addTearDown(() => windowManager.setAlwaysOnTop(false));
 }
 
 Future<void> _showQr(WidgetTester tester, Finder qr) async {
-  if (_gui) {
-    await Scrollable.ensureVisible(tester.element(qr), alignment: 0.5);
-    await tester.pump();
-  }
+  await Scrollable.ensureVisible(tester.element(qr), alignment: 0.5);
+  await tester.pump();
 }
 
 Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
@@ -126,7 +117,6 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
     await exchangeKeystoneSignature(
       tester,
       stage.urParts,
-      gui: _gui,
       batch: !tex,
       openScanner: () async {
         await tapWhenReady(tester, action);
@@ -206,7 +196,6 @@ Future<void> _runVoting(WidgetTester tester) async {
   await exchangeKeystoneSignature(
     tester,
     tester.widget<KeystonePcztQrStage>(qr).urParts,
-    gui: _gui,
     batch: true,
     voting: true,
     openScanner: () => tapWhenReady(tester, find.text('Scan signature')),

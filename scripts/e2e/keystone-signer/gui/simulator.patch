@@ -5,7 +5,7 @@
          ${CRYPTO_SLIP39}
      )
 -    add_dependencies(${PROJECT_NAME} rust_c)
-+    # The runner builds the pinned simulator Rust archive with the host signer.
++    # The runner builds the pinned Rust archive for this simulator.
 +    enable_language(OBJC)
 +    target_sources(${PROJECT_NAME} PRIVATE "${VIZOR_GUI_DRIVER}")
 +    target_link_libraries(${PROJECT_NAME} PRIVATE "-framework AppKit" "-framework Vision")

@@ -4,18 +4,13 @@ set -euo pipefail
 : "${FLUTTER_DEVICE:?set FLUTTER_DEVICE to macos or a booted iOS simulator UDID}"
 cd "$(dirname "$0")/../.."
 unset KEYSTONE_IOS_SIMULATOR_UDID
-gui=true
-if [[ $# -eq 1 && "$1" == --host-signer && "$FLUTTER_DEVICE" == macos ]]; then
-  gui=false
-elif [[ $# -gt 0 && ( $# -ne 1 || "$1" != --gui ) ]]; then
-  echo "Usage: $0 [--gui | --host-signer (macOS only)]" >&2
+if [[ $# -ne 0 ]]; then
+  echo "Usage: FLUTTER_DEVICE=macos|<simulator-udid> $0" >&2
   exit 2
 fi
 if [[ "$FLUTTER_DEVICE" == macos ]]; then
   target=desktop
-  hidden="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
-  if "$gui"; then hidden=false; fi
-  flags=(--tags desktop --dart-define=VIZOR_E2E_HIDDEN_WINDOW="$hidden")
+  flags=(--tags desktop --dart-define=VIZOR_E2E_HIDDEN_WINDOW=false)
 else
   target=mobile
   xcrun simctl list devices booted -j | jq -e --arg id "$FLUTTER_DEVICE" \
@@ -23,7 +18,6 @@ else
   export KEYSTONE_IOS_SIMULATOR_UDID="$FLUTTER_DEVICE"
   flags=(--tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile)
 fi
-flags+=(--dart-define=KEYSTONE_GUI_SCAN="$gui")
 work="$(mktemp -d "${TMPDIR:-/tmp}/vizor-keystone.XXXXXX")"
 pid=""
 chain="$work/chain"
@@ -36,19 +30,9 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
-server_args=(--fixture-dir "$work/voting" --port-file "$work/port")
-vote_gui=""
-send_gui=""
-if "$gui"; then
-  mkdir "$work/gui"
-  vote_gui="$work/gui/vote"
-  send_gui="$work/gui/payment"
-  server_args+=(--gui-dir "$work/gui")
-else
-  server_args+=(--send-signer "$work/send-signer" --voting-signer "$work/voting-signer")
-fi
-scripts/e2e/keystone-signer/build.sh "$work/voting-signer" stock "$vote_gui"
-scripts/e2e/keystone-signer/build.sh "$work/send-signer" --regtest "$send_gui"
+mkdir "$work/gui"
+scripts/e2e/keystone-signer/build.sh "$work/gui/vote" stock
+scripts/e2e/keystone-signer/build.sh "$work/gui/payment" regtest
 fixture_tool="$(cargo build --locked --quiet --manifest-path rust/Cargo.toml --example keystone_signer_fixture --message-format=json-render-diagnostics |
   jq -r 'select(.target.name == "keystone_signer_fixture" and .executable != null) | .executable')"
 export COMPOSE_PROJECT_NAME="vizor-$(basename "$work" | tr '[:upper:].' '[:lower:]-')"
@@ -61,7 +45,7 @@ cp -R scripts/nu7-regtest "$chain/scripts/"
 ln -s "$PWD/protos" "$chain/protos"
 cp docker-compose.zcash-nu7-regtest.yml "$compose_file"
 "$chain/scripts/nu7-regtest/up.sh"
-"$work/send-signer" account | "$fixture_tool" regtest-account "$work/wallet.db" > "$work/account.json"
+"$fixture_tool" regtest-account "$work/wallet.db" < "$work/gui/payment/account.ur" > "$work/account.json"
 funding="$(jq -er .fundingAddress "$work/account.json")"
 # Fund before and after NU6.3, then mature both coinbase pools.
 "$chain/scripts/nu7-regtest/fund.sh" "$funding" 4
@@ -71,9 +55,9 @@ funding="$(jq -er .fundingAddress "$work/account.json")"
 lwd="http://127.0.0.1:$NU7_REGTEST_LIGHTWALLETD_PORT"
 "$fixture_tool" regtest-sync "$work/wallet.db" "$lwd" "$NU7_REGTEST_NU63_HEIGHT" "$NU7_REGTEST_NU7_HEIGHT"
 mkdir -p "$work/voting"
-"$work/voting-signer" account | "$fixture_tool" prepare-voting "$work/voting/wallet.db"
+"$fixture_tool" prepare-voting "$work/voting/wallet.db" < "$work/gui/vote/account.ur"
 python3 scripts/e2e/keystone-signer/server.py --fixture-tool "$fixture_tool" \
-  "${server_args[@]}" &
+  --gui-dir "$work/gui" --fixture-dir "$work/voting" --port-file "$work/port" &
 pid=$!
 for ((i=0; i<100; i++)); do
   [[ -s "$work/port" ]] && break

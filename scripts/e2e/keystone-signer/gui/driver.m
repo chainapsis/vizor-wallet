@@ -18,7 +18,7 @@ void RecordGuiEvent(const char *label, const char *value)
 
 int ProvisionFixture(void)
 {
-    // BIP39 entropy of the public Speculos mnemonic used by signer.c.
+    // BIP39 entropy of the public Speculos mnemonic used to export the fixture account.
     uint8_t entropy[] = {
         0x63, 0x95, 0x86, 0x1d, 0x38, 0x51, 0x0e, 0xad,
         0xd4, 0x42, 0xa2, 0xec, 0xb3, 0x57, 0xa3, 0x5b,

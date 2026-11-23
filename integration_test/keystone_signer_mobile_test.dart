@@ -110,7 +110,6 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
       tester,
       frames,
       batch: !tex,
-      gui: true,
       openScanner: () async {
         await tapWhenReady(
           tester,
@@ -164,7 +163,6 @@ Future<void> _runVoting(WidgetTester tester) async {
     tester,
     tester.widget<KeystonePcztQrStage>(qr).urParts,
     batch: true,
-    gui: true,
     voting: true,
     openScanner: () async {
       await tapWhenReady(

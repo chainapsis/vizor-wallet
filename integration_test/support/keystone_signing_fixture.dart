@@ -298,35 +298,14 @@ class KeystoneVoteFixture {
   }
 }
 
-Future<List<String>> signWithFirmware(
-  List<String> frames, {
-  required bool batch,
-  bool voting = false,
-}) async {
-  final reply = await _request(
-    voting ? '/sign-votes' : '/sign',
-    body: {'mode': batch ? 'batch' : 'single', 'parts': frames},
-  );
-  final parts = (reply['parts'] as List).cast<String>();
-  expect(parts, isNotEmpty);
-  return parts;
-}
-
 Future<void> exchangeKeystoneSignature(
   WidgetTester tester,
   List<String> parts, {
   required bool batch,
-  required bool gui,
   bool voting = false,
   required Future<void> Function() openScanner,
   bool Function()? scanComplete,
 }) async {
-  if (!gui) {
-    final signed = await signWithFirmware(parts, batch: batch, voting: voting);
-    await openScanner();
-    await scanFirmwareFrames(tester, signed);
-    return;
-  }
   await _request(
     voting ? '/approve-votes' : '/approve-payment',
     body: {'mode': batch ? 'batch' : 'single', 'parts': parts},
@@ -437,25 +416,6 @@ Future<void> _scanGuiSignature(
     );
   } finally {
     await directory?.delete(recursive: true);
-  }
-}
-
-// The native camera would report these same UR strings as barcode detections.
-// Leave UR session management, decoding and navigation to the active screen.
-Future<void> scanFirmwareFrames(
-  WidgetTester tester,
-  List<String> frames,
-) async {
-  final finder = find.byType(MobileScanner);
-  await waitForWidget(tester, finder);
-  final detect = tester.widget<MobileScanner>(finder).onDetect!;
-  for (final frame in frames) {
-    detect(
-      BarcodeCapture(
-        barcodes: [Barcode(rawValue: frame, format: BarcodeFormat.qrCode)],
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 16));
   }
 }
 

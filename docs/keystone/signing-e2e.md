@@ -1,7 +1,7 @@
 # Keystone signing E2E
 
 Run a command from the repository root on macOS. The iOS target needs a
-dedicated, booted simulator. Both targets open the Keystone GUI by default.
+dedicated, booted simulator. Both targets open the Keystone GUI for every signing request.
 
 ```sh
 FLUTTER_DEVICE=macos scripts/e2e/flutter-keystone.sh
@@ -17,7 +17,7 @@ Both targets exercise the signing screens for their own form factor.
 | Voting delegation | One compact batch of two SDK bundles | Both bundle memos can be reached. Each stored signature verifies against the original bundle's randomized key and sighash. |
 
 The runner needs FVM, Xcode, CocoaPods, Rust, Python 3, jq, Docker Compose and
-grpcurl. It builds two host signers from Keystone Cypherpunk firmware 3.2.2
+grpcurl. It builds separate voting and payment GUI simulators from Keystone Cypherpunk firmware 3.2.2
 with the public Speculos fixture seed. Voting uses the stock signing code. Payments
 use an isolated build patched for regtest account derivation and consensus
 parameters. Set `KEYSTONE_FIRMWARE_DIR` to reuse a clean checkout of the pinned
@@ -37,8 +37,7 @@ simulator for every payment and voting request. Install CMake and SDL2
 (`brew install cmake sdl2`). Keep the primary display unlocked with room for
 both windows and grant Screen Recording permission to the process macOS
 prompts for. The runner provisions separate payment and voting simulator wallets with the
-public Speculos mnemonic. The payment GUI uses the same regtest firmware
-archive as the payment signer. The voting GUI uses the stock signing code.
+public Speculos mnemonic. The build exports each simulator fixture’s public account as a pairing UR for Vizor.
 
 The driver enters the fixture PIN and clicks **Scan**. Keystone reads the
 animated QR with its own image detector. On macOS the camera source is the
@@ -64,9 +63,4 @@ reconstruct the response before the test checks the transaction on Zebra or
 verifies both voting signatures against their original randomized keys and sighashes.
 The PNGs supply the camera input in this lane.
 
-The GUI server has no host signer configured. The runner uses the host tools
-to export fixture account information during setup. For a hidden macOS run, use
-`FLUTTER_DEVICE=macos scripts/e2e/flutter-keystone.sh --host-signer`. This
-mode signs on the host and supplies the returned URs to the barcode callback,
-skipping screen QR decoding and approval in the Keystone GUI.
 Physical camera optics and ballot submission require separate verification.

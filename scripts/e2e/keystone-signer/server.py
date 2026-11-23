@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pass local simulator requests to the fixed-key Keystone firmware harness."""
+"""Drive the Keystone GUI and serve its signature screen to Vizor."""
 import argparse
 import base64
 import gzip
@@ -11,15 +11,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--send-signer')
-parser.add_argument('--voting-signer')
 parser.add_argument('--fixture-dir', required=True, type=Path)
 parser.add_argument('--fixture-tool', required=True)
-parser.add_argument('--gui-dir', type=Path, help='Isolated Keystone SDL simulator and fixture wallet')
+parser.add_argument('--gui-dir', required=True, type=Path, help='Isolated Keystone SDL simulator and fixture wallet')
 parser.add_argument('--port-file', required=True, type=Path)
 args = parser.parse_args()
-if not args.gui_dir and not (args.send_signer and args.voting_signer):
-    parser.error('Host mode requires both firmware signers')
 
 
 def check_review(lines, kind, expected):
@@ -85,7 +81,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_error(404)
 
     def do_POST(self):
-        if self.path not in ('/sign', '/approve-payment', '/approve-votes', '/close-signing', '/sign-votes', '/verify-votes'):
+        if self.path not in ('/approve-payment', '/approve-votes', '/close-signing', '/verify-votes'):
             return self.send_error(404)
         if self.headers.get_content_type() != 'application/json':
             return self.send_error(415)
@@ -100,8 +96,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.signing_window = None
                 return self.respond(200, b'{}')
             if self.path == '/verify-votes':
-                command = [args.fixture_tool, 'verify-votes', str(args.fixture_dir / 'voting.json')]
-                return self.run_tool(command, json.dumps(request), frames=False)
+                return self.verify_votes(request)
             mode = request['mode']
             prefix = {'single': 'ur:zcash-pczt/', 'batch': 'ur:zcash-sign-batch/'}[mode]
             parts = request['parts']
@@ -112,29 +107,24 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid PCZT frame')
         except (KeyError, TypeError, ValueError) as error:
             return self.send_error(400, str(error))
-        if self.path in ('/approve-payment', '/approve-votes'):
-            if not args.gui_dir or self.server.signing_window is not None:
-                return self.send_error(409, 'Expected an idle Keystone GUI')
-            voting = self.path == '/approve-votes'
-            if voting and mode != 'batch':
-                return self.send_error(400, 'Expected a voting batch')
-            directory = args.gui_dir / ('vote' if voting else 'payment')
-            try:
-                self.server.signing_window = SigningWindow(directory, 'vote' if voting else mode, parts)
-                return self.respond(200, b'{}')
-            except (OSError, ValueError) as error:
-                return self.send_error(422, str(error))
-        if args.gui_dir:
-            return self.send_error(409, 'Signing requires approval on the Keystone GUI')
-        signer = args.voting_signer if self.path == '/sign-votes' else args.send_signer
-        self.run_tool([signer, mode], '\n'.join(parts), frames=True)
-
-    def run_tool(self, command, input_text, *, frames):
+        if self.server.signing_window is not None:
+            return self.send_error(409, 'Expected an idle Keystone GUI')
+        voting = self.path == '/approve-votes'
+        if voting and mode != 'batch':
+            return self.send_error(400, 'Expected a voting batch')
+        directory = args.gui_dir / ('vote' if voting else 'payment')
         try:
-            run = subprocess.run(command, input=input_text, text=True,
-                                 capture_output=True, check=True, timeout=60)
-            result = {'parts': run.stdout.splitlines()} if frames else {'verified': True}
-            body = json.dumps(result).encode()
+            self.server.signing_window = SigningWindow(directory, 'vote' if voting else mode, parts)
+            return self.respond(200, b'{}')
+        except (OSError, ValueError) as error:
+            return self.send_error(422, str(error))
+
+    def verify_votes(self, request):
+        command = [args.fixture_tool, 'verify-votes', str(args.fixture_dir / 'voting.json')]
+        try:
+            subprocess.run(command, input=json.dumps(request), text=True,
+                           capture_output=True, check=True, timeout=60)
+            body = b'{"verified": true}'
             status = 200
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
             status = 422
@@ -149,7 +139,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-# Unwind subprocess.run on runner cleanup so it kills and reaps its GUI child.
+# Run the server cleanup when the runner stops the service.
 def stop_server(_signum, _frame):
     raise SystemExit
 
