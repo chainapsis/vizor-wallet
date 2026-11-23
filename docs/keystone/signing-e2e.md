@@ -1,11 +1,10 @@
 # Keystone signing E2E
 
 Run a command from the repository root on macOS. The iOS target needs a
-dedicated, booted simulator. The default macOS run uses a hidden desktop window.
+dedicated, booted simulator. Both targets open the Keystone GUI by default.
 
 ```sh
 FLUTTER_DEVICE=macos scripts/e2e/flutter-keystone.sh
-FLUTTER_DEVICE=macos scripts/e2e/flutter-keystone.sh --gui
 FLUTTER_DEVICE="$SIMULATOR_UDID" scripts/e2e/flutter-keystone.sh
 ```
 
@@ -33,7 +32,7 @@ default loopback ports, set `NU7_REGTEST_RPC_PORT` (49242) and
 
 ## Scanning with the Keystone GUI
 
-The iOS Simulator run and the macOS `--gui` run open the Keystone 3.2.2 SDL
+The iOS Simulator and macOS runs open the Keystone 3.2.2 SDL
 simulator for every payment and voting request. Install CMake and SDL2
 (`brew install cmake sdl2`). Keep the primary display unlocked with room for
 both windows and grant Screen Recording permission to the process macOS
@@ -66,6 +65,8 @@ verifies both voting signatures against their original randomized keys and sigha
 The PNGs supply the camera input in this lane.
 
 The GUI server has no host signer configured. The runner uses the host tools
-to export fixture account information during setup. The default hidden macOS
-tests use the host signers and supply the returned URs to the barcode callback.
+to export fixture account information during setup. For a hidden macOS run, use
+`FLUTTER_DEVICE=macos scripts/e2e/flutter-keystone.sh --host-signer`. This
+mode signs on the host and supplies the returned URs to the barcode callback,
+skipping screen QR decoding and approval in the Keystone GUI.
 Physical camera optics and ballot submission require separate verification.

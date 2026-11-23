@@ -25,7 +25,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 
 import 'support/keystone_signing_fixture.dart';
 
-const _gui = bool.fromEnvironment('KEYSTONE_GUI_SCAN');
+const _gui = bool.fromEnvironment('KEYSTONE_GUI_SCAN', defaultValue: true);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

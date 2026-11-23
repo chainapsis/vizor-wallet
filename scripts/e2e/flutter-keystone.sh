@@ -4,13 +4,12 @@ set -euo pipefail
 : "${FLUTTER_DEVICE:?set FLUTTER_DEVICE to macos or a booted iOS simulator UDID}"
 cd "$(dirname "$0")/../.."
 unset KEYSTONE_IOS_SIMULATOR_UDID
-gui=false
-if [[ $# -gt 0 ]]; then
-  if [[ $# != 1 || "$1" != --gui ]]; then
-    echo "Use --gui to scan the signing QRs on screen" >&2
-    exit 2
-  fi
-  gui=true
+gui=true
+if [[ $# -eq 1 && "$1" == --host-signer && "$FLUTTER_DEVICE" == macos ]]; then
+  gui=false
+elif [[ $# -gt 0 && ( $# -ne 1 || "$1" != --gui ) ]]; then
+  echo "Usage: $0 [--gui | --host-signer (macOS only)]" >&2
+  exit 2
 fi
 if [[ "$FLUTTER_DEVICE" == macos ]]; then
   target=desktop
@@ -21,7 +20,6 @@ else
   target=mobile
   xcrun simctl list devices booted -j | jq -e --arg id "$FLUTTER_DEVICE" \
     'any(.devices | to_entries[] | select(.key | contains("iOS")) | .value[]; .udid == $id)' >/dev/null
-  gui=true
   export KEYSTONE_IOS_SIMULATOR_UDID="$FLUTTER_DEVICE"
   flags=(--tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile)
 fi
