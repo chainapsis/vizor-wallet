@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 gui=false
 if [[ $# -gt 0 ]]; then
   if [[ $# != 1 || "$1" != --gui || "$FLUTTER_DEVICE" != macos ]]; then
-    echo "Use --gui with FLUTTER_DEVICE=macos to scan the voting QR on screen" >&2
+    echo "Use --gui with FLUTTER_DEVICE=macos to scan the signing QRs on screen" >&2
     exit 2
   fi
   gui=true
@@ -34,13 +34,17 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
-scripts/e2e/keystone-signer/build.sh "$work/voting-signer"
 server_args=(--fixture-dir "$work/voting" --port-file "$work/port")
+vote_gui=""
+send_gui=""
 if "$gui"; then
-  scripts/e2e/keystone-signer/gui/build.sh "$work/gui"
+  mkdir "$work/gui"
+  vote_gui="$work/gui/vote"
+  send_gui="$work/gui/payment"
   server_args+=(--gui-dir "$work/gui")
 fi
-scripts/e2e/keystone-signer/build.sh "$work/send-signer" --regtest
+scripts/e2e/keystone-signer/build.sh "$work/voting-signer" stock "$vote_gui"
+scripts/e2e/keystone-signer/build.sh "$work/send-signer" --regtest "$send_gui"
 fixture_tool="$(cargo build --locked --quiet --manifest-path rust/Cargo.toml --example keystone_signer_fixture --message-format=json-render-diagnostics |
   jq -r 'select(.target.name == "keystone_signer_fixture" and .executable != null) | .executable')"
 export COMPOSE_PROJECT_NAME="vizor-$(basename "$work" | tr '[:upper:].' '[:lower:]-')"

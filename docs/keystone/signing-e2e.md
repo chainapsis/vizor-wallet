@@ -1,6 +1,6 @@
 # Keystone signing E2E
 
-Run either command from the repository root on macOS. The iOS target needs a
+Run a command from the repository root on macOS. The iOS target needs a
 dedicated, booted simulator. The default macOS run uses a hidden desktop window.
 
 ```sh
@@ -31,24 +31,32 @@ The runner removes its Compose project and volumes on exit. To change the
 default loopback ports, set `NU7_REGTEST_RPC_PORT` (49242) and
 `NU7_REGTEST_LIGHTWALLETD_PORT` (49177).
 
-## Scanning the voting QR with the Keystone GUI
+## Scanning signing requests with the Keystone GUI
 
 On Apple Silicon macOS, `--gui` runs the same three desktop tests and opens
-Vizor and the Keystone 3.2.2 SDL simulator for voting. Install CMake and SDL2
+Vizor and the Keystone 3.2.2 SDL simulator for each signing request. Install CMake and SDL2
 (`brew install cmake sdl2`). Keep the primary display unlocked with room for
 both windows and grant Screen Recording permission to the process macOS
-prompts for. The runner initializes a fresh simulator wallet in its temporary
-directory using the same public Speculos mnemonic as the host signer.
+prompts for. The runner provisions separate payment and voting simulator wallets with the
+public Speculos mnemonic. The payment GUI uses the same regtest firmware
+archive as the payment signer. The voting GUI uses the stock archive.
 
 The driver enters the fixture PIN and clicks **Scan**. Keystone reads the
 animated QR from the desktop through its own screen reader. The test checks
-the captured Keystone window for **Confirm Transaction (1/2)** with macOS
-Vision. Every observed UR frame must belong to the current request. Only
-those observed frames go to the voting signer, and both returned signatures
-must verify against the SDK bundles. A missing review or incomplete scan
-fails the test.
+the captured Keystone window with macOS Vision. A completed review shows the
+expected title, amount, fee and a ZEC value.
+
+| Request | Expected review | Required outcome |
+| --- | --- | --- |
+| TEX parent, then child | **Confirm Transaction** for each full PCZT | Both txids are mined and a child input references the parent txid. |
+| Ordinary payment | **Confirm Transaction** for the single-item batch | The txid is mined. |
+| Voting | **Confirm Transaction (1/2)** | Both signatures verify against the SDK bundles. |
+
+Every observed UR frame must belong to the current request. Only frames
+decoded by that GUI are forwarded to the matching host signer. A missing
+review, foreign frame or incomplete request fails the test.
 
 The default desktop and iOS runs pass outbound URs from the widget to the
-host signer. Payments use that exchange in all modes. Signed responses enter
-Vizor through its barcode detection callback. Physical camera optics and
-ballot submission require separate verification.
+host signer. In every mode, signed responses enter Vizor through its barcode
+detection callback. Physical camera optics and ballot submission require
+separate verification.

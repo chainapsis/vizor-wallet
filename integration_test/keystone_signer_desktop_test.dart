@@ -25,6 +25,8 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 
 import 'support/keystone_signing_fixture.dart';
 
+const _gui = bool.fromEnvironment('KEYSTONE_GUI_SCAN');
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(initializeZcashWalletRuntime);
@@ -53,8 +55,36 @@ Widget _app(GoRouter router) => MaterialApp.router(
 );
 
 Future<void> _prepareViewport(WidgetTester tester) async {
+  if (_gui) {
+    final binding = IntegrationTestWidgetsFlutterBinding.instance;
+    final previous = binding.framePolicy;
+    binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+    addTearDown(() => binding.framePolicy = previous);
+    final display = tester.view.display;
+    final size = display.size / display.devicePixelRatio;
+    // Keystone occupies the left 480 logical pixels of the primary display.
+    await windowManager.setBounds(
+      Rect.fromLTWH(
+        496,
+        40,
+        math.min(1080, size.width - 512),
+        math.min(940, size.height - 90),
+      ),
+    );
+    await windowManager.show();
+    await windowManager.setAlwaysOnTop(true);
+    addTearDown(() => windowManager.setAlwaysOnTop(false));
+    return;
+  }
   await tester.binding.setSurfaceSize(const Size(1280, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
+}
+
+Future<void> _showQr(WidgetTester tester, Finder qr) async {
+  if (_gui) {
+    await Scrollable.ensureVisible(tester.element(qr), alignment: 0.5);
+    await tester.pump();
+  }
 }
 
 Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
@@ -90,9 +120,9 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
     }
     final action = find.text('Get signature');
     await waitForWidget(tester, action.hitTestable());
-    final stage = tester.widget<KeystonePcztQrStage>(
-      find.byType(KeystonePcztQrStage),
-    );
+    final qr = find.byType(KeystonePcztQrStage);
+    await _showQr(tester, qr);
+    final stage = tester.widget<KeystonePcztQrStage>(qr);
     final signed = await signWithFirmware(stage.urParts, batch: !tex);
     await tapWhenReady(tester, action);
     await fixture.expectNoBroadcast();
@@ -115,29 +145,7 @@ Future<void> _runSend(WidgetTester tester, {required bool tex}) async {
 }
 
 Future<void> _runVoting(WidgetTester tester) async {
-  const gui = bool.fromEnvironment('KEYSTONE_GUI_SCAN');
-  if (gui) {
-    final binding = IntegrationTestWidgetsFlutterBinding.instance;
-    final previous = binding.framePolicy;
-    binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
-    addTearDown(() => binding.framePolicy = previous);
-    final display = tester.view.display;
-    final size = display.size / display.devicePixelRatio;
-    // Keystone occupies the left 480 logical pixels of the primary display.
-    await windowManager.setBounds(
-      Rect.fromLTWH(
-        496,
-        40,
-        math.min(1080, size.width - 512),
-        math.min(940, size.height - 90),
-      ),
-    );
-    await windowManager.show();
-    await windowManager.setAlwaysOnTop(true);
-    addTearDown(() => windowManager.setAlwaysOnTop(false));
-  } else {
-    await _prepareViewport(tester);
-  }
+  await _prepareViewport(tester);
   final fixture = await KeystoneVoteFixture.create();
   final scanned = Completer<List<int>>();
   final router = GoRouter(
@@ -188,10 +196,7 @@ Future<void> _runVoting(WidgetTester tester) async {
   await tapWhenReady(tester, find.byTooltip('Next bundle memo'));
   await tester.pump();
   expect(find.text('Bundle 2 of 2 memo'), findsOneWidget);
-  if (gui) {
-    await Scrollable.ensureVisible(tester.element(qr), alignment: 0.5);
-    await tester.pump();
-  }
+  await _showQr(tester, qr);
   final signed = await signWithFirmware(
     tester.widget<KeystonePcztQrStage>(qr).urParts,
     batch: true,

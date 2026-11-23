@@ -8,7 +8,7 @@
 #include "gui_views.h"
 #include "secret_cache.h"
 
-int ProvisionVoteFixture(void)
+int ProvisionFixture(void)
 {
     // BIP39 entropy of the public Speculos mnemonic used by signer.c.
     uint8_t entropy[] = {
@@ -33,11 +33,11 @@ static NSWindow *SimulatorWindow(void)
     return nil;
 }
 
-static bool ReviewTitleIsVisible(NSWindow *window)
+static bool ReviewIsReady(NSWindow *window, NSString *title)
 {
     // Capture only this SDL window. The GUI reader independently captures the
     // primary display to find and decode the QR shown by Flutter.
-    NSString *path = @"review.png";
+    NSString *path = @"scan-window.png";
     NSTask *capture = [[NSTask alloc] init];
     capture.executableURL = [NSURL fileURLWithPath:@"/usr/sbin/screencapture"];
     capture.arguments = @[@"-x", @"-o", @"-l", @(window.windowNumber).stringValue, path];
@@ -50,13 +50,21 @@ static bool ReviewTitleIsVisible(NSWindow *window)
     VNImageRequestHandler *reader = [[VNImageRequestHandler alloc]
         initWithURL:[NSURL fileURLWithPath:path] options:@{}];
     if (![reader performRequests:@[text] error:NULL]) return false;
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
     for (VNRecognizedTextObservation *line in text.results) {
-        if ([[line topCandidates:1].firstObject.string isEqualToString:@"Confirm Transaction (1/2)"]) return true;
+        NSString *value = [line topCandidates:1].firstObject.string;
+        if (value) [lines addObject:value];
     }
-    return false;
+    // A single PCZT opens its review shell before the asynchronous parser
+    // fills in the amount and fee. Keep driving LVGL through that transition.
+    NSString *content = [lines componentsJoinedByString:@" "];
+    NSString *zecAmount = @"[0-9]+([.,][0-9]+)?\\s+ZEC";
+    return [lines containsObject:title] && [content containsString:@"Amount"] &&
+           [content containsString:@"Fee"] &&
+           [content rangeOfString:zecAmount options:NSRegularExpressionSearch].location != NSNotFound;
 }
 
-void DriveVoteScan(void)
+void DriveScan(const char *kind)
 {
     static unsigned eventIndex;
     static Uint64 nextEvent;
@@ -64,13 +72,16 @@ void DriveVoteScan(void)
     Uint64 now = SDL_GetTicks64();
     if (now < nextEvent) return;
 
-    if (scanStarted && GuiCheckIfTopView(&g_zcashBatchView)) {
+    GUI_VIEW *review = strcmp(kind, "single") == 0 ? &g_transactionDetailView : &g_zcashBatchView;
+    if (scanStarted && GuiCheckIfTopView(review)) {
+        NSString *title = strcmp(kind, "vote") == 0 ? @"Confirm Transaction (1/2)" : @"Confirm Transaction";
         lv_refr_now(NULL);
-        if (!ReviewTitleIsVisible(SimulatorWindow())) {
-            fprintf(stderr, "Could not read the two-bundle review title from the Keystone window\n");
-            exit(EXIT_FAILURE);
+        if (!ReviewIsReady(SimulatorWindow(), title)) {
+            nextEvent = SDL_GetTicks64() + 200;
+            return;
         }
-        puts("Keystone GUI reviewed two bundles");
+        if (rename("scan-window.png", "review.png") != 0) exit(EXIT_FAILURE);
+        printf("Keystone GUI review: %s\n", title.UTF8String);
         exit(EXIT_SUCCESS);
     }
 

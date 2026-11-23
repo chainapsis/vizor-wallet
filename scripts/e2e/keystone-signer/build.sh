@@ -2,9 +2,11 @@
 set -euo pipefail
 out="${1:?supply an output binary path}"
 mode="${2:-stock}"
+gui_out="${3:-}"
+here="$(cd "$(dirname "$0")" && pwd)"
 case "$mode" in
   stock|--regtest) ;;
-  *) echo "usage: $0 output-path [--regtest]" >&2; exit 2 ;;
+  *) echo "usage: $0 output-path [stock|--regtest] [gui-directory]" >&2; exit 2 ;;
 esac
 firmware="${KEYSTONE_FIRMWARE_DIR:-$HOME/keplr-workspace/refs/keystone3-signer-check}"
 revision=f74496eedd0978a0de5c43fefd8291b201674e8e
@@ -17,20 +19,27 @@ if [[ "$(git -C "$firmware" rev-parse HEAD)" != "$revision" ]] ||
   echo "Expected a clean Keystone 3.2.2 checkout at $firmware" >&2
   exit 1
 fi
+rust_firmware="$firmware"
 set --
-if [[ "$mode" == --regtest ]]; then
+if [[ "$mode" == --regtest || -n "$gui_out" ]]; then
   # Keep the production checkout pristine and build only the host simulator.
-  scratch="$(mktemp -d "$HOME/keplr-workspace/refs/keystone-regtest.XXXXXX")"
+  scratch="$(mktemp -d "$HOME/keplr-workspace/refs/keystone-build.XXXXXX")"
   trap 'rm -rf "$scratch"' EXIT
   git clone --quiet --local --no-checkout "$firmware" "$scratch/firmware"
   firmware="$scratch/firmware"
   git -C "$firmware" checkout --quiet --detach "$revision"
-  git -C "$firmware" apply - < "$(dirname "$0")/regtest.patch"
+fi
+if [[ "$mode" == --regtest ]]; then
+  git -C "$firmware" apply "$here/regtest.patch"
+  rust_firmware="$firmware"
   set -- -DKEYSTONE_ZEBRA_REGTEST
 fi
 # Keep the firmware archive separate from the wallet fixture's Cargo target.
-(cd "$firmware/rust" && CARGO_TARGET_DIR=target cargo build --locked --release -p rust_c --no-default-features --features simulator-cypherpunk)
-cc "$@" -Wall -Wextra -Werror -I"$firmware/rust/rust_c/bindings/simulator-cypherpunk" \
-  "$(dirname "$0")/signer.c" "$firmware/rust/target/release/librust_c.a" \
+(cd "$rust_firmware/rust" && CARGO_TARGET_DIR=target cargo build --locked --release -p rust_c --no-default-features --features simulator-cypherpunk)
+cc "$@" -Wall -Wextra -Werror -I"$rust_firmware/rust/rust_c/bindings/simulator-cypherpunk" \
+  "$here/signer.c" "$rust_firmware/rust/target/release/librust_c.a" \
   -framework CoreFoundation -framework CoreGraphics -framework Security -framework SystemConfiguration \
   -lresolv -o "$out"
+if [[ -n "$gui_out" ]]; then
+  "$here/gui/build.sh" "$gui_out" "$firmware" "$rust_firmware/rust"
+fi

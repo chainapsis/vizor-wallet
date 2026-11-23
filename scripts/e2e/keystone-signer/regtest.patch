@@ -179,3 +179,11 @@ index 76ac2dd3..b1f4a7fb 100644
  zip32 = { version = "0.3", default-features = false, features = ["zeroize"] }
  rust_tools = { workspace = true }
  #zcash end
+diff --git a/src/crypto/account_public_info.c b/src/crypto/account_public_info.c
+--- a/src/crypto/account_public_info.c
++++ b/src/crypto/account_public_info.c
+@@ -565,3 +565,3 @@
+     //but we use 32 to identify it for now
+-    {ZCASH_UFVK_ENCRYPTED_0,          ZCASH_UFVK_ENCRYPTED, "zcash_ufvk_0",      "M/32'/133'/0'"    },
++    {ZCASH_UFVK_ENCRYPTED_0,          ZCASH_UFVK_ENCRYPTED, "zcash_ufvk_0",      "M/32'/1'/0'"      },
+     {XPUB_TYPE_MONERO_0,              EDWARDS_25519,  "monero_0",                "M/44'/128'/0'"    },

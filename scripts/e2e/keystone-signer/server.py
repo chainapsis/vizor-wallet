@@ -19,23 +19,23 @@ parser.add_argument('--port-file', required=True, type=Path)
 args = parser.parse_args()
 
 
-def scan_voting_screen(directory, expected):
+def scan_signing_screen(directory, kind, expected):
     # Keep the expected URs on the host. The GUI only receives screen pixels.
     try:
-        run = subprocess.run([directory / 'simulator'], cwd=directory, stdin=subprocess.DEVNULL,
+        run = subprocess.run([directory / 'simulator', kind], cwd=directory, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=45)
     except subprocess.TimeoutExpired as error:
-        raise ValueError('Keystone GUI scan timed out after 45 seconds. Check that the voting QR '
+        raise ValueError('Keystone GUI scan timed out after 45 seconds. Check that the signing QR '
                          'is visible on the primary display and Screen Recording is enabled.') from error
     lines = run.stdout.splitlines()
-    if run.returncode or 'Keystone GUI reviewed two bundles' not in lines:
-        raise ValueError('Keystone GUI did not display Confirm Transaction (1/2). '
+    title = 'Confirm Transaction (1/2)' if kind == 'vote' else 'Confirm Transaction'
+    if run.returncode or f'Keystone GUI review: {title}' not in lines:
+        raise ValueError(f'Keystone GUI did not display {title}. '
                          'Check the unlocked primary display and Screen Recording permission.')
     observed = [line[len('qrString: '):] for line in lines if line.startswith('qrString: ')]
     if not observed or not set(observed).issubset(expected):
-        raise ValueError('Keystone GUI decoded frames outside the displayed voting request')
-    print(f'Keystone GUI scanned {len(set(observed))} distinct voting frames and displayed '
-          'Confirm Transaction (1/2)', flush=True)
+        raise ValueError('Keystone GUI decoded frames outside the displayed signing request')
+    print(f'Keystone GUI scanned {len(set(observed))} distinct {kind} frames and displayed {title}', flush=True)
     return observed
 
 
@@ -71,12 +71,14 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid PCZT frame')
         except (KeyError, TypeError, ValueError) as error:
             return self.send_error(400, str(error))
-        if self.path == '/sign-votes' and args.gui_dir:
+        voting = self.path == '/sign-votes'
+        if args.gui_dir:
             try:
-                parts = scan_voting_screen(args.gui_dir, parts)
+                directory = args.gui_dir / ('vote' if voting else 'payment')
+                parts = scan_signing_screen(directory, 'vote' if voting else mode, parts)
             except (OSError, ValueError) as error:
                 return self.send_error(422, str(error))
-        signer = args.voting_signer if self.path == '/sign-votes' else args.send_signer
+        signer = args.voting_signer if voting else args.send_signer
         self.run_tool([signer, mode], '\n'.join(parts), frames=True)
 
     def run_tool(self, command, input_text, *, frames):

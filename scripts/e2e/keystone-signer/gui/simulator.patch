@@ -26,8 +26,8 @@
      return count;
  }
 
-+extern int ProvisionVoteFixture(void);
-+extern void DriveVoteScan(void);
++extern int ProvisionFixture(void);
++extern void DriveScan(const char *kind);
 +
  int main(int argc, char **argv)
  {
@@ -36,7 +36,7 @@
      GuiStyleInit();
      LanguageInit();
 
-+    if (argc == 2 && strcmp(argv[1], "--provision") == 0) return ProvisionVoteFixture();
++    if (argc == 2 && strcmp(argv[1], "--provision") == 0) return ProvisionFixture();
      GuiFrameOpenView(&g_initView);
      //  lv_example_calendar_1();
      //  lv_example_btnmatrix_2();
@@ -44,7 +44,7 @@
          /* Periodically call the lv_task handler.
           * It could be done in a timer interrupt or an OS task too.*/
          lv_timer_handler();
-+        DriveVoteScan();
++        DriveScan(argc == 2 ? argv[1] : "");
          if (g_reboot) {
              SDL_Quit();
              execvp(argv[0], argv);
