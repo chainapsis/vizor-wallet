@@ -4041,11 +4041,6 @@ Widget _buildMobileHomeUseCase({
         return migrationCta;
       }),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
-      ironwoodHomeBalancePresentationProvider.overrideWithValue(
-        migrationCta.mode == IronwoodHomeMigrationCtaMode.resume
-            ? IronwoodHomeBalancePresentationMode.ironwoodOnly
-            : IronwoodHomeBalancePresentationMode.allShielded,
-      ),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
@@ -4153,11 +4148,6 @@ Widget _buildDesktopHomeUseCase({
         return migrationCta;
       }),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
-      ironwoodHomeBalancePresentationProvider.overrideWithValue(
-        migrationCta.mode == IronwoodHomeMigrationCtaMode.resume
-            ? IronwoodHomeBalancePresentationMode.ironwoodOnly
-            : IronwoodHomeBalancePresentationMode.allShielded,
-      ),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _PreviewMigrationCoordinator(
           accountUuid: accountState.activeAccountUuid,

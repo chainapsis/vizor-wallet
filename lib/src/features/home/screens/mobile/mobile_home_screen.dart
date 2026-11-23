@@ -102,9 +102,6 @@ class MobileHomeScreen extends ConsumerWidget {
     final ironwoodMigrationCta = ref.watch(
       ironwoodHomeMigrationPresentationProvider,
     );
-    final showsIronwoodOnlyBalance =
-        ref.watch(ironwoodHomeBalancePresentationProvider) ==
-        IronwoodHomeBalancePresentationMode.ironwoodOnly;
     final isCurrentHomeRoute = GoRouterState.of(context).uri.path == '/home';
 
     final isImporting = ref
@@ -145,7 +142,6 @@ class MobileHomeScreen extends ConsumerWidget {
                             activeAccountUuid: activeAccountUuid,
                             privacyModeEnabled: privacyModeEnabled,
                             ironwoodMigrationCta: ironwoodMigrationCta,
-                            showsIronwoodOnlyBalance: showsIronwoodOnlyBalance,
                             onTogglePrivacyMode: () =>
                                 ref.read(privacyModeProvider.notifier).toggle(),
                           ),
@@ -929,7 +925,6 @@ class _HomeContent extends ConsumerStatefulWidget {
     required this.activeAccountUuid,
     required this.privacyModeEnabled,
     required this.ironwoodMigrationCta,
-    required this.showsIronwoodOnlyBalance,
     required this.onTogglePrivacyMode,
   });
 
@@ -937,7 +932,6 @@ class _HomeContent extends ConsumerStatefulWidget {
   final String? activeAccountUuid;
   final bool privacyModeEnabled;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
-  final bool showsIronwoodOnlyBalance;
   final VoidCallback onTogglePrivacyMode;
 
   @override
@@ -1134,15 +1128,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     // button does.
     final sendDisabled = ref.watch(migrationSendGateProvider);
     // Shared with desktop Home and the sidebar, so the platforms agree.
-    final shieldedBalance = homeDisplayedBalance(
-      sync,
-      ironwoodOnly: widget.showsIronwoodOnlyBalance,
-    );
+    final shieldedBalance = homeDisplayedBalance(sync);
     final transparentBalance = TransparentBalanceDisplay.of(sync);
-    // Orchard still migrating keeps Send and Receive in place of the
-    // first-receive prompt, although the card leaves it out.
     final hasBalance =
-        sync.displayShieldedBalance > BigInt.zero ||
+        shieldedBalance > BigInt.zero ||
         (transparentBalance.amount ?? BigInt.zero) > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final fiatBalanceText = _mobileHomeFiatTextForZatoshi(

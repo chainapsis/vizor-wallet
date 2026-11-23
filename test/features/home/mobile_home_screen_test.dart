@@ -260,8 +260,6 @@ Widget _app(
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodHomeMigrationCtaState? migrationPresentationCta,
-  IronwoodHomeBalancePresentationMode balancePresentation =
-      IronwoodHomeBalancePresentationMode.allShielded,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
   AsyncValue<IronwoodMigrationCompletionState>? migrationCompletion,
@@ -445,9 +443,6 @@ Widget _app(
       ),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(
         migrationPresentationCta ?? migrationCta,
-      ),
-      ironwoodHomeBalancePresentationProvider.overrideWithValue(
-        balancePresentation,
       ),
       ironwoodMigrationAnnouncementProvider.overrideWith(
         (ref) async => ironwoodAnnouncementStore.seen
@@ -2037,7 +2032,7 @@ void main() {
     expect(feedback, ['HapticFeedbackType.lightImpact']);
   });
 
-  testWidgets('shows the balance without migrating Orchard while migrating', (
+  testWidgets('shows total balance and remaining amount while migrating', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -2094,14 +2089,13 @@ void main() {
           accountUuid: 'account-1',
           status: status,
         ),
-        balancePresentation: IronwoodHomeBalancePresentationMode.ironwoodOnly,
         swapEnabled: true,
       ),
     );
     await tester.pump();
     await tester.pump();
 
-    expect(_mobileHomeBalanceText(tester), '2 ZEC');
+    expect(_mobileHomeBalanceText(tester), '4 ZEC');
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_home_ironwood_migration_loader')),
@@ -2133,38 +2127,13 @@ void main() {
             kIronwoodMigrationWaitingConfirmationsPhase,
           ),
         ),
-        balancePresentation: IronwoodHomeBalancePresentationMode.ironwoodOnly,
       ),
     );
     await tester.pump();
     await tester.pump();
 
-    expect(_mobileHomeBalanceText(tester), '1.30 ZEC');
+    expect(_mobileHomeBalanceText(tester), '3.30 ZEC');
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
-  });
-
-  testWidgets('keeps wallet actions while every fund is still migrating', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        _syncedState(orchardBalance: BigInt.from(200_000_000)),
-        migrationCta: IronwoodHomeMigrationCtaState.resume(
-          network: 'main',
-          accountUuid: 'account-1',
-          status: _migrationStatusForPhase(
-            kIronwoodMigrationWaitingConfirmationsPhase,
-          ),
-        ),
-        balancePresentation: IronwoodHomeBalancePresentationMode.ironwoodOnly,
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text('2 ZEC still migrating'), findsOneWidget);
-    expect(find.byKey(const ValueKey('mobile_home_send')), findsOneWidget);
-    expect(find.text('Receive your first ZEC'), findsNothing);
   });
 
   testWidgets('counts every shielded pool while migration is required', (

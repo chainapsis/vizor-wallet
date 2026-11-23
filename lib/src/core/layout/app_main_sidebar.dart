@@ -483,12 +483,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     // Home's number, so the two cannot disagree: the total would add
     // transparent funds and funds a pending transaction holds, which Home's
     // balance card leaves out.
-    final displayedBalance = homeDisplayedBalance(
-      accountSync,
-      ironwoodOnly:
-          ref.watch(ironwoodHomeBalancePresentationProvider) ==
-          IronwoodHomeBalancePresentationMode.ironwoodOnly,
-    );
+    final displayedBalance = homeDisplayedBalance(accountSync);
     final balanceText =
         '${accountSync.hasDisplayBalance ? _formatSidebarBalance(displayedBalance) : '—'} ' // l10n-ignore: amount format
         '$kZcashDefaultCurrencyTicker';

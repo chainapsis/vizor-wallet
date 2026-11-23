@@ -314,16 +314,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     final isMigrationRequired =
         ironwoodHomeMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
-    final balancePresentation = ref.watch(
-      ironwoodHomeBalancePresentationProvider,
-    );
-    final showsIronwoodOnlyBalance =
-        balancePresentation == IronwoodHomeBalancePresentationMode.ironwoodOnly;
-    // Shared with the sidebar, which shows this same number.
-    final displayedShieldedBalance = homeDisplayedBalance(
-      sync,
-      ironwoodOnly: showsIronwoodOnlyBalance,
-    );
+    // Shared with mobile Home and the sidebar, which show this same number.
+    final displayedShieldedBalance = homeDisplayedBalance(sync);
     final migratingBalance = sync.displayOrchardHoldingsBalance;
     final waitingForMigrationConfirmation =
         migratingBalance == BigInt.zero &&
@@ -413,7 +405,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 passwordRotationRecoveryFailed:
                     bootstrap.passwordRotationRecoveryFailed,
                 privacyModeEnabled: privacyModeEnabled,
-                showsIronwoodOnlyBalance: showsIronwoodOnlyBalance,
                 shieldedBalanceText: _formatZec(displayedShieldedBalance),
                 shieldedFiatBalanceText: shieldedFiatBalanceText,
                 priceChange24hPct: priceChange24hPct,
@@ -494,7 +485,6 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.hasActivitySyncData,
     required this.passwordRotationRecoveryFailed,
     required this.privacyModeEnabled,
-    required this.showsIronwoodOnlyBalance,
     required this.shieldedBalanceText,
     required this.shieldedFiatBalanceText,
     required this.priceChange24hPct,
@@ -519,7 +509,6 @@ class _HomePane extends ConsumerStatefulWidget {
   final bool hasActivitySyncData;
   final bool passwordRotationRecoveryFailed;
   final bool privacyModeEnabled;
-  final bool showsIronwoodOnlyBalance;
   final String shieldedBalanceText;
   final String? shieldedFiatBalanceText;
   final double? priceChange24hPct;
@@ -663,9 +652,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       homeInitializationPresentationProvider,
     );
     final isImporting = initialPresentation.showImporting;
-    final hasBalance = widget.showsIronwoodOnlyBalance
-        ? homeDisplayedBalance(widget.sync, ironwoodOnly: true) > BigInt.zero
-        : widget.sync.displayTotalBalance > BigInt.zero;
+    final hasBalance = widget.sync.displayTotalBalance > BigInt.zero;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
@@ -698,7 +685,6 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       importingAccountName: activeAccountName,
       hasBalance: hasBalance,
       balanceIsAvailable: widget.sync.hasDisplayBalance,
-      showsIronwoodOnlyBalance: widget.showsIronwoodOnlyBalance,
       shieldedBalanceText: widget.shieldedBalanceText,
       shieldedFiatBalanceText: widget.shieldedFiatBalanceText,
       priceChange24hPct: widget.priceChange24hPct,
@@ -1260,7 +1246,6 @@ class _HomeDesktopPane extends StatelessWidget {
     required this.importingAccountName,
     required this.hasBalance,
     this.balanceIsAvailable = true,
-    required this.showsIronwoodOnlyBalance,
     required this.shieldedBalanceText,
     required this.shieldedFiatBalanceText,
     required this.priceChange24hPct,
@@ -1293,7 +1278,6 @@ class _HomeDesktopPane extends StatelessWidget {
   final String? importingAccountName;
   final bool hasBalance;
   final bool balanceIsAvailable;
-  final bool showsIronwoodOnlyBalance;
   final String shieldedBalanceText;
   final String? shieldedFiatBalanceText;
   final double? priceChange24hPct;
@@ -1358,7 +1342,6 @@ class _HomeDesktopPane extends StatelessWidget {
                     child: _HomeDesktopBalanceCard(
                       hasBalance: hasBalance,
                       balanceIsAvailable: balanceIsAvailable,
-                      showsIronwoodOnlyBalance: showsIronwoodOnlyBalance,
                       shieldedBalanceText: shieldedBalanceText,
                       shieldedFiatBalanceText: shieldedFiatBalanceText,
                       priceChange24hPct: priceChange24hPct,
@@ -1595,7 +1578,6 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
   const _HomeDesktopBalanceCard({
     required this.hasBalance,
     this.balanceIsAvailable = true,
-    required this.showsIronwoodOnlyBalance,
     required this.shieldedBalanceText,
     required this.shieldedFiatBalanceText,
     required this.priceChange24hPct,
@@ -1619,7 +1601,6 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
 
   final bool hasBalance;
   final bool balanceIsAvailable;
-  final bool showsIronwoodOnlyBalance;
   final String shieldedBalanceText;
   final String? shieldedFiatBalanceText;
   final double? priceChange24hPct;
