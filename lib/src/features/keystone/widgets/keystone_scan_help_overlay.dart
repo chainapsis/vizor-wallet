@@ -45,6 +45,39 @@ class KeystoneScanHelpOverlay extends StatefulWidget {
       _KeystoneScanHelpOverlayState();
 }
 
+/// Inline help for layouts where a floating tooltip would cover request details.
+class KeystoneScanHelpDetails extends StatelessWidget {
+  const KeystoneScanHelpDetails({super.key});
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        context.l10n.keystoneFirmwareUpdate(
+          'keyst.one/firmware', // l10n-ignore: URL
+        ),
+        style: AppTypography.bodySmall.copyWith(
+          color: context.colors.text.secondary,
+        ),
+      ),
+      const SizedBox(height: AppSpacing.xxs),
+      _KeystoneTooltipAction(
+        semanticLabel: context.l10n.keystoneFirmwareOpenPage,
+        link: true,
+        onActivate: () => unawaited(_openKeystoneFirmware()),
+        builder: (context, focused) => Text(
+          context.l10n.keystoneFirmwareOpenPage,
+          style: AppTypography.bodySmall.copyWith(
+            color: context.colors.text.accent,
+            decoration: focused ? TextDecoration.underline : null,
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
 class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
   final LayerLink _layerLink = LayerLink();
   final OverlayPortalController _overlayController = OverlayPortalController();

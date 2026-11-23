@@ -145,6 +145,13 @@ void runFigmaCompareCaptureTest({
       );
     }
 
+    if (scenario.id == 'desktop-voting-keystone-enlarged') {
+      await tester.tap(find.byKey(const ValueKey('voting_enlarge_qr')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey('voting_qr_overlay')), findsOneWidget);
+    }
+
     if (scenario.id == 'activity-swap-failed-support' ||
         scenario.id == 'activity-pay-failed-support') {
       final prompt = find.byKey(const ValueKey('swap_support_prompt'));

@@ -15557,6 +15557,10 @@
       }
     }
   },
+  "votingEnlargeQr": "Enlarge QR",
+  "@votingEnlargeQr": {
+    "description": "Button opening the enlarged desktop Keystone voting request QR."
+  },
   "votingErrorChainCancelled": "Chain submission was cancelled.",
   "@votingErrorChainCancelled": {
     "description": "Error shown when a vote submission to the voting chain was cancelled."
@@ -15845,6 +15849,14 @@
   "votingKeepVoting": "Keep voting",
   "@votingKeepVoting": {
     "description": "Dialog button that returns to the unanswered questions."
+  },
+  "votingKeystoneAfterApproval": "After approval, scan the signed QR displayed on Keystone.",
+  "@votingKeystoneAfterApproval": {
+    "description": "Instruction beside the desktop Keystone voting request QR."
+  },
+  "votingKeystoneApproveTitle": "Approve with Keystone",
+  "@votingKeystoneApproveTitle": {
+    "description": "Heading of the desktop Keystone voting approval screen."
   },
   "votingKeystoneMemoLabel": "Bundle {number} of {total} memo",
   "@votingKeystoneMemoLabel": {
@@ -16568,6 +16580,10 @@
   "votingTokenHolderTitle": "Token holder voting",
   "@votingTokenHolderTitle": {
     "description": "Fallback name of a voting round shown when the round has no title."
+  },
+  "votingUseSignedBundles": "Skip and use signed bundles only",
+  "@votingUseSignedBundles": {
+    "description": "[security] Secondary desktop voting action that confirms dropping unsigned bundles and reduces voting power."
   },
   "votingViewLess": "View less",
   "@votingViewLess": {

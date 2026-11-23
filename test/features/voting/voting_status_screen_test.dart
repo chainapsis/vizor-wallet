@@ -4483,16 +4483,28 @@ void main() {
     expect(find.text('Sign 1 voting bundle'), findsOneWidget);
     expect(find.text('One Keystone approval'), findsOneWidget);
     expect(_RustApiFake.lastEncodedBatchMessageCount, 1);
+    expect(_RustApiFake.lastMaxFragmentLength, BigInt.from(140));
     expect(find.text('Bundle 1 of 1 memo'), findsOneWidget);
     expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
     expect(find.text('Scan signature'), findsOneWidget);
     await tester.pump();
     expect(find.text('Scanning issues?'), findsOneWidget);
     expect(find.text('Software account required'), findsNothing);
-    await tester.tap(find.text('Scan signature'));
+    final router = GoRouter.of(tester.element(find.byType(VotingStatusView)));
+    final routesBefore =
+        router.routerDelegate.currentConfiguration.matches.length;
+    final scan = tester
+        .widget<AppButton>(find.byKey(const ValueKey('voting_scan_signature')))
+        .onPressed!;
+    scan();
+    scan();
     await tester.pumpAndSettle();
 
     expect(find.text('keystone scan route'), findsOneWidget);
+    expect(
+      router.routerDelegate.currentConfiguration.matches.length,
+      routesBefore + 1,
+    );
     await tester.tap(find.text('Return Signature'));
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
@@ -4971,16 +4983,19 @@ void main() {
     await tester.tap(find.text('Scan signature'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Return Signature'));
-    await _pumpUntilFound(tester, find.text('Skip'));
+    await _pumpUntilFound(
+      tester,
+      find.text('Skip and use signed bundles only'),
+    );
 
     expect(find.text('Sign 1 voting bundle'), findsWidgets);
     expect(find.text('One Keystone approval'), findsOneWidget);
     expect(find.text('Bundle 1 of 2 memo'), findsNothing);
     expect(find.text('Bundle 2 of 2 memo'), findsOneWidget);
     expect(find.text('2 / 2'), findsNothing);
-    expect(find.text('Skip'), findsOneWidget);
+    expect(find.text('Skip and use signed bundles only'), findsOneWidget);
 
-    await tester.tap(find.text('Skip'));
+    await tester.tap(find.text('Skip and use signed bundles only'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Use signed bundles only?'), findsOneWidget);
@@ -5051,6 +5066,7 @@ void main() {
     );
     expect(find.text('One Keystone approval'), findsNothing);
     expect(_RustApiFake.lastEncodedBatchMessageCount, 40);
+    expect(_RustApiFake.lastMaxFragmentLength, BigInt.from(140));
     expect(find.text('Bundle 1 of 50 memo'), findsOneWidget);
     expect(find.text('Bundle 2 of 50 memo'), findsNothing);
     expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
@@ -7483,6 +7499,7 @@ class _RustApiFake implements RustLibApi {
   static bool failBatchEncoding = false;
   static int maxBatchMessages = 40;
   static int lastEncodedBatchMessageCount = 0;
+  static BigInt? lastMaxFragmentLength;
 
   @override
   Future<List<String>> crateApiKeystoneEncodePcztUrParts({
@@ -7522,6 +7539,7 @@ class _RustApiFake implements RustLibApi {
       throw StateError('forced batch encoding failure');
     }
     lastEncodedBatchMessageCount = messages.length;
+    lastMaxFragmentLength = maxFragmentLen;
     return const ['ur:zcash-sign-batch/test'];
   }
 

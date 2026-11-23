@@ -69,76 +69,87 @@ class _KeystoneVotingScanScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        // Back chevron sits 16px into the pane per the shared design rule
-        // (4px pane padding + AppBackLink's 12px internal inset); the centered
-        // content keeps md on the other sides.
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xxs,
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-        ),
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppBackLink(
-                label: context.l10n.commonBack,
-                onTap: _goBack,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        context.l10n.votingScanTitle,
-                        style: AppTypography.displaySmall.copyWith(
-                          color: colors.text.accent,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        context.l10n.votingScanHold,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.accent,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: AppSpacing.base),
-                      KeystoneQrScannerCard(
-                        expectedUrType: 'zcash-batch-sig-result',
-                        decoding: _decoding,
-                        error: _error,
-                        onProgress: (progress) {
-                          if (!mounted) return;
-                          setState(() {
-                            if (progress > 0) _error = null;
-                          });
-                        },
-                        onDecodeError: _handleDecodeError,
-                        onComplete: _handleScanComplete,
-                        decodingLabel: context.l10n.commonReadingSignature,
-                        unavailableMessage: context.l10n.votingScanNoCamera,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+  Widget build(BuildContext context) => AppDesktopShell(
+    sidebar: const AppMainSidebar(),
+    pane: AppDesktopPane(
+      padding: EdgeInsets.zero,
+      child: KeystoneVotingScanContent(
+        onBack: _goBack,
+        scanner: KeystoneQrScannerCard(
+          expectedUrType: 'zcash-batch-sig-result',
+          decoding: _decoding,
+          error: _error,
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              if (progress > 0) _error = null;
+            });
+          },
+          onDecodeError: _handleDecodeError,
+          onComplete: _handleScanComplete,
+          decodingLabel: context.l10n.commonReadingSignature,
+          unavailableMessage: context.l10n.votingScanNoCamera,
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+/// The same scan surface is used in production and deterministic flow captures.
+class KeystoneVotingScanContent extends StatelessWidget {
+  const KeystoneVotingScanContent({
+    required this.onBack,
+    required this.scanner,
+    super.key,
+  });
+  final VoidCallback onBack;
+  final Widget scanner;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(
+      AppSpacing.xxs,
+      AppSpacing.md,
+      AppSpacing.md,
+      AppSpacing.md,
+    ),
+    child: Column(
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppBackLink(label: context.l10n.commonBack, onTap: onBack),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    context.l10n.votingScanTitle,
+                    style: AppTypography.displaySmall.copyWith(
+                      color: context.colors.text.accent,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.l10n.votingScanHold,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: context.colors.text.accent,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.base),
+                  scanner,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }

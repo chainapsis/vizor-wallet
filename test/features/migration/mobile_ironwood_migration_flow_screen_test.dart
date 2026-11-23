@@ -45,6 +45,7 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/keystone/services/keystone_qr_config.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
@@ -4827,7 +4828,9 @@ void main() {
       }
       expect(prepareCount, 1);
       expect(qr, findsOneWidget);
-      expect(_rustApiFake.encodedMaxFragmentLengths, [BigInt.from(300)]);
+      expect(_rustApiFake.encodedMaxFragmentLengths, [
+        BigInt.from(keystoneQrFragmentLength),
+      ]);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await discardStarted.future;
@@ -4844,8 +4847,8 @@ void main() {
       expect(prepareCount, 2);
       expect(qr, findsOneWidget);
       expect(_rustApiFake.encodedMaxFragmentLengths, [
-        BigInt.from(300),
-        BigInt.from(300),
+        BigInt.from(keystoneQrFragmentLength),
+        BigInt.from(keystoneQrFragmentLength),
       ]);
     },
   );

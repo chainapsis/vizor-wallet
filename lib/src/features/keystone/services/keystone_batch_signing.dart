@@ -5,8 +5,7 @@ import '../../../core/zcash/wallet_error_code.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
-
-const _keystoneQrFragmentLength = 140;
+import 'keystone_qr_config.dart';
 
 /// What a friendly batch-signing error is about.
 enum KeystoneBatchSubject { transaction, deposit }
@@ -116,7 +115,6 @@ class KeystoneBatchSigningRequest {
 Future<KeystoneBatchSigningRequest> buildKeystoneBatchSigningRequest({
   required String requestId,
   required List<KeystoneBatchPcztSource> pczts,
-  int maxFragmentLength = _keystoneQrFragmentLength,
 }) async {
   if (requestId.isEmpty) {
     throw ArgumentError.value(requestId, 'requestId', 'must not be empty');
@@ -142,27 +140,18 @@ Future<KeystoneBatchSigningRequest> buildKeystoneBatchSigningRequest({
   return buildPreparedKeystoneBatchSigningRequest(
     requestId: requestId,
     messages: messages,
-    maxFragmentLength: maxFragmentLength,
   );
 }
 
 Future<KeystoneBatchSigningRequest> buildPreparedKeystoneBatchSigningRequest({
   required String requestId,
   required List<KeystonePreparedBatchMessage> messages,
-  int maxFragmentLength = _keystoneQrFragmentLength,
 }) async {
   if (requestId.isEmpty) {
     throw ArgumentError.value(requestId, 'requestId', 'must not be empty');
   }
   if (messages.isEmpty) {
     throw ArgumentError.value(messages, 'messages', 'must not be empty');
-  }
-  if (maxFragmentLength <= 0) {
-    throw ArgumentError.value(
-      maxFragmentLength,
-      'maxFragmentLength',
-      'must be positive',
-    );
   }
   if (messages.any(
     (message) => message.id.isEmpty || message.expectedSignatureCount <= 0,
@@ -177,7 +166,7 @@ Future<KeystoneBatchSigningRequest> buildPreparedKeystoneBatchSigningRequest({
   final urParts = await rust_keystone.encodeZcashSignBatchUrParts(
     requestId: requestId,
     messages: keystoneBatchMessageInputs(messages),
-    maxFragmentLen: BigInt.from(maxFragmentLength),
+    maxFragmentLen: BigInt.from(keystoneQrFragmentLength),
   );
   return KeystoneBatchSigningRequest(
     requestId: requestId,

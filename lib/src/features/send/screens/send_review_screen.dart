@@ -31,6 +31,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/services/keystone_batch_signing.dart';
+import '../../keystone/services/keystone_qr_config.dart';
 import '../../donation/widgets/donation_views.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../ledger/ledger_capability.dart';
@@ -933,7 +934,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           urPartsByRound.add(
             await rust_keystone.encodePcztUrParts(
               pcztBytes: redacted,
-              maxFragmentLen: BigInt.from(140),
+              maxFragmentLen: BigInt.from(keystoneQrFragmentLength),
             ),
           );
           batchRequestsByRound.add(null);

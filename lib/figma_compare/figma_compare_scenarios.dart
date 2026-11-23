@@ -3575,6 +3575,38 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'desktop-voting-keystone-request',
+    description: 'Desktop coinholder voting Keystone request QR',
+    builder: buildDesktopVotingKeystoneRequestUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-voting-review',
+    description: 'Desktop voting review before Keystone approval',
+    builder: buildDesktopVotingReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-voting-ballot',
+    description: 'Desktop ballot preceding review and Keystone approval',
+    builder: buildDesktopVotingBallotUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-voting-keystone-enlarged',
+    description: 'Desktop voting enlarged Keystone QR',
+    builder: buildDesktopVotingKeystoneRequestUseCase,
+    allowFocus: true,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-voting-keystone-scan',
+    description: 'Desktop voting signed-response scan with a mock camera',
+    builder: buildDesktopVotingKeystoneScanUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-voting-keystone-progress',
+    description: 'Desktop voting proof progress after Keystone approval',
+    builder: buildDesktopVotingKeystoneProgressUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-voting-keystone-request',
     description: 'Mobile voting Keystone request QR step',
     builder: buildMobileVotingKeystoneRequestUseCase,

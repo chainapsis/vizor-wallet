@@ -5,11 +5,13 @@ import '../../../providers/account_provider.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/widgets/ledger_access_recovery_modal.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import '../../../core/navigation/mobile_sidebar_exit.dart';
 
 import '../../ledger/services/ledger_signing_progress.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -20,10 +22,13 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_shape.dart';
+import '../../../core/widgets/app_modal_card.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
+import '../../keystone/services/keystone_qr_sizing.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
@@ -40,6 +45,8 @@ import '../widgets/voting_pane_scroll_area.dart';
 // It is re-exported so the platform progress screens keep importing it from the
 // screen that hands them the presentation.
 export '../voting_progress_presentation.dart' show VotingSubmissionProgressStep;
+
+part 'desktop_keystone_voting_signing.dart';
 
 typedef VotingStatusContentWrapper =
     Widget Function(BuildContext context, Widget content);
@@ -171,6 +178,7 @@ class VotingStatusView extends ConsumerStatefulWidget {
 }
 
 class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
+  bool _keystoneScanInFlight = false;
   bool _startScheduled = false;
   int _startGeneration = 0;
   VotingSessionKey? _jobKey;
@@ -266,14 +274,22 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   Future<void> _scanKeystoneSignature() async {
+    if (_keystoneScanInFlight) return;
     final key = _selectedJobKey();
     if (key == null) return;
-    final responseCbor = await context.push<List<int>>('/voting/keystone/scan');
-    if (!mounted || _selectedJobKey() != key) return;
-    if (responseCbor == null || responseCbor.isEmpty) return;
-    await ref
-        .read(votingSubmissionJobsProvider.notifier)
-        .handleKeystoneBatchSignResponse(key, responseCbor);
+    _keystoneScanInFlight = true;
+    try {
+      final responseCbor = await context.push<List<int>>(
+        '/voting/keystone/scan',
+      );
+      if (!mounted || _selectedJobKey() != key) return;
+      if (responseCbor == null || responseCbor.isEmpty) return;
+      await ref
+          .read(votingSubmissionJobsProvider.notifier)
+          .handleKeystoneBatchSignResponse(key, responseCbor);
+    } finally {
+      _keystoneScanInFlight = false;
+    }
   }
 
   Future<void> _handleInlineKeystoneSignature(List<int> responseCbor) async {
@@ -956,6 +972,27 @@ class VotingStatusContent extends StatelessWidget {
       return Padding(
         padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
         child: const _SoftwareAccountRequiredContent(),
+      );
+    }
+    if (kAppFormFactor == AppFormFactor.desktop &&
+        isHardwareAccount &&
+        !isLedgerAccount &&
+        phase == VotingSessionPhase.keystoneSigning &&
+        keystoneSigningBundleIndex != null) {
+      return ExternalActionGuardHold(
+        child: _DesktopKeystoneVotingSigning(
+          bundleIndex: keystoneSigningBundleIndex!,
+          urParts: keystoneUrParts,
+          batchMemos: keystoneBatchMemos,
+          batchMessageCount: keystoneBatchMessageCount,
+          batchTotalCount: keystoneBatchTotalCount,
+          qrError: keystoneQrError,
+          scanError: keystoneScanError,
+          terminalNotice: terminalDelegationNotice,
+          canSkipRemainingBundles: canSkipRemainingKeystoneBundles,
+          onScan: onScanKeystone,
+          onSkipRemainingBundles: onSkipKeystoneBundles,
+        ),
       );
     }
     final terminalNotice = terminalDelegationNotice;

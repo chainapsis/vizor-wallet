@@ -11,8 +11,9 @@ import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/particles/p
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/keystone_shield_scanner_surface.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/keystone_qr_fixtures.dart';
 
-const _parts = ['ur:zcash-pczt/first-frame', 'ur:zcash-pczt/second-frame'];
+const _parts = ['UR:ZCASH-PCZT/FIRST-FRAME', 'UR:ZCASH-PCZT/SECOND-FRAME'];
 final _cloud = List.generate(
   80,
   (i) => ShieldParticleSample(
@@ -53,6 +54,15 @@ Future<Uint8List> _raster(
 }
 
 void main() {
+  test('shielding caches less dense level-M production-sized QR frames', () {
+    final fixture = keystoneQrDensityFixtures.first;
+    final frames = KeystoneShieldQrFrames([fixture.part]);
+    final image = frames.frame(0);
+    expect(image.moduleCount, fixture.alphanumericModuleCount);
+    expect(image.errorCorrectLevel, QrErrorCorrectLevel.M);
+    expect(frames.frame(0), same(image));
+  });
+
   testWidgets(
     'the scene restores blur and finishes a scanner exit before success',
     (tester) async {
@@ -234,10 +244,7 @@ void main() {
           expect(morph.qrIndex, index);
           final bytes = await _raster(tester, morph, dpr: dpr);
           final qr = QrImage(
-            QrCode.fromData(
-              data: _parts[index],
-              errorCorrectLevel: QrErrorCorrectLevel.M,
-            ),
+            QrCode(2, QrErrorCorrectLevel.M)..addAlphaNumeric(_parts[index]),
           );
           final pitch = bounds.width / (qr.moduleCount + 8);
           int ink(int x, int y) => bytes[(y * (320 * dpr).round() + x) * 4];

@@ -1,8 +1,11 @@
 // ignore_for_file: depend_on_referenced_packages
+import 'dart:typed_data';
 
 import 'package:zcash_wallet/src/providers/voting/voting_participation_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../src/core/l10n/app_language.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_form_factor.dart';
@@ -18,6 +21,10 @@ import '../src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import '../src/features/voting/screens/voting_proposal_detail_screen.dart';
 import '../src/features/voting/screens/voting_results_screen.dart';
 import '../src/features/voting/screens/voting_status_screen.dart';
+import '../src/features/voting/screens/voting_review_screen.dart';
+import '../src/features/voting/screens/keystone_voting_scan_screen.dart';
+import '../src/providers/voting/voting_session_provider.dart';
+import '../src/providers/voting/voting_snapshot_warmup_provider.dart';
 import '../src/features/voting/voting_flow_models.dart';
 import '../src/features/voting/voting_message.dart';
 import '../src/features/voting/widgets/voting_metadata_widgets.dart';
@@ -548,6 +555,243 @@ Widget _mobileVotingFullPagePreview(
   );
 }
 
+/// The production desktop signing panel, isolated from wallet and Rust state.
+Widget buildDesktopVotingKeystoneRequestUseCase(BuildContext context) {
+  final presentation = _previewKeystonePresentation;
+  return ProviderScope(
+    child: AppDesktopShell(
+      sidebar: const _VotingPreviewSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingStatusContent(
+          phase: VotingSessionPhase.keystoneSigning,
+          submissionJobInFlight: true,
+          isHardwareAccount: true,
+          keystoneSigningBundleIndex: presentation.bundleIndex,
+          keystoneUrParts: presentation.urParts,
+          keystoneBatchMemos: presentation.batchMemos,
+          keystoneBatchMessageCount: presentation.batchMessageCount,
+          keystoneBatchTotalCount: presentation.batchTotalCount,
+          canSkipRemainingKeystoneBundles: presentation.canSkipRemainingBundles,
+          onScanKeystone: _previewNoop,
+          onSkipKeystoneBundles: _previewNoop,
+        ),
+      ),
+    ),
+  );
+}
+
+Widget buildDesktopVotingKeystoneProgressUseCase(BuildContext context) =>
+    AppDesktopShell(
+      sidebar: const _VotingPreviewSidebar(),
+      pane: const AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: VotingStatusContent(
+          phase: VotingSessionPhase.delegating,
+          isHardwareAccount: true,
+          submissionJobInFlight: true,
+          delegationProgress: 0.4,
+        ),
+      ),
+    );
+
+Widget buildDesktopVotingKeystoneScanUseCase(BuildContext context) =>
+    AppDesktopShell(
+      sidebar: const _VotingPreviewSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: KeystoneVotingScanContent(
+          onBack: _previewNoop,
+          scanner: ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            child: const SizedBox(
+              width: 300,
+              height: 300,
+              child: ColoredBox(color: Color(0xFF111515)),
+            ),
+          ),
+        ),
+      ),
+    );
+
+Widget buildDesktopVotingReviewUseCase(BuildContext context) =>
+    const AppDesktopShell(
+      sidebar: _VotingPreviewSidebar(),
+      pane: AppDesktopPane(
+        padding: EdgeInsets.zero,
+        child: _DesktopVotingReviewPreview(),
+      ),
+    );
+
+Widget buildDesktopVotingBallotUseCase(BuildContext context) => AppDesktopShell(
+  sidebar: const _VotingPreviewSidebar(),
+  pane: AppDesktopPane(
+    padding: EdgeInsets.zero,
+    child: VotingNavigationPreview(
+      title: 'Community priorities',
+      votingPowerZatoshi: 375000000,
+      initialChoices: const {0: 0, 1: 0},
+      proposals: const [
+        VotingProposalView(
+          id: 1,
+          title: 'Community grants',
+          description: 'Should community grants receive support?',
+          options: [
+            VotingOptionView(index: 0, label: 'Support'),
+            VotingOptionView(index: 1, label: 'Oppose'),
+            VotingOptionView(index: 2, label: 'Abstain'),
+          ],
+        ),
+        VotingProposalView(
+          id: 2,
+          title: 'Network priorities',
+          description: 'Should network research receive support?',
+          options: [
+            VotingOptionView(index: 0, label: 'Support'),
+            VotingOptionView(index: 1, label: 'Oppose'),
+            VotingOptionView(index: 2, label: 'Abstain'),
+          ],
+        ),
+      ],
+    ),
+  ),
+);
+
+class _DesktopVotingReviewPreview extends StatefulWidget {
+  const _DesktopVotingReviewPreview();
+  @override
+  State<_DesktopVotingReviewPreview> createState() =>
+      _DesktopVotingReviewPreviewState();
+}
+
+class _DesktopVotingReviewPreviewState
+    extends State<_DesktopVotingReviewPreview> {
+  late final _router = GoRouter(
+    initialLocation: '/voting/poll/preview-voting',
+    routes: [
+      GoRoute(path: '/voting', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(
+        path: '/voting/poll/:roundId',
+        builder: (_, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId/review',
+        builder: (_, _) => const Material(
+          type: MaterialType.transparency,
+          child: VotingReviewView(
+            roundId: 'preview-voting',
+            showDesktopToolbar: true,
+          ),
+        ),
+      ),
+    ],
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _router.push('/voting/poll/preview-voting/review');
+    });
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ProviderScope(
+    overrides: [
+      votingSessionProvider(
+        'preview-voting',
+      ).overrideWith(_PreviewReviewSession.new),
+      votingDraftProvider(
+        const VotingSessionKey(
+          roundId: 'preview-voting',
+          accountUuid: 'preview-account',
+        ),
+      ).overrideWith(_PreviewReviewDraft.new),
+    ],
+    child: MaterialApp.router(
+      routerConfig: _router,
+      debugShowCheckedModeBanner: false,
+      locale: Localizations.localeOf(context),
+      localizationsDelegates: appLocalizationsDelegates,
+      supportedLocales: appSupportedLocales(preview: true),
+    ),
+  );
+}
+
+class _PreviewReviewSession extends VotingSessionNotifier {
+  _PreviewReviewSession() : super('preview-voting');
+  @override
+  Future<VotingSessionState> build() async => VotingSessionState(
+    roundId: 'preview-voting',
+    accountUuid: 'preview-account',
+    eligibleWeightZatoshi: BigInt.from(375000000),
+    isHardwareAccount: true,
+    round: VotingRoundDetails(
+      roundId: 'preview-voting',
+      title: 'Community priorities',
+      status: 'active',
+      snapshotHeight: 3543600,
+      eaPk: Uint8List(32),
+      ncRoot: Uint8List(32),
+      nullifierImtRoot: Uint8List(32),
+      rawJson: const {
+        'proposals': [
+          {
+            'id': 1,
+            'title': 'Community grants',
+            'description': 'Should community grants receive support?',
+            'options': [
+              {'index': 0, 'label': 'Support'},
+              {'index': 1, 'label': 'Oppose'},
+              {'index': 2, 'label': 'Abstain'},
+            ],
+          },
+          {
+            'id': 2,
+            'title': 'Network priorities',
+            'description': 'Should network research receive support?',
+            'options': [
+              {'index': 0, 'label': 'Support'},
+              {'index': 1, 'label': 'Oppose'},
+              {'index': 2, 'label': 'Abstain'},
+            ],
+          },
+        ],
+      },
+    ),
+  );
+  @override
+  Future<VotingSnapshotWarmupResult> precomputeSnapshotBundles({
+    required String accountUuid,
+  }) async => const VotingSnapshotWarmupResult.ready(bundleCount: 3);
+}
+
+class _PreviewReviewDraft extends VotingDraftNotifier {
+  _PreviewReviewDraft()
+    : super(
+        const VotingSessionKey(
+          roundId: 'preview-voting',
+          accountUuid: 'preview-account',
+        ),
+      );
+  @override
+  VotingDraftState build() => const VotingDraftState(choices: {1: 0, 2: 0});
+}
+
+// Synthetic 10-KiB payload encoded with the pinned UR library at the shared
+// 140-byte fragment limit. These frames reproduce display density;
+// they are not requests that a device should sign.
+const _previewVotingKeystoneUrParts = [
+  'UR:ZCASH-SIGN-BATCH/1-74/LPADCSGECFDEAECYJKREWTTTHDLUAEADAOAXAAAHAMATAYASBKBDBNBTBABSBEBYBGBWBBBZCMCHCSCFCYCWCECACKCTCXCLCPCNDKDADSDIDEDTDRDNDWDPDMDLDYEHEYEOEEECENEMETESFTFRFNFSFMFHFZFPFWFXFYFEFGFLFDGAGEGRGSGTGLGWGDGYGMGUGHGOHFHGHDHKHTHPHHHLHYHEHNHSIDIAIEIHIYIOISINIMJEJZJNJTJLJOJSJPJKJYKPKOKTKSKKKNKGKEKIKBLBLALYLFLSLRLPLNLTLOLDLEEYENFWEN',
+  'UR:ZCASH-SIGN-BATCH/2-74/LPAOCSGECFDEAECYJKREWTTTHDLULULKLGMNMYMHMEMOMUMWMDMTMSMKNLNYNDNSNTNNNENBOYOEOTOXONOLOSPDPTPKPYPSPMPLPEPFPAPRQDQZRERPRLRORHRDRKRFRYRNRSRTSESASRSSSKSWSTSPSOSGSBSFSNTOTKTITTTDTETYTLTBTSTPTATNUYUOUTUEURVTVYVOVLVEVWVAVDVSWLWDWMWPWEWYWSWTWNWZWFWKYKYNYLYAYTZSAEADAOAXAAAHAMATAYASBKBDBNBTBABSBEBYBGBWBBBZCMCHCSCFCYGUCMKTWZ',
+];
+
 Widget buildMobileVotingKeystoneRequestUseCase(BuildContext context) {
   return ProviderScope(
     child: MobileKeystoneVotingSigningScreen(
@@ -579,18 +823,18 @@ Widget _previewVotingScanner(
 }
 
 final _previewKeystonePresentation = VotingKeystoneStatusPresentation(
-  bundleIndex: 0,
-  urParts: const [_previewVotingKeystoneUr],
+  bundleIndex: 1,
+  urParts: _previewVotingKeystoneUrParts,
   batchMemos: const [
-    VotingKeystoneBatchMemo(
-      bundleIndex: 0,
-      bundleCount: 3,
-      displayMemo: 'Amount: 1.25 ZEC\nProposal: Community grants',
-    ),
     VotingKeystoneBatchMemo(
       bundleIndex: 1,
       bundleCount: 3,
-      displayMemo: 'Amount: 0.75 ZEC\nProposal: Network priorities',
+      displayMemo: 'Proposal: Community grants\nAmount: 1.25 ZEC',
+    ),
+    VotingKeystoneBatchMemo(
+      bundleIndex: 2,
+      bundleCount: 3,
+      displayMemo: 'Proposal: Network priorities\nAmount: 0.75 ZEC',
     ),
   ],
   batchMessageCount: 2,
@@ -602,9 +846,6 @@ final _previewKeystonePresentation = VotingKeystoneStatusPresentation(
 
 Future<void> _previewSignedVotingResponse(List<int> _) async {}
 void _previewNoop() {}
-
-const _previewVotingKeystoneUr =
-    'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
 
 final _previewVotingShareNow = DateTime.utc(2026, 8, 23, 12);
 

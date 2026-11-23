@@ -24,6 +24,7 @@ import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../../services/camera_permission_settings.dart';
 import '../../../../services/qr_scanner.dart';
+import '../../../keystone/services/keystone_qr_config.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanCameraErrorOverlay;
 import '../../../send/screens/mobile/mobile_send_screen.dart'
@@ -181,7 +182,7 @@ class _MobileKeystoneShieldScreenState
       if (!mounted || _closed || _cancellationStarted) return;
       final urParts = await rust_keystone.encodePcztUrParts(
         pcztBytes: redactedPczt,
-        maxFragmentLen: BigInt.from(140),
+        maxFragmentLen: BigInt.from(keystoneQrFragmentLength),
       );
 
       if (!mounted || _closed || _cancellationStarted) return;

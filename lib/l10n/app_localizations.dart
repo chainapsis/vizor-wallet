@@ -19961,6 +19961,12 @@ abstract class AppLocalizations {
   /// **'Ends {date}'**
   String votingEnds(String date);
 
+  /// Button opening the enlarged desktop Keystone voting request QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Enlarge QR'**
+  String get votingEnlargeQr;
+
   /// Error shown when a vote submission to the voting chain was cancelled.
   ///
   /// In en, this message translates to:
@@ -20258,6 +20264,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keep voting'**
   String get votingKeepVoting;
+
+  /// Instruction beside the desktop Keystone voting request QR.
+  ///
+  /// In en, this message translates to:
+  /// **'After approval, scan the signed QR displayed on Keystone.'**
+  String get votingKeystoneAfterApproval;
+
+  /// Heading of the desktop Keystone voting approval screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve with Keystone'**
+  String get votingKeystoneApproveTitle;
 
   /// Label above the memo of one bundle on the Keystone signing panel.
   ///
@@ -21050,6 +21068,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Token holder voting'**
   String get votingTokenHolderTitle;
+
+  /// [security] Secondary desktop voting action that confirms dropping unsigned bundles and reduces voting power.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip and use signed bundles only'**
+  String get votingUseSignedBundles;
 
   /// Button that collapses a long description.
   ///

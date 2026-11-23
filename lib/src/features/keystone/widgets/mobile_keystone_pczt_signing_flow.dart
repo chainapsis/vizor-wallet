@@ -25,6 +25,7 @@ import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import '../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanCameraErrorOverlay, MobileScanViewfinderCorners;
+import '../services/keystone_qr_sizing.dart';
 import 'keystone_pczt_qr_stage.dart';
 import 'keystone_prompt_lines.dart';
 
@@ -128,6 +129,8 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     this.onRequestAuxiliaryAction,
     this.showCancelAction = true,
     this.allowQrContentScrolling = false,
+    this.wholePixelModules = false,
+    this.minimumQrModulePixels,
     this.forceScannerActiveForTesting = false,
     this.startInScannerForTesting = false,
     this.onScanWindowForTesting,
@@ -162,6 +165,10 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   /// Scroll the title, request details, and QR together while keeping actions
   /// visible, including when system text scaling enlarges the request details.
   final bool allowQrContentScrolling;
+  final bool wholePixelModules;
+
+  /// The minimum physical pitch, calculated from this request's QR versions.
+  final int? minimumQrModulePixels;
   final bool forceScannerActiveForTesting;
   final bool startInScannerForTesting;
   final ValueChanged<Rect>? onScanWindowForTesting;
@@ -177,6 +184,7 @@ class _MobileKeystonePcztSigningFlowState
   var _stage = _SignStage.preparing;
   String? _error;
   List<String> _urParts = const [];
+  KeystoneQrSizing? _qrSizing;
   List<int>? _pcztWithProofs;
   bool _proofsFailed = false;
   bool _decoding = false;
@@ -219,6 +227,10 @@ class _MobileKeystonePcztSigningFlowState
             ? _SignStage.scanning
             : _SignStage.showQr;
         _urParts = payload.urParts;
+        _qrSizing =
+            !widget.wholePixelModules && widget.minimumQrModulePixels == null
+            ? null
+            : KeystoneQrSizing.fromParts(_urParts);
         _error = null;
         if (widget.startInScannerForTesting) _ensureScanController();
       });
@@ -527,15 +539,44 @@ class _MobileKeystonePcztSigningFlowState
       ],
     );
 
-    Widget qrRegion(double width, double height) {
+    Widget qrRegion(double width, double height, {double? viewportHeight}) {
       final availableForQr =
           height -
           _mobileKeystoneQrPromptGap -
           _mobileKeystonePromptBlockHeight;
-      final frameSize = math
+      final minimumSize = widget.minimumQrModulePixels;
+      final minimumLogicalSize = minimumSize == null
+          ? 120.0
+          : math
+                .min(
+                  math.min(width, viewportHeight ?? height),
+                  math.max(
+                    120.0,
+                    _qrSizing?.minimumSize(
+                          MediaQuery.devicePixelRatioOf(context),
+                          pixelsPerModule: minimumSize,
+                        ) ??
+                        120.0,
+                  ),
+                )
+                .clamp(0.0, _mobileKeystoneQrFrameSize);
+      var frameSize = math
           .min(_mobileKeystoneQrFrameSize, math.min(width, availableForQr))
-          .clamp(120.0, _mobileKeystoneQrFrameSize)
+          .clamp(minimumLogicalSize, _mobileKeystoneQrFrameSize)
           .toDouble();
+      if (widget.wholePixelModules &&
+          widget.allowQrContentScrolling &&
+          _qrSizing != null) {
+        // Spend scrollable room on the next whole-pixel pitch rather than
+        // paying for the wider border by making the data pattern smaller.
+        frameSize = math.min(
+          math.min(width, viewportHeight ?? height),
+          _qrSizing!.sizePreservingPattern(
+            frameSize,
+            MediaQuery.devicePixelRatioOf(context),
+          ),
+        );
+      }
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -594,6 +635,7 @@ class _MobileKeystonePcztSigningFlowState
                             constraints.crossAxisExtent - 2 * kMobilePageMargin,
                             constraints.viewportMainAxisExtent -
                                 constraints.precedingScrollExtent,
+                            viewportHeight: constraints.viewportMainAxisExtent,
                           ),
                         ),
                       ),
@@ -715,7 +757,10 @@ class _MobileKeystonePcztSigningFlowState
       error: null,
       size: size,
       scanOptimized: true,
-      quietZone: const PrettyQrQuietZone.modules(3),
+      wholePixelModules: widget.wholePixelModules,
+      quietZone: widget.wholePixelModules
+          ? null
+          : const PrettyQrQuietZone.modules(3),
     );
   }
 
