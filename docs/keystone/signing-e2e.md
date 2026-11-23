@@ -1,27 +1,44 @@
 # Keystone signing E2E
 
-Run a command from the repository root on macOS. The iOS target needs a
-dedicated, booted simulator. Both targets open the Keystone GUI for every signing request.
+Run from the repository root on macOS with Docker running and the primary display
+unlocked. Both targets open the Keystone GUI for every signing request.
 
 ```sh
 FLUTTER_DEVICE=macos scripts/e2e/flutter-keystone.sh
-FLUTTER_DEVICE="$SIMULATOR_UDID" scripts/e2e/flutter-keystone.sh
 ```
 
-Both targets exercise the signing screens for their own form factor.
+For iOS, boot a dedicated iPhone in Simulator and use its UDID from the list.
+
+```sh
+xcrun simctl list devices booted
+FLUTTER_DEVICE="<booted iPhone UDID>" scripts/e2e/flutter-keystone.sh
+```
 
 | Scenario | Firmware exchange | Required outcome |
 | --- | --- | --- |
-| TEX payment | Two consecutive full PCZT approvals | The Zebra mempool is empty before each approval. Both expected txids appear in mined blocks and the child spends the parent. |
+| TEX payment | Two consecutive full PCZT approvals | After each GUI approval, the Zebra mempool is empty when Vizor opens its scanner, before it reads the signed QR. Both expected txids appear in mined blocks and the child spends the parent. |
 | Ordinary payment to a transparent address | One compact batch approval | The send receipt shows success and the expected txid appears in a Zebra block. |
 | Voting delegation | One compact batch of two SDK bundles | Both bundle memos can be reached. Each stored signature verifies against the original bundle's randomized key and sighash. |
 
-The runner needs FVM, Xcode, CocoaPods, Rust, Python 3, jq, Docker Compose and
+The runner needs FVM, Xcode, CocoaPods, Rust, Python 3.9 or later, jq, Docker Compose and
 grpcurl. It builds separate voting and payment GUI simulators from Keystone Cypherpunk firmware 3.2.2
 with the public Speculos fixture seed. Voting uses the stock signing code. Payments
 use an isolated build patched for regtest account derivation and consensus
-parameters. Set `KEYSTONE_FIRMWARE_DIR` to reuse a clean checkout of the pinned
-revision. The default is `~/keplr-workspace/refs/keystone3-signer-check`.
+parameters.
+
+By default the runner clones firmware 3.2.2 into
+`~/keplr-workspace/refs/keystone3-signer-check` on first use. To use a different
+location, set the checkout path before running either command above.
+
+```sh
+export KEYSTONE_FIRMWARE_DIR="$HOME/src/keystone3-firmware"
+```
+
+The runner creates the checkout if missing. An existing checkout must be at
+`f74496eedd0978a0de5c43fefd8291b201674e8e` with clean tracked files. Relative
+paths resolve from the Vizor repository root. The runner creates and removes
+temporary build checkouts beside the selected firmware checkout, so its parent
+directory must be writable.
 
 For payments, the runner starts a fresh Zebra regtest with lightwalletd, funds
 the firmware account before and after Ironwood activation and matures the

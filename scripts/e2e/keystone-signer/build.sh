@@ -13,6 +13,7 @@ if [[ ! -e "$firmware" ]]; then
   mkdir -p "$(dirname "$firmware")"
   git clone --depth 1 --branch 3.2.2 https://github.com/KeystoneHQ/keystone3-firmware.git "$firmware"
 fi
+firmware="$(CDPATH= cd -- "$firmware" && pwd)"
 if [[ "$(git -C "$firmware" rev-parse HEAD)" != "$revision" ]] ||
    [[ -n "$(git -C "$firmware" status --porcelain --untracked-files=no)" ]]; then
   echo "Expected a clean Keystone 3.2.2 checkout at $firmware" >&2
@@ -21,7 +22,7 @@ fi
 rust_firmware="$firmware"
 set --
 # Keep the production checkout pristine and build only the host simulator.
-scratch="$(mktemp -d "$HOME/keplr-workspace/refs/keystone-build.XXXXXX")"
+scratch="$(mktemp -d "$(dirname "$firmware")/keystone-build.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 git clone --quiet --local --no-checkout "$firmware" "$scratch/firmware"
 firmware="$scratch/firmware"
