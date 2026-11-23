@@ -2,6 +2,9 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 final _nonAlphanumericQrCharacter = RegExp(r'[^-0-9A-Z $%*+./:]');
 
+bool keystoneQrUsesAlphanumeric(String data) =>
+    data.isNotEmpty && !_nonAlphanumericQrCharacter.hasMatch(data);
+
 /// Builds the smallest QR for a Keystone UR without changing its text.
 ///
 /// Production UR frames are uppercase and fit QR's alphanumeric alphabet.
@@ -10,7 +13,7 @@ QrImage encodeKeystoneQrImage(
   String data, {
   int errorCorrectLevel = QrErrorCorrectLevel.M,
 }) {
-  if (data.isEmpty || _nonAlphanumericQrCharacter.hasMatch(data)) {
+  if (!keystoneQrUsesAlphanumeric(data)) {
     return QrImage(
       QrCode.fromData(data: data, errorCorrectLevel: errorCorrectLevel),
     );

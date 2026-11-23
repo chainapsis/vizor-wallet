@@ -12,9 +12,10 @@ import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stag
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
-import '../../support/keystone_qr_fixtures.dart';
+import '../../support/voting_qr_frames.dart';
+import '../../support/app_test_fonts.dart';
 
-final _parts = [for (final f in keystoneQrDensityFixtures.take(2)) f.part];
+const _parts = votingQrFrames;
 const _memos = [
   VotingKeystoneBatchMemo(
     bundleIndex: 1,
@@ -95,13 +96,14 @@ Future<void> _pump(
 }
 
 void main() {
+  setUpAll(loadAppTestFonts);
   testWidgets(
-    '400px QR and 472px enlargement share playback at the minimum window size',
+    'pixel-sized QR and enlargement share playback at the minimum window size',
     (tester) async {
       await _pump(tester, _content());
       expect(
         tester.getSize(find.byKey(const ValueKey('voting_qr_normal'))),
-        const Size(400, 400),
+        const Size(414, 414),
       );
       await tester.tap(find.byKey(const ValueKey('keystone_memo_next')));
       await tester.pump();
@@ -117,7 +119,7 @@ void main() {
       await tester.pump();
       expect(
         tester.getSize(find.byKey(const ValueKey('voting_qr_enlarged'))),
-        const Size(472, 472),
+        const Size(483, 483),
       );
       expect(
         tester
@@ -267,7 +269,7 @@ void main() {
     await tester.pump();
     expect(
       tester.getSize(find.byKey(const ValueKey('voting_qr_enlarged'))),
-      const Size(480, 480),
+      const Size(552, 552),
     );
     final close = tester.widget<AppButton>(
       find.byKey(const ValueKey('voting_close_enlarged_qr')),

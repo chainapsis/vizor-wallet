@@ -11,6 +11,7 @@ import '../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../ledger/services/ledger_signing_progress.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -27,6 +28,7 @@ import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
+import '../../keystone/services/keystone_qr_sizing.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';

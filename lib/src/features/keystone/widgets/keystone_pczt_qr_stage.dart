@@ -8,6 +8,7 @@ import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../services/keystone_qr_encoder.dart';
+import 'keystone_qr_painter.dart';
 
 enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 
@@ -51,16 +52,20 @@ class KeystonePcztQrStage extends StatelessWidget {
     required this.error,
     this.size = 230,
     this.scanOptimized = true,
+    this.wholePixelModules = false,
     this.quietZone,
     this.playback,
     super.key,
-  });
+  }) : assert(!wholePixelModules || (scanOptimized && quietZone == null));
 
   final KeystonePcztQrStagePhase phase;
   final List<String> urParts;
   final String? error;
   final double size;
   final bool scanOptimized;
+
+  /// Uses a fixed four-module quiet zone; [quietZone] is for the legacy renderer.
+  final bool wholePixelModules;
   final PrettyQrQuietZone? quietZone;
   final KeystoneQrPlaybackController? playback;
 
@@ -75,6 +80,7 @@ class KeystonePcztQrStage extends StatelessWidget {
           urParts: urParts,
           size: size,
           scanOptimized: scanOptimized,
+          wholePixelModules: wholePixelModules,
           quietZone: quietZone,
           playback: playback,
         ),
@@ -115,6 +121,7 @@ class _AnimatedKeystoneQr extends StatefulWidget {
     required this.urParts,
     required this.size,
     required this.scanOptimized,
+    required this.wholePixelModules,
     required this.quietZone,
     required this.playback,
   });
@@ -122,6 +129,7 @@ class _AnimatedKeystoneQr extends StatefulWidget {
   final List<String> urParts;
   final double size;
   final bool scanOptimized;
+  final bool wholePixelModules;
   final PrettyQrQuietZone? quietZone;
   final KeystoneQrPlaybackController? playback;
 
@@ -207,6 +215,17 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
     final frame = _frameAt(
       (widget.playback?.value ?? _index) % widget.urParts.length,
     );
+    if (widget.wholePixelModules) {
+      return ColoredBox(
+        color: colors.surface.qrCode,
+        child: CustomPaint(
+          painter: KeystoneQrPainter(
+            frame,
+            MediaQuery.devicePixelRatioOf(context),
+          ),
+        ),
+      );
+    }
     if (widget.scanOptimized) {
       return SizedBox(
         width: widget.size,

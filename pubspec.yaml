@@ -78,6 +78,7 @@ dependencies:
   video_player: ^2.14.0
 
 dev_dependencies:
+  zxing2: ^0.2.4
   fake_async: ^1.3.3
   flutter_test:
     sdk: flutter

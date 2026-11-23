@@ -35,6 +35,7 @@ class _DesktopKeystoneVotingSigning extends StatefulWidget {
 class _DesktopKeystoneVotingSigningState
     extends State<_DesktopKeystoneVotingSigning> {
   late final KeystoneQrPlaybackController _playback;
+  late KeystoneQrSizing _qrSizing;
   final _expandFocus = FocusNode();
   final _closeFocus = FocusNode();
   final _modalFocus = FocusScopeNode(
@@ -50,12 +51,16 @@ class _DesktopKeystoneVotingSigningState
   void initState() {
     super.initState();
     _playback = KeystoneQrPlaybackController(widget.urParts);
+    _qrSizing = KeystoneQrSizing.fromParts(widget.urParts);
   }
 
   @override
   void didUpdateWidget(covariant _DesktopKeystoneVotingSigning oldWidget) {
     super.didUpdateWidget(oldWidget);
     _playback.updateParts(widget.urParts);
+    if (!listEquals(oldWidget.urParts, widget.urParts)) {
+      _qrSizing = KeystoneQrSizing.fromParts(widget.urParts);
+    }
     if (oldWidget.bundleIndex != widget.bundleIndex) _memoIndex = 0;
     if (!_ready) _expanded = false;
     if (widget.terminalNotice != null &&
@@ -103,6 +108,7 @@ class _DesktopKeystoneVotingSigningState
     urParts: widget.urParts,
     error: widget.qrError,
     size: size,
+    wholePixelModules: true,
     playback: _playback,
   );
 
@@ -238,10 +244,17 @@ class _DesktopKeystoneVotingSigningState
     final horizontal =
         paddedWidth >= 696 && MediaQuery.textScalerOf(context).scale(14) <= 21;
     final qrSize = math.min(
-      400.0,
+      // Preserve at least the former 400px surface's ~360px data pattern.
+      // Extra room pays for the four-module border and rounding pitch up.
+      _ready
+          ? _qrSizing.sizeForPattern(
+              360,
+              MediaQuery.devicePixelRatioOf(context),
+            )
+          : 400.0,
       math.min(
         horizontal ? paddedWidth - 296 : paddedWidth,
-        math.max(200.0, height - 280),
+        math.max(200.0, height - 248),
       ),
     );
     final qr = SizedBox(
@@ -332,8 +345,7 @@ class _DesktopKeystoneVotingSigningState
     );
   }
 
-  Widget _enlarged(double height, double width) {
-    final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+  Widget _enlarged(double width) {
     final memos = widget.batchMemos
         .where((memo) => memo.displayMemo.trim().isNotEmpty)
         .toList();
@@ -347,10 +359,10 @@ class _DesktopKeystoneVotingSigningState
             context.l10n.votingBundleOf(memo.bundleIndex + 1, memo.bundleCount),
             memo.displayMemo.trim().split('\n').last,
           ].join(' · ');
-    final qrSize = math.max(
-      120.0,
-      math.min(480.0, math.min(width - 112, height - 232 * scale)),
-    );
+    final preferredSize = _ready
+        ? _qrSizing.sizeForPattern(432, MediaQuery.devicePixelRatioOf(context))
+        : 480.0;
+    final qrSize = math.min(preferredSize, math.max(0.0, width - 112));
     return AppPaneModalOverlay(
       key: const ValueKey('voting_qr_overlay'),
       onDismiss: _closeExpanded,
@@ -395,8 +407,18 @@ class _DesktopKeystoneVotingSigningState
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   _bundleSummary(),
-                  const SizedBox(height: AppSpacing.sm),
-                  _qr(qrSize, enlarged: true),
+                  const SizedBox(height: AppSpacing.xs),
+                  Flexible(
+                    child: LayoutBuilder(
+                      builder: (_, constraints) => _qr(
+                        _qrSizing.fitWithin(
+                          math.min(qrSize, constraints.maxHeight),
+                          MediaQuery.devicePixelRatioOf(context),
+                        ),
+                        enlarged: true,
+                      ),
+                    ),
+                  ),
                   if (memoSummary != null) ...[
                     const SizedBox(height: AppSpacing.xs),
                     Text(
@@ -407,7 +429,7 @@ class _DesktopKeystoneVotingSigningState
                       ),
                     ),
                   ],
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.s),
                   SizedBox(
                     width: math.min(320.0, width - 80),
                     child: _scanButton(),
@@ -441,7 +463,7 @@ class _DesktopKeystoneVotingSigningState
                 ),
               ),
             ),
-            if (_expanded) _enlarged(height, width),
+            if (_expanded) _enlarged(width),
           ],
         ),
       );
