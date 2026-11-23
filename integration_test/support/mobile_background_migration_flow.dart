@@ -408,6 +408,12 @@ Future<rust_sync.MigrationStatus> runNativeDueOutboxTicksUntilSubmitted({
     expect(scheduled, isNotEmpty);
     final tip = (await getDriver('/status'))['zcashdHeight'] as num;
     if (scheduled.first.scheduledHeight > tip.toInt()) {
+      final early = await runNativeMigrationOutboxTick();
+      expect(early['outcome'], anyOf('waiting', 'noWork'));
+      expect(
+        await nativeMigrationReceipts(accountUuid, previous.activeRunId!),
+        isEmpty,
+      );
       await postDriver('/mine', {
         'blocks': scheduled.first.scheduledHeight - tip.toInt(),
       });

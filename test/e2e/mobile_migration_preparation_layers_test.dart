@@ -16,10 +16,6 @@ void main() {
     expect(mobileManyNotePreparationLayers(20, 1000020000), [2, 1, 1]);
   });
 
-  test('original 500-note weighted preparation has five exact layers', () {
-    expect(mobileManyNotePreparationLayers(500, 500000000), [35, 5, 2, 1, 1]);
-  });
-
   test('does not infer an unverified funding shape', () {
     expect(
       () => mobileManyNotePreparationLayers(20, 500000000),

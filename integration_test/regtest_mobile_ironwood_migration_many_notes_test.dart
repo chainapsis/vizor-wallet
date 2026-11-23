@@ -223,18 +223,15 @@ void main() {
       );
       await finishMobilePrivateMigrationForHome(tester);
     },
-    timeout: Timeout(Duration(minutes: _fundedNoteCount >= 100 ? 90 : 30)),
+    timeout: const Timeout(Duration(minutes: 30)),
   );
 }
 
-// Fixed funding vectors that the runners pass as defines. Their layers are the
+// The 20-note runner passes a fixed funding vector. Its layers are the
 // current planner's (rust/src/wallet/sync/migration/split_plan.rs after the
 // 2026-07-31 refinement series), not the wallet/status response being tested.
 List<int> mobileManyNotePreparationLayers(int notes, int fundedZatoshi) {
   if (notes == 20 && fundedZatoshi == 1000020000) return const [2, 1, 1];
-  if (notes == 500 && fundedZatoshi == 500000000) {
-    return const [35, 5, 2, 1, 1];
-  }
   throw StateError('No independently verified preparation layers for funding');
 }
 

@@ -109,6 +109,17 @@ void main() {
       );
       await waitForNativeBackgroundMempoolSize(0);
 
+      // The first signed child is due, but notification scheduling is denied.
+      await expectNativeBackgroundManagerDeniedWithoutNotifications();
+      final denied = await mobileRegtestMigrationStatus(accountUuid);
+      expectNativeOutboxTickDidNotCreateProofs(proofed, denied);
+      expect(denied.broadcastedTxCount + denied.confirmedTxCount, 0);
+      expect(
+        await nativeMigrationReceipts(accountUuid, proofed.activeRunId!),
+        isEmpty,
+      );
+      await waitForNativeBackgroundMempoolSize(0);
+
       await stopWalletForProcessRestart();
     },
     timeout: const Timeout(Duration(minutes: 25)),
