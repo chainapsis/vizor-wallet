@@ -155,13 +155,13 @@ const _addressBookContacts = <_AddressBookContact>[
   ),
   _AddressBookContact(
     name: 'Mike SOL',
-    addressPreview: '43123 ... 43123',
+    addressPreview: '431235 ... 43123',
     profilePictureId: 'pfp-06',
     network: _AddressBookNetwork.solana,
   ),
   _AddressBookContact(
     name: 'Solana Binance',
-    addressPreview: '43123 ... 43123',
+    addressPreview: '431235 ... 43123',
     profilePictureId: 'pfp-08',
     network: _AddressBookNetwork.solana,
   ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
@@ -9,6 +10,8 @@ import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_review_layout.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+
+import '../../support/app_test_fonts.dart';
 
 const _transparentFromAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 
@@ -40,12 +43,18 @@ void main() {
     expect(find.text('From'), findsOneWidget);
     // Canonical 7+6 truncation for both the sender headline and the
     // receiving sub-line.
-    expect(find.text('t1PV7ny ... GVSpEX'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentFromAddress)),
+      findsOneWidget,
+    );
     expect(find.text('Transparent'), findsOneWidget);
     expect(find.text('Show full address'), findsOneWidget);
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('120 ZEC'), findsOneWidget);
-    expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentReceivingAddress)),
+      findsOneWidget,
+    );
 
     expect(find.byType(ReviewWrapCard), findsOneWidget);
     expect(find.byType(ReviewWrapDivider), findsNothing);
@@ -96,6 +105,9 @@ void main() {
   testWidgets('matches the Figma received vertical offsets in pixels', (
     tester,
   ) async {
+    // Figma offsets, measured with the app's fonts; the test font's
+    // full-em glyphs would push the full-address action onto its own line.
+    await tester.runAsync(loadAppTestFonts);
     await _pump(
       tester,
       ReceivedReceiptView(
@@ -190,7 +202,10 @@ void main() {
 
     expect(find.text('From'), findsOneWidget);
     expect(find.text('Mike'), findsOneWidget);
-    expect(find.text('t1PV7ny ... GVSpEX'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentFromAddress)),
+      findsOneWidget,
+    );
     expect(find.text('Show full address'), findsOneWidget);
     expect(find.text('Transparent'), findsNothing);
   });
@@ -273,7 +288,10 @@ void main() {
     );
     // Only the Amount row remains, still carrying the receiving sub-line.
     expect(find.byType(ReviewInfoRow), findsOneWidget);
-    expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentReceivingAddress)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('fires the affordance callbacks', (tester) async {

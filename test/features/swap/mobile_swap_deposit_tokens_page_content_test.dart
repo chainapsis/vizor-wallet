@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -207,7 +208,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_harness(_content()));
 
-    const addressValue = '0x123kjhc ... 4x98g20';
+    final addressValue = truncatedAddress('0x123kjhc4e984ac1832f10aa4x98g20');
     final addressText = find.text(addressValue);
     final addressRight = find.byKey(
       const ValueKey('swap_deposit_address_right_item'),

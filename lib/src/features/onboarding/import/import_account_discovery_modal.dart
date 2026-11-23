@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/address_line_text.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
@@ -370,9 +372,20 @@ class _DiscoveredAccountRowState extends State<_DiscoveredAccountRow> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        _shortAddress(widget.account.firstTransparentAddress),
-                        overflow: TextOverflow.ellipsis,
+                      // The long form, or the short one where it would be
+                      // cut.
+                      AddressLineText(
+                        AddressLine(
+                          address: truncatedLongAddress(
+                            widget.account.firstTransparentAddress,
+                            monospace: true,
+                          ),
+                          shortAddress: truncatedAddress(
+                            widget.account.firstTransparentAddress,
+                            monospace: true,
+                          ),
+                        ),
+                        singleLine: true,
                         style: AppTypography.codeSmall.copyWith(
                           color: colors.text.secondary,
                         ),
@@ -402,11 +415,6 @@ class _DiscoveredAccountRowState extends State<_DiscoveredAccountRow> {
 
   String _accountPathLabel() {
     return "m/44'/${widget.bip44CoinType}'/${widget.account.zip32AccountIndex}'/...";
-  }
-
-  String _shortAddress(String address) {
-    if (address.length <= 28) return address;
-    return '${address.substring(0, 12)} ... ${address.substring(address.length - 12)}';
   }
 }
 

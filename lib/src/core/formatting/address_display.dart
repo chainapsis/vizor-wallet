@@ -1,22 +1,33 @@
-/// Canonical display formatting for Zcash addresses.
+/// Display formatting for addresses and transaction ids.
 ///
-/// Single source of truth for the send review/status screens, the received
-/// receipt, and the verify-address modal. Truncated one-line forms go
-/// through [truncatedAddress]. The full-address viewer renders the raw
-/// string in Geist Mono and wraps naturally — [addressVerifyGrid] remains
-/// for any caller that still needs the legacy 5-character grouping.
+/// Every shortened address or id goes through one of three forms:
+/// * [truncatedAddress] — short, for an address sharing its line with a
+///   name, label or action.
+/// * [truncatedLongAddress] — long, for an address on its own line that
+///   people check (receive, Send recipients, saving a contact, import).
+/// * [truncatedTxid] — transaction ids and hashes.
+///
+/// The full-address viewer renders the raw string in Geist Mono and wraps
+/// naturally — [addressVerifyGrid] remains for any caller that still needs
+/// the legacy 5-character grouping.
 library;
 
-/// Head/tail lengths for the single-line truncated form.
-///
-/// The Figma mocks are designer-typed placeholder strings with inconsistent
-/// counts (7+6 on the review screens, 9+8 on the contact sub-line, 6+5 on
-/// the status screens). The 7+6 pair used by the primary review screens
-/// (`u195091 ... 190591`) is the one canonical form; every surface renders
-/// through [truncatedAddress] so the counts cannot drift again.
-const kTruncatedAddressHeadLength = 7;
-const kTruncatedAddressTailLength = 6;
+import '../layout/app_form_factor.dart';
+
+/// Head/tail lengths of the short form: the longest that keeps every short
+/// line whole and the review headline address within 85% of its column.
+/// 6+5 on phones (7+6 pushes "To:" off), 7+6 on desktop (9+7 fills 93%).
+const kTruncatedAddressHeadLength = kAppFormFactor == AppFormFactor.mobile
+    ? 6
+    : 7;
+const kTruncatedAddressTailLength = kAppFormFactor == AppFormFactor.mobile
+    ? 5
+    : 6;
 const kTruncatedAddressSeparator = ' ... ';
+
+/// The separator in Geist Mono, where every glyph takes a full cell and
+/// `' ... '` would read as a wide gap.
+const kMonospaceTruncatedAddressSeparator = '...';
 
 /// Zcash address pool for display-only UI decisions.
 enum ZcashAddressDisplayKind { shielded, transparent }
@@ -32,22 +43,53 @@ ZcashAddressDisplayKind zcashAddressDisplayKind(String address) {
       : ZcashAddressDisplayKind.shielded;
 }
 
-/// Single-line truncated address: first [kTruncatedAddressHeadLength] chars
+/// The short form: first [kTruncatedAddressHeadLength] chars
 /// + [kTruncatedAddressSeparator] + last [kTruncatedAddressTailLength] chars.
+/// Pass [monospace] where the address is set in a monospace face; it then
+/// takes [kMonospaceTruncatedAddressSeparator].
 ///
 /// Addresses short enough that truncation would not save space (length up to
 /// head + tail + separator) are returned unchanged.
-String truncatedAddress(String address) {
+String truncatedAddress(String address, {bool monospace = false}) => _truncated(
+  address,
+  kTruncatedAddressHeadLength,
+  kTruncatedAddressTailLength,
+  monospace,
+);
+
+/// Head/tail lengths for the long form (`u1q6g2k3r4s5t ... 66778899aab`).
+const kLongTruncatedAddressHeadLength = 13;
+const kLongTruncatedAddressTailLength = 11;
+
+/// The long form: first [kLongTruncatedAddressHeadLength] chars +
+/// [kTruncatedAddressSeparator] + last [kLongTruncatedAddressTailLength]
+/// chars, for surfaces where checking the address is the point. [monospace]
+/// works as for [truncatedAddress].
+///
+/// Addresses short enough that truncation would not save space are returned
+/// unchanged.
+String truncatedLongAddress(String address, {bool monospace = false}) =>
+    _truncated(
+      address,
+      kLongTruncatedAddressHeadLength,
+      kLongTruncatedAddressTailLength,
+      monospace,
+    );
+
+String _truncated(String address, int head, int tail, bool monospace) {
   final trimmed = address.trim();
-  const compactLength =
-      kTruncatedAddressHeadLength +
-      kTruncatedAddressTailLength +
-      kTruncatedAddressSeparator.length;
-  if (trimmed.length <= compactLength) return trimmed;
-  return '${trimmed.substring(0, kTruncatedAddressHeadLength)}' // l10n-ignore: address format
-      '$kTruncatedAddressSeparator'
-      '${trimmed.substring(trimmed.length - kTruncatedAddressTailLength)}';
+  final separator = monospace
+      ? kMonospaceTruncatedAddressSeparator
+      : kTruncatedAddressSeparator;
+  if (trimmed.length <= head + tail + separator.length) return trimmed;
+  return '${trimmed.substring(0, head)}' // l10n-ignore: address format
+      '$separator'
+      '${trimmed.substring(trimmed.length - tail)}';
 }
+
+/// A saved contact's name beside its compacted address: `Rowan (0x0cd7 ... 7181)`.
+String labeledAddressText(String label, String compactAddress) =>
+    '$label ($compactAddress)'; // l10n-ignore: name and address format
 
 /// Number of leading/trailing hex chars kept when middle-truncating a
 /// transaction id / hash to `12345678...90abcdef`.
@@ -58,7 +100,8 @@ const kTruncatedTxidEndLength = 8;
 /// render tx ids identically.
 String truncatedTxid(String txid) {
   final trimmed = txid.trim();
-  if (trimmed.length <= kTruncatedTxidEndLength * 2) return trimmed;
+  // An id no longer than its shortened form stays whole.
+  if (trimmed.length <= kTruncatedTxidEndLength * 2 + 3) return trimmed;
   return '${trimmed.substring(0, kTruncatedTxidEndLength)}' // l10n-ignore: txid format
       '...'
       '${trimmed.substring(trimmed.length - kTruncatedTxidEndLength)}';

@@ -98,6 +98,12 @@ enum SwapStatusDetailKind {
     _ => false,
   };
 
+  /// Values that are transaction ids, shortened as ids rather than addresses.
+  bool get namesTransaction => switch (this) {
+    txId || sourceTx || deliveryTx => true,
+    _ => false,
+  };
+
   /// Values that are addresses or tx ids: shortened/scaled to fit the row.
   bool get compactsValue => switch (this) {
     depositAddress ||

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/primitives.dart';
 import 'package:zcash_wallet/src/core/widgets/review_buttons_stack.dart';
@@ -9,6 +10,11 @@ import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/widgetbook/review_components_use_cases.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+
+// The fixture's address.
+const _sampleAddress =
+    'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+    '73d57f73c6dc05121591a83861cd190591';
 
 void main() {
   testWidgets('review info row gallery renders all variants', (tester) async {
@@ -19,7 +25,7 @@ void main() {
     expect(find.text('123.12 ZEC'), findsOneWidget);
     // To-row headline, failed-row headline, and the contact sub-address all
     // render the same canonical truncation.
-    expect(find.text('u195091 ... 190591'), findsNWidgets(3));
+    expect(find.text(truncatedAddress(_sampleAddress)), findsNWidgets(3));
     expect(find.text('Mike'), findsOneWidget);
     expect(find.text('Shielded'), findsNWidgets(2));
     expect(find.text('Show full address'), findsNWidgets(3));

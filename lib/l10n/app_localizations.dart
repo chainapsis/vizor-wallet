@@ -100,12 +100,6 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
-  /// Shown during the new Ledger approval after an unsigned voting request was repaired.
-  ///
-  /// In en, this message translates to:
-  /// **'Your vote request was rebuilt for compatibility with the live vote. Review it again on your Ledger.'**
-  String get votingLedgerRequestRebuilt;
-
   /// Body of the first paragraph of the About screen.
   ///
   /// In en, this message translates to:
@@ -20378,6 +20372,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reconnect your Ledger and try again.'**
   String get votingLedgerReconnect;
+
+  /// Shown during the new Ledger approval after an unsigned voting request was repaired.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote request was rebuilt for compatibility with the live vote. Review it again on your Ledger.'**
+  String get votingLedgerRequestRebuilt;
 
   /// Shown in place of an untranslated voting SDK error when a voting screen fails to load: alone under a load-failed title, or as {error} in votingResultsLoadFailed, votingResultsRoundLoadFailed, votingReviewLoadFailed and votingConfirmationLoadFailed. The English error stays behind commonShowDetails.
   ///

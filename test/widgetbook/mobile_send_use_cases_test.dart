@@ -6,6 +6,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
@@ -406,7 +407,14 @@ void main() {
     expect(find.text('Review Send'), findsOneWidget);
     expect(find.text('123.12 ZEC'), findsOneWidget);
     expect(find.text('Contact label'), findsOneWidget);
-    expect(find.text('u1tvg24 .... 23hhq6d'), findsOneWidget);
+    expect(
+      find.text(
+        truncatedAddress(
+          'u1tvg2412a23kshieldedaddress000000000000000000000000k64123hhq6d',
+        ),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Add short encrypted message'), findsOneWidget);
     expect(find.text('Confirm & Send'), findsOneWidget);
     expect(

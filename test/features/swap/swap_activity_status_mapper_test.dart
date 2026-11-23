@@ -1,6 +1,7 @@
 import 'dart:ui' show Locale;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/swap/models/one_time_address_role.dart';
@@ -967,6 +968,12 @@ void main() {
     expect(sending.receiveDetailText, startsWith('To: Treasury ('));
     expect(sending.receiveDetailText, contains('on Ethereum'));
     expect(sending.receiveDetailCopyText, recipientAddress);
+    // The line keeps its parts, so a narrow summary can drop the name or the
+    // chain instead of cutting the address.
+    expect(sending.receiveDetailAddress?.label, 'Treasury');
+    expect(sending.receiveDetailAddress?.before, 'To: ');
+    expect(sending.receiveDetailAddress?.after, ' on Ethereum');
+    expect(sending.receiveDetailAddress?.text, sending.receiveDetailText);
 
     final depositing = swapActivityStatusPresentationForIntent(
       testL10n,
@@ -987,6 +994,8 @@ void main() {
     );
     expect(depositing.payDetailText, startsWith('Refund to: Treasury ('));
     expect(depositing.payDetailCopyText, recipientAddress);
+    expect(depositing.payDetailAddress?.label, 'Treasury');
+    expect(depositing.payDetailAddress?.text, depositing.payDetailText);
   });
 
   test('selected contact id distinguishes duplicate Activity labels', () {
@@ -1358,7 +1367,7 @@ void main() {
     expect(_detailValue(presentation.details, 'Memo'), 'memo-7');
     expect(
       _detailValue(presentation.details, 'Deposit USDC to'),
-      '0xdeposit-address',
+      truncatedAddress('0xdeposit-address'),
     );
     expect(_detailValue(presentation.details, 'Refund fee'), '0.25 USDC');
     expect(
@@ -1446,7 +1455,7 @@ void main() {
     expect(_detailValue(presentation.details, 'Memo'), 'memo-7');
     expect(
       _detailValue(presentation.details, 'Deposit USDC to'),
-      '0xdeposit-address',
+      truncatedAddress('0xdeposit-address'),
     );
     expect(
       _detailValue(presentation.details, 'Deposit deadline'),

@@ -9,10 +9,6 @@ class AppLocalizationsKo extends AppLocalizations {
   AppLocalizationsKo([String locale = 'ko']) : super(locale);
 
   @override
-  String get votingLedgerRequestRebuilt =>
-      '진‍행 중‍인 투‍표‍와 호‍환‍되‍도‍록 투‍표 요‍청‍을 다‍시 만‍들‍었‍습‍니‍다. Ledger‍에‍서 다‍시 확‍인‍하‍세‍요.';
-
-  @override
   String get aboutBuiltByBody =>
       '저‍희‍는 Cosmos, Ethereum, Bitcoin‍에‍서 수‍백‍만 명‍이 쓰‍는 지‍갑 Keplr‍를 만‍들‍었‍어‍요. Vizor‍는 Zcash 지‍갑‍이‍라‍면 이‍래‍야 한‍다‍는 저‍희‍의 답‍이‍에‍요.';
 
@@ -12286,6 +12282,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get votingLedgerReconnect => 'Ledger‍를 다‍시 연‍결‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get votingLedgerRequestRebuilt =>
+      '진‍행 중‍인 투‍표‍와 호‍환‍되‍도‍록 투‍표 요‍청‍을 다‍시 만‍들‍었‍습‍니‍다. Ledger‍에‍서 다‍시 확‍인‍하‍세‍요.';
 
   @override
   String get votingLoadFailedRetry => '잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';

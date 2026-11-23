@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -12,7 +13,7 @@ import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../domain/swap_contract.dart';
-import '../../models/swap_address_formatting.dart';
+import '../../../../core/formatting/address_display.dart';
 import '../../models/swap_activity_status_mapper.dart'
     show PayActivityStatusPhase, SwapActivityStatusPresentation;
 import '../../models/swap_status_presentation.dart';
@@ -21,6 +22,7 @@ import '../swap_status_page_content.dart' show SwapAnimatedProgressRoute;
 import '../swap_progress_explorer_footer.dart';
 import 'mobile_swap_review_header.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/locale_typography.dart';
 
 const _mobileStatusDetailIconSize = 16.0;
 const _mobileStatusHeaderToBodyGap = AppSpacing.sm + AppSpacing.s;
@@ -163,13 +165,7 @@ class MobilePayStatusHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compactAddress = compactSwapAddress(
-      recipientAddress,
-      maxLength: 15,
-      prefixLength: 7,
-      suffixLength: 5,
-      separator: '...',
-    );
+    final compactAddress = truncatedAddress(recipientAddress);
     final name = recipientName?.trim();
     final profilePictureId = recipientProfilePictureId?.trim();
     return ConstrainedBox(
@@ -519,7 +515,7 @@ class _MobilePaymentDetails extends StatelessWidget {
         SwapStatusDetailRowData(
           label: context.l10n.commonRefundTo,
           kind: SwapStatusDetailKind.refundTo,
-          value: compactSwapAddress(payStatus!.refundAddress!),
+          value: truncatedAddress(payStatus!.refundAddress!),
           copyable: true,
           copyText: payStatus.refundAddress,
         ),
@@ -721,6 +717,9 @@ class _MobileFinalDetailRow extends StatelessWidget {
     final colors = context.colors;
     final displayLabel = _mobileStatusDetailLabel(context.l10n, row);
     final displayValue = _mobileStatusDetailDisplayValue(row);
+    final labelStyle = AppTypography.labelLarge.copyWith(
+      color: colors.text.secondary,
+    );
     final linkUri = row.linkUri;
     final canTap = linkUri != null || row.copyable;
     return MouseRegion(
@@ -750,18 +749,18 @@ class _MobileFinalDetailRow extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: Text(
-                      displayLabel,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
+                  Expanded(child: Text(displayLabel, style: labelStyle)),
                   const SizedBox(width: AppSpacing.s),
                   ConstrainedBox(
+                    // At least half the row, and whatever a short label
+                    // ("Tx ID") leaves, so an id keeps its text size.
                     constraints: BoxConstraints(
-                      maxWidth: (constraints.maxWidth - AppSpacing.s) / 2,
+                      maxWidth: math.max(
+                        (constraints.maxWidth - AppSpacing.s) / 2,
+                        constraints.maxWidth -
+                            AppSpacing.s -
+                            _singleLineWidth(context, displayLabel, labelStyle),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -851,25 +850,28 @@ String _mobileStatusDetailLabel(
   return row.label;
 }
 
-String _mobileStatusDetailDisplayValue(SwapStatusDetailRowData row) {
-  final source = row.copyText?.trim();
-  if (source == null || source.isEmpty) return row.value;
-  if (!_shouldCompactMobileStatusDetailValue(row, source)) return row.value;
-  return compactSwapAddress(
-    source,
-    maxLength: 14,
-    prefixLength: 6,
-    suffixLength: 5,
-    separator: '…',
-  );
+/// The width [text] takes on one line in [style], as `Text` would draw it.
+double _singleLineWidth(BuildContext context, String text, TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: withLocaleFontFallback(context, style)),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    locale: Localizations.maybeLocaleOf(context),
+    maxLines: 1,
+  )..layout();
+  final width = painter.width;
+  painter.dispose();
+  return width;
 }
 
-bool _shouldCompactMobileStatusDetailValue(
-  SwapStatusDetailRowData row,
-  String source,
-) {
-  if (source.length <= 18) return false;
-  return row.kind.compactsValue;
+String _mobileStatusDetailDisplayValue(SwapStatusDetailRowData row) {
+  final source = row.copyText?.trim();
+  if (source == null || source.isEmpty || !row.kind.compactsValue) {
+    return row.value;
+  }
+  return row.kind.namesTransaction
+      ? truncatedTxid(source)
+      : truncatedAddress(source);
 }
 
 class _MobileStatusDetailActionIcon extends StatelessWidget {

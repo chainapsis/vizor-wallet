@@ -4,17 +4,24 @@ library;
 import '../../support/test_l10n.dart';
 import 'package:flutter/material.dart'
     show MaterialApp, SingleChildScrollView, Tooltip;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/l10n/l10n.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart'
+    show kMobilePageMargin;
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/address_line_text.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_address_plan.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
-import 'package:zcash_wallet/src/features/swap/models/swap_address_formatting.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/one_time_address_label.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/core/l10n/locale_typography.dart';
 import '../../core/widgets/support/review_info_row_trailing_cases.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -197,11 +204,8 @@ void main() {
       ),
     );
 
-    final compactAddress = compactSwapAddress(
+    final compactAddress = truncatedAddress(
       '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2',
-      prefixLength: 6,
-      suffixLength: 5,
-      separator: ' ... ',
     );
     expect(find.text('To: Treasury ($compactAddress)'), findsOneWidget);
   });
@@ -236,12 +240,7 @@ void main() {
       ),
     );
 
-    final compactAddress = compactSwapAddress(
-      address,
-      prefixLength: 6,
-      suffixLength: 5,
-      separator: ' ... ',
-    );
+    final compactAddress = truncatedAddress(address);
     expect(find.text('To: Second ($compactAddress)'), findsOneWidget);
     expect(find.textContaining('First'), findsNothing);
   });
@@ -263,11 +262,8 @@ void main() {
   ) async {
     await tester.pumpWidget(_harness(_content()));
 
-    final compactAddress = compactSwapAddress(
+    final compactAddress = truncatedAddress(
       '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2',
-      prefixLength: 6,
-      suffixLength: 5,
-      separator: ' ... ',
     );
     expect(find.text('To: $compactAddress'), findsOneWidget);
     expect(compactAddress.endsWith('...'), isFalse);
@@ -341,6 +337,142 @@ void main() {
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Cancel'), findsNothing);
     expect(find.bySemanticsLabel('Close'), findsOneWidget);
+  });
+
+  group('the header address line keeps its head and tail', () {
+    const externalAddress = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
+    final compactAddress = truncatedAddress(externalAddress);
+
+    Future<void> pumpOnPhone(
+      WidgetTester tester,
+      Widget child, {
+      required String locale,
+      Size size = const Size(393, 852),
+      double textScale = 1,
+    }) async {
+      await loadFigmaCompareFonts();
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: Locale(locale),
+          supportedLocales: appSupportedLocales(preview: true),
+          localizationsDelegates: appLocalizationsDelegates,
+          builder: (context, navigator) => AppTheme(
+            data: AppThemeData.light,
+            child: MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(textScale)),
+              // The language's own fonts, as the app sets them.
+              child: LocaleTypography(child: navigator!),
+            ),
+          ),
+          // The page's side margins.
+          home: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: kMobilePageMargin),
+            child: child,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    void expectAddressWhole(
+      WidgetTester tester,
+      String address, {
+      String? name,
+    }) {
+      final lines = [
+        for (final element in find.byType(RichText).evaluate())
+          if ((element.renderObject! as RenderParagraph).text
+              .toPlainText()
+              .contains(address))
+            element.renderObject! as RenderParagraph,
+      ];
+      expect(lines, isNotEmpty, reason: 'No line shows $address');
+      for (final line in lines) {
+        expect(
+          line.didExceedMaxLines,
+          isFalse,
+          reason: '"${line.text.toPlainText()}" is cut short',
+        );
+        // A saved contact stays named, on its own line when the row is narrow.
+        if (name != null) {
+          expect(line.text.toPlainText(), contains(name.substring(0, 3)));
+        }
+      }
+    }
+
+    for (final locale in const ['en', 'ko', 'zh']) {
+      for (final label in const [null, 'Mike', 'Treasury', 'Rowan Ledger']) {
+        testWidgets('review, $locale, ${label ?? 'no contact'}', (
+          tester,
+        ) async {
+          await pumpOnPhone(
+            tester,
+            _content(
+              addressBookContacts: [
+                if (label != null)
+                  AddressBookContact(
+                    id: 'contact',
+                    label: label,
+                    network: AddressBookNetwork.ethereum,
+                    address: externalAddress,
+                    profilePictureId: 'default',
+                    createdAtMs: 0,
+                    updatedAtMs: 0,
+                  ),
+              ],
+            ),
+            locale: locale,
+          );
+          expectAddressWhole(tester, compactAddress, name: label);
+        });
+      }
+
+      // The status screen's ZEC payout line, at half the strip beside the
+      // one-time address label.
+      testWidgets('status beside the one-time label, $locale', (tester) async {
+        const zecAddress = 'u1q6g2 ... 78899';
+        await pumpOnPhone(
+          tester,
+          Builder(
+            builder: (context) => MobileSwapReviewHeader(
+              pay: const MobileSwapReviewHeaderRow(
+                label: 'You paid',
+                amountText: '100.12 USDC',
+                asset: SwapAsset.usdc,
+              ),
+              receive: MobileSwapReviewHeaderRow(
+                label: 'You received',
+                amountText: '1.12 ZEC',
+                asset: SwapAsset.zec,
+                bottomAddress: AddressLine.inTemplate(
+                  context.l10n.swapPanelRecipientTo,
+                  address: zecAddress,
+                ),
+                oneTimeAddress: OneTimeAddressRole.payout,
+              ),
+            ),
+          ),
+          locale: locale,
+        );
+        expectAddressWhole(tester, zecAddress);
+      });
+    }
+
+    testWidgets('a narrow phone with larger text', (tester) async {
+      await pumpOnPhone(
+        tester,
+        _content(),
+        locale: 'ko',
+        size: const Size(320, 900),
+        textScale: 1.3,
+      );
+      expectAddressWhole(tester, compactAddress);
+    });
   });
 }
 

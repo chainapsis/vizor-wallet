@@ -1,7 +1,9 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import '../layout/app_form_factor.dart';
 import '../theme/app_theme.dart';
+import 'address_line_text.dart';
 import 'app_button.dart';
 import 'app_icon.dart';
 
@@ -72,6 +74,7 @@ class ReviewInfoRow extends StatelessWidget {
     this.bottomLeftIconName,
     this.bottomLeftIconColor,
     this.bottomLeftText,
+    this.bottomLeftAddress,
     this.bottomLeftTextKey,
     this.trailingActionLabel,
     this.trailingActionIconName = AppIcons.eye,
@@ -85,7 +88,10 @@ class ReviewInfoRow extends StatelessWidget {
     this.rowHeight = ReviewInfoRow.height,
     this.reserveBottomRow = true,
     super.key,
-  });
+  }) : assert(
+         bottomLeftText == null || bottomLeftAddress == null,
+         'Pass bottomLeftText or bottomLeftAddress, not both.',
+       );
 
   /// Small secondary label above the value ("Amount", "To", "From").
   final String label;
@@ -113,6 +119,11 @@ class ReviewInfoRow extends StatelessWidget {
 
   /// Bottom-left text: badge label, truncated sub-address, or fiat value.
   final String? bottomLeftText;
+
+  /// Bottom-left sentence naming an address ("To: Mike (0x9aDF ... 819E2)"),
+  /// in place of [bottomLeftText]. The address stays whole when the strip is
+  /// narrow; the rest of the sentence gives way (see [AddressLineText]).
+  final AddressLine? bottomLeftAddress;
 
   /// Key on [bottomLeftText], for test lookups.
   final Key? bottomLeftTextKey;
@@ -256,10 +267,27 @@ class ReviewInfoRow extends StatelessWidget {
       ? AppTypography.labelLarge
       : AppTypography.labelSmall;
 
+  Widget? _bottomLeftLabel(TextStyle textStyle) {
+    if (bottomLeftAddress case final address?) {
+      return AddressLineText(address, key: bottomLeftTextKey, style: textStyle);
+    }
+    if (bottomLeftText case final text?) {
+      return Text(
+        text,
+        key: bottomLeftTextKey,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: textStyle,
+      );
+    }
+    return null;
+  }
+
   bool get _hasBottomRow =>
       reserveBottomRow ||
       bottomLeftIconName != null ||
       bottomLeftText != null ||
+      bottomLeftAddress != null ||
       bottomLeftPlaceholder != null ||
       trailingActionLabel != null;
 
@@ -267,102 +295,128 @@ class ReviewInfoRow extends StatelessWidget {
     final leadingIconWidth = bottomLeftIconName == null
         ? 0.0
         : AppIconSize.medium + AppSpacing.xxs;
+    final leadingIcon = bottomLeftIconName == null
+        ? null
+        : AppIcon(
+            bottomLeftIconName!,
+            size: AppIconSize.medium,
+            color: bottomLeftIconColor ?? colors.text.secondary,
+          );
     return LayoutBuilder(
-      builder: (context, constraints) => Row(
-        children: [
-          if (bottomLeftIconName != null) ...[
-            AppIcon(
-              bottomLeftIconName!,
-              size: AppIconSize.medium,
-              color: bottomLeftIconColor ?? colors.text.secondary,
+      builder: (context, constraints) {
+        final label = bottomLeftPlaceholder == null
+            ? _bottomLeftLabel(textStyle)
+            : null;
+        // A line naming a saved contact keeps the address line's own order
+        // instead: the name moves to a line above, the address stays beside
+        // the action.
+        if (label != null &&
+            trailing == null &&
+            trailingActionLabel != null &&
+            bottomLeftAddress?.contactLabel == null) {
+          // The text keeps its line beside the action when both fit. Otherwise
+          // it takes the whole line and the action moves below it, so an
+          // address is never cut to make room for the button.
+          return _LabelActionLayout(
+            textDirection: Directionality.of(context),
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (leadingIcon != null) ...[
+                  leadingIcon,
+                  const SizedBox(width: AppSpacing.xxs),
+                ],
+                Flexible(child: label),
+              ],
             ),
-            const SizedBox(width: AppSpacing.xxs),
+            action: _trailingAction(colors, constraints, leadingIconWidth),
+          );
+        }
+        return Row(
+          children: [
+            if (leadingIcon != null) ...[
+              leadingIcon,
+              const SizedBox(width: AppSpacing.xxs),
+            ],
+            if (bottomLeftPlaceholder != null)
+              Expanded(child: bottomLeftPlaceholder!)
+            else if (label != null)
+              // Beside [trailing] the text keeps its width, up to half the
+              // strip, and [trailing] takes the rest.
+              trailing != null
+                  ? ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth:
+                            ((constraints.maxWidth - leadingIconWidth) / 2)
+                                .clamp(0.0, constraints.maxWidth),
+                      ),
+                      child: label,
+                    )
+                  : Expanded(child: label)
+            else if (trailing == null)
+              const Spacer(),
+            if (trailing case final trailing?)
+              Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: trailing,
+                ),
+              )
+            else if (trailingActionLabel != null)
+              _trailingAction(colors, constraints, leadingIconWidth),
           ],
-          if (bottomLeftPlaceholder != null)
-            Expanded(child: bottomLeftPlaceholder!)
-          else if (bottomLeftText != null)
-            // Beside [trailing] the text keeps its width, up to half the
-            // strip, and [trailing] takes the rest.
-            trailing != null
-                ? ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: ((constraints.maxWidth - leadingIconWidth) / 2)
-                          .clamp(0.0, constraints.maxWidth),
-                    ),
-                    child: Text(
-                      bottomLeftText!,
-                      key: bottomLeftTextKey,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textStyle,
-                    ),
-                  )
-                : Expanded(
-                    child: Text(
-                      bottomLeftText!,
-                      key: bottomLeftTextKey,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textStyle,
-                    ),
-                  )
-          else if (trailing == null)
-            const Spacer(),
-          if (trailing case final trailing?)
-            Expanded(
-              child: Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: trailing,
-              ),
-            )
-          else if (trailingActionLabel != null)
-            // Keeps its natural width but never pushes past the strip, so a
-            // long or scaled label ellipsizes instead of overflowing.
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: (constraints.maxWidth - leadingIconWidth).clamp(
-                  0.0,
-                  constraints.maxWidth,
-                ),
-              ),
-              child: IntrinsicWidth(
-                child: AppButton(
-                  key: trailingActionKey,
-                  onPressed: onTrailingAction,
-                  variant: AppButtonVariant.ghost,
-                  size: AppButtonSize.small,
-                  iconGap: 0,
-                  constrainContent: true,
-                  // Scaled text makes the button taller instead of clipping.
-                  growWithContent: true,
-                  // The eye glyph matches the ghost label color per the Figma
-                  // frames (not the default icon tint).
-                  leading: AppIcon(
-                    trailingActionIconName,
-                    color: colors.button.ghost.label,
-                  ),
-                  // The compact Figma ghost button is outer p4 + icon16 +
-                  // label px4, with no extra icon gap between those nested
-                  // nodes.
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xxs,
-                    ),
-                    child: Text(
-                      trailingActionLabel!,
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.ellipsis,
-                      // Explicit Label M style per Figma — the small button's
-                      // own token is Label S; the ghost label color still
-                      // flows in from the button's DefaultTextStyle merge.
-                      style: AppTypography.labelLarge,
-                    ),
-                  ),
-                ),
-              ),
+        );
+      },
+    );
+  }
+
+  /// The ghost action at the strip's end ("Show full address").
+  Widget _trailingAction(
+    AppColors colors,
+    BoxConstraints constraints,
+    double leadingIconWidth,
+  ) {
+    // Keeps its natural width but never pushes past the strip, so a long or
+    // scaled label ellipsizes instead of overflowing.
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: (constraints.maxWidth - leadingIconWidth).clamp(
+          0.0,
+          constraints.maxWidth,
+        ),
+      ),
+      child: IntrinsicWidth(
+        child: AppButton(
+          key: trailingActionKey,
+          onPressed: onTrailingAction,
+          variant: AppButtonVariant.ghost,
+          size: AppButtonSize.small,
+          iconGap: 0,
+          constrainContent: true,
+          // Scaled text makes the button taller instead of clipping.
+          growWithContent: true,
+          // The eye glyph matches the ghost label color per the Figma
+          // frames (not the default icon tint).
+          leading: AppIcon(
+            trailingActionIconName,
+            color: colors.button.ghost.label,
+          ),
+          // The compact Figma ghost button is outer p4 + icon16 + label px4,
+          // with no extra icon gap between those nested nodes.
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: Text(
+              trailingActionLabel!,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              // Explicit Label M style per Figma — the small button's own
+              // token is Label S; the ghost label color still flows in from
+              // the button's DefaultTextStyle merge.
+              style: AppTypography.labelLarge,
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -445,4 +499,98 @@ class ReviewInfoFlow extends StatelessWidget {
       ],
     );
   }
+}
+
+/// [label] and [action] on one line, [action] at the end, when both fit.
+/// Otherwise [label] takes the whole first line and [action] moves to a line
+/// of its own below it, still at the end.
+class _LabelActionLayout extends MultiChildRenderObjectWidget {
+  _LabelActionLayout({
+    required this.textDirection,
+    required Widget label,
+    required Widget action,
+  }) : super(children: [label, action]);
+
+  final TextDirection textDirection;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderLabelAction(textDirection: textDirection);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderLabelAction renderObject,
+  ) {
+    renderObject.textDirection = textDirection;
+  }
+}
+
+class _LabelActionParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderLabelAction extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _LabelActionParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _LabelActionParentData> {
+  _RenderLabelAction({required TextDirection textDirection})
+    : _textDirection = textDirection;
+
+  TextDirection get textDirection => _textDirection;
+  TextDirection _textDirection;
+  set textDirection(TextDirection value) {
+    if (value == _textDirection) return;
+    _textDirection = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _LabelActionParentData) {
+      child.parentData = _LabelActionParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final label = firstChild!;
+    final action = childAfter(label)!;
+    final loose = BoxConstraints(maxWidth: constraints.maxWidth);
+    action.layout(loose, parentUsesSize: true);
+    label.layout(loose, parentUsesSize: true);
+    final width = constraints.hasBoundedWidth
+        ? constraints.maxWidth
+        : label.size.width + action.size.width;
+    final labelData = label.parentData! as _LabelActionParentData;
+    final actionData = action.parentData! as _LabelActionParentData;
+    final rtl = textDirection == TextDirection.rtl;
+    final oneLine = label.size.width + action.size.width <= width;
+    if (oneLine) {
+      label.layout(
+        BoxConstraints(maxWidth: width - action.size.width),
+        parentUsesSize: true,
+      );
+    }
+    final height = oneLine
+        ? (label.size.height > action.size.height
+              ? label.size.height
+              : action.size.height)
+        : label.size.height + action.size.height;
+    labelData.offset = Offset(
+      rtl ? width - label.size.width : 0,
+      oneLine ? (height - label.size.height) / 2 : 0,
+    );
+    actionData.offset = Offset(
+      rtl ? 0 : width - action.size.width,
+      oneLine ? (height - action.size.height) / 2 : label.size.height,
+    );
+    size = constraints.constrain(Size(width, height));
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
 }

@@ -91,7 +91,7 @@ void main() {
             ? [
                 l10n.commonChainAndAddress,
                 sample.surface == 'contact-long-chain'
-                    ? 'Binance Smart Chain'
+                    ? 'BNB Smart Chain'
                     : 'Ethereum',
               ]
             : [

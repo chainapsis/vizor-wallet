@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/primitives.dart';
 import 'package:zcash_wallet/src/core/widgets/review_buttons_stack.dart';
@@ -9,6 +10,11 @@ import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.
 import 'package:zcash_wallet/src/features/send/widgets/send_status_content_view.dart';
 import 'package:zcash_wallet/widgetbook/send_review_status_use_cases.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+
+// The fixture's address.
+const _sampleAddress =
+    'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
+    '73d57f73c6dc05121591a83861cd190591';
 
 void main() {
   testWidgets('review address use case renders the review layout', (
@@ -19,7 +25,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(SendReviewContentView), findsOneWidget);
     expect(find.text('Review send'), findsOneWidget);
-    expect(find.text('u195091 ... 190591'), findsOneWidget);
+    expect(find.text(truncatedAddress(_sampleAddress)), findsOneWidget);
     expect(find.text('Shielded'), findsOneWidget);
     expect(find.text('Confirm & send'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
@@ -32,7 +38,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Mike'), findsOneWidget);
-    expect(find.text('u195091 ... 190591'), findsOneWidget);
+    expect(find.text(truncatedAddress(_sampleAddress)), findsOneWidget);
     expect(find.text('Shielded'), findsNothing);
     expect(find.text(r'$250.12'), findsOneWidget);
     expect(find.text('Message'), findsOneWidget);

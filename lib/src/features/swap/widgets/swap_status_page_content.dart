@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/address_line_text.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
@@ -40,6 +41,8 @@ class SwapStatusPageContent extends StatefulWidget {
     this.receiveLabel,
     required this.payDetailText,
     required this.receiveDetailText,
+    this.payDetailAddress,
+    this.receiveDetailAddress,
     required this.statusLabel,
     required this.badgeKind,
     this.payDetailCopyText,
@@ -85,6 +88,11 @@ class SwapStatusPageContent extends StatefulWidget {
   /// line shows an address rather than a fiat value.
   final String? payDetailCopyText;
   final String? receiveDetailCopyText;
+
+  /// [payDetailText] / [receiveDetailText] when they name an address, so the
+  /// address stays whole on a narrow line.
+  final AddressLine? payDetailAddress;
+  final AddressLine? receiveDetailAddress;
 
   /// User-facing status label shown in the terminal Status row.
   final String statusLabel;
@@ -256,9 +264,11 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
               payLabel: payLabel,
               payAmountText: widget.payAmountText,
               payDetailText: widget.payDetailText,
+              payDetailAddress: widget.payDetailAddress,
               receiveLabel: receiveLabel,
               receiveAmountText: widget.receiveAmountText,
               receiveDetailText: widget.receiveDetailText,
+              receiveDetailAddress: widget.receiveDetailAddress,
               receiveDetailCopyText: widget.receiveDetailCopyText,
               onCopy: widget.onCopy,
             )
@@ -269,7 +279,10 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
                 asset: widget.payAsset,
                 label: payLabel,
                 amountText: widget.payAmountText,
-                detailText: widget.payDetailText,
+                detailText: widget.payDetailAddress == null
+                    ? widget.payDetailText
+                    : null,
+                detailAddress: widget.payDetailAddress,
                 detailCopyText: widget.payDetailCopyText,
                 oneTimeAddress:
                     widget.oneTimeAddress == OneTimeAddressRole.refund
@@ -280,7 +293,10 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
                 asset: widget.receiveAsset,
                 label: receiveLabel,
                 amountText: widget.receiveAmountText,
-                detailText: widget.receiveDetailText,
+                detailText: widget.receiveDetailAddress == null
+                    ? widget.receiveDetailText
+                    : null,
+                detailAddress: widget.receiveDetailAddress,
                 detailCopyText: widget.receiveDetailCopyText,
                 oneTimeAddress:
                     widget.oneTimeAddress == OneTimeAddressRole.payout
@@ -341,9 +357,11 @@ class _PaymentStatusSummary extends StatelessWidget {
     required this.payLabel,
     required this.payAmountText,
     required this.payDetailText,
+    required this.payDetailAddress,
     required this.receiveLabel,
     required this.receiveAmountText,
     required this.receiveDetailText,
+    required this.receiveDetailAddress,
     required this.receiveDetailCopyText,
     required this.onCopy,
   });
@@ -351,11 +369,31 @@ class _PaymentStatusSummary extends StatelessWidget {
   final String payLabel;
   final String payAmountText;
   final String payDetailText;
+  final AddressLine? payDetailAddress;
   final String receiveLabel;
   final String receiveAmountText;
   final String receiveDetailText;
+  final AddressLine? receiveDetailAddress;
   final String? receiveDetailCopyText;
   final ValueChanged<String>? onCopy;
+
+  static Widget _detailLine(
+    String text,
+    AddressLine? address, {
+    required TextStyle style,
+    TextAlign? textAlign,
+  }) {
+    if (address != null) {
+      return AddressLineText(address, style: style, textAlign: textAlign);
+    }
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: textAlign,
+      style: style,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -393,10 +431,9 @@ class _PaymentStatusSummary extends StatelessWidget {
               onTap: copyable && onCopy != null
                   ? () => onCopy!(receiveDetailCopyText!)
                   : null,
-              child: Text(
+              child: _detailLine(
                 receiveDetailText,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                receiveDetailAddress,
                 textAlign: TextAlign.center,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.text.secondary,
@@ -447,10 +484,9 @@ class _PaymentStatusSummary extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
-                  child: Text(
+                  child: _detailLine(
                     payDetailText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    payDetailAddress,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.text.secondary,
                     ),

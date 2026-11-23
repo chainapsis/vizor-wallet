@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
+import '../../../../core/widgets/address_line_text.dart';
 import '../../../../core/widgets/app_tappable.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
@@ -16,7 +17,7 @@ import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
 import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/widgets/address_book_network_icon.dart';
-import '../../../swap/models/swap_address_formatting.dart';
+import '../../../../core/formatting/address_display.dart';
 
 // The Figma fields reserve a 16px sub-label slot with a 4px gap even when
 // there is no helper copy. Express those empty slots as spacing so the modal
@@ -229,9 +230,11 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
             child: ExcludeSemantics(
               child: Container(
                 key: const ValueKey('mobile_pay_add_contact_address'),
-                height: AppInputSizing.height,
+                constraints: const BoxConstraints(
+                  minHeight: AppInputSizing.height,
+                ),
                 alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+                padding: const EdgeInsets.all(AppSpacing.s),
                 decoration: BoxDecoration(
                   color: colors.surface.input.primary,
                   borderRadius: BorderRadius.circular(AppInputSizing.radius),
@@ -250,16 +253,13 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                     BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
                   ],
                 ),
-                child: Text(
-                  compactSwapAddress(
-                    widget.address,
-                    maxLength: 30,
-                    prefixLength: 16,
-                    suffixLength: 10,
-                    separator: '...',
+                // The long form, or the short one where it would be cut; at
+                // the largest text sizes the short form wraps.
+                child: AddressLineText(
+                  AddressLine(
+                    address: truncatedLongAddress(widget.address),
+                    shortAddress: truncatedAddress(widget.address),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.accent,
                   ),

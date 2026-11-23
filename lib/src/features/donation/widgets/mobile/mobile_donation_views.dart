@@ -2,10 +2,12 @@ import 'package:flutter/material.dart'
     show InputBorder, InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/formatting/address_display.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/layout/mobile/mobile_sticky_bottom_action.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/address_line_text.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
@@ -14,6 +16,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../../swap/models/swap_models.dart';
 import '../../../swap/widgets/swap_asset_icon.dart';
+import '../../donation_config.dart';
 import '../donation_views.dart';
 
 class MobileDonationComposeView extends StatelessWidget {
@@ -414,7 +417,9 @@ class MobileDonationReviewContent extends StatelessWidget {
               value: 'Vizor Wallet', // l10n-ignore: product name
               leading: const DonationVizorBadge(size: 40),
               valueFit: BoxFit.scaleDown,
-              bottomLeftText: 'u15kdl…8tg3y',
+              bottomLeftAddress: AddressLine(
+                address: truncatedAddress(kVizorDonationAddress),
+              ),
               trailingActionLabel: context.l10n.commonFullAddress,
               onTrailingAction: onFullAddress,
             ),

@@ -1,8 +1,10 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/formatting/address_display.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/address_line_text.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/pool_badge.dart';
@@ -68,7 +70,8 @@ class MobileRecipientSection extends StatelessWidget {
 /// bare address (wallet glyph, address, optional pool line).
 class MobileRecipientRow extends StatelessWidget {
   const MobileRecipientRow({
-    required this.addressText,
+    required this.address,
+    this.longAddress = true,
     this.name,
     this.profilePictureId,
     this.isShielded,
@@ -81,8 +84,13 @@ class MobileRecipientRow extends StatelessWidget {
     super.key,
   });
 
-  /// The address as the row shows it, already shortened by the caller.
-  final String addressText;
+  /// The full address.
+  final String address;
+
+  /// Shows [address] in the long form (falling back to the short form where
+  /// the row leaves too little room); false keeps every row short, for a list
+  /// whose rows carry amounts.
+  final bool longAddress;
   final String? name;
   final String? profilePictureId;
 
@@ -141,11 +149,19 @@ class MobileRecipientRow extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _RecipientLine(title ?? addressText, color: colors.text.accent),
+                if (title != null)
+                  _RecipientLine(title, color: colors.text.accent)
+                else
+                  _RecipientLine.address(
+                    address,
+                    long: longAddress,
+                    color: colors.text.accent,
+                  ),
                 if (title != null) ...[
                   const SizedBox(height: AppSpacing.xxs),
-                  _RecipientLine(
-                    addressText,
+                  _RecipientLine.address(
+                    address,
+                    long: longAddress,
                     color: colors.text.secondary,
                     fontWeight: FontWeight.w400,
                   ),
@@ -236,18 +252,34 @@ class MobileRecipientRow extends StatelessWidget {
 /// A fixed-height single line so two of them fit the 44px row at any text
 /// scale, matching the scan row above the lists.
 class _RecipientLine extends StatelessWidget {
-  const _RecipientLine(
-    this.text, {
+  const _RecipientLine(String this.text, {required this.color})
+    : address = null,
+      long = false,
+      fontWeight = FontWeight.w500;
+
+  /// A line showing [address] in the recipient lists' long form, falling
+  /// back to the short form where the row leaves too little room.
+  const _RecipientLine.address(
+    String this.address, {
+    required this.long,
     required this.color,
     this.fontWeight = FontWeight.w500,
-  });
+  }) : text = null;
 
-  final String text;
+  final String? text;
+  final String? address;
+
+  /// Whether [address] takes the long form (else the short form).
+  final bool long;
   final Color color;
   final FontWeight fontWeight;
 
   @override
   Widget build(BuildContext context) {
+    final style = AppTypography.labelLarge.copyWith(
+      color: color,
+      fontWeight: fontWeight,
+    );
     return SizedBox(
       height: _lineHeight,
       child: Align(
@@ -256,15 +288,24 @@ class _RecipientLine extends StatelessWidget {
           data: MediaQuery.of(
             context,
           ).copyWith(textScaler: TextScaler.noScaling),
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(
-              color: color,
-              fontWeight: fontWeight,
+          child: switch (address) {
+            final address? => AddressLineText(
+              long
+                  ? AddressLine(
+                      address: truncatedLongAddress(address),
+                      shortAddress: truncatedAddress(address),
+                    )
+                  : AddressLine(address: truncatedAddress(address)),
+              style: style,
+              singleLine: true,
             ),
-          ),
+            null => Text(
+              text!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+          },
         ),
       ),
     );

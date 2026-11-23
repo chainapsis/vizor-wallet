@@ -16,7 +16,7 @@ import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../core/widgets/dot_qr_shape.dart';
 import '../domain/swap_contract.dart';
-import '../models/swap_address_formatting.dart';
+import '../../../core/formatting/address_display.dart';
 import '../models/swap_deposit_qr_payload.dart';
 import '../models/swap_token_amount_formatting.dart';
 import 'swap_support_notice.dart';
@@ -1156,7 +1156,7 @@ class _DepositDetailsList extends StatelessWidget {
           ),
           _detailRow(
             label: context.l10n.swapDepositOneTimeAddress,
-            value: compactSwapAddress(depositAddress),
+            value: truncatedAddress(depositAddress),
             copyText: depositAddress,
             toastMessage: context.l10n.commonAddressCopied,
             copyKey: const ValueKey('swap_copy_deposit_address'),

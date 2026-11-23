@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/address_line_text.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../domain/swap_contract.dart';
@@ -15,10 +16,11 @@ class MobileSwapReviewHeaderRow {
     required this.amountText,
     required this.asset,
     this.bottomText,
+    this.bottomAddress,
     this.fullAddress,
     this.addressNetworkLabel,
     this.oneTimeAddress,
-  });
+  }) : assert(bottomText == null || bottomAddress == null);
 
   /// "You're paying" / "You're receiving".
   final String label;
@@ -28,9 +30,12 @@ class MobileSwapReviewHeaderRow {
 
   final SwapAsset asset;
 
-  /// Small grey line under the amount — the fiat value or
-  /// "To: 0x1125 ... 17512".
+  /// Small grey line under the amount: the fiat value.
   final String? bottomText;
+
+  /// The line under the amount when it names an address
+  /// ("To: 0x1125 ... 17512"), in place of [bottomText].
+  final AddressLine? bottomAddress;
 
   /// When set, the bottom strip gains the eye "Full address" action
   /// opening the chunked verify sheet — Figma `Verify Address`
@@ -87,6 +92,7 @@ class MobileSwapReviewHeader extends StatelessWidget {
         showChainBadge: !row.asset.isNativeZec,
       ),
       bottomLeftText: row.bottomText,
+      bottomLeftAddress: row.bottomAddress,
       trailing: fullAddress == null && row.oneTimeAddress != null
           ? OneTimeAddressLabel(role: row.oneTimeAddress!)
           : null,

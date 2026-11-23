@@ -9,7 +9,7 @@ import '../../../core/widgets/review_wrap_card.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../domain/swap_asset.dart';
 import '../models/swap_activity_status_mapper.dart';
-import '../models/swap_address_formatting.dart';
+import '../../../core/formatting/address_display.dart';
 import 'swap_asset_icon.dart';
 import 'swap_status_page_content.dart';
 import 'swap_progress_explorer_footer.dart';
@@ -140,13 +140,7 @@ class PayActivityStatusContent extends StatelessWidget {
 
   Widget _reviewInfo(BuildContext context) {
     final contact = recipientContact;
-    final compactRecipient = compactSwapAddress(
-      recipientAddress,
-      maxLength: 19,
-      prefixLength: 8,
-      suffixLength: 8,
-      separator: '...',
-    );
+    final compactRecipient = truncatedAddress(recipientAddress);
 
     return ConstrainedBox(
       key: const ValueKey('pay_status_review_info'),
@@ -268,7 +262,7 @@ class PayActivityStatusContent extends StatelessWidget {
                   status.refundAddress?.isNotEmpty == true)
                 ReviewListRow(
                   label: context.l10n.commonRefundTo,
-                  value: compactSwapAddress(status.refundAddress!),
+                  value: truncatedAddress(status.refundAddress!),
                   copyText: status.refundAddress,
                   scaleValueToFit: true,
                 ),

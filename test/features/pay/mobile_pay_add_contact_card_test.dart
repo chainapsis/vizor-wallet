@@ -84,7 +84,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Ethereum'), findsOneWidget);
-    expect(find.textContaining('0x11111111111111'), findsOneWidget);
+    expect(find.bySemanticsLabel('Address $_address'), findsOneWidget);
     expect(generatorCalls, 1);
     expect(
       tester

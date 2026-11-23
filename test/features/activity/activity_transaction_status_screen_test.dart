@@ -582,7 +582,7 @@ void main() {
     expect(find.text('From'), findsOneWidget);
     expect(find.text('Unknown sender'), findsOneWidget);
     // Our receiving output's address shows as the Amount sub-line.
-    expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
+    expect(find.text(truncatedAddress(_receivingAddress)), findsOneWidget);
     expect(find.text('Thanks for lunch'), findsOneWidget);
     expect(find.text(_expectedTimestamp(_blockTime)), findsOneWidget);
     // Zero fee on an inbound transaction hides the network fee row.
@@ -726,8 +726,11 @@ void main() {
     );
 
     expect(find.text('Mom'), findsOneWidget);
-    expect(find.text('t1PV7ny ... GVSpEX'), findsOneWidget);
-    expect(find.text('u195091 ... 190591'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentSenderAddress)),
+      findsOneWidget,
+    );
+    expect(find.text(truncatedAddress(_recipientAddress)), findsOneWidget);
 
     await tester.tap(find.text('Show full address'));
     await tester.pump();
@@ -795,7 +798,10 @@ void main() {
     );
 
     expect(find.text('Savings'), findsOneWidget);
-    expect(find.text('t1PV7ny ... GVSpEX'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_transparentSenderAddress)),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
@@ -846,7 +852,7 @@ void main() {
     expect(find.byType(SendStatusContentView), findsOneWidget);
     expect(find.text('Sent successfully'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
-    expect(find.text('u195091 ... 190591'), findsOneWidget);
+    expect(find.text(truncatedAddress(_recipientAddress)), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
     expect(
       find.text(
@@ -1025,7 +1031,7 @@ void main() {
     );
 
     expect(find.text('Mom'), findsOneWidget);
-    expect(find.text('u195091 ... 190591'), findsOneWidget);
+    expect(find.text(truncatedAddress(_recipientAddress)), findsOneWidget);
   });
 
   testWidgets('renders the redesigned receipt for a shielding transaction', (

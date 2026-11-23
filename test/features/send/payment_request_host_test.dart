@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
@@ -774,7 +775,10 @@ void main() {
       find.byKey(const ValueKey('payment_request_recipient_name')),
       findsNothing,
     );
-    expect(find.text('u195091 ... 190591'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_address, monospace: true)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the fiat line lands when the price arrives after the card', (
@@ -815,7 +819,10 @@ void main() {
       find.byKey(const ValueKey('payment_request_recipient_name')),
       findsNothing,
     );
-    expect(find.text('u195091 ... 190591'), findsOneWidget);
+    expect(
+      find.text(truncatedAddress(_address, monospace: true)),
+      findsOneWidget,
+    );
   });
 
   // A card that has run out of ways to answer itself stops promising an

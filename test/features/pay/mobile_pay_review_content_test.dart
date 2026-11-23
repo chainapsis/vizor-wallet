@@ -2,14 +2,17 @@
 library;
 
 import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/app_test_fonts.dart';
 
 const _recipientAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
 
@@ -45,7 +48,11 @@ const _quote = SwapQuote(
   receiveEstimateTextOverride: '990 USDC',
 );
 
-Widget _harness(Widget child, {AppThemeData theme = AppThemeData.light}) {
+Widget _harness(
+  Widget child, {
+  AppThemeData theme = AppThemeData.light,
+  double width = 361,
+}) {
   return MaterialApp(
     localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
@@ -54,7 +61,7 @@ Widget _harness(Widget child, {AppThemeData theme = AppThemeData.light}) {
         data: const MediaQueryData(size: Size(393, 852)),
         child: Center(
           child: SizedBox(
-            width: 361,
+            width: width,
             child: SingleChildScrollView(child: child),
           ),
         ),
@@ -82,12 +89,16 @@ void main() {
   testWidgets('matches the active review card anatomy and contact content', (
     tester,
   ) async {
+    // The heights below are the Figma ones, measured with the app's fonts;
+    // the test font's full-em glyphs would push the full-address action
+    // onto its own line.
+    await tester.runAsync(loadAppTestFonts);
     await tester.pumpWidget(_harness(_content()));
 
     expect(find.text('Paying'), findsOneWidget);
     expect(find.text('990 USDC'), findsOneWidget);
     expect(find.text('Mike'), findsOneWidget);
-    expect(find.text('0x5290 ... 69EE7'), findsOneWidget);
+    expect(find.text(truncatedAddress(_recipientAddress)), findsOneWidget);
     expect(find.text('Converted amount'), findsOneWidget);
     expect(find.text('2.251 ZEC'), findsOneWidget);
     expect(find.text(r'$250.12'), findsNWidgets(2));
@@ -115,7 +126,7 @@ void main() {
     await tester.pumpWidget(_harness(_content(contact: null)));
 
     expect(find.text('Unknown address'), findsOneWidget);
-    expect(find.text('0x5290 ... 69EE7'), findsOneWidget);
+    expect(find.text(truncatedAddress(_recipientAddress)), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey('mobile_pay_review_full_address_button')),
     );
@@ -267,6 +278,19 @@ void main() {
       find.byKey(const ValueKey('mobile_pay_review_refresh_quote_button')),
     );
     expect(refreshed, 1);
+  });
+  testWidgets('an address headline fits a 320pt phone', (tester) async {
+    await tester.runAsync(loadAppTestFonts);
+    // A 320pt phone leaves 288 for the card.
+    await tester.pumpWidget(_harness(_content(contact: null), width: 288));
+
+    final headline = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_pay_review_recipient_row')),
+        matching: find.text(truncatedAddress(_recipientAddress)),
+      ),
+    );
+    expect(headline.didExceedMaxLines, isFalse);
   });
 }
 

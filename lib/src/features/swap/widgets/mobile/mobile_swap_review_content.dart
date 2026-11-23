@@ -1,17 +1,18 @@
 import '../../../../core/l10n/l10n.dart';
+
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/address_line_text.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../address_book/models/address_book_contact.dart';
-import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../domain/swap_address_plan.dart';
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_book_helpers.dart';
-import '../../models/swap_address_formatting.dart';
+import '../../../../core/formatting/address_display.dart';
 import '../../models/swap_detail_tooltips.dart';
 import '../../models/swap_quote_text.dart';
 import '../../models/swap_token_amount_formatting.dart';
@@ -72,22 +73,15 @@ class MobileSwapReviewContent extends StatelessWidget {
       address: externalAddress,
       contactId: userExternalContactId,
     )?.label.trim();
-    final externalCompact = compactSwapAddress(
-      externalAddress,
-      prefixLength: 6,
-      suffixLength: 5,
-      separator: ' ... ',
+    final externalCompact = truncatedAddress(externalAddress);
+    final externalBottom = AddressLine.inTemplate(
+      sendsZec
+          ? context.l10n.swapReviewToAddress
+          : context.l10n.swapReviewFromAddress,
+      address: externalCompact,
+      label: externalContactLabel,
     );
-    final externalAddressText =
-        externalContactLabel == null || externalContactLabel.isEmpty
-        ? externalCompact
-        : contactAddressDisplayText(
-            label: externalContactLabel,
-            compactAddress: externalCompact,
-          );
-    final externalBottom = sendsZec
-        ? context.l10n.swapReviewToAddress(externalAddressText)
-        : context.l10n.swapReviewFromAddress(externalAddressText);
+
     final payFiat = payFiatTextOverride;
     final receiveFiat = receiveFiatTextOverride;
 
@@ -110,11 +104,10 @@ class MobileSwapReviewContent extends StatelessWidget {
         trimSwapAmountText(compactSwapAmountText(quote.receiveEstimateText)),
       ),
       asset: quote.receiveAsset,
-      bottomText: sendsZec
-          ? externalBottom
-          : receiveFiat == null
+      bottomText: sendsZec || receiveFiat == null
           ? null
           : groupSwapAmountText(receiveFiat),
+      bottomAddress: sendsZec ? externalBottom : null,
       fullAddress: sendsZec ? externalAddress : null,
       oneTimeAddress: !sendsZec && addressPlan.oneTimeZecAddress
           ? OneTimeAddressRole.payout

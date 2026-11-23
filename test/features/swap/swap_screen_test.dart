@@ -93,6 +93,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
 
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import '../../support/address_line_finders.dart';
 import '../../support/full_text_expectations.dart';
 import '../../support/localized_test_scope.dart';
 import '../../support/test_l10n.dart';
@@ -105,6 +107,8 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 part 'support/swap_screen_test_fakes.dart';
 part 'support/swap_persistence_interleavings.dart';
 
+/// The external address most swap fixtures send to.
+const _reviewDestination = '0x52908400098527886e0f7030069857d2e4169ee7';
 void main() {
   _swapPersistenceInterleavingTests();
   testWidgets(
@@ -363,7 +367,9 @@ void main() {
     expect(
       find.descendant(
         of: receiveSide,
-        matching: find.text('To: 0x5290840 ... 4169ee7 on Ethereum'),
+        matching: find.text(
+          'To: ${truncatedAddress(_reviewDestination)} on Ethereum',
+        ),
       ),
       findsOneWidget,
     );
@@ -410,7 +416,9 @@ void main() {
     expect(
       find.descendant(
         of: receiveSide,
-        matching: find.text('To: Treasury (0x5290840 ... 4169ee7) on Ethereum'),
+        matching: find.text(
+          'To: Treasury (${truncatedAddress(_reviewDestination)}) on Ethereum',
+        ),
       ),
       findsOneWidget,
     );
@@ -451,7 +459,9 @@ void main() {
     expect(
       find.descendant(
         of: receiveSide,
-        matching: find.text('To: Second (0x5290840 ... 4169ee7) on Ethereum'),
+        matching: find.text(
+          'To: Second (${truncatedAddress(_reviewDestination)}) on Ethereum',
+        ),
       ),
       findsOneWidget,
     );
@@ -481,7 +491,9 @@ void main() {
     expect(
       find.descendant(
         of: paySide,
-        matching: find.text('Refund to: 0x5290840 ... 4169ee7'),
+        matching: find.text(
+          'Refund to: ${truncatedAddress(_reviewDestination)}',
+        ),
       ),
       findsOneWidget,
     );
@@ -653,7 +665,7 @@ void main() {
 
     const depositAddress =
         '0x1111111111111111111111111111111111111111111111111111111111111111';
-    const compactDepositAddress = '0x1111111 ... 1111111';
+    final compactDepositAddress = truncatedAddress(depositAddress);
 
     await tester.pumpWidget(
       _themeHarness(
@@ -1633,7 +1645,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('swap_review_info_receive')),
-        matching: find.textContaining('To: '),
+        matching: findAddressLineContaining('To: '),
       ),
       findsOneWidget,
     );
@@ -2141,7 +2153,7 @@ void main() {
       );
       expect(amountAssetIcon.showChainBadge, isTrue);
       expect(find.text('New address'), findsOneWidget);
-      expect(find.text('0x529084...e4169ee7'), findsOneWidget);
+      expect(find.text(truncatedAddress(_reviewDestination)), findsOneWidget);
       expect(find.text('Payment progress'), findsOneWidget);
       expect(find.text('View on NEAR Intents'), findsOneWidget);
       expect(find.text('ZEC spent'), findsOneWidget);
@@ -2159,9 +2171,14 @@ void main() {
       expect(find.byKey(const ValueKey('swap_review_info')), findsNothing);
       expect(find.byKey(const ValueKey('pay_status_summary')), findsNothing);
 
+      // The test font's full-em glyphs push the full-address action onto its
+      // own line here; pay_activity_status_layout_test.dart pins the Figma
+      // height with the app's fonts.
       expect(
-        tester.getSize(find.byKey(const ValueKey('pay_status_review_info'))),
-        const Size(396, 204),
+        tester
+            .getSize(find.byKey(const ValueKey('pay_status_review_info')))
+            .width,
+        396,
       );
       expect(
         tester.getSize(find.byKey(const ValueKey('pay_status_detail_card'))),
@@ -2591,14 +2608,14 @@ void main() {
     await _setDesktopViewport(tester);
     const fullAddress =
         '0x1111111111111111111111111111111111111111111111111111111111111111';
-    const compactAddress = '0x1111111 ... 1111111';
+    final compactAddress = truncatedAddress(fullAddress);
 
     await tester.pumpWidget(
       _themeHarnessWithOverlay(
         _statusTestPage(
           activeTab: SwapStatusTab.details,
-          details: const [
-            SwapStatusDetailRowData(
+          details: [
+            const SwapStatusDetailRowData(
               label: 'Account',
               kind: SwapStatusDetailKind.account,
               value: 'John',
@@ -3176,7 +3193,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
     await tester.pumpAndSettle();
 
-    expect(_destinationSummaryText(tester), '0x529084...169ee7');
+    expect(
+      _destinationSummaryText(tester),
+      truncatedAddress(_reviewDestination),
+    );
   });
 
   testWidgets('typed contact address shows the match line and names the chip', (
@@ -7413,7 +7433,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('swap_review_info_receive')),
-        matching: find.textContaining('To: '),
+        matching: findAddressLineContaining('To: '),
       ),
       findsOneWidget,
     );
@@ -7557,7 +7577,7 @@ void main() {
     expect(find.text('Failed'), findsNothing);
     expect(find.text('Deposit amount'), findsOneWidget);
     expect(find.text('Expected to receive'), findsOneWidget);
-    expect(find.textContaining('Refund to:'), findsOneWidget);
+    expect(findAddressLineContaining('Refund to:'), findsOneWidget);
     expect(find.text('Refund to'), findsNothing);
     expect(find.text('Refunded amount'), findsOneWidget);
     expect(find.text('2.2976 USDC'), findsOneWidget);
@@ -8073,7 +8093,10 @@ void main() {
     expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_address_summary')), findsOneWidget);
     expect(find.text('Ethereum recipient'), findsNothing);
-    expect(find.text('0xde709f...e2fb77'), findsWidgets);
+    expect(
+      find.text(truncatedAddress('0xde709f2102306220921060314715629080e2fb77')),
+      findsWidgets,
+    );
     expect(find.text('Settlement path'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -8251,7 +8274,9 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('swap_review_info_receive')),
-          matching: find.text('To: 0x5290840 ... 4169ee7 on Ethereum'),
+          matching: findAddressLine(
+            'To: ${truncatedAddress(_reviewDestination)} on Ethereum',
+          ),
         ),
         findsOneWidget,
       );
@@ -8267,7 +8292,7 @@ void main() {
       expect(
         find.descendant(
           of: reviewDetails,
-          matching: find.text('0x5290840 ... 4169ee7'),
+          matching: find.text(truncatedAddress(_reviewDestination)),
         ),
         findsNothing,
       );
@@ -8548,7 +8573,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('swap_review_info_receive')),
-          matching: find.textContaining('To: '),
+          matching: findAddressLineContaining('To: '),
         ),
         findsOneWidget,
       );
@@ -8613,7 +8638,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('swap_review_info_receive')),
-        matching: find.textContaining('To: '),
+        matching: findAddressLineContaining('To: '),
       ),
       findsOneWidget,
     );
@@ -8661,7 +8686,10 @@ void main() {
       findsNothing,
     );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
-    expect(_destinationSummaryText(tester), '0x529084...169ee7');
+    expect(
+      _destinationSummaryText(tester),
+      truncatedAddress(_reviewDestination),
+    );
   });
 
   testWidgets('quote loading separates draft estimate from live review', (
@@ -9044,7 +9072,10 @@ void main() {
       findsOneWidget,
     );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
-    expect(_destinationSummaryText(tester), '0x529084...169ee7');
+    expect(
+      _destinationSummaryText(tester),
+      truncatedAddress(_reviewDestination),
+    );
   });
 
   for (final direction in SwapDirection.values) {
@@ -10987,7 +11018,10 @@ void main() {
 
     expect(find.text('Ethereum refund'), findsNothing);
     expect(find.byKey(const ValueKey('swap_address_summary')), findsOneWidget);
-    expect(find.text('0x8617e3...38070d'), findsWidgets);
+    expect(
+      find.text(truncatedAddress('0x8617e340b3d01fa5f11f306f4090fd50e238070d')),
+      findsWidgets,
+    );
     expect(find.text('ZEC delivery'), findsNothing);
     expect(find.text('u1wallet-refund-placeholder'), findsNothing);
     expect(find.text('USDC source deposit'), findsNothing);
@@ -11642,7 +11676,7 @@ void main() {
     expect(find.text('USDC recipient'), findsOneWidget);
     expect(find.text('Second'), findsOneWidget);
     expect(find.text('First'), findsNothing);
-    expect(find.text('0x52908…69ee7'), findsOneWidget);
+    expect(find.text(truncatedAddress(_reviewDestination)), findsOneWidget);
     expect(find.text('t1live-deposit'), findsWidgets);
     expect(find.text('ZEC deposit tx hash'), findsNothing);
     expect(find.text('Submit ZEC deposit'), findsNothing);
@@ -12885,7 +12919,7 @@ void main() {
         'hardware-broadcast-txid',
       );
       await _openSwapStatusDetails(tester, expand: true);
-      expect(find.text('hardware- ... st-txid'), findsWidgets);
+      expect(find.text(truncatedTxid('hardware-broadcast-txid')), findsWidgets);
       expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
     },
   );
@@ -13049,7 +13083,7 @@ void main() {
         const SwapLiteralMessage('broadcast timed out before confirmation'),
       );
       await _openSwapStatusDetails(tester, expand: true);
-      expect(find.text('hardware- ... st-txid'), findsWidgets);
+      expect(find.text(truncatedTxid('hardware-broadcast-txid')), findsWidgets);
       expect(
         find.text('broadcast timed out before confirmation'),
         findsWidgets,
