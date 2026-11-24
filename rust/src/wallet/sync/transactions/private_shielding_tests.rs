@@ -57,7 +57,7 @@ const MEMO: [u8; 512] = {
 
 /// Vizor's regtest chain: every upgrade through NU6.2 at height 1, Ironwood
 /// at `NU6_3`.
-pub(super) fn regtest() -> LocalNetwork {
+pub(in crate::wallet::sync) fn regtest() -> LocalNetwork {
     let one = Some(BlockHeight::from_u32(1));
     LocalNetwork {
         overwinter: one,

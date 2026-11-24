@@ -7305,7 +7305,9 @@ fn pending_policy_checks_detect_fee_drift_and_only_mined_input_spends() {
     )
     .unwrap();
     conn.execute_batch(
-        "CREATE TABLE transactions (
+        "CREATE TABLE orchard_tree_checkpoints (checkpoint_id INTEGER PRIMARY KEY);
+         INSERT INTO orchard_tree_checkpoints VALUES (3543504);
+         CREATE TABLE transactions (
              id_tx INTEGER PRIMARY KEY,
              txid BLOB NOT NULL,
              mined_height INTEGER
@@ -8282,18 +8284,69 @@ fn confirmation_count_retains_checkpoint_fallback_for_minimal_schema() {
 
 #[test]
 fn confirmation_reconciliation_completes_run_and_releases_locks() {
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
-    ensure_schema(&conn).unwrap();
-    conn.execute(
-        "CREATE TABLE transactions (txid BLOB PRIMARY KEY, mined_height INTEGER)",
-        [],
+    use zcash_client_backend::data_api::{
+        testing::{
+            orchard::OrchardPoolTester, pool::ShieldedPoolTester, AddressType, IronwoodFvk,
+            TestBuilder,
+        },
+        Account as _, WalletRead as _, WalletWrite as _,
+    };
+    use zcash_client_sqlite::testing::{
+        db::{TestDb, TestDbFactory},
+        BlockCache,
+    };
+    use zcash_primitives::block::BlockHash;
+    use zcash_protocol::value::Zatoshis;
+
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
+    let mut wallet = TestBuilder::new()
+        .with_network(super::super::transactions::private_shielding_tests::regtest())
+        .with_data_store_factory(TestDbFactory::file_backed())
+        .with_block_cache(BlockCache::new())
+        .with_account_from_sapling_activation(BlockHash([0; 32]))
+        .build();
+    let account = wallet.test_account().unwrap().id();
+    let spendable = |db: &TestDb| {
+        db.db()
+            .get_wallet_summary(crate::wallet::confirmations_policy())
+            .unwrap()
+            .unwrap()
+            .account_balances()[&account]
+            .ironwood_balance()
+            .spendable_value()
+    };
+    let (start, _) = wallet.generate_empty_block();
+    wallet.generate_empty_block();
+    wallet.scan_cached_blocks(start, 2);
+    let fvk = OrchardPoolTester::test_account_fvk(&wallet);
+    let (mined, _, _) = wallet.generate_next_block(
+        &IronwoodFvk(fvk),
+        AddressType::Internal,
+        Zatoshis::const_from_u64(99_990_000),
+    );
+    wallet.generate_empty_block();
+    wallet.generate_empty_block();
+    wallet.scan_cached_blocks(mined, 3);
+    let (unscanned, _) = wallet.generate_empty_block();
+    wallet.generate_empty_block();
+    let (tip, _) = wallet.generate_empty_block();
+    wallet.wallet_mut().db_mut().update_chain_tip(tip).unwrap();
+    let conn = open_wallet_raw_conn_with_timeout(
+        wallet.wallet().conn().path().unwrap(),
+        READ_DB_BUSY_TIMEOUT,
     )
     .unwrap();
-
+    ensure_schema(&conn).unwrap();
     let run_id = "run-1";
     let denomination_txid_hex = "11".repeat(32);
-    let child_txid_hex =
-        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string();
+    let raw: [u8; 32] = conn
+        .query_row(
+            "SELECT txid FROM transactions WHERE mined_height = ?1",
+            [u32::from(mined)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let child_txid_hex = zcash_primitives::transaction::TxId::from_bytes(raw).to_string();
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -8303,8 +8356,8 @@ fn confirmation_reconciliation_completes_run_and_releases_locks() {
         ),
         params![
             run_id,
-            "account-1",
-            "test",
+            account.expose_uuid().to_string(),
+            "regtest",
             "db",
             PHASE_WAITING_MIGRATION_CONFIRMATIONS,
             "[100000000,200000000]",
@@ -8341,16 +8394,6 @@ fn confirmation_reconciliation_completes_run_and_releases_locks() {
         params![run_id, child_txid_hex, denomination_txid_hex],
     )
     .unwrap();
-
-    for (txid_hex, mined_height) in [(&denomination_txid_hex, 17), (&child_txid_hex, 20)] {
-        let mut txid_blob = hex::decode(txid_hex).unwrap();
-        txid_blob.reverse();
-        conn.execute(
-            "INSERT INTO transactions (txid, mined_height) VALUES (?1, ?2)",
-            params![txid_blob, mined_height],
-        )
-        .unwrap();
-    }
 
     let remaining_note = PreparedOrchardNoteRef {
         txid_hex: "22".repeat(32),
@@ -8428,6 +8471,28 @@ fn confirmation_reconciliation_completes_run_and_releases_locks() {
     )
     .unwrap();
     reconcile_run_confirmations(&conn, run_id).unwrap();
+    // The child has three scanned confirmations, but its shard still has
+    // unscanned blocks at the known tip. Completion must wait for that scan.
+    assert_eq!(
+        synced_orchard_confirmation_count(&conn, u32::from(mined)).unwrap(),
+        3
+    );
+    assert_eq!(
+        conn.query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            [run_id],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        PHASE_WAITING_MIGRATION_CONFIRMATIONS
+    );
+    assert_eq!(spendable(wallet.wallet()), Zatoshis::ZERO);
+    wallet.scan_cached_blocks(unscanned, 3);
+    assert_eq!(
+        spendable(wallet.wallet()),
+        Zatoshis::const_from_u64(99_990_000)
+    );
+    reconcile_run_confirmations(&conn, run_id).unwrap();
     let status = status_for_run(
         &conn,
         ActiveRun {
@@ -8450,6 +8515,31 @@ fn confirmation_reconciliation_completes_run_and_releases_locks() {
         )
         .unwrap();
     assert_eq!(lock_state, "unlocked");
+
+    // Another spendable note on this account cannot stand in for a missing child.
+    assert!(!migration_outputs_ready(&conn, run_id, &[denomination_txid_hex]).unwrap());
+
+    // An earlier child may already have been spent before the last child clears.
+    conn.execute(
+        "INSERT INTO transactions (txid, mined_height, min_observed_height) VALUES (?1, ?2, ?2)",
+        params![[9u8; 32], u32::from(tip)],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO ironwood_received_note_spends (ironwood_received_note_id, transaction_id)
+         SELECT n.id, spending.id_tx FROM ironwood_received_notes n
+         JOIN transactions receiving ON receiving.id_tx = n.transaction_id
+         JOIN transactions spending ON spending.txid = ?1 WHERE receiving.txid = ?2",
+        params![[9u8; 32], raw],
+    )
+    .unwrap();
+    assert!(migration_outputs_ready(&conn, run_id, std::slice::from_ref(&child_txid_hex)).unwrap());
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET account_uuid = ?1 WHERE run_id = ?2"),
+        params![uuid::Uuid::new_v4().to_string(), run_id],
+    )
+    .unwrap();
+    assert!(!migration_outputs_ready(&conn, run_id, &[child_txid_hex]).unwrap());
 }
 
 #[test]
