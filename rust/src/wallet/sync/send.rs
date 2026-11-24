@@ -3484,7 +3484,7 @@ async fn broadcast_due_orchard_migration_transactions_inner(
 
 include!("send/ironwood_migration.rs");
 
-fn parse_txid_hex(txid_hex: &str) -> Result<TxId, String> {
+pub(super) fn parse_txid_hex(txid_hex: &str) -> Result<TxId, String> {
     let bytes = hex::decode(txid_hex).map_err(|e| format!("Bad migration txid hex: {e}"))?;
     let mut bytes: [u8; 32] = bytes
         .try_into()
