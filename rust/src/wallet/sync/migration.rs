@@ -7839,21 +7839,6 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
         return Ok(());
     }
 
-    if conn.is_autocommit() {
-        let tx = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
-            .map_err(|e| format!("Begin migration confirmation reconciliation: {e}"))?;
-        reconcile_run_confirmations_in_tx(&tx, run_id)?;
-        return tx
-            .commit()
-            .map_err(|e| format!("Commit migration confirmations: {e}"));
-    }
-    reconcile_run_confirmations_in_tx(conn, run_id)
-}
-
-fn reconcile_run_confirmations_in_tx(
-    conn: &rusqlite::Connection,
-    run_id: &str,
-) -> Result<(), String> {
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT txid_hex, status
@@ -7964,10 +7949,7 @@ fn reconcile_run_confirmations_in_tx(
 
     let total_count = count_for_run(conn, PENDING_TXS_TABLE, run_id)?;
     let confirmed_count = count_pending_with_status(conn, run_id, "confirmed")?;
-    if total_count > 0
-        && confirmed_count >= total_count
-        && !TERMINAL_PHASES.contains(&current_phase.as_str())
-    {
+    if total_count > 0 && confirmed_count >= total_count {
         let planned_count = planned_part_count_with_conn(conn, run_id)?;
         if planned_count == 0 || total_count != planned_count || unpromoted_count > 0 {
             if current_phase == PHASE_WAITING_MIGRATION_CONFIRMATIONS {
@@ -7999,8 +7981,8 @@ fn reconcile_run_confirmations_in_tx(
             .map_err(|e| format!("Query completed migration trust state: {e}"))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Read completed migration trust state: {e}"))?;
-        for txid in &txids {
-            let Some(identity) = local_denomination_chain_identity(conn, txid)? else {
+        for txid in txids {
+            let Some(identity) = local_denomination_chain_identity(conn, &txid)? else {
                 return Ok(());
             };
             if synced_orchard_confirmation_count(conn, identity.mined_height)?
@@ -8008,9 +7990,6 @@ fn reconcile_run_confirmations_in_tx(
             {
                 return Ok(());
             }
-        }
-        if !migration_outputs_ready(conn, run_id, &txids)? {
-            return Ok(());
         }
         let now = now_ms()?;
         let completed = conn
@@ -8044,83 +8023,6 @@ fn reconcile_run_confirmations_in_tx(
     }
 
     Ok(())
-}
-
-/// A private child pays one Ironwood output back to the run's account. Its
-/// mined depth alone says nothing about the scan state of the output's shard.
-fn migration_outputs_ready(
-    conn: &rusqlite::Connection,
-    run_id: &str,
-    txids: &[String],
-) -> Result<bool, String> {
-    use zcash_client_backend::data_api::WalletRead;
-
-    let (uuid, network): (String, String) = conn
-        .query_row(
-            &format!("SELECT account_uuid, network FROM {RUNS_TABLE} WHERE run_id = ?1"),
-            [run_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|e| format!("Read migration run account: {e}"))?;
-    let account = crate::wallet::keys::parse_account_uuid(&uuid)?;
-    let network = WalletNetwork::from_str(&network)
-        .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
-    let db = zcash_client_sqlite::WalletDb::from_connection(
-        conn,
-        network,
-        zcash_client_sqlite::util::SystemClock,
-        OsRng,
-    );
-    let Some((_, anchor)) = db
-        .get_target_and_anchor_heights(crate::wallet::confirmations_policy().trusted())
-        .map_err(|e| format!("Read migration spend anchor: {e}"))?
-    else {
-        return Ok(false);
-    };
-
-    // Match the SDK balance's witness checks for these self-transfers. Selecting
-    // all spendable notes would also filter out legitimate small or locked outputs.
-    let child_ids: rusqlite::vtab::array::Array = std::rc::Rc::new(
-        txids
-            .iter()
-            .map(|hex| {
-                super::send::parse_txid_hex(hex)
-                    .map(|txid| rusqlite::types::Value::Blob(txid.as_ref().to_vec()))
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-    let ready: usize = conn
-        .prepare_cached(
-            "SELECT COUNT(DISTINCT t.id_tx)
-         FROM transactions t
-         JOIN ironwood_received_notes n ON n.transaction_id = t.id_tx
-         JOIN accounts a ON a.id = n.account_id
-         WHERE t.txid IN rarray(?1) AND a.uuid = ?2 AND (
-             n.witness_stabilized OR EXISTS (
-                 SELECT 1 FROM ironwood_received_note_spends s
-                 JOIN transactions spent ON spent.id_tx = s.transaction_id
-                 WHERE s.ironwood_received_note_id = n.id AND spent.mined_height IS NOT NULL
-             ) OR (
-                 t.mined_height <= ?3 AND EXISTS (
-                     SELECT 1 FROM v_ironwood_shards_scan_state shard
-                     WHERE n.commitment_tree_position >= shard.start_position
-                       AND n.commitment_tree_position < shard.end_position_exclusive
-                       AND shard.max_priority <= 10
-                 ) AND NOT EXISTS (
-                     SELECT 1 FROM v_ironwood_shard_unscanned_ranges
-                     WHERE ?3 BETWEEN subtree_start_height AND IFNULL(subtree_end_height, ?3)
-                       AND block_range_start <= ?3
-                 )
-             )
-         )",
-        )
-        .map_err(|e| format!("Prepare migration output scan check: {e}"))?
-        .query_row(
-            params![child_ids, account.expose_uuid(), u32::from(anchor)],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("Read migration output scan state: {e}"))?;
-    Ok(ready == txids.len())
 }
 
 fn reconcile_denomination_confirmations(
