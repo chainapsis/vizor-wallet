@@ -8,7 +8,7 @@ use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use zcash_protocol::{consensus::BlockHeight, zip318::BlockSpacing};
 
-use crate::wallet::{keys, network::WalletNetwork};
+use crate::wallet::{db::WalletDbReader, keys, network::WalletNetwork};
 
 pub(crate) const RECEIVE_CACHE_SIDECAR_SUFFIX: &str = ".receive.redb";
 // Keep v3 completions: existing accounts opt into recovery by re-importing.
@@ -296,15 +296,16 @@ pub(crate) fn refresh_account_from_wallet_db(
 }
 
 pub(crate) fn refresh_all_from_wallet_db(
-    db_path: &str,
+    reader: &mut WalletDbReader<'_>,
     network: WalletNetwork,
     scanned_height: Option<u64>,
 ) -> Result<usize, String> {
-    let account_uuids = keys::list_account_uuids_from_db(db_path)?;
+    let db_path = reader.path();
+    let conn = reader.connection()?;
+    let account_uuids = keys::list_account_uuids(conn)?;
     let mut refreshed = 0;
     for account_uuid in account_uuids {
-        match refresh_account_cache_from_wallet_db(db_path, network, &account_uuid, scanned_height)
-        {
+        match refresh_account_cache(conn, db_path, network, &account_uuid, scanned_height) {
             Ok(()) => refreshed += 1,
             Err(e) => log::warn!(
                 "transparent receive cache: refresh failed for account {}: {}",
@@ -322,11 +323,18 @@ pub(crate) fn refresh_account_cache_from_wallet_db(
     account_uuid: &str,
     scanned_height: Option<u64>,
 ) -> Result<(), String> {
-    let addresses = keys::get_external_transparent_receive_addresses_from_db(
-        db_path,
-        network,
-        Some(account_uuid),
-    )?;
+    let conn = crate::wallet::sync::open_readonly_conn(db_path)?;
+    refresh_account_cache(&conn, db_path, network, account_uuid, scanned_height)
+}
+
+fn refresh_account_cache(
+    conn: &rusqlite::Connection,
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    scanned_height: Option<u64>,
+) -> Result<(), String> {
+    let addresses = keys::external_transparent_receive_addresses(conn, Some(account_uuid))?;
     write_clean_addresses(db_path, network, account_uuid, &addresses, scanned_height)
 }
 

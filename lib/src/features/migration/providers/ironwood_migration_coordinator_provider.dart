@@ -248,7 +248,7 @@ class IronwoodMigrationCoordinator
   bool _refreshPending = false;
   bool _forceAdvancePending = false;
   bool _foreground = true;
-  int _accountStateEpoch = 0;
+  int _refreshEpoch = 0;
   final _desktopOpenFallbackGate = DesktopOpenMigrationFallbackGate();
   DateTime? _lastDesktopActivityWallTime;
   Duration? _lastDesktopActivityMonotonicTime;
@@ -272,7 +272,7 @@ class IronwoodMigrationCoordinator
   @override
   IronwoodMigrationCoordinatorState build() {
     ref.listen(accountProvider, (_, next) {
-      _accountStateEpoch += 1;
+      _refreshEpoch += 1;
       final accountState = next.value;
       if (accountState == null) {
         unawaited(refreshNow());
@@ -305,7 +305,17 @@ class IronwoodMigrationCoordinator
         unawaited(refreshNow());
       }
     });
-    ref.listen(rpcEndpointFailoverProvider, (_, _) => unawaited(refreshNow()));
+    // Every tip poll records its height in this state; only an endpoint
+    // change gives a sweep something new to read.
+    ref.listen(
+      rpcEndpointFailoverProvider.select(
+        (state) => (
+          state.current.networkName,
+          state.current.normalizedLightwalletdUrl,
+        ),
+      ),
+      (_, _) => unawaited(refreshNow()),
+    );
     return const IronwoodMigrationCoordinatorState();
   }
 
@@ -688,6 +698,13 @@ class IronwoodMigrationCoordinator
           .read(ironwoodMigrationServiceProvider)
           .stop(accountUuid: accountUuid, expectedRunId: runId);
       if (!ref.mounted) return;
+      // A sweep started before the durable stop can still hold the running
+      // phase. Discard that pass before Home is allowed to read again.
+      _refreshEpoch++;
+      if (ref.read(accountProvider).value?.activeAccountUuid == accountUuid) {
+        ref.invalidate(desktopHomeMigrationSweepProvider);
+        ref.invalidate(ironwoodPostMigrationStateProvider);
+      }
       state = state.copyWith(
         errors: Map<String, String>.from(state.errors)..remove(accountUuid),
       );
@@ -868,7 +885,7 @@ class IronwoodMigrationCoordinator
 
     final accountState = ref.read(accountProvider).value;
     if (accountState == null || accountState.accounts.isEmpty) return;
-    final accountStateEpoch = _accountStateEpoch;
+    final refreshEpoch = _refreshEpoch;
     // Transfers that became due during a genuine suspension (machine sleep,
     // or a wallet locked for a long stretch) are "overdue at open" and must
     // go through a fresh one-transfer ZIP 318 allowance.
@@ -879,10 +896,10 @@ class IronwoodMigrationCoordinator
         final entryHeight = await ref
             .read(rpcEndpointFailoverProvider.notifier)
             .getLatestBlockHeight();
-        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+        if (!_canApplyRefresh(refreshEpoch)) return;
         _desktopOpenFallbackGate.observeEpochEntryHeight(entryHeight.toInt());
       } catch (error) {
-        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+        if (!_canApplyRefresh(refreshEpoch)) return;
         // Status reconciliation and non-broadcast migration work may continue,
         // but the gate remains fail-closed for scheduled transfers until an
         // authoritative epoch-entry height can be read.
@@ -892,7 +909,7 @@ class IronwoodMigrationCoordinator
         );
       }
     }
-    if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+    if (!_canApplyRefresh(refreshEpoch)) return;
 
     final service = ref.read(ironwoodMigrationServiceProvider);
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
@@ -903,17 +920,23 @@ class IronwoodMigrationCoordinator
     // costs one summary rather than one per account.
     final sweepErrors = <String, Object>{};
     final sweptStatuses = <String, rust_sync.MigrationStatus>{};
+    final homeSweep =
+        kAppFormFactor == AppFormFactor.desktop &&
+            ref.exists(desktopHomeMigrationSweepProvider)
+        ? ref.read(desktopHomeMigrationSweepProvider)
+        : null;
+    String? batchDbPath;
     try {
-      sweptStatuses.addAll(
-        await service.statuses(
-          network: endpoint.networkName,
-          accountUuids: [
-            for (final account in accountState.accounts) account.uuid,
-          ],
-          onAccountError: (accountUuid, error) =>
-              sweepErrors[accountUuid] = error,
-        ),
+      final batch = await service.statuses(
+        network: endpoint.networkName,
+        accountUuids: [
+          for (final account in accountState.accounts) account.uuid,
+        ],
+        onAccountError: (accountUuid, error) =>
+            sweepErrors[accountUuid] = error,
       );
+      sweptStatuses.addAll(batch.statuses);
+      batchDbPath = batch.batchDbPath;
     } catch (error) {
       // The native batch can fail before it can return per-account entries
       // (for example while opening/migrating the DB or parsing one UUID).
@@ -933,10 +956,10 @@ class IronwoodMigrationCoordinator
         } catch (accountError) {
           sweepErrors[account.uuid] = accountError;
         }
-        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+        if (!_canApplyRefresh(refreshEpoch)) return;
       }
     }
-    if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+    if (!_canApplyRefresh(refreshEpoch)) return;
 
     if (kAppFormFactor == AppFormFactor.desktop) {
       for (final account in accountState.accounts) {
@@ -976,7 +999,7 @@ class IronwoodMigrationCoordinator
               StateError('migration status unavailable for ${account.uuid}');
         }
         var status = sweptStatus;
-        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+        if (!_canApplyRefresh(refreshEpoch)) return;
         nextStatuses[account.uuid] = status;
         nextErrors.remove(account.uuid);
 
@@ -997,12 +1020,12 @@ class IronwoodMigrationCoordinator
             accountUuid: account.uuid,
             status: status,
           );
-          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+          if (!_canApplyRefresh(refreshEpoch)) return;
           status = await service.readOnlyStatus(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+          if (!_canApplyRefresh(refreshEpoch)) return;
           nextStatuses[account.uuid] = status;
           final stillDue = migrationHasDueScheduledBroadcast(
             status,
@@ -1024,12 +1047,12 @@ class IronwoodMigrationCoordinator
           accountUuid: account.uuid,
         )) {
           await _advance(account.uuid, status: status);
-          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+          if (!_canApplyRefresh(refreshEpoch)) return;
           status = await service.status(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+          if (!_canApplyRefresh(refreshEpoch)) return;
           nextStatuses[account.uuid] = status;
         }
         if (account.uuid == accountState.activeAccountUuid &&
@@ -1044,7 +1067,7 @@ class IronwoodMigrationCoordinator
       }
     }
 
-    if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+    if (!_canApplyRefresh(refreshEpoch)) return;
     if (activeBalanceMayHaveChanged) {
       try {
         // Migration status reads reconcile the database, but the home card
@@ -1056,14 +1079,36 @@ class IronwoodMigrationCoordinator
         // refresh races with a normal sync.
         log('Ironwood migration balance refresh failed: $error');
       }
-      if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+      if (!_canApplyRefresh(refreshEpoch)) return;
+    }
+    if (homeSweep != null) {
+      final uuid = accountState.activeAccountUuid;
+      final status = nextStatuses[uuid];
+      // Other rows in nextStatuses can be retained from an older sweep.
+      // Only hand off this pass's successful active row, after any advance.
+      homeSweep.result =
+          batchDbPath != null &&
+              uuid != null &&
+              status != null &&
+              sweptStatuses.containsKey(uuid) &&
+              !nextErrors.containsKey(uuid)
+          ? (
+              dbPath: batchDbPath,
+              network: endpoint.networkName,
+              accountUuid: uuid,
+              status: status,
+            )
+          : null;
     }
     state = state.copyWith(statuses: nextStatuses, errors: nextErrors);
-    _invalidateMigrationProviders(accountState.activeAccountUuid);
+    _invalidateMigrationProviders(
+      accountState.activeAccountUuid,
+      hasHomeResult: homeSweep?.result != null,
+    );
   }
 
-  bool _canApplyRefreshForAccountEpoch(int accountStateEpoch) =>
-      ref.mounted && accountStateEpoch == _accountStateEpoch;
+  bool _canApplyRefresh(int refreshEpoch) =>
+      ref.mounted && refreshEpoch == _refreshEpoch;
 
   void _clearProcessLocalStateForNoAccounts() {
     final hadWalletState =
@@ -1189,14 +1234,14 @@ class IronwoodMigrationCoordinator
     required String accountUuid,
     required rust_sync.MigrationStatus status,
   }) async {
-    final accountStateEpoch = _accountStateEpoch;
+    final refreshEpoch = _refreshEpoch;
     try {
       return await service.recoverDueMigrationOutbox(
         network: network,
         accountUuid: accountUuid,
       );
     } catch (error) {
-      if (_canApplyRefreshForAccountEpoch(accountStateEpoch)) {
+      if (_canApplyRefresh(refreshEpoch)) {
         _recordOutboxRecoveryFailure(
           error,
           accountUuid: accountUuid,
@@ -1603,7 +1648,10 @@ class IronwoodMigrationCoordinator
         .length;
   }
 
-  void _invalidateMigrationProviders(String? activeAccountUuid) {
+  void _invalidateMigrationProviders(
+    String? activeAccountUuid, {
+    bool hasHomeResult = false,
+  }) {
     if (activeAccountUuid != null) {
       final network = ref.read(rpcEndpointFailoverProvider).current.networkName;
       ref.invalidate(
@@ -1615,9 +1663,9 @@ class IronwoodMigrationCoordinator
         ),
       );
     }
-    ref.invalidate(ironwoodPostMigrationStateProvider);
+    ref.invalidate(ironwoodPostMigrationStateProvider, asReload: hasHomeResult);
     ref.invalidate(ironwoodMigrationRouteCtaProvider);
-    ref.invalidate(ironwoodHomeMigrationCtaProvider);
+    ref.invalidate(ironwoodHomeMigrationCtaProvider, asReload: hasHomeResult);
   }
 }
 

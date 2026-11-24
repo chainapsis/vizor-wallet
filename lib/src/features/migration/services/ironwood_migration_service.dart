@@ -1054,14 +1054,17 @@ class IronwoodMigrationService {
   /// * On mobile, [status] does more than read — it resolves credential
   ///   context and drives preparation — so this falls back to the
   ///   per-account path there and batches only on desktop.
-  Future<Map<String, rust_sync.MigrationStatus>> statuses({
+  Future<
+    ({String? batchDbPath, Map<String, rust_sync.MigrationStatus> statuses})
+  >
+  statuses({
     required String network,
     required List<String> accountUuids,
     required void Function(String accountUuid, Object error) onAccountError,
   }) async {
-    if (accountUuids.isEmpty) return const {};
+    final results = <String, rust_sync.MigrationStatus>{};
+    if (accountUuids.isEmpty) return (batchDbPath: null, statuses: results);
     if (isMobile()) {
-      final results = <String, rust_sync.MigrationStatus>{};
       for (final accountUuid in accountUuids) {
         try {
           results[accountUuid] = await status(
@@ -1072,7 +1075,7 @@ class IronwoodMigrationService {
           onAccountError(accountUuid, error);
         }
       }
-      return results;
+      return (batchDbPath: null, statuses: results);
     }
 
     final live = <String>[];
@@ -1089,7 +1092,7 @@ class IronwoodMigrationService {
       }
       live.add(accountUuid);
     }
-    if (live.isEmpty) return const {};
+    if (live.isEmpty) return (batchDbPath: null, statuses: results);
 
     final dbPath = await getWalletDbPath();
     final entries = await getStatuses(
@@ -1098,7 +1101,6 @@ class IronwoodMigrationService {
       accountUuids: live,
     );
 
-    final results = <String, rust_sync.MigrationStatus>{};
     for (final entry in entries) {
       final entryStatus = entry.status;
       if (entryStatus == null) {
@@ -1110,7 +1112,7 @@ class IronwoodMigrationService {
       }
       results[entry.accountUuid] = entryStatus;
     }
-    return results;
+    return (batchDbPath: dbPath, statuses: results);
   }
 
   Future<rust_sync.MigrationStatus> status({

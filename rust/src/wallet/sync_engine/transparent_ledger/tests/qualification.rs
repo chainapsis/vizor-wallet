@@ -35,7 +35,7 @@ use crate::wallet::sync_engine::test_lwd::CapturingLwd;
 use crate::wallet::sync_engine::transparent_recovery_tests::{downloaded, legacy_transaction};
 use crate::wallet::sync_engine::{
     ephemeral_checks, ledger_discovery, refresh_utxos, store_transparent_outputs,
-    transparent_followup, TransparentAccountSelection,
+    transparent_followup, TransparentAccountSelection, WalletDbReader,
 };
 
 /// Where public discovery found the legacy receipt.
@@ -776,7 +776,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
             let mut received = false;
             let refreshed = refresh_utxos(
                 &mut lwd.client,
-                &path,
+                &mut WalletDbReader::new(&path),
                 &mut db,
                 MAIN,
                 policy,
@@ -919,7 +919,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     let mut received = false;
     let deferred = refresh_utxos(
         &mut lwd.client,
-        &path,
+        &mut WalletDbReader::new(&path),
         &mut followup_db,
         MAIN,
         required,
@@ -995,7 +995,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     let mut received = false;
     let refreshed = refresh_utxos(
         &mut lwd.client,
-        &path,
+        &mut WalletDbReader::new(&path),
         &mut db,
         MAIN,
         EnhancementPolicy::for_preference(MAIN, false),
@@ -1073,7 +1073,7 @@ async fn private_queries_discloses_nothing_before_it_raises_the_wallet() {
     let mut received = false;
     let refreshed = refresh_utxos(
         &mut lwd.client,
-        &path,
+        &mut WalletDbReader::new(&path),
         &mut db,
         MAIN,
         selected,
@@ -1194,7 +1194,7 @@ async fn private_queries_discloses_nothing_before_it_raises_the_wallet() {
     let mut received = false;
     let deferred = refresh_utxos(
         &mut lwd.client,
-        &path,
+        &mut WalletDbReader::new(&path),
         &mut db,
         MAIN,
         selected,

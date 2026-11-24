@@ -167,16 +167,13 @@ pub(super) struct WorkModel {
 
 impl WorkModel {
     pub(super) fn load(
-        db_data_path: &str,
+        conn: &rusqlite::Connection,
         network: WalletNetwork,
         reference_batch_size: u32,
     ) -> Result<Self, String> {
         let mut points = compiled_points(network);
         let plan_end = compiled_end(&points);
-        for (pool, ends) in read_subtree_end_heights(db_data_path)?
-            .into_iter()
-            .enumerate()
-        {
+        for (pool, ends) in read_subtree_end_heights(conn)?.into_iter().enumerate() {
             for (index, end_height) in ends {
                 points[pool].push((end_height + 1, (index + 1) as f64 * SUBTREE_LEAVES));
             }
@@ -365,8 +362,7 @@ fn compiled_points(network: WalletNetwork) -> [Vec<(u64, f64)>; 3] {
     points
 }
 
-fn read_subtree_end_heights(db_data_path: &str) -> Result<[Vec<(u64, u64)>; 3], String> {
-    let conn = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
+fn read_subtree_end_heights(conn: &rusqlite::Connection) -> Result<[Vec<(u64, u64)>; 3], String> {
     let mut out: [Vec<(u64, u64)>; 3] = Default::default();
     for (pool, table) in POOL_TABLES.iter().enumerate() {
         let sql = format!(
@@ -955,7 +951,7 @@ mod tests {
         .unwrap();
 
         // Off mainnet there are no compiled sizes, so only subtrees count.
-        let model = WorkModel::load(&path, WalletNetwork::Test, 2_000).unwrap();
+        let model = WorkModel::load(&conn, WalletNetwork::Test, 2_000).unwrap();
         // Subtree i holds leaves up to (i + 1) * 2^16 once its end block is in.
         assert_eq!(
             model.curves[0].points,

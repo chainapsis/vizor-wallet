@@ -475,6 +475,56 @@ fn report_wallet_db_write_hold(operation: &'static str, held: Duration) {
     }
 }
 
+#[cfg(unix)]
+type WalletFileId = (u64, u64);
+#[cfg(not(unix))]
+type WalletFileId = same_file::Handle;
+
+#[cfg(unix)]
+fn wallet_file_id(path: &str) -> std::io::Result<WalletFileId> {
+    use std::os::unix::fs::MetadataExt;
+    // Closing even a separate descriptor can release SQLite's process-wide
+    // POSIX locks on this inode. Check its metadata without opening it.
+    let metadata = std::fs::metadata(path)?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn wallet_file_id(path: &str) -> std::io::Result<WalletFileId> {
+    same_file::Handle::from_path(path)
+}
+
+/// An autocommit reader owned by one sync attempt. Open on first use so
+/// skipped reads cannot fail a sync. Statements and transactions stay local
+/// to their callers, allowing the next read to see intervening commits.
+pub(crate) struct WalletDbReader<'a> {
+    path: &'a str,
+    opened: Option<(WalletFileId, rusqlite::Connection)>,
+}
+
+impl<'a> WalletDbReader<'a> {
+    pub(crate) fn new(path: &'a str) -> Self {
+        Self { path, opened: None }
+    }
+
+    pub(crate) fn path(&self) -> &'a str {
+        self.path
+    }
+
+    pub(crate) fn connection(&mut self) -> Result<&rusqlite::Connection, String> {
+        let file = wallet_file_id(self.path).map_err(|e| format!("Failed to open DB: {e}"))?;
+        if self
+            .opened
+            .as_ref()
+            .is_none_or(|(previous, _)| previous != &file)
+        {
+            let conn = open_readonly_conn_with_timeout(self.path, Some(SYNC_DB_BUSY_TIMEOUT))?;
+            self.opened = Some((file, conn));
+        }
+        Ok(&self.opened.as_ref().expect("reader was opened above").1)
+    }
+}
+
 pub(crate) fn open_readonly_conn_with_timeout(
     db_path: &str,
     timeout: Option<Duration>,
@@ -498,6 +548,91 @@ pub(crate) fn open_readonly_conn_with_timeout(
 mod tests {
     use super::*;
     use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[cfg(unix)]
+    #[test]
+    fn reusing_sync_reader_preserves_sqlite_lock_against_another_process() {
+        const PROBE_PATH: &str = "VIZOR_TEST_SYNC_READER_LOCK_DB";
+        if let Some(path) = std::env::var_os(PROBE_PATH) {
+            let probe = rusqlite::Connection::open_with_flags(
+                path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .unwrap();
+            probe.busy_timeout(Duration::ZERO).unwrap();
+            let result = probe.query_row("SELECT count(*) FROM events", [], |row| {
+                row.get::<_, i64>(0)
+            });
+            assert_eq!(
+                result.unwrap_err().sqlite_error_code(),
+                Some(rusqlite::ErrorCode::DatabaseBusy)
+            );
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let writer = rusqlite::Connection::open(&path).unwrap();
+        writer
+            .execute_batch("PRAGMA journal_mode=DELETE; CREATE TABLE events(id INTEGER)")
+            .unwrap();
+        let mut reader = WalletDbReader::new(path.to_str().unwrap());
+        reader.connection().unwrap();
+        writer.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        reader.connection().unwrap();
+
+        let test =
+            "wallet::db::tests::reusing_sync_reader_preserves_sqlite_lock_against_another_process";
+        let probe = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test])
+            .env(PROBE_PATH, &path)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&probe.stdout);
+        assert!(
+            probe.status.success() && stdout.contains("1 passed"),
+            "{stdout}"
+        );
+    }
+
+    #[test]
+    fn sync_reader_retries_open_and_observes_commits_between_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let mut reader = WalletDbReader::new(path.to_str().unwrap());
+        assert!(reader.connection().is_err());
+        let writer = rusqlite::Connection::open(&path).unwrap();
+        writer
+            .execute_batch("CREATE TABLE events(id INTEGER)")
+            .unwrap();
+        let count = |conn: &rusqlite::Connection| {
+            conn.query_row("SELECT COUNT(*) FROM events", [], |r| r.get::<_, i64>(0))
+                .unwrap()
+        };
+        let conn = reader.connection().unwrap();
+        conn.pragma_update(None, "cache_size", -1234).unwrap();
+        assert_eq!(count(conn), 0);
+        assert!(conn.execute("INSERT INTO events VALUES (1)", []).is_err());
+        writer.execute("INSERT INTO events VALUES (2)", []).unwrap();
+        let conn = reader.connection().unwrap();
+        assert_eq!(count(conn), 1);
+        let size: i64 = conn
+            .pragma_query_value(None, "cache_size", |r| r.get(0))
+            .unwrap();
+        assert_eq!(size, -1234);
+        // Unix permits moving a database while SQLite still has it open.
+        #[cfg(unix)]
+        {
+            drop(writer);
+            std::fs::rename(&path, dir.path().join("old.db")).unwrap();
+            assert!(reader.connection().is_err());
+            let replacement = rusqlite::Connection::open(&path).unwrap();
+            replacement
+                .execute_batch("CREATE TABLE events(id INTEGER)")
+                .unwrap();
+            assert_eq!(count(reader.connection().unwrap()), 0);
+        }
+    }
 
     /// Every handle the app opens on one wallet counts Enhance content
     /// failures in the same session: three unreadable replies recorded
