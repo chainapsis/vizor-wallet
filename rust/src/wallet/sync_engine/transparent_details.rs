@@ -816,7 +816,8 @@ pub(crate) fn enhance_publicly(
     cancel_epoch: u64,
 ) -> Result<(), String> {
     use crate::wallet::db::{
-        open_existing_wallet_db_with_timeout, with_wallet_db_write_lock, WALLET_DB_BUSY_TIMEOUT,
+        open_existing_wallet_db_with_timeout, wallet_file_id, with_wallet_db_write_lock,
+        WALLET_DB_BUSY_TIMEOUT,
     };
     use zcash_client_backend::data_api::transparent_ledger::TransparentDetailRead;
     const CANCELLED: &str = "the lookup was cancelled; nothing was stored";
@@ -825,10 +826,9 @@ pub(crate) fn enhance_publicly(
     if load.cancelled() {
         return Err(CANCELLED.to_owned());
     }
-    let file = same_file::Handle::from_path(db_path)
-        .map_err(|_| "the wallet is unavailable".to_owned())?;
+    let file = wallet_file_id(db_path).map_err(|_| "the wallet is unavailable".to_owned())?;
     let same_file = || {
-        same_file::Handle::from_path(db_path)
+        wallet_file_id(db_path)
             .map(|current| current == file)
             .unwrap_or(false)
     };

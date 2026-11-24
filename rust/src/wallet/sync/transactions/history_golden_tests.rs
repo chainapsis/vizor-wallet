@@ -2841,6 +2841,76 @@ fn golden_shared_or_mixed_funding_keeps_receipts_incomplete() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn activity_reads_preserve_the_wallets_shared_lock_in_wal_mode() {
+    use crate::wallet::sync_engine::transparent_details;
+    use std::{fs::File, os::fd::AsRawFd, process::Command};
+
+    const PROBE_PATH: &str = "VIZOR_TEST_ACTIVITY_WAL_LOCK_DB";
+    if let Some(path) = std::env::var_os(PROBE_PATH) {
+        // POSIX reports conflicts with other processes, so inspect the main
+        // database from a child. F_GETLK only queries, it never takes a lock.
+        let file = File::open(path).unwrap();
+        // SAFETY: all-zero is a valid initial flock (a whole-file range).
+        let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+        lock.l_type = libc::F_WRLCK as _;
+        lock.l_whence = libc::SEEK_SET as _;
+        // SAFETY: the descriptor is open and the output pointer is valid.
+        let result = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETLK, &mut lock) };
+        assert_ne!(result, -1, "{}", std::io::Error::last_os_error());
+        assert_eq!(lock.l_type, libc::F_RDLCK as libc::c_short);
+        return;
+    }
+
+    let w = wallet();
+    let mode: String = w
+        .conn
+        .pragma_query_value(None, "journal_mode", |r| r.get(0))
+        .unwrap();
+    assert_eq!(mode, "wal");
+    let assert_shared_lock = |stage: &str| {
+        let test = "wallet::sync::transactions::history_golden_tests::activity_reads_preserve_the_wallets_shared_lock_in_wal_mode";
+        let probe = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test])
+            .env(PROBE_PATH, &w.path)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&probe.stdout);
+        assert!(
+            probe.status.success() && stdout.contains("1 passed"),
+            "{stage}: {stdout}"
+        );
+    };
+
+    w.conn
+        .execute_batch("BEGIN; SELECT count(*) FROM accounts")
+        .unwrap();
+    assert_shared_lock("before reading Activity");
+    history_pages::index(&w.path, NETWORK, w.a).unwrap();
+    history_pages::index(&w.path, NETWORK, w.a).unwrap();
+    assert_shared_lock("after reusing the Activity snapshot");
+
+    // An unknown transaction reaches the normal identity and local wallet
+    // checks, then exits before any public request.
+    let error = transparent_details::enhance_publicly(
+        &w.path,
+        NETWORK,
+        "",
+        w.a,
+        [0; 32],
+        transparent_details::public_load_epoch(),
+    )
+    .unwrap_err();
+    assert!(
+        error.contains("the account holds no transparent part"),
+        "{error}"
+    );
+    assert_shared_lock("after checking transparent details");
+    w.conn.execute_batch("ROLLBACK").unwrap();
+    history_pages::evict_db(&w.path);
+}
+
 #[test]
 fn golden_activity_pages_reuse_and_invalidate_local_snapshots() {
     let w = wallet();

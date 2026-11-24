@@ -476,12 +476,12 @@ fn report_wallet_db_write_hold(operation: &'static str, held: Duration) {
 }
 
 #[cfg(unix)]
-type WalletFileId = (u64, u64);
+pub(crate) type WalletFileId = (u64, u64);
 #[cfg(not(unix))]
-type WalletFileId = same_file::Handle;
+pub(crate) type WalletFileId = same_file::Handle;
 
 #[cfg(unix)]
-fn wallet_file_id(path: &str) -> std::io::Result<WalletFileId> {
+pub(crate) fn wallet_file_id(path: &str) -> std::io::Result<WalletFileId> {
     use std::os::unix::fs::MetadataExt;
     // Closing even a separate descriptor can release SQLite's process-wide
     // POSIX locks on this inode. Check its metadata without opening it.
@@ -490,7 +490,7 @@ fn wallet_file_id(path: &str) -> std::io::Result<WalletFileId> {
 }
 
 #[cfg(not(unix))]
-fn wallet_file_id(path: &str) -> std::io::Result<WalletFileId> {
+pub(crate) fn wallet_file_id(path: &str) -> std::io::Result<WalletFileId> {
     same_file::Handle::from_path(path)
 }
 

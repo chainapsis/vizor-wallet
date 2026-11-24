@@ -11,6 +11,7 @@ use std::{
 };
 
 use super::*;
+use crate::wallet::db::{wallet_file_id, WalletFileId};
 
 const DETAIL_BATCH: usize = 20;
 const MAX_ACCOUNTS: usize = 4;
@@ -43,7 +44,7 @@ struct Key {
 
 struct Entry {
     conn: rusqlite::Connection,
-    file: same_file::Handle,
+    file: WalletFileId,
     snapshot: Option<Snapshot>,
 }
 
@@ -175,19 +176,9 @@ impl HistoryCache {
                 Err(TryLockError::WouldBlock) => return None,
             }
         };
-        let snapshot = entry.take().and_then(
-            |Entry {
-                 conn,
-                 file,
-                 snapshot,
-             }| {
-                // Keep the entry lock until both file handles are closed. Another
-                // drain must never observe None while a taken connection is open.
-                drop(conn);
-                drop(file);
-                snapshot
-            },
-        );
+        // Moving out the snapshot drops the rest of the entry under the lock.
+        // Another drain must never observe None while the connection is open.
+        let snapshot = entry.take().and_then(|retired| retired.snapshot);
         drop(entry);
         self.lock()
             .retired
@@ -283,7 +274,7 @@ fn with_snapshot<T>(
     if lease.slot.retired.load(Ordering::Acquire) {
         return Err("Activity snapshot is no longer available".into());
     }
-    let file = same_file::Handle::from_path(path).map_err(|e| e.to_string())?;
+    let file = wallet_file_id(path).map_err(|e| e.to_string())?;
     if entry.as_ref().is_none_or(|e| e.file != file) {
         *entry = Some(Entry {
             conn: open_readonly_conn(path)?,

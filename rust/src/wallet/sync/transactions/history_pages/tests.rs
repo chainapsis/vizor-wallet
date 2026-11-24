@@ -27,7 +27,7 @@ fn wallet() -> (tempfile::TempDir, String) {
 fn entry(path: &str) -> Entry {
     Entry {
         conn: open_readonly_conn(path).unwrap(),
-        file: same_file::Handle::from_path(path).unwrap(),
+        file: wallet_file_id(path).unwrap(),
         snapshot: None,
     }
 }
