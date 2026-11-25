@@ -100,6 +100,52 @@ pub(crate) fn open_existing_wallet_db_with_timeout(
     Ok(wallet_db(conn, db_path, network))
 }
 
+/// Bind public-lookup consent to the existing database for the lifetime of
+/// the returned wallet. SQLite owns the Unix descriptor that pins the inode.
+pub(crate) fn open_wallet_for_public_lookup(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<(WalletDatabase, WalletFileId), String> {
+    #[cfg(not(unix))]
+    let file = wallet_file_id(db_path).map_err(|e| e.to_string())?;
+    let conn = open_existing_wallet_connection(db_path)?;
+    #[cfg(unix)]
+    let file = opened_wallet_file_id(&conn)?;
+    configure_wallet_connection(&conn, WALLET_DB_BUSY_TIMEOUT, true)?;
+    ensure_mined_transaction_history(&conn)?;
+    Ok((wallet_db(conn, db_path, network), file))
+}
+
+#[cfg(unix)]
+fn opened_wallet_file_id(conn: &rusqlite::Connection) -> Result<WalletFileId, String> {
+    use rusqlite::ffi;
+
+    // Use the name SQLite opened (including symlink resolution). The caller
+    // separately checks its requested path against this identity.
+    let path = conn.path().ok_or("the wallet has no database path")?;
+    let file = wallet_file_id(path).map_err(|e| e.to_string())?;
+    let mut moved: std::ffi::c_int = 0;
+    // SAFETY: conn owns the live SQLite handle and HAS_MOVED writes one int.
+    let rc = unsafe {
+        ffi::sqlite3_file_control(
+            conn.handle(),
+            c"main".as_ptr(),
+            ffi::SQLITE_FCNTL_HAS_MOVED,
+            (&mut moved as *mut std::ffi::c_int).cast(),
+        )
+    };
+    if rc != ffi::SQLITE_OK {
+        return Err(format!(
+            "cannot verify opened wallet: {}",
+            ffi::Error::new(rc)
+        ));
+    }
+    if moved != 0 {
+        return Err("the wallet changed before the lookup; nothing was sent".to_owned());
+    }
+    Ok(file)
+}
+
 /// Preserve mined evidence before backend rewinds clear it, including sends
 /// without change. Spend links alone also exist for never-mined transactions.
 /// Install on writable open before any scan or rewind; an uninitialized DB has
@@ -242,13 +288,17 @@ pub(crate) fn open_existing_wallet_raw_conn_with_timeout(
     db_path: &str,
     timeout: Duration,
 ) -> Result<rusqlite::Connection, String> {
-    let conn = rusqlite::Connection::open_with_flags(
+    let conn = open_existing_wallet_connection(db_path)?;
+    configure_wallet_connection(&conn, timeout, true)?;
+    Ok(conn)
+}
+
+fn open_existing_wallet_connection(db_path: &str) -> Result<rusqlite::Connection, String> {
+    rusqlite::Connection::open_with_flags(
         db_path,
         rusqlite::OpenFlags::default().difference(rusqlite::OpenFlags::SQLITE_OPEN_CREATE),
     )
-    .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
-    configure_wallet_connection(&conn, timeout, true)?;
-    Ok(conn)
+    .map_err(|e| format!("Failed to open wallet DB: {e}"))
 }
 
 fn configure_wallet_connection(
@@ -548,6 +598,26 @@ pub(crate) fn open_readonly_conn_with_timeout(
 mod tests {
     use super::*;
     use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[cfg(unix)]
+    #[test]
+    fn public_lookup_rejects_replacement_before_file_identity_is_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        drop(rusqlite::Connection::open(path).unwrap());
+        let conn = open_existing_wallet_connection(path).unwrap();
+        let original = wallet_file_id(path).unwrap();
+        assert_eq!(opened_wallet_file_id(&conn).unwrap(), original);
+
+        std::fs::remove_file(path).unwrap();
+        drop(rusqlite::Connection::open(path).unwrap());
+        // The lookup's SQLite connection alone keeps the original inode live.
+        assert_ne!(wallet_file_id(path).unwrap(), original);
+        assert!(opened_wallet_file_id(&conn)
+            .unwrap_err()
+            .contains("wallet changed before the lookup"));
+    }
 
     #[cfg(unix)]
     #[test]
