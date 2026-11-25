@@ -110,6 +110,67 @@ void main() {
     expect(selected.lightwalletdUrl, call.urls.last);
   });
 
+  group('switch threshold', () {
+    _Harness fastRecheck() => _Harness(
+      settings: const AutomaticRpcEndpointSettings(
+        recheckInterval: Duration(minutes: 1),
+        minimumResidence: Duration.zero,
+      ),
+    );
+
+    String current(_Harness h) => h.container
+        .read(rpcEndpointFailoverProvider)
+        .current
+        .lightwalletdUrl;
+
+    test('a candidate a quarter faster replaces a healthy server', () async {
+      final harness = fastRecheck()
+        ..respond = (_) async => [_sample(_eu, 200), _sample(_kr, 400)];
+      expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
+      harness.respond = (_) async => [_sample(_eu, 200), _sample(_kr, 150)];
+      harness.now = harness.now.add(const Duration(minutes: 2));
+      await harness.notifier.ensureReady();
+      await _flush();
+      expect(current(harness), _kr);
+    });
+
+    test('a candidate inside the noise floor keeps the server', () async {
+      final harness = fastRecheck()
+        ..respond = (_) async => [_sample(_eu, 100), _sample(_kr, 400)];
+      expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
+      harness.respond = (_) async => [_sample(_eu, 100), _sample(_kr, 75)];
+      harness.now = harness.now.add(const Duration(minutes: 2));
+      await harness.notifier.ensureReady();
+      await _flush();
+      expect(current(harness), _eu);
+    });
+
+    test('the old threshold would have kept the slower server', () async {
+      final harness = _Harness(
+        settings: const AutomaticRpcEndpointSettings(
+          recheckInterval: Duration(minutes: 1),
+          minimumResidence: Duration.zero,
+          directSwitchMargin: Duration(milliseconds: 150),
+          directSwitchRatio: 0.7,
+        ),
+      )..respond = (_) async => [_sample(_eu, 200), _sample(_kr, 400)];
+      expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
+      harness.respond = (_) async => [_sample(_eu, 200), _sample(_kr, 150)];
+      harness.now = harness.now.add(const Duration(minutes: 2));
+      await harness.notifier.ensureReady();
+      await _flush();
+      expect(current(harness), _eu);
+    });
+
+    test('Tor keeps the wide threshold', () {
+      const settings = AutomaticRpcEndpointSettings();
+      expect(settings.directSwitchMargin, const Duration(milliseconds: 40));
+      expect(settings.directSwitchRatio, 0.8);
+      expect(settings.torSwitchMargin, const Duration(milliseconds: 150));
+      expect(settings.torSwitchRatio, 0.7);
+    });
+  });
+
   for (final invalid in [0, -1, 0x100000000]) {
     test(
       'selection rejects malformed fast height $invalid and uses a valid peer',
