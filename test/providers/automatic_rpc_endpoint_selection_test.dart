@@ -74,7 +74,10 @@ void main() {
         ),
         isTrue,
       );
-      expect(harness.calls.single.maxConcurrency, 4);
+      expect(
+        harness.calls.single.maxConcurrency,
+        harness.calls.single.urls.length,
+      );
       expect(
         harness.calls.single.totalTimeout,
         allOf(
@@ -93,6 +96,19 @@ void main() {
       );
     },
   );
+
+  test('every automatic candidate starts in one wave', () async {
+    final harness = _Harness()
+      ..respond = (call) async => [
+          for (var i = 0; i < call.urls.length; i++)
+            _sample(call.urls[i], i == call.urls.length - 1 ? 20 : 200),
+        ];
+    final selected = await harness.notifier.ensureReady();
+    final call = harness.calls.single;
+    expect(call.urls, hasLength(13));
+    expect(call.maxConcurrency, call.urls.length);
+    expect(selected.lightwalletdUrl, call.urls.last);
+  });
 
   for (final invalid in [0, -1, 0x100000000]) {
     test(
@@ -1240,10 +1256,13 @@ void main() {
       await _flush();
       expect(harness.fullCalls, hasLength(1));
       expect(harness.fullCalls.single.urls, hasLength(13));
-      expect(harness.fullCalls.single.maxConcurrency, 4);
+      expect(
+        harness.fullCalls.single.maxConcurrency,
+        harness.fullCalls.single.urls.length,
+      );
       expect(
         harness.fullCalls.single.totalTimeout,
-        const Duration(seconds: 13),
+        const Duration(seconds: 4),
       );
       // The foreground operation is independent of the complete-pool future.
       expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
@@ -1847,7 +1866,10 @@ void main() {
           expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(99));
           expect(h.birthdayCalls, hasLength(1));
           expect(h.birthdayCalls.single.urls, [rocks, _us]);
-          expect(h.birthdayCalls.single.maxConcurrency, tor ? 2 : 4);
+          expect(
+            h.birthdayCalls.single.maxConcurrency,
+            tor ? 2 : h.birthdayCalls.single.urls.length,
+          );
           expect(
             h.birthdayCalls.single.totalTimeout,
             lessThanOrEqualTo(

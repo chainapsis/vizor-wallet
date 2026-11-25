@@ -20,6 +20,11 @@ typedef RpcEndpointLatestBlockHeightGetter =
 
 enum RpcEndpointFailoverEventKind { switchedToFallback, switchedToPrimary }
 
+/// Probe all direct candidates together so queue wait doesn't bias the shared
+/// 250 ms comparison window; keep Tor capped at 2 due to circuit setup cost.
+int _probeConcurrency(List<RpcEndpointConfig> targets, {required bool tor}) =>
+    tor ? 2 : (targets.isEmpty ? 1 : targets.length);
+
 class RpcEndpointFailoverEvent {
   const RpcEndpointFailoverEvent({
     required this.sequence,
@@ -473,7 +478,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
                 ? (tor ? settings.torProbeTimeout : settings.directProbeTimeout)
                 : timeout,
             totalTimeout: timeout,
-            maxConcurrency: tor ? 2 : 4,
+            maxConcurrency: _probeConcurrency(targets, tor: tor),
           ),
           cancelled.future.then<List<RpcEndpointCandidateSample>>(
             (_) => throw _automaticSelectionStopped(),
@@ -743,7 +748,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         )
         .toList();
     final currentObservationVersion = _tipObservationVersion;
-    final concurrency = tor ? 2 : 4;
+    final concurrency = _probeConcurrency(targets, tor: tor);
     final timeout = tor
         ? settings.torProbeTimeout
         : settings.directProbeTimeout;
@@ -1275,7 +1280,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       probe: probe,
       probeTimeout: timeout,
       remaining: remaining,
-      maxConcurrency: tor ? 2 : 4,
+      maxConcurrency: _probeConcurrency(targets, tor: tor),
     );
 
     try {
@@ -1929,7 +1934,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           probe: probe,
           probeTimeout: timeout,
           remaining: remaining,
-          maxConcurrency: tor ? 2 : 4,
+          maxConcurrency: _probeConcurrency(targets, tor: tor),
         );
         requireCurrent();
         for (final sample in samples) {
