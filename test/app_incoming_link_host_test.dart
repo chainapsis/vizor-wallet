@@ -340,14 +340,12 @@ void main() {
 
   // The share sheet is a third way in on the same host. What it shares is
   // resolved into one of the two link kinds and then takes that kind's lane.
-  testWidgets('shared text holding an address becomes a request card for it', (
+  testWidgets('a complete shared address becomes a request card for it', (
     tester,
   ) async {
     final (container, router, _) = await pumpHost(tester);
 
-    sharedPayments.emit(
-      const SharedText('Pay me at $_sharedAddress, thanks', seq: 1),
-    );
+    sharedPayments.emit(const SharedText(_sharedAddress, seq: 1));
     await tester.pumpAndSettle();
 
     final flow = container.read(paymentRequestFlowProvider);
@@ -362,6 +360,42 @@ void main() {
       reason: 'a share is reviewed like a pasted link, not re-scanned',
     );
     expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+  });
+
+  testWidgets('a complete shared URI preserves label, amount, and memo', (
+    tester,
+  ) async {
+    final (container, _, _) = await pumpHost(tester);
+    sharedPayments.emit(
+      const SharedText(
+        'zcash:$_sharedAddress?label=Coffee%20for%20two&amount=0.5&memo=aGk_',
+        seq: 1,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final prefill = container.read(paymentRequestFlowProvider)?.prefill;
+    expect(prefill?.address, _sharedAddress);
+    expect(prefill?.label, 'Coffee for two');
+    expect(prefill?.amountText, '0.5');
+    expect(prefill?.memoText, 'hi?');
+  });
+
+  testWidgets('a shared URI with an unencoded label never opens a request', (
+    tester,
+  ) async {
+    final (container, router, _) = await pumpHost(tester);
+    sharedPayments.emit(
+      const SharedText(
+        'zcash:$_sharedAddress?label=Coffee for two&amount=0.5',
+        seq: 1,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    expect(router.state.uri.path, '/home');
   });
 
   testWidgets('shared text without a payment is answered with a notice', (
@@ -446,9 +480,7 @@ void main() {
   ) async {
     final (container, router, _) = await pumpHost(tester);
 
-    sharedPayments.emit(
-      SharedText('Here is your gift: ${_paymentLink.toUri()}', seq: 1),
-    );
+    sharedPayments.emit(SharedText(_paymentLink.toUri().toString(), seq: 1));
     await tester.pumpAndSettle();
 
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);

@@ -95,7 +95,7 @@ void main() {
   }
 
   test('shared text resolves at once', () async {
-    await shareText('pay $request');
+    await shareText(request);
 
     expect(outcomes, [
       isA<SharedPaymentRequest>().having((r) => r.raw, 'raw', request),
@@ -153,12 +153,12 @@ void main() {
       // A cold start drains the runner's queue in one push: an older text
       // share and the number of a link tapped after it, in that order.
       await emitBatch([
-        SharedText('pay $request', seq: ++seq),
+        SharedText(request, seq: ++seq),
         SharedCaptured(seq: ++seq),
       ]);
       expect(outcomes, isEmpty, reason: 'the link in the same batch is newer');
 
-      await emitBatch([SharedText('pay $request', seq: ++seq)]);
+      await emitBatch([SharedText(request, seq: ++seq)]);
       expect(outcomes, hasLength(1));
     },
   );
@@ -183,7 +183,7 @@ void main() {
 
       // Text shared after the reset, while that image was still being
       // copied, is delivered at once and is not overtaken by anything.
-      await shareText('pay $request');
+      await shareText(request);
       expect(outcomes, hasLength(1));
       outcomes.clear();
 
