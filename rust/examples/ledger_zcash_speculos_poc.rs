@@ -7,7 +7,7 @@ mod gift_card;
 mod migration;
 #[path = "ledger_zcash_speculos_poc/regtest.rs"]
 mod regtest;
-#[path = "ledger_zcash_speculos_poc/voting.rs"]
+#[path = "support/voting_fixture.rs"]
 mod voting;
 
 use std::{
@@ -221,7 +221,9 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         .map_err(|error| format!("Write {}: {error}", tex_step_1_path.display()))?;
     fs::write(&tex_step_2_path, &tex_pczts.step_2)
         .map_err(|error| format!("Write {}: {error}", tex_step_2_path.display()))?;
-    let voting_requests = voting::signing_requests(&export.ufvk, &export.seed_fingerprint)?;
+    let voting_db = zcash_voting::round::VotingDb::open(":memory:").map_err(|e| e.to_string())?;
+    voting_db.set_wallet_id("speculos-ledger-voting");
+    let voting_requests = voting::signing_requests(&export.ufvk, &export.seed_fingerprint, &voting_db, true)?;
     let voting_bundle_1 = &voting_requests[0];
     let voting_bundle_2 = &voting_requests[1];
     let voting_bundle_1_path = pczt_path.with_extension("voting-bundle-1.pczt");

@@ -304,14 +304,77 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
   }
 }
 
-class _VotingKeystoneSigningRound {
-  const _VotingKeystoneSigningRound({
+class VotingKeystoneSigningRound {
+  const VotingKeystoneSigningRound._({
     required this.batchRequest,
     required this.requests,
   });
 
   final KeystoneBatchSigningRequest batchRequest;
   final List<rust_delegate.KeystoneSigningRequest> requests;
+
+  static Future<VotingKeystoneSigningRound> prepare(
+    VotingSessionKey key,
+    List<rust_delegate.KeystoneSigningRequest> requests,
+  ) async {
+    final baseRequestId = _votingKeystoneRequestId(key, requests);
+    final allMessages = _votingKeystoneBatchMessages(requests);
+    final roundCounts = await rust_keystone.zcashSignBatchRoundMessageCounts(
+      requestId: baseRequestId,
+      messages: keystoneBatchMessageInputs(allMessages),
+      maxMessages: _votingKeystoneBatchMaxMessages,
+    );
+    if (roundCounts.isEmpty || roundCounts.first <= 0) {
+      throw StateError('Keystone returned an invalid voting batch plan.');
+    }
+    final messageCount = roundCounts.first;
+    if (messageCount > requests.length) {
+      throw StateError('Keystone voting batch plan exceeds the request.');
+    }
+    final roundRequests = requests.sublist(0, messageCount);
+    final batchRequest = await buildPreparedKeystoneBatchSigningRequest(
+      requestId: baseRequestId,
+      messages: _votingKeystoneBatchMessages(roundRequests),
+    );
+    return VotingKeystoneSigningRound._(
+      batchRequest: batchRequest,
+      requests: roundRequests,
+    );
+  }
+
+  Future<List<VotingKeystoneBatchSignature>> decodeSignatures(
+    List<int> responseCbor,
+  ) async {
+    final decoded = await batchRequest.decodeTypedResponse(responseCbor);
+    if (decoded.results.length != requests.length) {
+      throw StateError(
+        'Keystone returned a different number of voting signatures than requested.',
+      );
+    }
+
+    final batchSignatures = <VotingKeystoneBatchSignature>[];
+    for (var index = 0; index < requests.length; index++) {
+      final request = requests[index];
+      final result = decoded.results[index];
+      // Compact responses carry ordered signature lists without message IDs.
+      // Rust checks the request ID and count before restoring request order.
+      if (result.sigs.length != 1) {
+        throw StateError(
+          'Keystone returned signatures that do not match this voting request.',
+        );
+      }
+      final signature = result.sigs.single;
+      batchSignatures.add(
+        VotingKeystoneBatchSignature(
+          bundleIndex: request.bundleIndex,
+          pool: signature.pool,
+          actionIndex: signature.actionIndex,
+          signature: signature.sig,
+        ),
+      );
+    }
+    return batchSignatures;
+  }
 }
 
 class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
@@ -324,7 +387,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Timer? _completionPollTimer;
   Future<void>? _immediateConfirmationCheck;
   Future<void>? _expiryConfirmationCheck;
-  _VotingKeystoneSigningRound? _keystoneSigningRound;
+  VotingKeystoneSigningRound? _keystoneSigningRound;
   int _nextGeneration = 0;
 
   @override
@@ -419,37 +482,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     );
     late final List<VotingKeystoneBatchSignature> batchSignatures;
     try {
-      final decoded = await signingRound.batchRequest.decodeTypedResponse(
-        responseCbor,
-      );
+      batchSignatures = await signingRound.decodeSignatures(responseCbor);
       if (!_isCurrentJob(key: key, generation: generation)) return;
-      if (decoded.results.length != signingRound.requests.length) {
-        throw StateError(
-          'Keystone returned a different number of voting signatures than requested.',
-        );
-      }
-
-      batchSignatures = <VotingKeystoneBatchSignature>[];
-      for (var index = 0; index < signingRound.requests.length; index++) {
-        final request = signingRound.requests[index];
-        final result = decoded.results[index];
-        // Compact responses carry ordered signature lists without message IDs.
-        // Rust checks the request ID and count before restoring request order.
-        if (result.sigs.length != 1) {
-          throw StateError(
-            'Keystone returned signatures that do not match this voting request.',
-          );
-        }
-        final signature = result.sigs.single;
-        batchSignatures.add(
-          VotingKeystoneBatchSignature(
-            bundleIndex: request.bundleIndex,
-            pool: signature.pool,
-            actionIndex: signature.actionIndex,
-            signature: signature.sig,
-          ),
-        );
-      }
     } catch (error) {
       if (!_isCurrentJob(key: key, generation: generation)) return;
       await sessionNotifier.reportKeystoneScanError(
@@ -994,33 +1028,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       clearKeystoneQrError: true,
     );
     try {
-      final baseRequestId = _votingKeystoneRequestId(key, requests);
-      final allMessages = _votingKeystoneBatchMessages(requests);
-      final roundCounts = await rust_keystone.zcashSignBatchRoundMessageCounts(
-        requestId: baseRequestId,
-        messages: keystoneBatchMessageInputs(allMessages),
-        maxMessages: _votingKeystoneBatchMaxMessages,
-      );
-      if (roundCounts.isEmpty || roundCounts.first <= 0) {
-        throw StateError('Keystone returned an invalid voting batch plan.');
-      }
-      final messageCount = roundCounts.first;
-      if (messageCount > requests.length) {
-        throw StateError('Keystone voting batch plan exceeds the request.');
-      }
-      final roundRequests = requests.sublist(0, messageCount);
-      final batchRequest = await buildPreparedKeystoneBatchSigningRequest(
-        requestId: baseRequestId,
-        messages: _votingKeystoneBatchMessages(roundRequests),
-      );
+      final round = await VotingKeystoneSigningRound.prepare(key, requests);
       if (!_isCurrentJob(key: key, generation: generation)) return;
-      _keystoneSigningRound = _VotingKeystoneSigningRound(
-        batchRequest: batchRequest,
-        requests: roundRequests,
-      );
+      _keystoneSigningRound = round;
+      final roundRequests = round.requests;
       state = state.copyWith(
         status: VotingSubmissionJobStatus.waitingForKeystone,
-        keystoneUrParts: batchRequest.urParts,
+        keystoneUrParts: round.batchRequest.urParts,
         keystoneBatchMemos: [
           for (final request in roundRequests)
             VotingKeystoneBatchMemo(

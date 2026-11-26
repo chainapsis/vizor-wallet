@@ -1,0 +1,189 @@
+diff --git a/rust/apps/zcash/src/pczt/sign.rs b/rust/apps/zcash/src/pczt/sign.rs
+index ae136a9e..0fd3ea6e 100644
+--- a/rust/apps/zcash/src/pczt/sign.rs
++++ b/rust/apps/zcash/src/pczt/sign.rs
+@@ -22,7 +22,7 @@ use zcash_vendor::{
+ };
+
+ #[cfg(feature = "cypherpunk")]
+-use zcash_vendor::orchard;
++use zcash_vendor::{orchard, zcash_protocol::constants::regtest::COIN_TYPE};
+
+ #[cfg(any(feature = "cypherpunk", feature = "multi_coins"))]
+ use zcash_vendor::{
+@@ -235,7 +235,7 @@ impl<'a> SeedSigner<'a> {
+         &self,
+         account_index: zcash_vendor::zip32::AccountId,
+     ) -> Result<orchard::keys::SpendAuthorizingKey, ZcashError> {
+-        let osk = orchard::keys::SpendingKey::from_zip32_seed(self.seed, 133, account_index)
++        let osk = orchard::keys::SpendingKey::from_zip32_seed(self.seed, COIN_TYPE, account_index)
+             .map_err(|e| {
+                 ZcashError::SigningError(format!(
+                     "failed to derive {} spending key: {e:?}",
+@@ -330,7 +330,7 @@ impl PcztSigner for SeedSigner<'_> {
+         let Some(account_index) = super::matching_seed_supported_orchard_account(
+             &self.seed_fingerprint,
+             action.spend().zip32_derivation().as_ref(),
+-            133,
++            COIN_TYPE,
+             self.pool,
+         )?
+         else {
+diff --git a/rust/keystore/src/algorithms/zcash/mod.rs b/rust/keystore/src/algorithms/zcash/mod.rs
+index b2e1c410..996dde7e 100644
+--- a/rust/keystore/src/algorithms/zcash/mod.rs
++++ b/rust/keystore/src/algorithms/zcash/mod.rs
+@@ -25,14 +25,14 @@ pub fn derive_ufvk<P: consensus::Parameters>(
+             "invalid account path: {account_path}"
+         )));
+     }
+-    //should be hardened(32) hardened(133) hardened(account_id)
++    // ZIP 32 account path on the simulator regtest network.
+     let purpose = account_path[0];
+     let coin_type = account_path[1];
+     let account_id = account_path[2];
+     match (purpose, coin_type, account_id) {
+         (
+             ChildNumber::Hardened { index: 32 },
+-            ChildNumber::Hardened { index: 133 },
++            ChildNumber::Hardened { index: zcash_vendor::zcash_protocol::constants::regtest::COIN_TYPE },
+             ChildNumber::Hardened { index: account_id },
+         ) => {
+             let account_index = zip32::AccountId::try_from(account_id)
+diff --git a/rust/rust_c/src/zcash/mod.rs b/rust/rust_c/src/zcash/mod.rs
+index 1f103f29..33eed435 100644
+--- a/rust/rust_c/src/zcash/mod.rs
++++ b/rust/rust_c/src/zcash/mod.rs
+@@ -34,7 +34,29 @@ use ur_registry::zcash::zcash_pczt::ZcashPczt;
+ use ur_registry::zcash::zcash_sign_batch::ZcashSignBatch;
+ #[cfg(feature = "cypherpunk")]
+ use zcash_vendor::pczt::roles::signer::batch::{BatchSignRequest, BatchSignResponse};
+-use zcash_vendor::{pczt::Pczt, zcash_protocol::consensus::MainNetwork};
++#[cfg(not(feature = "simulator-cypherpunk"))]
++compile_error!("Zebra regtest firmware is for the Cypherpunk simulator only");
++
++use zcash_vendor::{
++    pczt::Pczt,
++    zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork},
++};
++
++// Same upgrade schedule as the Zebra E2E chain.
++const FIRST: Option<BlockHeight> = Some(BlockHeight::from_u32(1));
++const REGTEST: LocalNetwork = LocalNetwork {
++    overwinter: FIRST,
++    sapling: FIRST,
++    blossom: FIRST,
++    heartwood: FIRST,
++    canopy: FIRST,
++    nu5: FIRST,
++    nu6: FIRST,
++    nu6_1: FIRST,
++    nu6_2: FIRST,
++    nu6_3: Some(BlockHeight::from_u32(300)),
++    nu7: Some(BlockHeight::from_u32(600)),
++};
+ use zeroize::Zeroize;
+
+ // Cap both per-PCZT overhead and variable-size payload data to leave headroom
+@@ -54,7 +76,7 @@ pub unsafe extern "C" fn derive_zcash_ufvk(
+ ) -> *mut SimpleResponse<c_char> {
+     let seed = extract_array!(seed, u8, seed_len as usize);
+     let account_path = unsafe { recover_c_char(account_path) };
+-    let ufvk_text = derive_ufvk(&MainNetwork, seed, &account_path);
++    let ufvk_text = derive_ufvk(&REGTEST, seed, &account_path);
+     let result = match ufvk_text {
+         Ok(text) => SimpleResponse::success(convert_c_char(text)).simple_c_ptr(),
+         Err(e) => SimpleResponse::from(e).simple_c_ptr(),
+@@ -84,7 +106,7 @@ pub unsafe extern "C" fn generate_zcash_default_address(
+     ufvk_text: PtrString,
+ ) -> *mut SimpleResponse<c_char> {
+     let ufvk_text = unsafe { recover_c_char(ufvk_text) };
+-    let address = get_address(&MainNetwork, &ufvk_text);
++    let address = get_address(&REGTEST, &ufvk_text);
+     match address {
+         Ok(text) => SimpleResponse::success(convert_c_char(text)).simple_c_ptr(),
+         Err(e) => SimpleResponse::from(e).simple_c_ptr(),
+@@ -113,7 +135,7 @@ pub unsafe extern "C" fn check_zcash_tx_cypherpunk(
+     let seed_fingerprint = extract_array!(seed_fingerprint, u8, 32);
+     let seed_fingerprint = seed_fingerprint.try_into().unwrap();
+     match app_zcash::check_pczt_cypherpunk(
+-        &MainNetwork,
++        &REGTEST,
+         &pczt.get_data(),
+         &ufvk_text,
+         seed_fingerprint,
+@@ -149,7 +171,7 @@ pub unsafe extern "C" fn check_zcash_tx_multi_coins(
+     let seed_fingerprint = extract_array!(seed_fingerprint, u8, 32);
+     let seed_fingerprint = seed_fingerprint.try_into().unwrap();
+     match app_zcash::check_pczt_multi_coins(
+-        &MainNetwork,
++        &REGTEST,
+         &pczt.get_data(),
+         &xpub_text,
+         seed_fingerprint,
+@@ -184,7 +206,7 @@ pub unsafe extern "C" fn parse_zcash_tx_cypherpunk(
+     let ufvk_text = unsafe { recover_c_char(ufvk) };
+     let seed_fingerprint = extract_array!(seed_fingerprint, u8, 32);
+     let seed_fingerprint = seed_fingerprint.try_into().unwrap();
+-    match app_zcash::parse_pczt_cypherpunk(&MainNetwork, bytes, &ufvk_text, seed_fingerprint) {
++    match app_zcash::parse_pczt_cypherpunk(&REGTEST, bytes, &ufvk_text, seed_fingerprint) {
+         Ok(pczt) => TransactionParseResult::success(DisplayPczt::from(&pczt).c_ptr()).c_ptr(),
+         Err(e) => TransactionParseResult::from(e).c_ptr(),
+     }
+@@ -209,7 +231,7 @@ pub unsafe extern "C" fn parse_zcash_tx_multi_coins(
+     };
+     let seed_fingerprint = extract_array!(seed_fingerprint, u8, 32);
+     let seed_fingerprint = seed_fingerprint.try_into().unwrap();
+-    match app_zcash::parse_pczt_multi_coins(&MainNetwork, bytes, seed_fingerprint) {
++    match app_zcash::parse_pczt_multi_coins(&REGTEST, bytes, seed_fingerprint) {
+         Ok(pczt) => TransactionParseResult::success(DisplayPczt::from(&pczt).c_ptr()).c_ptr(),
+         Err(e) => TransactionParseResult::from(e).c_ptr(),
+     }
+@@ -409,7 +431,7 @@ pub unsafe extern "C" fn check_zcash_batch_tx_cypherpunk(
+     let check_ctx = app_zcash::BatchCheckContext::new(&ufvk_text);
+     for payload in payloads {
+         match app_zcash::check_batch_pczt_with_display(
+-            &MainNetwork,
++            &REGTEST,
+             &payload,
+             &check_ctx,
+             seed_fingerprint,
+@@ -790,7 +812,7 @@ unsafe fn sign_zcash_tx_cypherpunk_dynamic(
+                     return UREncodeResult::from(RustCError::MasterFingerprintMismatch).c_ptr();
+                 }
+                 match app_zcash::sign_checked_pczt(
+-                    &MainNetwork,
++                    &REGTEST,
+                     pczt_bytes,
+                     seed,
+                     &seed_fingerprint,
+@@ -1580,7 +1602,7 @@ pub unsafe extern "C" fn verify_zcash_address(
+     if !address_ok {
+         return ZcashAddressInvalid;
+     }
+-    match app_zcash::address_verification::verify(&MainNetwork, &key, &text) {
++    match app_zcash::address_verification::verify(&REGTEST, &key, &text) {
+         VerificationResult::Owned => ZcashAddressOwned,
+         VerificationResult::NotOwned => ZcashAddressNotOwned,
+         VerificationResult::InvalidAddress => ZcashAddressInvalid,
+diff --git a/rust/zcash_vendor/Cargo.toml b/rust/zcash_vendor/Cargo.toml
+index 76ac2dd3..b1f4a7fb 100644
+--- a/rust/zcash_vendor/Cargo.toml
++++ b/rust/zcash_vendor/Cargo.toml
+@@ -54,7 +54,7 @@ transparent = { package = "zcash_transparent", version = "=0.11.0-keystone.0", d
+ zcash_address = { version = "0.14", default-features = false }
+ zcash_encoding = { version = "0.5", default-features = false }
+ zcash_keys = { version = "=0.17.0-keystone.0", default-features = false }
+-zcash_protocol = { version = "0.11", default-features = false }
++zcash_protocol = { version = "0.11", default-features = false, features = ["local-consensus"] }
+ zip32 = { version = "0.3", default-features = false, features = ["zeroize"] }
+ rust_tools = { workspace = true }
+ #zcash end
+diff --git a/src/crypto/account_public_info.c b/src/crypto/account_public_info.c
+--- a/src/crypto/account_public_info.c
++++ b/src/crypto/account_public_info.c
+@@ -565,3 +565,3 @@
+     //but we use 32 to identify it for now
+-    {ZCASH_UFVK_ENCRYPTED_0,          ZCASH_UFVK_ENCRYPTED, "zcash_ufvk_0",      "M/32'/133'/0'"    },
++    {ZCASH_UFVK_ENCRYPTED_0,          ZCASH_UFVK_ENCRYPTED, "zcash_ufvk_0",      "M/32'/1'/0'"      },
+     {XPUB_TYPE_MONERO_0,              EDWARDS_25519,  "monero_0",                "M/44'/128'/0'"    },
