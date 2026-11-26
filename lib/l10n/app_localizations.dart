@@ -17420,6 +17420,30 @@ abstract class AppLocalizations {
   /// **'Software updates unavailable'**
   String get settingsWinUpdateUnavailableTitle;
 
+  /// Toast shown when an image shared into Vizor from another app holds no QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'The shared image doesn\'t contain a QR code.'**
+  String get sharedPaymentImageNoCode;
+
+  /// Toast shown when an image shared into Vizor from another app holds more than one QR code, so none of them is used.
+  ///
+  /// In en, this message translates to:
+  /// **'The shared image contains more than one QR code.'**
+  String get sharedPaymentImageSeveralCodes;
+
+  /// Toast shown when an image shared into Vizor from another app cannot be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t read the shared image.'**
+  String get sharedPaymentImageUnreadable;
+
+  /// Toast shown when text shared into Vizor from another app holds no Zcash address or payment link.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared content doesn\'t include a Zcash address or payment link.'**
+  String get sharedPaymentNoPayment;
+
   /// Sidebar account name shown before an account has loaded.
   ///
   /// In en, this message translates to:

@@ -9789,6 +9789,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsWinUpdateUnavailableTitle => '无法进行软件更新';
 
   @override
+  String get sharedPaymentImageNoCode => '分享的图片不包含二维码。';
+
+  @override
+  String get sharedPaymentImageSeveralCodes => '分享的图片包含多个二维码。';
+
+  @override
+  String get sharedPaymentImageUnreadable => 'Vizor 无法读取分享的图片。';
+
+  @override
+  String get sharedPaymentNoPayment => '分享的内容不包含 Zcash 地址或支付链接。';
+
+  @override
   String get sidebarAccountNameFallback => '用户名';
 
   @override

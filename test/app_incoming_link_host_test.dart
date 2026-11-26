@@ -9,6 +9,8 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/shared_payment_inbox.dart';
+import 'package:zcash_wallet/src/core/navigation/shared_payment_intake.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/custom_endpoint_settings_panel.dart';
@@ -20,9 +22,11 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
+import 'package:zcash_wallet/src/providers/shared_payment_inbox_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/services/shared_payment_service.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
@@ -53,10 +57,13 @@ void main() {
     activeAddress: 'u1active',
   );
 
+  late _FakeSharedPaymentService sharedPayments;
+
   Future<(ProviderContainer, GoRouter, _FakeIncomingUriService)> pumpHost(
     WidgetTester tester, {
     bool hasWallet = true,
     bool connecting = false,
+    SharedImageQrCodes? readQrCodes,
   }) async {
     if (!hasWallet) {
       await tester.binding.setSurfaceSize(const Size(1080, 720));
@@ -64,6 +71,8 @@ void main() {
     }
     final incomingUris = _FakeIncomingUriService();
     addTearDown(incomingUris.dispose);
+    sharedPayments = _FakeSharedPaymentService();
+    addTearDown(sharedPayments.dispose);
 
     final router = GoRouter(
       initialLocation: hasWallet ? '/home' : '/welcome',
@@ -107,6 +116,17 @@ void main() {
           syncProvider.overrideWith(FakeSyncNotifier.new),
           paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
           incomingUriServiceProvider.overrideWithValue(incomingUris),
+          sharedPaymentServiceProvider.overrideWithValue(sharedPayments),
+          sharedPaymentInboxProvider.overrideWith((ref) {
+            final inbox = SharedPaymentInbox(
+              intake: SharedPaymentIntake(
+                readQrCodes: readQrCodes ?? (_) async => const [],
+              ),
+              events: sharedPayments.stream,
+            );
+            ref.onDispose(inbox.dispose);
+            return inbox;
+          }),
         ],
         child: Consumer(
           builder: (context, ref, _) {
@@ -317,6 +337,187 @@ void main() {
     // No ZIP-321 rejection sentence: the link never reached that parser.
     expect(find.textContaining('payment link'), findsNothing);
   });
+
+  // The share sheet is a third way in on the same host. What it shares is
+  // resolved into one of the two link kinds and then takes that kind's lane.
+  testWidgets('a complete shared address becomes a request card for it', (
+    tester,
+  ) async {
+    final (container, router, _) = await pumpHost(tester);
+
+    sharedPayments.emit(const SharedText(_sharedAddress, seq: 1));
+    await tester.pumpAndSettle();
+
+    final flow = container.read(paymentRequestFlowProvider);
+    expect(
+      flow?.prefill.address,
+      _sharedAddress,
+      reason: 'the address went through the ZIP-321 lane as zcash:<address>',
+    );
+    expect(
+      flow?.prefill.requestSource,
+      PaymentRequestSource.pastedLink,
+      reason: 'a share is reviewed like a pasted link, not re-scanned',
+    );
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+  });
+
+  testWidgets('a complete shared URI preserves label, amount, and memo', (
+    tester,
+  ) async {
+    final (container, _, _) = await pumpHost(tester);
+    sharedPayments.emit(
+      const SharedText(
+        'zcash:$_sharedAddress?label=Coffee%20for%20two&amount=0.5&memo=aGk_',
+        seq: 1,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final prefill = container.read(paymentRequestFlowProvider)?.prefill;
+    expect(prefill?.address, _sharedAddress);
+    expect(prefill?.label, 'Coffee for two');
+    expect(prefill?.amountText, '0.5');
+    expect(prefill?.memoText, 'hi?');
+  });
+
+  testWidgets('a shared URI with an unencoded label never opens a request', (
+    tester,
+  ) async {
+    final (container, router, _) = await pumpHost(tester);
+    sharedPayments.emit(
+      const SharedText(
+        'zcash:$_sharedAddress?label=Coffee for two&amount=0.5',
+        seq: 1,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    expect(router.state.uri.path, '/home');
+  });
+
+  testWidgets('shared text without a payment is answered with a notice', (
+    tester,
+  ) async {
+    final (container, _, _) = await pumpHost(tester);
+
+    sharedPayments.emit(const SharedText('Hello world', seq: 1));
+    await tester.pumpAndSettle();
+
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    expect(
+      find.text(SharedPaymentNotice.noPayment.text(testL10n)),
+      findsOneWidget,
+    );
+  });
+
+  // The runner numbers links and shares alike and announces a link's number
+  // on the share channel, so the fake does what the runner would: the link
+  // is announced there as well as delivered on its own channel.
+  testWidgets('a link tapped while a shared image is still being read wins '
+      'over the older share', (tester) async {
+    final reading = Completer<List<String>>();
+    final (container, _, incomingUris) = await pumpHost(
+      tester,
+      readQrCodes: (_) => reading.future,
+    );
+
+    sharedPayments.emit(const SharedImage('/cache/shared.png', seq: 1));
+    await tester.pump();
+    sharedPayments.emit(const SharedCaptured(seq: 2));
+    incomingUris.emit('zcash:u1recipient?amount=0.5');
+    await tester.pumpAndSettle();
+    expect(
+      container.read(paymentRequestFlowProvider)?.prefill.address,
+      'u1recipient',
+    );
+
+    reading.complete(['zcash:$_sharedAddress?amount=1']);
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(paymentRequestFlowProvider)?.prefill.address,
+      'u1recipient',
+      reason: 'the older share must not replace the newer link',
+    );
+  });
+
+  testWidgets('a Gift Card read from a shared image still arrives when a '
+      'newer link came first', (tester) async {
+    final reading = Completer<List<String>>();
+    final (container, _, incomingUris) = await pumpHost(
+      tester,
+      readQrCodes: (_) => reading.future,
+    );
+
+    sharedPayments.emit(const SharedImage('/cache/gift.png', seq: 1));
+    await tester.pump();
+    sharedPayments.emit(const SharedCaptured(seq: 2));
+    incomingUris.emit('zcash:u1recipient?amount=0.5');
+    await tester.pumpAndSettle();
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+
+    reading.complete([_paymentLink.toUri().toString()]);
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(paymentLinkIntakeProvider).pendingLink,
+      isNotNull,
+      reason: 'Gift Cards queue; a newer payment does not discard one',
+    );
+    expect(
+      container.read(paymentRequestFlowProvider)?.prefill.address,
+      'u1recipient',
+      reason: 'and the newer payment card is untouched',
+    );
+  });
+
+  testWidgets('a shared Gift Card link reaches the Gift Card intake', (
+    tester,
+  ) async {
+    final (container, router, _) = await pumpHost(tester);
+
+    sharedPayments.emit(SharedText(_paymentLink.toUri().toString(), seq: 1));
+    await tester.pumpAndSettle();
+
+    expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
+    expect(
+      container.read(paymentUriPrefillProvider),
+      isNull,
+      reason: 'the link never reached the ZIP-321 park',
+    );
+    expect(
+      router.routerDelegate.currentConfiguration.uri.path,
+      '/payment-links',
+    );
+  });
+}
+
+/// Shaped like a unified address, so the share intake hands it on; the
+/// precheck fake above accepts any address, so it never reaches Rust.
+const _sharedAddress =
+    'u1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce6mua7l';
+
+class _FakeSharedPaymentService extends SharedPaymentService {
+  final StreamController<List<SharedIntakeEvent>> _payloads =
+      StreamController<List<SharedIntakeEvent>>.broadcast();
+
+  @override
+  Stream<List<SharedIntakeEvent>> get stream => _payloads.stream;
+
+  @override
+  Future<void> initialize() async {}
+
+  /// One push from the runner holding just [event].
+  void emit(SharedIntakeEvent event) => _payloads.add([event]);
+
+  @override
+  Future<void> dispose() async {
+    await _payloads.close();
+  }
 }
 
 class _FakeIncomingUriService extends IncomingUriService {

@@ -13459,6 +13459,22 @@
   "@settingsWinUpdateUnavailableTitle": {
     "description": "Title of the error dialog when updates are still unavailable after Tor was turned off."
   },
+  "sharedPaymentImageNoCode": "The shared image doesn't contain a QR code.",
+  "@sharedPaymentImageNoCode": {
+    "description": "Toast shown when an image shared into Vizor from another app holds no QR code."
+  },
+  "sharedPaymentImageSeveralCodes": "The shared image contains more than one QR code.",
+  "@sharedPaymentImageSeveralCodes": {
+    "description": "Toast shown when an image shared into Vizor from another app holds more than one QR code, so none of them is used."
+  },
+  "sharedPaymentImageUnreadable": "Vizor couldn't read the shared image.",
+  "@sharedPaymentImageUnreadable": {
+    "description": "Toast shown when an image shared into Vizor from another app cannot be read."
+  },
+  "sharedPaymentNoPayment": "Shared content doesn't include a Zcash address or payment link.",
+  "@sharedPaymentNoPayment": {
+    "description": "Toast shown when text shared into Vizor from another app holds no Zcash address or payment link."
+  },
   "sidebarAccountNameFallback": "Username",
   "@sidebarAccountNameFallback": {
     "description": "Sidebar account name shown before an account has loaded."
