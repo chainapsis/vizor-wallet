@@ -1645,13 +1645,22 @@ async fn repair_anchor_root_mismatch_if_needed(
     };
 
     let anchor_height_u64 = u32::from(anchor_height) as u64;
-    let raw_anchor_tree_state = match prefetched_anchor {
-        Some((h, ts)) if h == anchor_height_u64 => ts,
-        _ => get_tree_state(client, anchor_height_u64).await?,
+    let stored_anchor_hash = db
+        .get_block_hash(anchor_height)
+        .map_err(|e| SyncError::db(format!("get_block_hash({anchor_height}): {e}")))?;
+    let anchor_chain_state = match prefetched_anchor
+        .filter(|(h, _)| *h == anchor_height_u64)
+        .and_then(|(_, ts)| ts.to_chain_state().ok())
+        .filter(|cs| {
+            cs.block_height() == anchor_height
+                && stored_anchor_hash.is_some_and(|expected| cs.block_hash() == expected)
+        }) {
+        Some(cs) => cs,
+        None => get_tree_state(client, anchor_height_u64)
+            .await?
+            .to_chain_state()
+            .map_err(|e| SyncError::parse(format!("parse anchor tree state: {e}")))?,
     };
-    let anchor_chain_state = raw_anchor_tree_state
-        .to_chain_state()
-        .map_err(|e| SyncError::parse(format!("parse anchor tree state: {e}")))?;
     if anchor_chain_state.block_height() != anchor_height {
         return Err(SyncError::parse(format!(
             "lightwalletd returned tree state for height {}, requested {anchor_height}",
