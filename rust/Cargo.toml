@@ -289,20 +289,20 @@ opt-level = 3
 [profile.dev.package."*"]
 opt-level = 3
 
-# Temporary draft pin to zakura-core/wallet-libraries `main` (`df50164`, which
-# rewires `shardtree` onto `zcashlabs-shardtree 0.7.2` and includes PR #409).
+# Temporary draft pin to zakura-core/wallet-libraries `main` (which rewires
+# `shardtree` onto `zcashlabs-shardtree 0.7.2` and includes PR #409).
 # Replace with published crate versions once released.
 [patch.crates-io]
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-pir-protocol = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-pir-server-core = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-pir-publisher = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-pir-query-server = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-pir-client = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-filters = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-one-time-ivk = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-near-intents = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
-zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "df5016493d956c574a7ee0d88a9a91fa30c3f792" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-protocol = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-server-core = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-publisher = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-query-server = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-client = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-filters = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-one-time-ivk = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-near-intents = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
