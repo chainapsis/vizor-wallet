@@ -14,6 +14,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
@@ -3387,6 +3388,89 @@ void main() {
       expect(scrimRect.bottom, greaterThan(fieldRect.bottom));
     },
   );
+
+  for (final (name, padding) in [
+    ('ordinary phone', const EdgeInsets.only(top: 55, bottom: 34)),
+    ('right inset', const EdgeInsets.fromLTRB(0, 24, 72, 20)),
+    ('left inset', const EdgeInsets.fromLTRB(72, 24, 0, 20)),
+    ('asymmetric insets', const EdgeInsets.fromLTRB(12, 24, 72, 20)),
+  ]) {
+    for (final keyboardHeight in [0.0, 320.0]) {
+      testWidgets(
+        'recipient overlay aligns with safe content: $name, keyboard $keyboardHeight',
+        (tester) async {
+          tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight);
+          addTearDown(tester.view.resetViewInsets);
+          await tester.pumpWidget(_app(viewPadding: padding));
+          await tester.pumpAndSettle();
+
+          final field = find.byKey(const ValueKey('mobile_send_address_field'));
+          final input = find.descendant(
+            of: field,
+            matching: find.byType(EditableText),
+          );
+          final paste = find.byKey(const ValueKey('mobile_send_address_paste'));
+          final clear = find.byKey(const ValueKey('mobile_send_address_clear'));
+          final continueButton = find.byKey(
+            const ValueKey('mobile_send_continue'),
+          );
+          final scanRect = tester.getRect(
+            find.byKey(const ValueKey('mobile_send_scan_row')),
+          );
+          final restingField = tester.getRect(field);
+          final inputElement = tester.element(input);
+          expect(restingField.left, scanRect.left);
+          expect(restingField.right, scanRect.right);
+          if (name == 'ordinary phone') {
+            // Preserve the existing geometry when horizontal insets are zero.
+            expect(restingField.left, kMobilePageMargin);
+            expect(restingField.right, 520 - kMobilePageMargin);
+          }
+          expect(paste, findsNothing);
+
+          await tester.tap(field);
+          await tester.pumpAndSettle();
+
+          expect(tester.element(input), same(inputElement));
+          expect(tester.getRect(field), restingField);
+          final pasteRect = tester.getRect(paste);
+          expect(pasteRect.left, greaterThanOrEqualTo(scanRect.left));
+          expect(pasteRect.right, lessThanOrEqualTo(scanRect.right));
+          expect(paste.hitTestable(), findsOneWidget);
+          final focusedFooter = tester.getRect(continueButton);
+          expect(focusedFooter.left, scanRect.left);
+          expect(focusedFooter.right, scanRect.right);
+
+          await _enterAddress(tester, _shieldedAddress);
+
+          final clearRect = tester.getRect(clear);
+          expect(clearRect.left, greaterThanOrEqualTo(scanRect.left));
+          expect(clearRect.right, lessThanOrEqualTo(scanRect.right));
+          expect(clear.hitTestable(), findsOneWidget);
+
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_send_recipient_focus_scrim')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.getRect(continueButton).left, focusedFooter.left);
+          expect(tester.getRect(continueButton).right, focusedFooter.right);
+          expect(tester.getRect(field), restingField);
+
+          await tester.tap(field);
+          await tester.pumpAndSettle();
+          await tester.tap(clear);
+          await tester.pumpAndSettle();
+
+          expect(tester.widget<EditableText>(input).controller.text, isEmpty);
+          expect(tester.widget<EditableText>(input).focusNode.hasFocus, isTrue);
+          expect(paste.hitTestable(), findsOneWidget);
+          expect(tester.getRect(field), restingField);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('recipient focus applies backdrop-only Continue colors', (
     tester,
