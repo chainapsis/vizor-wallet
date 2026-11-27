@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/duration_format.dart';
+import '../../core/storage/app_secure_store.dart';
 import '../../core/storage/linux_keyring_coordinator.dart';
 import '../../core/storage/linux_secret_operation_guard.dart';
 import '../account_provider.dart';
@@ -133,6 +134,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void>? _focusedConfirmation;
   VotingRoundSession? _focusedConfirmationSession;
   final Set<VotingRoundSession> _activeRoundSessions = {};
+
+  /// Whether the last [castVotes] run stopped because a cast signs its
+  /// bundle's delegation, which a signerless run cannot do. The submission
+  /// job then routes the ballot to the signing path.
+  bool get castsAwaitSignatures => _castsAwaitSignatures;
+  bool _castsAwaitSignatures = false;
+
+  /// Bundles the current hardware signing round signs besides the plan's,
+  /// from the last [prepareKeystoneSigning] or [prepareLedgerSigning].
+  List<int> _alsoSignBundles = const [];
   bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
@@ -632,6 +643,179 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
+  /// The round as this session authenticated it, for the proxy delegator
+  /// calls: the account's voting context and the round details.
+  Future<VotingProxyRoundAccess> proxyRoundAccess() async {
+    final context = await _loadContext(_roundId, checkStaleAction: false);
+    return VotingProxyRoundAccess(
+      apiContext: _apiRoundContext(context),
+      round: context.round,
+    );
+  }
+
+  /// Persists the round's bundle plan when the account has none yet, so the
+  /// proxy planner has bundles to pack. Idempotent, as for
+  /// [recordBallotIntents].
+  Future<void> ensureProxyBundleSetup() {
+    return _enqueue(() async {
+      final context = await _loadContext(_roundId);
+      if (roundPlanBundleCount(context.roundPlan) > 0) return;
+      await _waitUntilWalletReadyForVoting(context);
+      await ref
+          .read(votingRustApiProvider)
+          .setupDelegationBundles(ctx: _apiRoundContext(context));
+      _throwIfContextStale(context, 'proxy-bundle-setup');
+      final roundPlan = await _loadRoundPlan(context);
+      _setStateForContext(
+        context,
+        (state.value ?? await future).copyWith(roundPlan: roundPlan),
+      );
+    }, propagateError: true);
+  }
+
+  /// Drives the round's proxy delegation work once to quiescence: proving
+  /// and submitting each bundle's proxy batch, then delivering every landed
+  /// DC's shares (plan section 4.4). Background share tracking then confirms
+  /// the handed-off shares' reveals.
+  ///
+  /// The session always binds the round hotkey, which every DC's secrets
+  /// derive from. [mnemonic] (software) or [hardwareSigner] supplies the
+  /// signer a batch proving or carrying its bundle's registration needs.
+  /// [onStepFinished] runs after every finished proxy step, so the caller
+  /// can read progress. Step failures, a chain-terminal batch and a stalled
+  /// recovery come back in the outcome; anything else throws.
+  Future<VotingProxyDriveOutcome> driveProxyDelegation({
+    String? mnemonic,
+    HardwareSignerKind? hardwareSigner,
+    void Function()? onStepFinished,
+  }) async {
+    final secretGuard = mnemonic == null
+        ? null
+        : LinuxSecretOperationGuard(
+            store: ref.read(linuxSecretOperationStoreProvider),
+            coordinator: ref.read(linuxKeyringCoordinatorProvider),
+            isRequestCurrent: () => !_isDisposed && ref.mounted,
+            readAccounts: () => ref.read(accountProvider).value,
+            accountUuid: _sessionAccountUuid,
+          );
+    var outcome = const VotingProxyDriveOutcome();
+    await _enqueue(
+      () async {
+        secretGuard?.check();
+        final context = await _loadContext(_roundId);
+        final roundPlan = context.roundPlan;
+        if (!roundPlanHasProxyWork(roundPlan)) return;
+        if (hardwareSigner != null &&
+            !(context.isHardwareAccount &&
+                context.hardwareSignerKind == hardwareSigner)) {
+          throw StateError(
+            'Proxy delegation signs with this account\'s own signer.',
+          );
+        }
+        var current = await future;
+        if (roundPlanProxyNeedsRegistrationProof(roundPlan) &&
+            current.pirEndpoint == null) {
+          await _waitUntilWalletReadyForVoting(context);
+          final pirEndpoint = await _resolvePirEndpoint(context);
+          _throwIfContextStale(context, 'proxy-pir-resolution');
+          if (pirEndpoint == null) {
+            throw StateError('PIR endpoint has not been resolved.');
+          }
+          current = (state.value ?? current).copyWith(pirEndpoint: pirEndpoint);
+          _setStateForContext(context, current);
+        }
+        final signatures = hardwareSigner == null
+            ? const <int, rust_wire.KeystoneSignatureRecord>{}
+            : await _loadHardwareSignatures(context);
+        final storedHotkeySecret = await _ensureHotkey(
+          context,
+          alreadyBound: signatures.isNotEmpty,
+        );
+        final signer = mnemonic != null
+            ? rust_session.ApiDelegationSignerInput(
+                kind: rust_session.ApiDelegationSignerKind.mnemonic,
+                mnemonic: mnemonic,
+                keystoneSig: null,
+                keystoneSighash: null,
+              )
+            : hardwareSigner != null
+            ? const rust_session.ApiDelegationSignerInput(
+                kind: rust_session.ApiDelegationSignerKind.keystoneStored,
+                mnemonic: null,
+                keystoneSig: null,
+                keystoneSighash: null,
+              )
+            : null;
+        secretGuard?.check();
+        final rust = ref.read(votingRustApiProvider);
+        final session = _openRoundSession(
+          rust,
+          context,
+          storedHotkeySecret: storedHotkeySecret,
+          pirServerUrls: _delegationPirTransportUrls(state.value ?? current),
+        );
+        try {
+          final report = await _runRound(
+            session,
+            context,
+            signer: signer,
+            label: 'proxy', // l10n-ignore: log label
+            onEvent: (event) {
+              final step = event.step;
+              if (event.kind == rust_wire.RoundDriveEventKind.stepFinished &&
+                  step != null &&
+                  isProxyNextStep(step)) {
+                onStepFinished?.call();
+              }
+            },
+          );
+          outcome = VotingProxyDriveOutcome(
+            quiescence: report.quiescence.kind,
+            failures: [
+              for (final record in report.failures)
+                if (record.step case final step?)
+                  VotingRoundStepFailure(step, record.failure),
+            ],
+          );
+        } on VotingChainTerminalOutcome {
+          outcome = const VotingProxyDriveOutcome(chainTerminal: true);
+        } on VotingChainPendingOutcome {
+          outcome = const VotingProxyDriveOutcome(chainPending: true);
+        } finally {
+          _closeRoundSession(session);
+        }
+        final refreshedRoundPlan = await _loadRoundPlan(context);
+        _setStateForContext(
+          context,
+          (state.value ?? current).copyWith(roundPlan: refreshedRoundPlan),
+        );
+        // Handed-off DC shares are tracked in the background, as a cast's
+        // shares are, until their reveals are confirmed. Only a drive that
+        // handed off a share restarts a sleeping run: proxy cycles repeat
+        // every few seconds, and most hand off nothing.
+        Set<(int, int, int)> trackedDcShares(rust_wire.RoundPlanView? plan) => {
+          for (final step
+              in plan?.nextSteps ?? const <rust_wire.NextStepView>[])
+            if (step.kind == rust_wire.NextStepKind.confirmShare &&
+                step.dcSlot != null)
+              (step.bundleIndex, step.dcSlot!, step.shareIndex),
+        };
+        final handedOff = !trackedDcShares(
+          roundPlan,
+        ).containsAll(trackedDcShares(refreshedRoundPlan));
+        if (_ownsAutomaticShareTracking) {
+          unawaited(
+            _startAutomaticShareTracking(context, sharesAdded: handedOff),
+          );
+        }
+      },
+      cleanupProcessStateOnError: false,
+      publishError: false,
+      propagateError: true,
+    );
+    return outcome;
+  }
+
   /// Runs the delegation round for whichever signer this account uses.
   ///
   /// The two entry points differ only in how a bundle is signed and in what
@@ -734,7 +918,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
         if (hardware) {
+          // A bundle owing only proxy steps that sign nothing (proving the
+          // batch, or advancing one without its registration) needs no device
+          // signature; with no proxy allocation this is every bundle.
+          final signing = delegationBundleIndexesNeedingSigning(
+            roundPlan,
+          ).toSet();
+          final proxyOnly =
+              {
+                for (final step in roundPlan?.nextSteps ?? const [])
+                  if (isProxyNextStep(step)) step.bundleIndex,
+              }..removeAll({
+                for (final step in roundPlan?.nextSteps ?? const [])
+                  if (!isProxyNextStep(step)) step.bundleIndex,
+              });
           for (final bundleIndex in delegationBundleIndexes) {
+            if (proxyOnly.contains(bundleIndex) &&
+                !signing.contains(bundleIndex)) {
+              continue;
+            }
             if (!signatures.containsKey(bundleIndex)) {
               _setError(
                 VotingSignerNotice(
@@ -910,14 +1112,21 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  Future<void> prepareKeystoneSigning() {
+  /// Builds the Keystone requests for every bundle the plan still needs
+  /// signed, and for [alsoSign] (see [keptBundlesSigningFirstCast]), so one
+  /// scan covers the whole Submit. Bundles already signed are skipped.
+  Future<void> prepareKeystoneSigning({Iterable<int> alsoSign = const []}) {
+    _alsoSignBundles = alsoSign.toList(growable: false);
     return _enqueue(
       () => _prepareHardwareSigningUnlocked(HardwareSignerKind.keystone),
       cleanupProcessStateOnError: false,
     );
   }
 
-  Future<void> prepareLedgerSigning() {
+  /// The Ledger form of [prepareKeystoneSigning]: the device approves each
+  /// bundle's request in turn, all before anything is sent.
+  Future<void> prepareLedgerSigning({Iterable<int> alsoSign = const []}) {
+    _alsoSignBundles = alsoSign.toList(growable: false);
     return _enqueue(
       () => _prepareHardwareSigningUnlocked(HardwareSignerKind.ledger),
       cleanupProcessStateOnError: false,
@@ -1331,10 +1540,34 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
+  /// Removes the ballot intents [recordBallotIntents] stored for
+  /// [proposalIds], for a delegation submit whose commit was refused.
+  Future<void> clearBallotIntents(List<int> proposalIds) {
+    return _enqueue(() async {
+      if (proposalIds.isEmpty) return;
+      final context = await _loadContext(_roundId);
+      final session = _openRoundSession(
+        ref.read(votingRustApiProvider),
+        context,
+      );
+      try {
+        final plan = await session.clearBallotIntents(proposalIds);
+        _throwIfContextStale(context, 'clear-ballot-intents');
+        _setStateForContext(
+          context,
+          (state.value ?? await future).copyWith(roundPlan: plan),
+        );
+      } finally {
+        _closeRoundSession(session);
+      }
+    });
+  }
+
   Future<void> castVotes({
     required List<VotingDraftVote> draftVotes,
     List<int>? allProposalIds,
   }) {
+    _castsAwaitSignatures = false;
     final operation = _enqueue(() async {
       final current = await future;
       final context = await _loadContext(_roundId);
@@ -1597,6 +1830,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         tally = _mergeTally(tally, report.tally);
         publishState();
         if (failures.isNotEmpty) throw _VoteBundleBatchException(failures);
+        _castsAwaitSignatures =
+            report.quiescence.kind ==
+            rust_wire.RoundQuiescenceKind.needsDelegationSignatures;
       } on _StaleVotingSessionAction {
         rethrow;
       } catch (_) {
@@ -1639,7 +1875,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
-      if (!hasBlockingWork) {
+      // Casts still waiting for a signature keep the answers they carry.
+      if (!hasBlockingWork && !_castsAwaitSignatures) {
         await _clearPersistedDraftChoices(context);
       }
       debugPrint(
@@ -1670,14 +1907,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
       if (_ownsAutomaticShareTracking) {
-        unawaited(_startAutomaticShareTracking(context));
+        unawaited(_startAutomaticShareTracking(context, sharesAdded: true));
       }
     }, cleanupProcessStateOnError: false);
     return operation;
   }
 
-  static bool _isVoteStep(rust_wire.NextStepView step) =>
-      isVoteNextStepKind(step.kind);
+  static bool _isVoteStep(rust_wire.NextStepView step) => isVoteNextStep(step);
 
   static bool _isDelegationStep(rust_wire.NextStepView step) {
     return switch (step.kind) {
@@ -1798,7 +2034,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           rust_wire.RoundStepProgressKind.delegation ||
           rust_wire.RoundStepProgressKind.delegateAndVoteBatchPersisted ||
           rust_wire.RoundStepProgressKind.treeSynced ||
-          rust_wire.RoundStepProgressKind.shareConfirmed:
+          rust_wire.RoundStepProgressKind.shareConfirmed ||
+          // Proxy batches report no vote progress; the SDK emits them only
+          // for a committed proxy allocation.
+          rust_wire.RoundStepProgressKind.proxyBatchProved ||
+          rust_wire.RoundStepProgressKind.proxyBatchSigned:
         break;
     }
   }
@@ -2511,9 +2751,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   // Automatic callers consume the error after startup schedules recovery.
   // Explicit callers still receive it so a waiting submission cannot hang.
+  //
+  // [sharesAdded] says the caller just persisted shares. A live run sleeps
+  // until the earliest check time its last pass saw, so it is cancelled, and
+  // the restart this start records begins a run that reads the new rows.
   Future<void> _startAutomaticShareTracking(
-    _VotingSessionContext context,
-  ) async {
+    _VotingSessionContext context, {
+    bool sharesAdded = false,
+  }) async {
+    if (sharesAdded && _shareTrackingRunIsLive) _shareTrackingSession?.cancel();
     try {
       await _startShareTracking(context);
     } catch (error) {
@@ -2606,6 +2852,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _releaseAutomaticShareTracking();
       return;
     }
+    // A handed-off DC share is derived again from the round hotkey to be
+    // resent, as the proxy job derives it to deliver it. Without one,
+    // tracking still confirms DC shares but never resends them, so a hotkey
+    // that cannot be read, a corrupt one say, must not stop the round's
+    // tracking. A session change still ends this start, as an account switch
+    // or lock does.
+    List<int>? storedHotkeySecret;
+    try {
+      storedHotkeySecret = await _readStoredHotkey(context);
+    } on SecureStorageSessionChangedException {
+      rethrow;
+    } catch (error) {
+      // The type only: a decoding error's message quotes the stored secret.
+      debugPrint(
+        '[zcash] Voting: share tracking starts without the round hotkey '
+        'round=${context.round.roundId} error=${error.runtimeType}',
+      );
+    }
+    if (_isDisposed || !ref.mounted) return;
     // Re-checked after the awaits above: a concurrent caller may have started
     // the run while this one was loading.
     if (_shareTrackingRun != null) return;
@@ -2615,7 +2880,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _cancelShareTrackingRetry();
 
     final rust = ref.read(votingRustApiProvider);
-    final session = _openRoundSession(rust, context);
+    final session = _openRoundSession(
+      rust,
+      context,
+      storedHotkeySecret: storedHotkeySecret,
+    );
     _shareTrackingSession = session;
     _shareTrackingContext = context;
     // The stored future is the settled one: a run's failure is handled here,
@@ -2971,6 +3240,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
         final immediateShare = roundPlan.immediateShareKey;
         if (immediateShare == null) return;
+        // The key is derived from the choices before any cast is made. With
+        // no unconfirmed share row, the designated share has not been
+        // submitted yet: not confirmed, and nothing the helpers can answer.
+        if (!roundPlan.hasUnconfirmedShares) return;
         if (_finalConfirmationCheckCancelled(context)) return;
 
         final rust = ref.read(votingRustApiProvider);
@@ -3023,6 +3296,74 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       propagateError: true,
     );
     return confirmed;
+  }
+
+  /// Re-reads, after `vote_end`, whether each handed-off DC's share 0 that
+  /// the plan still lists as unconfirmed is confirmed: the proxy job's final
+  /// check, as [refreshImmediateShareConfirmation] is the vote job's, since
+  /// share tracking stops at `vote_end`. The plan does not say which DCs were
+  /// planned at once, so every listed share 0 is checked. It never resubmits
+  /// a share or selects a new helper.
+  Future<void> refreshDcShareZeroConfirmations() async {
+    await _enqueue(
+      () async {
+        if (_automaticShareTrackingStopped ||
+            ref.read(appSecurityProvider).requiresUnlock) {
+          return;
+        }
+        final current = await future;
+        if (_isDisposed || !ref.mounted) return;
+        final context = await _loadContext(_roundId);
+        _currentContext = context;
+        final shareZeros = (await _loadRoundPlan(context)).nextSteps
+            .where(
+              (step) =>
+                  step.kind == rust_wire.NextStepKind.confirmShare &&
+                  step.dcSlot != null &&
+                  step.shareIndex == 0,
+            )
+            .toList(growable: false);
+        if (shareZeros.isEmpty || _finalConfirmationCheckCancelled(context)) {
+          return;
+        }
+
+        final rust = ref.read(votingRustApiProvider);
+        final session = _openRoundSession(rust, context);
+        _focusedConfirmationSession = session;
+        Future<void> confirmEach() async {
+          for (final step in shareZeros) {
+            if (_finalConfirmationCheckCancelled(context)) return;
+            await session.confirmImmediateShare(
+              bundleIndex: step.bundleIndex,
+              proposalId: step.proposalId,
+              shareIndex: step.shareIndex,
+              dcSlot: step.dcSlot,
+            );
+          }
+        }
+
+        final check = confirmEach();
+        _focusedConfirmation = check.then<void>((_) {}, onError: (_, _) {});
+        try {
+          await check;
+        } finally {
+          _focusedConfirmation = null;
+          if (identical(_focusedConfirmationSession, session)) {
+            _focusedConfirmationSession = null;
+          }
+          _closeRoundSession(session);
+        }
+        if (_finalConfirmationCheckCancelled(context)) return;
+        final roundPlan = await _loadRoundPlan(context);
+        _setStateForContext(
+          context,
+          (state.value ?? current).copyWith(roundPlan: roundPlan),
+        );
+      },
+      cleanupProcessStateOnError: false,
+      publishError: false,
+      propagateError: true,
+    );
   }
 
   /// Stops tracking and waits for the run to finish.
@@ -3496,9 +3837,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     var roundPlan = current.roundPlan ?? context.roundPlan;
     var signatures = await _loadHardwareSignatures(context);
-    var unsignedBundleIndexes = delegationBundleIndexesNeedingSigning(
-      roundPlan,
-    ).where((bundleIndex) => !signatures.containsKey(bundleIndex)).toList();
+    var unsignedBundleIndexes =
+        {
+              ...delegationBundleIndexesNeedingSigning(roundPlan),
+              ..._alsoSignBundles,
+            }
+            .where((bundleIndex) => !signatures.containsKey(bundleIndex))
+            .toList()
+          ..sort();
     final existingHotkey = await _readStoredHotkey(context);
     if (existingHotkey == null &&
         (signatures.isNotEmpty || (roundPlan?.hotkeyBound ?? false))) {
@@ -4579,6 +4925,51 @@ class _VotingSessionContext {
   HardwareSignerKind get signerForCopy =>
       isLedgerAccount ? HardwareSignerKind.ledger : HardwareSignerKind.keystone;
   String get hardwareSignerLabel => votingHardwareSignerName(signerForCopy);
+}
+
+/// The round as a voting session authenticated it, for the proxy delegator
+/// calls (see [VotingSessionNotifier.proxyRoundAccess]).
+@immutable
+class VotingProxyRoundAccess {
+  /// Creates the access.
+  const VotingProxyRoundAccess({required this.apiContext, required this.round});
+
+  /// The account's voting context, as Rust voting calls take it.
+  final rust_api.ApiVotingRoundContext apiContext;
+
+  /// The authenticated round details.
+  final VotingRoundDetails round;
+}
+
+/// What one proxy delegation drive did (see
+/// [VotingSessionNotifier.driveProxyDelegation]).
+@immutable
+class VotingProxyDriveOutcome {
+  /// Creates the outcome.
+  const VotingProxyDriveOutcome({
+    this.quiescence,
+    this.failures = const [],
+    this.chainTerminal = false,
+    this.chainPending = false,
+  });
+
+  /// Why the run stopped, when it ran to a report.
+  final rust_wire.RoundQuiescenceKind? quiescence;
+
+  /// Steps the run isolated, in dispatch order.
+  final List<VotingRoundStepFailure> failures;
+
+  /// The chain answered a submission as ended.
+  final bool chainTerminal;
+
+  /// A submission's outcome is not known yet: its recovery stalled, or no
+  /// vote-chain replica reached the height its pass needs, such as a proxy
+  /// batch's code 2 pass. Nothing ended; a later drive resumes it.
+  final bool chainPending;
+
+  /// Whether the run stopped for hardware signatures it does not hold.
+  bool get needsSignatures =>
+      quiescence == rust_wire.RoundQuiescenceKind.needsDelegationSignatures;
 }
 
 class _StaleVotingSessionAction implements Exception {

@@ -12,6 +12,9 @@ import '../../features/keystone/services/keystone_batch_signing.dart';
 import '../../features/voting/voting_message.dart';
 import '../../features/ledger/services/ledger_failure_guidance.dart';
 import '../../features/ledger/services/ledger_signing_service.dart';
+import '../../features/voting/proxy/proxy_delegation_presentation.dart';
+import '../../features/voting/proxy/proxy_delegation_repository.dart';
+import '../../features/voting/proxy/proxy_delegator_client.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
@@ -21,9 +24,11 @@ import '../../services/voting/voting_retry.dart';
 import '../../services/voting/voting_rust_exception.dart';
 import '../account_provider.dart';
 import '../rpc_endpoint_provider.dart';
+import 'proxy_delegator_host.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
+import 'voting_share_tracking_registry_provider.dart';
 import 'voting_submission_guard_provider.dart';
 
 enum VotingSubmissionJobStatus {
@@ -34,6 +39,92 @@ enum VotingSubmissionJobStatus {
   complete,
   error,
 }
+
+/// Which flow a submission job runs.
+enum VotingSubmissionJobKind {
+  /// The ballot: delegation of the account's notes, casts and shares.
+  ballot,
+
+  /// A committed proxy allocation: its batches and DC shares (plan section
+  /// 4.5, Job).
+  proxy,
+}
+
+/// Where a proxy delegation job stands.
+enum ProxyJobStage {
+  /// Proving the batches.
+  preparing,
+
+  /// Waiting for a hardware signature on a batch's registration.
+  signing,
+
+  /// A batch is on its way to the voting chain.
+  submitting,
+
+  /// Delivering the landed DCs' shares, or waiting for background share
+  /// tracking to confirm share 0's reveal.
+  handingOff,
+
+  /// The chain refused a sent batch; the job keeps sending it until it lands
+  /// or `vote_end` passes.
+  refused,
+
+  /// Every delegation is handed off, with every immediate share 0 revealed.
+  complete,
+
+  /// The round closed before a delegation was handed off.
+  notCounted,
+
+  /// `vote_end` passed before the job could complete.
+  expired,
+}
+
+/// Why a proxy job ended without its delegation being sent.
+enum ProxyJobTerminalReason { notCounted, expired }
+
+/// The pacing of a proxy job's cycles.
+@immutable
+class ProxyJobCycleDelays {
+  /// Creates the delays.
+  const ProxyJobCycleDelays({
+    this.working = const Duration(seconds: 5),
+    this.waiting = const Duration(seconds: 30),
+    this.retry = const Duration(seconds: 10),
+  });
+
+  /// Between cycles while batches or shares are moving.
+  final Duration working;
+
+  /// Between cycles while the chain refuses a sent batch.
+  final Duration waiting;
+
+  /// After a cycle failed for a reason a later one can overcome, or left a
+  /// submission pending ([VotingProxyDriveOutcome.chainPending]).
+  final Duration retry;
+}
+
+/// The pacing proxy jobs use; tests shorten it.
+final proxyJobCycleDelaysProvider = Provider<ProxyJobCycleDelays>(
+  (_) => const ProxyJobCycleDelays(),
+);
+
+/// The clock submission jobs judge `vote_end` by; tests replace it.
+final votingSubmissionJobClockProvider = Provider<DateTime Function()>(
+  (_) => DateTime.now,
+);
+
+/// Reads zcash_voting's delegation progress for a job's round and account.
+typedef ProxyJobProgressReader =
+    Future<ApiProxyDelegationProgress?> Function(VotingSessionKey key);
+
+/// zcash_voting's `proxy::progress` for a job, through the delegator client
+/// bound to the job's pinned session.
+final proxyJobProgressReaderProvider = Provider<ProxyJobProgressReader>((ref) {
+  final clients = <VotingSessionKey, ProxyDelegatorClient>{};
+  return (key) => (clients[key] ??= ProxyDelegatorClient(
+    host: SessionProxyDelegatorHost(ref, key: key),
+  )).progress(key.roundId);
+});
 
 /// Display metadata for requests included in the currently shown Keystone QR.
 @immutable
@@ -70,6 +161,10 @@ class VotingSubmissionJobState {
     this.pendingDraftVotes,
     this.pendingProposalIds = const [],
     this.pendingRecoveryWithoutDraft = false,
+    this.kind = VotingSubmissionJobKind.ballot,
+    this.proxyStage,
+    this.proxyProgress,
+    this.terminalReason,
   });
 
   final VotingSessionKey? key;
@@ -92,6 +187,19 @@ class VotingSubmissionJobState {
   final List<VotingDraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
   final bool pendingRecoveryWithoutDraft;
+
+  /// Which flow the job runs.
+  final VotingSubmissionJobKind kind;
+
+  /// A proxy job's stage; null for a ballot job.
+  final ProxyJobStage? proxyStage;
+
+  /// zcash_voting's latest view of the round's delegation, when the job
+  /// has read one.
+  final ApiProxyDelegationProgress? proxyProgress;
+
+  /// Why a proxy job ended without its delegation being sent.
+  final ProxyJobTerminalReason? terminalReason;
 
   bool get hasVisibleJob =>
       key != null && status != VotingSubmissionJobStatus.idle;
@@ -125,6 +233,11 @@ class VotingSubmissionJobState {
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
     bool? pendingRecoveryWithoutDraft,
+    VotingSubmissionJobKind? kind,
+    ProxyJobStage? proxyStage,
+    ApiProxyDelegationProgress? proxyProgress,
+    bool clearProxyProgress = false,
+    ProxyJobTerminalReason? terminalReason,
   }) {
     return VotingSubmissionJobState(
       key: key ?? this.key,
@@ -159,6 +272,12 @@ class VotingSubmissionJobState {
       pendingProposalIds: pendingProposalIds ?? this.pendingProposalIds,
       pendingRecoveryWithoutDraft:
           pendingRecoveryWithoutDraft ?? this.pendingRecoveryWithoutDraft,
+      kind: kind ?? this.kind,
+      proxyStage: proxyStage ?? this.proxyStage,
+      proxyProgress: clearProxyProgress
+          ? null
+          : proxyProgress ?? this.proxyProgress,
+      terminalReason: terminalReason ?? this.terminalReason,
     );
   }
 }
@@ -262,6 +381,30 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
   Future<void> retry(VotingSessionKey key) async {
     state = state.addJobKey(key);
     await ref.read(votingSubmissionJobProvider(key).notifier).retry();
+  }
+
+  /// Starts the round's proxy delegation job for [accountUuid], or the
+  /// active account, as [VotingSubmissionJobNotifier.startProxy] decides.
+  /// Returns the job's key, or null when no account is active.
+  Future<VotingSessionKey?> startProxy(
+    String roundId, {
+    String? accountUuid,
+  }) async {
+    final String? resolvedAccountUuid;
+    try {
+      resolvedAccountUuid = accountUuid ?? await _activeAccountUuid();
+    } catch (error) {
+      state = state.setStartError(roundId, votingMessageForError(error));
+      return null;
+    }
+    if (resolvedAccountUuid == null) return null;
+    final key = VotingSessionKey(
+      roundId: roundId,
+      accountUuid: resolvedAccountUuid,
+    );
+    state = state.addJobKey(key);
+    await ref.read(votingSubmissionJobProvider(key).notifier).startProxy();
+    return key;
   }
 
   Future<void> cancelLedgerSigning(VotingSessionKey key) {
@@ -389,28 +532,124 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Future<void>? _expiryConfirmationCheck;
   VotingKeystoneSigningRound? _keystoneSigningRound;
   int _nextGeneration = 0;
+  Timer? _proxyCycleTimer;
+  bool _proxyCycleRunning = false;
+  bool _proxyCycleAgain = false;
+  bool _proxyFinalCheckDone = false;
+  int _proxyProgressReads = 0;
+  Future<void>? _ballotProxyDrive;
+  DateTime? _lastBallotProxyDriveAt;
+  Timer? _proxyKeepAliveTimer;
+  ProviderSubscription<AsyncValue<VotingSessionState>>? _proxyKeepAliveSession;
+  bool _proxyKeepAliveFinalDrive = false;
+
+  /// Whether this job start already sent casts that stopped for a signature
+  /// back to signing (see [_routeCastsToSigning]).
+  bool _castSigningRerouted = false;
+
+  /// Bundles a ballot job's batch signing also signs, for the casts that
+  /// follow the batches (see [keptBundlesSigningFirstCast]).
+  List<int> _keptCastSigningBundles = const [];
 
   @override
   VotingSubmissionJobState build() {
     ref.onDispose(() {
       _completionPollTimer?.cancel();
       _completionPollTimer = null;
+      _cancelProxyCycle();
+      _stopProxyKeepAlive();
       _releaseSessionSubscription();
     });
+    listenSelf((_, next) => _followJobForProxyKeepAlive(next));
     return VotingSubmissionJobState(key: _key);
   }
 
+  /// Starts the ballot job, unless one is visible.
+  ///
+  /// A proxy job hands the round over (the last-moment hand-off into the
+  /// vote flow): its cycles stop and the ballot job, which sends any batch
+  /// not yet landed first (see [_sendProxyBatchesFirst]) and whose round runs
+  /// then drive the rest of the proxy work, completes only once that work is
+  /// settled. A proxy
+  /// job waiting for a hardware signature keeps the round, because the vote
+  /// status screen is where that signature is collected, and so does one
+  /// whose account has no ballot to add (see [_hasBallotToAdd]). A vote job
+  /// that then fails or waits for a hardware signature keeps the DC shares
+  /// moving (see [_followJobForProxyKeepAlive]).
   Future<void> start() async {
+    if (_isHandOverableProxyJob(state) && !await _hasBallotToAdd()) {
+      await startProxy();
+      return;
+    }
     final current = state;
+    if (_isHandOverableProxyJob(current)) {
+      _cancelProxyCycle();
+      _startJob(_key);
+      return;
+    }
     if (current.hasVisibleJob) return;
     _startJob(_key);
+  }
+
+  /// Whether [job] is a proxy job a vote job may take the round from: one
+  /// not waiting for a hardware signature.
+  static bool _isHandOverableProxyJob(VotingSubmissionJobState job) =>
+      job.kind == VotingSubmissionJobKind.proxy &&
+      job.status != VotingSubmissionJobStatus.waitingForKeystone &&
+      job.status != VotingSubmissionJobStatus.waitingForLedger;
+
+  /// Whether the account has a ballot for a vote job to cast: drafted
+  /// answers, or votes the plan still owes, including recorded answers an
+  /// unlanded batch withholds. Without one, as when the delegates took
+  /// everything, a vote job would only stall the proxy work, so the proxy
+  /// job keeps the round.
+  Future<bool> _hasBallotToAdd() async {
+    try {
+      final draft = await ref
+          .read(votingDraftProvider(_key).notifier)
+          .ensureLoaded();
+      if (!draft.isEmpty) return true;
+    } catch (_) {
+      return true;
+    }
+    final plan = _sessionForJob(_key)?.roundPlan;
+    return roundPlanOwesBallotCasts(plan) ||
+        voteCarryingBundleIndexes(plan).isNotEmpty;
   }
 
   Future<void> retry() async {
     _releaseGuard();
     _keystoneSigningRound = null;
+    if (state.kind == VotingSubmissionJobKind.proxy) {
+      state = VotingSubmissionJobState(
+        key: _key,
+        proxyProgress: state.proxyProgress,
+      );
+      _startProxyJob(_key);
+      return;
+    }
     state = VotingSubmissionJobState(key: _key);
     _startJob(_key);
+  }
+
+  /// Starts the round's proxy delegation job (plan section 4.5, Job).
+  ///
+  /// A job in flight, of either kind, keeps running and only reads progress
+  /// again: a ballot job drives the round's proxy work too. A proxy job that
+  /// failed short of a terminal outcome starts again; a finished one reads
+  /// progress again.
+  Future<void> startProxy() async {
+    final current = state;
+    final restart =
+        current.status == VotingSubmissionJobStatus.idle ||
+        (current.kind == VotingSubmissionJobKind.proxy &&
+            current.status == VotingSubmissionJobStatus.error &&
+            current.terminalReason == null);
+    if (restart) {
+      _startProxyJob(_key);
+      return;
+    }
+    await _refreshProxyProgress(key: _key, generation: current.generation);
   }
 
   Future<void> cancelLedgerSigning() async {
@@ -431,6 +670,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       status: VotingSubmissionJobStatus.error,
       generation: generation,
       errorMessage: const VotingNotice(VotingNoticeKind.ledgerCancelled),
+      kind: current.kind,
+      proxyStage: current.proxyStage,
+      proxyProgress: current.proxyProgress,
     );
     try {
       await ref.read(ledgerOperationCancellerProvider)();
@@ -439,17 +681,27 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
   }
 
+  /// Clears a job that is not in flight. A failed vote job whose round
+  /// still owes proxy work hands it back to a proxy job, so dismissing the
+  /// vote's error never stops DC share delivery.
   void dismiss() {
     if (state.isInFlight) return;
+    final handBack =
+        _stallsProxyWork(state) &&
+        roundPlanHasProxyWork(_sessionForJob(_key)?.roundPlan);
     _cancelCompletionPoll();
+    _cancelProxyCycle();
     _releaseGuard();
     _releaseSessionSubscription();
     _keystoneSigningRound = null;
     state = VotingSubmissionJobState(key: _key, generation: ++_nextGeneration);
+    if (handBack) _startProxyJob(_key);
   }
 
   void _startJob(VotingSessionKey key) {
     _cancelCompletionPoll();
+    _castSigningRerouted = false;
+    _keptCastSigningBundles = const [];
     _replaceGuard(accountUuid: key.accountUuid, roundId: key.roundId);
     _retainSession(key);
     _keystoneSigningRound = null;
@@ -462,8 +714,30 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       key: key,
       status: VotingSubmissionJobStatus.running,
       generation: generation,
+      proxyProgress: state.proxyProgress,
     );
     unawaited(_run(key: key, generation: generation));
+  }
+
+  /// Starts a proxy job for [key]: its first cycle runs now.
+  void _startProxyJob(VotingSessionKey key) {
+    _cancelCompletionPoll();
+    _cancelProxyCycle();
+    _keptCastSigningBundles = const [];
+    _replaceGuard(accountUuid: key.accountUuid, roundId: key.roundId);
+    _retainSession(key);
+    _keystoneSigningRound = null;
+    _proxyFinalCheckDone = false;
+    final generation = ++_nextGeneration;
+    state = VotingSubmissionJobState(
+      key: key,
+      status: VotingSubmissionJobStatus.running,
+      generation: generation,
+      kind: VotingSubmissionJobKind.proxy,
+      proxyStage: ProxyJobStage.preparing,
+      proxyProgress: state.proxyProgress,
+    );
+    unawaited(_runProxyCycle(key: key, generation: generation));
   }
 
   Future<void> handleKeystoneBatchSignResponse(List<int> responseCbor) async {
@@ -581,7 +855,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       final proposals = proposalsFromRound(round);
-      final VotingDraftState draft;
+      VotingDraftState draft;
       try {
         draft = await ref
             .read(votingDraftProvider(key).notifier)
@@ -692,6 +966,28 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           return;
         }
         activeSession = afterEligibilityCheck ?? activeSession;
+      }
+      if (roundPlanHasUnlandedProxyBatch(activeSession.roundPlan)) {
+        // One hardware signing covers the batches and the casts after them.
+        _keptCastSigningBundles = draftVotes.isEmpty
+            ? const []
+            : keptBundlesSigningFirstCast(activeSession.roundPlan);
+        await _sendProxyBatchesFirst(key: key, generation: generation);
+        return;
+      }
+      final nothingLeftPlan = activeSession.roundPlan;
+      if (roundPlanNothingLeftToVote(nothingLeftPlan) &&
+          !nothingLeftPlan!.nextSteps.any(isVoteNextStep)) {
+        // Delegates took every bundle's weight: no ballot is cast, so the
+        // job only waits, through the completion poll that drives proxy
+        // work, for the delegations to settle. A vote the chain lifecycle
+        // already owns falls through to be driven as recovery.
+        if (_canCompleteSubmission(activeSession)) {
+          _completeJob(key: key, generation: generation);
+        } else {
+          _scheduleCompletionPoll(key: key, generation: generation);
+        }
+        return;
       }
       var needsDelegation = _sessionNeedsDelegation(activeSession);
       var needsDelegationSigning = _sessionNeedsDelegationSigning(
@@ -883,12 +1179,527 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
   }
 
+  /// Sends the round's proxy batches before the ballot: a ballot job runs
+  /// proxy cycles, which carry the account's signer and collect a hardware
+  /// signature, until no batch is left unlanded (see
+  /// [roundPlanHasUnlandedProxyBatch]); [_settleProxyCycle] then runs the
+  /// ballot again. The SDK withholds a bundle's casts until its batch lands,
+  /// and the casts' own round runs carry no signer that could send it.
+  Future<void> _sendProxyBatchesFirst({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    _cancelCompletionPoll();
+    await _runProxyCycle(key: key, generation: generation);
+  }
+
+  /// Runs one proxy cycle, or marks another to follow the running one.
+  Future<void> _runProxyCycle({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    if (_proxyCycleRunning) {
+      _proxyCycleAgain = true;
+      return;
+    }
+    _proxyCycleRunning = true;
+    try {
+      do {
+        _proxyCycleAgain = false;
+        await _proxyCycle(key: key, generation: generation);
+      } while (_proxyCycleAgain &&
+          _isCurrentJob(key: key, generation: generation) &&
+          state.status == VotingSubmissionJobStatus.running);
+    } catch (error) {
+      if (!_isCurrentJob(key: key, generation: generation)) return;
+      // A request that got no answer is no verdict: the next cycle asks
+      // again, so a restored job delivers once the network returns.
+      if (isRetryableVotingError(error) || isVotingTransportError(error)) {
+        _scheduleProxyCycle(
+          key: key,
+          generation: generation,
+          delay: ref.read(proxyJobCycleDelaysProvider).retry,
+        );
+        return;
+      }
+      _failJob(
+        key: key,
+        generation: generation,
+        message: _messageFromError(error),
+      );
+    } finally {
+      _proxyCycleRunning = false;
+    }
+  }
+
+  /// One proxy cycle: collect a hardware signature when the plan needs one,
+  /// otherwise drive the round's proxy work once.
+  ///
+  /// A hardware account follows the vote flow's signing: the request is
+  /// built for every bundle whose batch signs its registration, and the
+  /// device's answer comes back through [_submitAfterHardwareSignatures],
+  /// which drives the round. With every signature already stored, signing
+  /// preparation goes straight on to that drive.
+  Future<void> _proxyCycle({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    final sessionProvider = votingSubmissionSessionProvider(key);
+    final sessionNotifier = ref.read(sessionProvider.notifier);
+    final loaded = await ref.read(sessionProvider.future);
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    final session = _sessionForJob(key) ?? loaded;
+    if (session.isHardwareAccount &&
+        (session.roundPlan?.needsDelegationSigning ?? false)) {
+      _storePendingHardwareState(
+        key: key,
+        generation: generation,
+        draftVotes: const [],
+        intentProposalIds: const [],
+        pendingRecoveryWithoutDraft: true,
+      );
+      state = state.copyWith(proxyStage: ProxyJobStage.signing);
+      final alsoSign = state.kind == VotingSubmissionJobKind.ballot
+          ? _keptCastSigningBundles
+          : const <int>[];
+      if (session.isLedgerAccount) {
+        await _prepareAndSignWithLedger(
+          sessionNotifier,
+          key: key,
+          generation: generation,
+          alsoSign: alsoSign,
+        );
+      } else {
+        await _prepareKeystoneSigning(
+          sessionNotifier,
+          key: key,
+          generation: generation,
+          alsoSign: alsoSign,
+        );
+      }
+      return;
+    }
+    await _driveProxy(key: key, generation: generation);
+  }
+
+  /// Drives the round's proxy work once, reads zcash_voting's progress and
+  /// decides what the job does next.
+  ///
+  /// A software account hands over its mnemonic only while a batch still
+  /// proves or signs its bundle's registration.
+  Future<void> _driveProxy({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    final sessionNotifier = ref.read(
+      votingSubmissionSessionProvider(key).notifier,
+    );
+    final session = _sessionForJob(key);
+    if (session == null) return;
+    final plan = session.roundPlan;
+    String? mnemonic;
+    if (!session.isHardwareAccount &&
+        (delegationBundleIndexesNeedingSigning(plan).isNotEmpty ||
+            roundPlanProxyNeedsRegistrationProof(plan))) {
+      final secretGuard = LinuxSecretOperationGuard(
+        store: ref.read(linuxSecretOperationStoreProvider),
+        coordinator: ref.read(linuxKeyringCoordinatorProvider),
+        isRequestCurrent: () => _isCurrentJob(key: key, generation: generation),
+        readAccounts: () => ref.read(accountProvider).value,
+        accountUuid: key.accountUuid,
+      );
+      final softwareSecret = await ref
+          .read(accountProvider.notifier)
+          .getSoftwareWalletSecretForAccount(key.accountUuid);
+      if (!_isCurrentJob(key: key, generation: generation)) return;
+      secretGuard.check();
+      mnemonic = softwareSecret?.encodeForStorage();
+      if (mnemonic == null || mnemonic.isEmpty) {
+        _failJob(
+          key: key,
+          generation: generation,
+          message: const VotingNotice(VotingNoticeKind.softwareAccountRequired),
+          softwareAccountRequired: true,
+        );
+        return;
+      }
+    }
+    if (state.proxyStage == ProxyJobStage.signing) {
+      state = state.copyWith(proxyStage: ProxyJobStage.preparing);
+    }
+    final outcome = await sessionNotifier.driveProxyDelegation(
+      mnemonic: mnemonic,
+      hardwareSigner: session.isHardwareAccount
+          ? session.hardwareSignerKind
+          : null,
+      onStepFinished: () =>
+          unawaited(_refreshProxyProgress(key: key, generation: generation)),
+    );
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    final read = await _refreshProxyProgress(key: key, generation: generation);
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    // The job is settled only by a progress read that answered.
+    if (!read) {
+      _scheduleProxyCycle(
+        key: key,
+        generation: generation,
+        delay: ref.read(proxyJobCycleDelaysProvider).retry,
+      );
+      return;
+    }
+    _settleProxyCycle(key: key, generation: generation, outcome: outcome);
+  }
+
+  /// Decides what follows a drive: complete, end, fail, or schedule the next
+  /// cycle, from zcash_voting's progress as the progress screen reads it.
+  void _settleProxyCycle({
+    required VotingSessionKey key,
+    required int generation,
+    required VotingProxyDriveOutcome outcome,
+  }) {
+    final delays = ref.read(proxyJobCycleDelaysProvider);
+    final failure = proxyJobBlockingFailure(outcome.failures);
+    if (failure != null) {
+      _failJob(
+        key: key,
+        generation: generation,
+        message: _messageFromError(failure),
+      );
+      return;
+    }
+    // The next cycle collects the signatures the run stopped for.
+    if (outcome.needsSignatures) {
+      _scheduleProxyCycle(
+        key: key,
+        generation: generation,
+        delay: delays.retry,
+      );
+      return;
+    }
+    final plan = _sessionForJob(key)?.roundPlan;
+    final voteEnd = _sessionForJob(key)?.round?.voteEndTime;
+    final now = ref.read(votingSubmissionJobClockProvider)();
+    final closed = voteEnd != null && !now.isBefore(voteEnd);
+    // A ballot job sent its batches first (see [_sendProxyBatchesFirst]):
+    // once every one landed, its casts follow while the round is open.
+    if (state.kind == VotingSubmissionJobKind.ballot &&
+        !closed &&
+        !roundPlanHasUnlandedProxyBatch(plan)) {
+      _cancelProxyCycle();
+      unawaited(_run(key: key, generation: generation));
+      return;
+    }
+    final progress = state.proxyProgress;
+    if (progress == null || voteEnd == null) {
+      _failJob(
+        key: key,
+        generation: generation,
+        message: progress == null
+            ? const VotingNotice(VotingNoticeKind.proxyNoDelegation)
+            : const VotingNotice(VotingNoticeKind.roundEndTimeUnavailable),
+      );
+      return;
+    }
+    switch (proxyProgressOutcome(progress, now: now, voteEnd: voteEnd)) {
+      case ProxyProgressComplete():
+        _endProxyJob(key: key, generation: generation);
+      case ProxyProgressNotCounted():
+        _endProxyJob(
+          key: key,
+          generation: generation,
+          reason: ProxyJobTerminalReason.notCounted,
+        );
+      case ProxyProgressExpired():
+        // One final check first: confirming a handed-off share 0's reveal is
+        // allowed after `vote_end`, as the vote path's final immediate-share
+        // check is, though share tracking has stopped.
+        if (!_proxyFinalCheckDone) {
+          _proxyFinalCheckDone = true;
+          unawaited(
+            _finalProxyCheck(
+              key: key,
+              generation: generation,
+              progress: progress,
+            ),
+          );
+          return;
+        }
+        _endProxyJob(
+          key: key,
+          generation: generation,
+          reason: ProxyJobTerminalReason.expired,
+        );
+      case ProxyProgressRefused():
+        state = state.copyWith(proxyStage: ProxyJobStage.refused);
+        _scheduleProxyCycle(
+          key: key,
+          generation: generation,
+          delay: delays.waiting,
+        );
+      case ProxyProgressRunning(:final step):
+        state = state.copyWith(
+          proxyStage: switch (step) {
+            ProxyProgressStep.preparing => ProxyJobStage.preparing,
+            ProxyProgressStep.submitting => ProxyJobStage.submitting,
+            ProxyProgressStep.handingOff => ProxyJobStage.handingOff,
+          },
+        );
+        final retrying =
+            outcome.chainPending ||
+            outcome.chainTerminal ||
+            outcome.failures.isNotEmpty;
+        _scheduleProxyCycle(
+          key: key,
+          generation: generation,
+          delay: retrying ? delays.retry : delays.working,
+        );
+    }
+  }
+
+  /// The proxy job's one check after `vote_end`: while an at-once share 0's
+  /// reveal is unconfirmed, it confirms what the helpers revealed, then runs
+  /// the last cycle, whose progress read completes or expires the job.
+  Future<void> _finalProxyCheck({
+    required VotingSessionKey key,
+    required int generation,
+    required ApiProxyDelegationProgress progress,
+  }) async {
+    if (progress.plannedImmediate && !progress.immediateRevealConfirmed) {
+      try {
+        await ref
+            .read(votingSubmissionSessionProvider(key).notifier)
+            .refreshDcShareZeroConfirmations();
+      } catch (error, stackTrace) {
+        debugPrint(
+          '[zcash] Voting: final DC share 0 confirmation failed: '
+          '$error\n$stackTrace',
+        );
+      }
+    }
+    if (!_isCurrentJob(key: key, generation: generation)) return;
+    _scheduleProxyCycle(key: key, generation: generation, delay: Duration.zero);
+  }
+
+  /// Ends a proxy job: complete when every delegation is handed off, failed
+  /// for `vote_end` or a closed round.
+  void _endProxyJob({
+    required VotingSessionKey key,
+    required int generation,
+    ProxyJobTerminalReason? reason,
+  }) {
+    _cancelProxyCycle();
+    switch (reason) {
+      case null:
+        _completeJob(key: key, generation: generation);
+        state = state.copyWith(proxyStage: ProxyJobStage.complete);
+      case ProxyJobTerminalReason.notCounted:
+        _failJob(
+          key: key,
+          generation: generation,
+          message: const VotingNotice(VotingNoticeKind.proxyNotCounted),
+          retryable: false,
+        );
+        state = state.copyWith(
+          proxyStage: ProxyJobStage.notCounted,
+          terminalReason: reason,
+        );
+      case ProxyJobTerminalReason.expired:
+        _failJob(
+          key: key,
+          generation: generation,
+          message: const VotingNotice(VotingNoticeKind.immediateShareExpired),
+          retryable: false,
+        );
+        state = state.copyWith(
+          proxyStage: ProxyJobStage.expired,
+          terminalReason: reason,
+        );
+    }
+  }
+
+  /// Runs the next proxy cycle after [delay].
+  void _scheduleProxyCycle({
+    required VotingSessionKey key,
+    required int generation,
+    required Duration delay,
+  }) {
+    _proxyCycleTimer?.cancel();
+    _proxyCycleTimer = Timer(delay, () {
+      _proxyCycleTimer = null;
+      if (!_isCurrentJob(key: key, generation: generation) ||
+          state.status != VotingSubmissionJobStatus.running) {
+        return;
+      }
+      unawaited(_runProxyCycle(key: key, generation: generation));
+    });
+  }
+
+  /// Stops scheduling proxy cycles.
+  void _cancelProxyCycle() {
+    _proxyCycleTimer?.cancel();
+    _proxyCycleTimer = null;
+    _proxyCycleAgain = false;
+  }
+
+  /// Reads zcash_voting's progress for [key] into the job state and returns
+  /// whether the read answered. A failed read keeps the last snapshot: the
+  /// next cycle reads again.
+  Future<bool> _refreshProxyProgress({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    final read = ++_proxyProgressReads;
+    final ApiProxyDelegationProgress? progress;
+    try {
+      progress = await ref.read(proxyJobProgressReaderProvider)(key);
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: proxy progress read failed: '
+        '${describeProxyDelegationError(error)}',
+      );
+      return false;
+    }
+    if (!ref.mounted ||
+        read != _proxyProgressReads ||
+        state.generation != generation) {
+      return true;
+    }
+    state = state.copyWith(
+      proxyProgress: progress,
+      clearProxyProgress: progress == null,
+    );
+    return true;
+  }
+
+  /// Drives a ballot job's round's outstanding proxy work while it waits to
+  /// complete: no background tracking delivers DC shares. At most one drive
+  /// runs, and one starts at most every working delay. Returns the drive,
+  /// or null when none started.
+  Future<void>? _startBallotProxyDrive({
+    required VotingSessionKey key,
+    required int generation,
+  }) {
+    if (_ballotProxyDrive != null) return null;
+    final now = ref.read(votingSubmissionJobClockProvider)();
+    final last = _lastBallotProxyDriveAt;
+    if (last != null &&
+        now.difference(last) < ref.read(proxyJobCycleDelaysProvider).working) {
+      return null;
+    }
+    _lastBallotProxyDriveAt = now;
+    late final Future<void> drive;
+    drive =
+        () async {
+          try {
+            final session = _sessionForJob(key);
+            await ref
+                .read(votingSubmissionSessionProvider(key).notifier)
+                .driveProxyDelegation(
+                  hardwareSigner: (session?.isHardwareAccount ?? false)
+                      ? session?.hardwareSignerKind
+                      : null,
+                );
+            if (!_isCurrentJob(key: key, generation: generation)) return;
+            await _refreshProxyProgress(key: key, generation: generation);
+          } catch (error) {
+            debugPrint('[zcash] Voting: ballot proxy drive failed: $error');
+          }
+        }().whenComplete(() {
+          if (identical(_ballotProxyDrive, drive)) _ballotProxyDrive = null;
+        });
+    _ballotProxyDrive = drive;
+    unawaited(drive);
+    return drive;
+  }
+
+  /// Whether [job] leaves its round's proxy work without a driver: a vote
+  /// job that failed, which ran the round's drives (see [start]), or a job
+  /// of either kind waiting for a hardware signature.
+  static bool _stallsProxyWork(VotingSubmissionJobState job) =>
+      job.status == VotingSubmissionJobStatus.waitingForKeystone ||
+      job.status == VotingSubmissionJobStatus.waitingForLedger ||
+      (job.kind == VotingSubmissionJobKind.ballot &&
+          job.status == VotingSubmissionJobStatus.error);
+
+  /// Keeps DC shares moving while [job] stalls the round's proxy work, on a
+  /// timed drive every working delay, and stops once the job runs again,
+  /// completes or is dismissed.
+  void _followJobForProxyKeepAlive(VotingSubmissionJobState job) {
+    final key = job.key;
+    if (key == null || !_stallsProxyWork(job)) {
+      _stopProxyKeepAlive();
+      return;
+    }
+    if (_proxyKeepAliveTimer != null ||
+        !roundPlanHasProxyWork(_sessionForJob(key)?.roundPlan)) {
+      return;
+    }
+    // The job let go of its session; the drives need it alive.
+    _proxyKeepAliveSession = ref.listen<AsyncValue<VotingSessionState>>(
+      votingSubmissionSessionProvider(key),
+      (_, _) {},
+    );
+    _proxyKeepAliveFinalDrive = false;
+    _proxyKeepAliveTimer = Timer.periodic(
+      ref.read(proxyJobCycleDelaysProvider).working,
+      (_) => _proxyKeepAliveTick(key),
+    );
+  }
+
+  /// One keep-alive drive, under a drainable background-work lease so
+  /// account deletion and reset wait for it. After `vote_end` one last
+  /// drive runs, as the proxy job's does.
+  void _proxyKeepAliveTick(VotingSessionKey key) {
+    final job = state;
+    final session = _sessionForJob(key);
+    if (job.key != key ||
+        !_stallsProxyWork(job) ||
+        !roundPlanHasProxyWork(session?.roundPlan)) {
+      _stopProxyKeepAlive();
+      return;
+    }
+    final voteEnd = session?.round?.voteEndTime;
+    final ended =
+        voteEnd != null &&
+        !ref.read(votingSubmissionJobClockProvider)().isBefore(voteEnd);
+    if (ended && _proxyKeepAliveFinalDrive) {
+      _stopProxyKeepAlive();
+      return;
+    }
+    final release = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork(accountUuid: key.accountUuid);
+    if (release == null) {
+      _stopProxyKeepAlive();
+      return;
+    }
+    final drive = _startBallotProxyDrive(key: key, generation: job.generation);
+    if (drive == null) {
+      release();
+      return;
+    }
+    if (ended) _proxyKeepAliveFinalDrive = true;
+    unawaited(drive.whenComplete(release));
+  }
+
+  /// Stops the keep-alive drives.
+  void _stopProxyKeepAlive() {
+    _proxyKeepAliveTimer?.cancel();
+    _proxyKeepAliveTimer = null;
+    _proxyKeepAliveSession?.close();
+    _proxyKeepAliveSession = null;
+  }
+
   Future<void> _prepareKeystoneSigning(
     VotingSessionNotifier sessionNotifier, {
     required VotingSessionKey key,
     required int generation,
+    List<int> alsoSign = const [],
   }) async {
-    await sessionNotifier.prepareKeystoneSigning();
+    await sessionNotifier.prepareKeystoneSigning(alsoSign: alsoSign);
     if (!_isCurrentJob(key: key, generation: generation)) return;
     final session = _sessionForJob(key);
     if (session == null) return;
@@ -916,8 +1727,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionNotifier sessionNotifier, {
     required VotingSessionKey key,
     required int generation,
+    List<int> alsoSign = const [],
   }) => LedgerConnectionScope().run(() async {
-    await sessionNotifier.prepareLedgerSigning();
+    await sessionNotifier.prepareLedgerSigning(alsoSign: alsoSign);
     if (!_isCurrentJob(key: key, generation: generation)) return;
 
     int? rebuiltBundle;
@@ -1064,6 +1876,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     HardwareSignerKind? signerKind,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
+    // A ballot job signed for a batch it sends first (see
+    // [_sendProxyBatchesFirst]).
+    if (state.kind == VotingSubmissionJobKind.proxy ||
+        roundPlanHasUnlandedProxyBatch(_sessionForJob(key)?.roundPlan)) {
+      _setRunning(key: key, generation: generation);
+      await _driveProxy(key: key, generation: generation);
+      return;
+    }
     final draftVotes = state.pendingDraftVotes;
     if (draftVotes == null ||
         (draftVotes.isEmpty && !state.pendingRecoveryWithoutDraft)) {
@@ -1130,6 +1950,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     var votePollingSession = _sessionForJob(key) ?? initialSession;
+    // Casting now would cast nothing in a bundle its batch still holds, and
+    // the confirmation below would then ask about a share never made.
+    if (roundPlanHasUnlandedProxyBatch(votePollingSession?.roundPlan)) {
+      await _sendProxyBatchesFirst(key: key, generation: generation);
+      return;
+    }
     final canContinueWithoutDraft =
         votePollingSession != null &&
         (_canRecoverWithoutDraft(votePollingSession) ||
@@ -1173,6 +1999,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     var done = _sessionForJob(key);
     if (done?.phase == VotingSessionPhase.error) {
       _failFromSession(key: key, generation: generation, session: done!);
+      return;
+    }
+    if (sessionNotifier.castsAwaitSignatures) {
+      await _routeCastsToSigning(key: key, generation: generation);
       return;
     }
     if (done != null) {
@@ -1228,6 +2058,26 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       return;
     }
     _completeJob(key: key, generation: generation);
+  }
+
+  /// Sends a ballot whose signerless casts stopped for a signature back
+  /// through [_run], which collects it from the seed or the device. Once per
+  /// job start: casts that stop again fail the job with
+  /// [VotingNoticeKind.castsNeedSignature] instead of ending quietly.
+  Future<void> _routeCastsToSigning({
+    required VotingSessionKey key,
+    required int generation,
+  }) async {
+    if (_castSigningRerouted) {
+      _failJob(
+        key: key,
+        generation: generation,
+        message: const VotingNotice(VotingNoticeKind.castsNeedSignature),
+      );
+      return;
+    }
+    _castSigningRerouted = true;
+    await _run(key: key, generation: generation);
   }
 
   void _storePendingHardwareState({
@@ -1422,6 +2272,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _startExpiryConfirmationCheck(key: key, generation: generation);
         return;
       }
+      if (roundPlanHasProxyWork(session?.roundPlan)) {
+        _startBallotProxyDrive(key: key, generation: generation);
+      }
       _startImmediateConfirmationCheck(key: key, generation: generation);
     });
   }
@@ -1506,7 +2359,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
     final session = _sessionForJob(key);
-    if (confirmed || _canCompleteSubmission(session)) {
+    if ((confirmed && !roundPlanHasProxyWork(session?.roundPlan)) ||
+        _canCompleteSubmission(session)) {
       _completeJob(key: key, generation: generation);
       return;
     }
@@ -1518,22 +2372,33 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _completionPollTimer = null;
   }
 
+  /// Whether the ballot is done: eligibility confirmed, every vote and
+  /// share submitted, the round's immediate share confirmed, and, when the
+  /// round has a proxy allocation, its proxy work settled too.
   bool _canCompleteSubmission(VotingSessionState? session) {
     if (session == null) return false;
     return session.hasConfirmedVotingEligibility &&
         _hasCompletedSubmissionArtifacts(session) &&
-        hasConfirmedImmediateShare(session.roundPlan);
+        hasConfirmedImmediateShare(session.roundPlan) &&
+        !roundPlanHasProxyWork(session.roundPlan);
   }
 
+  /// Whether `vote_end` passed with the round's immediate share unconfirmed
+  /// or its proxy work unsettled.
   bool _hasExpiredUnconfirmedImmediateShare(
     VotingSessionState? session, {
     DateTime? now,
   }) {
-    if (session == null || hasConfirmedImmediateShare(session.roundPlan)) {
+    if (session == null ||
+        (hasConfirmedImmediateShare(session.roundPlan) &&
+            !roundPlanHasProxyWork(session.roundPlan))) {
       return false;
     }
     final voteEnd = session.round?.voteEndTime;
-    return voteEnd != null && !(now ?? DateTime.now()).isBefore(voteEnd);
+    return voteEnd != null &&
+        !(now ?? ref.read(votingSubmissionJobClockProvider)()).isBefore(
+          voteEnd,
+        );
   }
 
   void _failForExpiredImmediateShare({
@@ -1571,9 +2436,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     return afterEligibilityCheck ?? session;
   }
 
+  /// Whether the ballot's votes and shares are all submitted. A round with
+  /// nothing left to vote has no ballot to submit, so only its remaining
+  /// work counts.
   bool _hasCompletedSubmissionArtifacts(VotingSessionState? session) {
     if (session == null) return false;
-    return hasCompletedVoteForDisplay(session.roundPlan) &&
+    return (hasCompletedVoteForDisplay(session.roundPlan) ||
+            roundPlanNothingLeftToVote(session.roundPlan)) &&
         !_hasRemainingVoteOrShareWork(session);
   }
 
@@ -1752,6 +2621,26 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           ),
     ];
   }
+}
+
+/// The first of [failures] that a later proxy cycle cannot overcome, if
+/// any: a transport failure, a busy store, an incomplete helper delivery or
+/// the vote end (which the progress decides) is retried or settled.
+VotingRoundStepFailure? proxyJobBlockingFailure(
+  List<VotingRoundStepFailure> failures,
+) {
+  for (final failure in failures) {
+    switch (failure.failure.kind) {
+      case rust_wire.RoundStepFailureKindView.transport ||
+          rust_wire.RoundStepFailureKindView.busy ||
+          rust_wire.RoundStepFailureKindView.helperDeliveryIncomplete ||
+          rust_wire.RoundStepFailureKindView.voteEnded:
+        continue;
+      default:
+        return failure;
+    }
+  }
+  return null;
 }
 
 const _votingKeystoneBatchMaxMessages = 40;

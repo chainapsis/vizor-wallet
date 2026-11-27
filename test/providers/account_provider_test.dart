@@ -21,6 +21,8 @@ import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_c
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/send/services/recent_send_recipients.dart';
+import 'package:zcash_wallet/src/core/config/proxy_delegation_feature_config.dart';
+import 'package:zcash_wallet/src/features/voting/proxy/proxy_registry_store.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -1067,6 +1069,56 @@ void main() {
       ['account-1'],
     );
   });
+
+  for (final enabled in [true, false]) {
+    test('account deletion ${enabled ? 'deletes' : 'leaves'} proxy registry '
+        'state with the dormant flag ${enabled ? 'on' : 'off'}', () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-account-removal-proxy',
+      );
+      addTearDown(() {
+        if (supportDirectory.existsSync()) {
+          supportDirectory.deleteSync(recursive: true);
+        }
+      });
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (call) async {
+            if (call.method == 'getApplicationSupportDirectory') {
+              return supportDirectory.path;
+            }
+            throw MissingPluginException('Unexpected path provider call.');
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null);
+      });
+
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          proxyDelegationFeatureEnabledProvider.overrideWithValue(enabled),
+          votingShareTrackingRegistryProvider.overrideWithValue(
+            VotingShareTrackingRegistry(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      final registry = File(
+        '${await getWalletDbPath()}.voting-cache/'
+        '$kProxyRegistryCacheFolder/main/registry-cache.json',
+      );
+      await registry.parent.create(recursive: true);
+      await registry.writeAsString('');
+      await container.read(accountProvider.notifier).removeAccount('account-2');
+
+      expect(await registry.exists(), !enabled);
+      expect(_rustApi.deletedAccountUuids, contains('account-2'));
+    });
+  }
 
   test(
     'a redeemed Gift Card allows account deletion with recovery still retained',

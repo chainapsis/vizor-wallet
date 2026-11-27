@@ -32,6 +32,7 @@ class AddressQrScanModal extends StatefulWidget {
     required this.resolve,
     required this.onAddressScanned,
     required this.onCancel,
+    this.title,
     super.key,
   });
 
@@ -39,6 +40,10 @@ class AddressQrScanModal extends StatefulWidget {
   final MobileScanResolver resolve;
   final ValueChanged<String> onAddressScanned;
   final VoidCallback onCancel;
+
+  /// The modal's heading, for scans of something other than an address.
+  /// Null shows the address heading.
+  final String? title;
 
   @override
   State<AddressQrScanModal> createState() => _AddressQrScanModalState();
@@ -312,6 +317,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
           onCancel: _cancel,
           unavailableDescription: unavailableDescription,
           error: _error,
+          title: widget.title,
         );
       },
     );
@@ -322,6 +328,7 @@ class AddressQrScanModalContent extends StatelessWidget {
   const AddressQrScanModalContent({
     required this.status,
     required this.onCancel,
+    this.title,
     this.cameraView,
     this.cameraLabel =
         'Face Time HD Camera (Default)', // l10n-ignore: sample device name
@@ -339,6 +346,9 @@ class AddressQrScanModalContent extends StatelessWidget {
   static const cameraHeight = 220.0;
   static const cameraModalHeight = 276.0;
   static const cameraFooterHeight = 40.0;
+
+  /// The modal's heading; null shows the address heading.
+  final String? title;
 
   final AddressQrCameraStatus status;
   final Widget? cameraView;
@@ -381,7 +391,7 @@ class AddressQrScanModalContent extends StatelessWidget {
         mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _AddressQrScanTitle(),
+          _AddressQrScanTitle(title),
           const SizedBox(height: AppSpacing.sm),
           _scanExpand(
             isMobile,
@@ -440,7 +450,9 @@ Widget _scanExpand(bool mobile, {required Widget child}) =>
     mobile ? child : Expanded(child: child);
 
 class _AddressQrScanTitle extends StatelessWidget {
-  const _AddressQrScanTitle();
+  const _AddressQrScanTitle(this.title);
+
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
@@ -449,7 +461,7 @@ class _AddressQrScanTitle extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            context.l10n.addressScanTitle,
+            title ?? context.l10n.addressScanTitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(

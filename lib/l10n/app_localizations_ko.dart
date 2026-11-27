@@ -862,6 +862,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get addressScanZcashPrompt => '계‍속‍하‍려‍면 Zcash QR 코‍드‍를 스‍캔‍하‍세‍요';
 
   @override
+  String get appBackDelegate => '대‍리‍인';
+
+  @override
+  String get appBackDelegates => '대‍리‍인 목‍록';
+
+  @override
   String get appBackDonation => '후‍원';
 
   @override
@@ -878,6 +884,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get appBackSend => '보‍내‍기';
+
+  @override
+  String get appBackSplit => '나‍누‍기';
 
   @override
   String get appBackStatus => '상‍태';
@@ -8516,6 +8525,410 @@ class AppLocalizationsKo extends AppLocalizations {
   String get profilePictureUpdateFailed => '프‍로‍필 사‍진‍을 바‍꾸‍지 못‍했‍어‍요.';
 
   @override
+  String get proxyAddDelegateLabel => '대‍리‍인 추‍가';
+
+  @override
+  String get proxyAddLabel => '추‍가';
+
+  @override
+  String get proxyAddToDelegationLabel => '위‍임‍에 추‍가';
+
+  @override
+  String get proxyAddedLabel => '추‍가‍됨';
+
+  @override
+  String get proxyAllocationTitle => '투‍표‍권 나‍누‍기';
+
+  @override
+  String get proxyAlreadyStartedVoting =>
+      '이‍번 라‍운‍드‍에‍서 이‍미 투‍표‍를 시‍작‍해‍서 위‍임‍할 수 없‍어‍요.';
+
+  @override
+  String get proxyAlreadyVoted => '이‍번 라‍운‍드‍에‍서 이‍미 투‍표‍해‍서 위‍임‍할 수 없‍어‍요.';
+
+  @override
+  String get proxyAnswerKeptShare =>
+      '제‍출‍하‍기 전‍에 남‍겨 둔 ZEC‍로 질‍문‍에 하‍나 이‍상 답‍하‍거‍나 ZEC‍를 모‍두 위‍임‍해 주‍세‍요.';
+
+  @override
+  String proxyAnswersForYou(String names, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '이 질‍문‍에‍는 $names 대‍리‍인‍이 대‍신 답‍해‍요',
+      one: '이 질‍문‍에‍는 $names 대‍리‍인‍이 대‍신 답‍해‍요',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get proxyBeforeYouDelegateTitle => '위‍임‍하‍기 전‍에';
+
+  @override
+  String proxyBlockedRetired(String name) {
+    return '$name 대‍리‍인‍은 활‍동‍을 종‍료‍했‍어‍요.';
+  }
+
+  @override
+  String proxyBlockedSuspended(String name) {
+    return '$name 대‍리‍인‍은 정‍지‍되‍어 위‍임‍할 수 없‍어‍요.';
+  }
+
+  @override
+  String get proxyBrowseEmpty => 'Vizor 목‍록‍에 아‍직 대‍리‍인‍이 없‍어‍요.';
+
+  @override
+  String get proxyCannotVerify =>
+      '지‍금‍은 대‍리‍인‍을 확‍인‍할 수 없‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get proxyChangeDelegationLabel => '변‍경';
+
+  @override
+  String get proxyCheckingDelegates => '투‍표 체‍인‍에‍서 대‍리‍인‍을 확‍인‍하‍는 중‍이‍에‍요.';
+
+  @override
+  String proxyClosingSoon(String timeLeft) {
+    return '$timeLeft 후‍에 투‍표‍가 끝‍나‍요. 대‍리‍인‍이 투‍표‍할 시‍간‍이 부‍족‍할 수 있‍어‍요.';
+  }
+
+  @override
+  String get proxyCommitError =>
+      '위‍임‍을 시‍작‍하‍지 못‍했‍어‍요. 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get proxyConfirmCheckboxHint => '위‍임‍하‍려‍면 위‍의 확‍인‍란‍을 선‍택‍해 주‍세‍요.';
+
+  @override
+  String get proxyCountedLabel => '집‍계‍됨';
+
+  @override
+  String get proxyCountsOnlyWithBallot =>
+      '위‍임‍한 ZEC‍는 대‍리‍인‍이 투‍표‍가 끝‍나‍기 전‍에 완‍성‍된 투‍표‍용‍지‍를 제‍출‍해‍야‍만 집‍계‍돼‍요. 제‍출‍하‍지 않‍으‍면 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍아‍요.';
+
+  @override
+  String get proxyDelegatedLabel => '위‍임‍됨';
+
+  @override
+  String proxyDelegatedLine(String amount, String name, String stage) {
+    return '$name 대‍리‍인‍에‍게 $amount 위‍임‍했‍어‍요. $stage.';
+  }
+
+  @override
+  String proxyDelegatingStep(String handles) {
+    return '$handles 대‍리‍인‍에‍게 위‍임 중';
+  }
+
+  @override
+  String get proxyDelegationConfirmed => '위‍임‍을 전‍송‍했‍고 변‍경‍할 수 없‍어‍요.';
+
+  @override
+  String get proxyDirectorySubtitle =>
+      '대‍리‍인‍을 최‍대 8‍명‍까‍지 선‍택‍하‍세‍요. 다‍른 대‍리‍인‍은 정‍확‍한 핸‍들‍로 검‍색‍하‍거‍나 게‍시‍물, 키, 번‍호 또‍는 지‍문‍을 붙‍여 넣‍어 찾‍을 수 있‍어‍요.';
+
+  @override
+  String get proxyDirectoryTitle => '대‍리‍인 선‍택';
+
+  @override
+  String get proxyFinality =>
+      '위‍임‍은 라‍운‍드‍마‍다 한 번‍만 할 수 있‍어‍요. 확‍인‍한 뒤‍에‍는 변‍경‍할 수 없‍어‍요.';
+
+  @override
+  String get proxyFindLabel => '찾‍기';
+
+  @override
+  String get proxyHandedOffLabel => '전‍송‍됨';
+
+  @override
+  String proxyHasNotVotedYet(String name) {
+    return '$name 대‍리‍인‍이 아‍직 투‍표‍하‍지 않‍았‍어‍요';
+  }
+
+  @override
+  String get proxyHelperTiming =>
+      '헬‍퍼‍가 투‍표‍가 끝‍나‍기 전‍에 위‍임‍을 집‍계‍에 추‍가‍해‍요. 일‍찍 위‍임‍하‍면 무‍작‍위 시‍점‍에, 마‍지‍막 몇 시‍간 안‍에 위‍임‍하‍면 바‍로 추‍가‍해‍요. 투‍표 서‍버‍는 어‍떤 대‍리‍인‍을 선‍택‍했‍는‍지‍는 볼 수 있‍지‍만, 누‍가 선‍택‍했‍는‍지‍는 볼 수 없‍어‍요.';
+
+  @override
+  String get proxyIntro =>
+      '대‍리‍인‍이 이‍번 라‍운‍드‍의 모‍든 안‍건‍에 대‍신 투‍표‍해‍요. 신‍뢰‍하‍는 사‍람‍에‍게 투‍표‍권‍의 일‍부 또‍는 전‍부‍를 위‍임‍하‍세‍요.';
+
+  @override
+  String get proxyKeepForMyselfLabel => '내 몫‍으‍로 남‍기‍기';
+
+  @override
+  String get proxyKeepInstalled =>
+      '위‍임‍이 전‍송‍됨‍으‍로 표‍시‍될 때‍까‍지 Vizor‍를 삭‍제‍하‍지 마‍세‍요. 그 전‍에 다‍시 설‍치‍하‍거‍나 지‍갑‍을 복‍원‍하‍면 위‍임‍이 집‍계‍되‍지 않‍을 수 있‍고, 남‍겨 둔 ZEC‍는 지‍금 설‍치‍된 앱‍에‍서‍만 투‍표‍할 수 있‍어‍요.';
+
+  @override
+  String get proxyKeptShareUnanswered =>
+      'Vizor‍가 남‍겨 둔 ZEC‍에 대‍한 답‍변‍을 저‍장‍하‍지 못‍해‍서 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요. 질‍문‍으‍로 돌‍아‍가 다‍시 제‍출‍해 주‍세‍요.';
+
+  @override
+  String proxyKeptToAnswer(String amount) {
+    return '직‍접 답‍할 $amount';
+  }
+
+  @override
+  String get proxyLetDelegateVoteLabel => '대‍리‍인‍에‍게 일‍부 또‍는 전‍부 위‍임';
+
+  @override
+  String get proxyListUnavailable =>
+      '지‍금‍은 Vizor 대‍리‍인 목‍록‍을 사‍용‍할 수 없‍어‍요. 핸‍들‍로 검‍색‍하‍거‍나 대‍리‍인 키‍를 붙‍여 넣‍을 수‍는 있‍어‍요.';
+
+  @override
+  String get proxyLoadError => '위‍임 정‍보‍를 불‍러‍오‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String proxyLookalike(String handle) {
+    return '@$handle 핸‍들‍과 비‍슷‍해 보‍여‍요. 위‍임‍하‍기 전‍에 지‍문‍을 확‍인‍해 주‍세‍요.';
+  }
+
+  @override
+  String get proxyLookupNotFound => '그 키, 번‍호 또‍는 지‍문‍으‍로 등‍록‍된 대‍리‍인‍이 없‍어‍요.';
+
+  @override
+  String get proxyLookupUnrecognized =>
+      '마‍커 게‍시‍물, 대‍리‍인 키, 번‍호, 지‍문 중 어‍느 것‍에‍도 해‍당‍하‍지 않‍아‍요.';
+
+  @override
+  String proxyMismatch(String name) {
+    return 'Vizor‍가 표‍시‍한 $name 대‍리‍인 정‍보‍가 투‍표 체‍인‍과 일‍치‍하‍지 않‍아‍서 위‍임‍할 수 없‍어‍요.';
+  }
+
+  @override
+  String proxyNamesAnd(String names, String last) {
+    return '$names 및 $last';
+  }
+
+  @override
+  String get proxyNewThisRound => '이‍번 라‍운‍드 신‍규. 투‍표‍가 시‍작‍된 뒤 등‍록‍됐‍어‍요.';
+
+  @override
+  String get proxyNewThisRoundLabel => '이‍번 라‍운‍드 신‍규';
+
+  @override
+  String proxyNoBallot(String name) {
+    return '$name 대‍리‍인‍이 투‍표‍가 끝‍나‍기 전‍에 투‍표‍용‍지‍를 제‍출‍하‍지 않‍아‍서, 위‍임‍한 ZEC‍가 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍았‍어‍요.';
+  }
+
+  @override
+  String get proxyNoBallotNotCountedLabel =>
+      '투‍표‍용‍지 없‍음. 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍음';
+
+  @override
+  String get proxyNoBallotYetLabel => '아‍직 투‍표‍용‍지 없‍음';
+
+  @override
+  String get proxyNoDelegates => '대‍리‍인‍을 한 명 이‍상 선‍택‍해 주‍세‍요.';
+
+  @override
+  String get proxyNoDelegation => '이‍번 라‍운‍드‍에‍는 제‍출‍할 위‍임‍이 없‍어‍요.';
+
+  @override
+  String proxyNoSearchResults(String query) {
+    return '\"$query\" 핸‍들‍을 쓰‍는 대‍리‍인‍이 없‍어‍요. 정‍확‍한 핸‍들‍로 검‍색‍해‍야 해‍요.';
+  }
+
+  @override
+  String get proxyNotCounted =>
+      '헬‍퍼‍가 이 위‍임‍을 집‍계‍하‍기 전‍에 투‍표‍가 끝‍났‍어‍요. 위‍임‍이 집‍계‍되‍지 않‍았‍어‍요.';
+
+  @override
+  String get proxyNotCountedLabel => '집‍계‍되‍지 않‍음';
+
+  @override
+  String get proxyNotEnoughVotingPower =>
+      '대‍리‍인 한 명‍당 0.125 ZEC 이‍상‍의 투‍표‍권‍이 필‍요‍해‍요.';
+
+  @override
+  String proxyNotOnChain(String name) {
+    return 'Vizor‍가 투‍표 체‍인‍에‍서 $name 대‍리‍인‍을 찾‍지 못‍했‍어‍요.';
+  }
+
+  @override
+  String get proxyNotReviewed =>
+      '검‍토‍되‍지 않‍음. Vizor‍가 확‍인‍하‍지 않‍은 대‍리‍인‍이‍에‍요. 위‍임‍하‍기 전‍에 지‍문‍을 대‍리‍인 게‍시‍물‍에 있‍는 지‍문‍과 비‍교‍해 주‍세‍요.';
+
+  @override
+  String get proxyNotReviewedLabel => '검‍토‍되‍지 않‍음';
+
+  @override
+  String get proxyNothingLeftToVote =>
+      '이‍번 라‍운‍드‍의 투‍표‍권‍을 모‍두 위‍임‍해‍서 직‍접 투‍표‍할 투‍표‍권‍이 남‍아 있‍지 않‍아‍요. 대‍리‍인‍이 그 투‍표‍권‍으‍로 투‍표‍해‍요.';
+
+  @override
+  String proxyOptionFallback(int number) {
+    return '선‍택‍지 $number';
+  }
+
+  @override
+  String get proxyPasteHint => '게‍시‍물 텍‍스‍트, zvdk1 키, #번‍호 또‍는 지‍문';
+
+  @override
+  String get proxyPasteLabel => '붙‍여 넣‍기 또‍는 스‍캔';
+
+  @override
+  String get proxyPaused =>
+      '이‍번 라‍운‍드‍의 위‍임‍이 일‍시 중‍지‍됐‍어‍요. 이‍미 한 위‍임‍에‍는 영‍향‍이 없‍고, 투‍표‍는 계‍속‍할 수 있‍어‍요.';
+
+  @override
+  String get proxyPercentLabel => '비‍율';
+
+  @override
+  String get proxyPercentOver => '비‍율 합‍계‍는 100%를 넘‍을 수 없‍어‍요.';
+
+  @override
+  String get proxyPercentRequired => '대‍리‍인‍마‍다 비‍율‍을 입‍력‍해 주‍세‍요.';
+
+  @override
+  String proxyPickerCount(int count) {
+    return '8‍명 중 $count‍명 선‍택‍됨';
+  }
+
+  @override
+  String proxyPickerCountFull(int count) {
+    return '8‍명 중 $count‍명‍을 선‍택‍했‍어‍요. 대‍리‍인‍은 최‍대 8‍명‍까‍지 선‍택‍할 수 있‍어‍요.';
+  }
+
+  @override
+  String get proxyPickerFull => '대‍리‍인‍은 최‍대 8‍명‍까‍지 선‍택‍할 수 있‍어‍요.';
+
+  @override
+  String get proxyPlanChanged =>
+      '투‍표‍권‍이 바‍뀌‍었‍어‍요. 투‍표‍권 나‍누‍기‍를 확‍인‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get proxyPrivacy =>
+      '대‍리‍인‍은 내‍가 누‍구‍인‍지 볼 수 없‍고, 내 금‍액‍은 공‍개‍되‍지 않‍아‍요. 결‍과‍에‍는 선‍택‍지‍별 합‍계‍만 표‍시‍되‍고 대‍리‍인‍의 합‍계‍는 절‍대 표‍시‍되‍지 않‍으‍며, 내 ZEC‍는 대‍리‍인‍의 공‍개 투‍표‍용‍지‍를 따‍라‍요. 대‍리‍인‍이 고‍른 선‍택‍지‍에 직‍접 투‍표‍한 사‍람‍이 아‍무‍도 없‍으‍면 결‍과‍에‍서 대‍리‍인‍의 합‍계‍가 드‍러‍날 때‍가 있‍고, 내‍가 그 대‍리‍인‍의 유‍일‍한 위‍임‍자‍라‍면 내 금‍액‍도 함‍께 드‍러‍날 수 있‍어‍요. 결‍과‍에‍서 내‍가 누‍구‍인‍지‍는 절‍대 드‍러‍나‍지 않‍아‍요.';
+
+  @override
+  String get proxyProfileTitle => '대‍리‍인';
+
+  @override
+  String get proxyProfileUnavailable =>
+      '이 대‍리‍인 정‍보‍가 더 이‍상 남‍아 있‍지 않‍아‍요. 돌‍아‍가‍서 다‍시 찾‍아 주‍세‍요.';
+
+  @override
+  String get proxyProgressTitle => '위‍임 중';
+
+  @override
+  String get proxyProviderGitHubLabel => 'GitHub';
+
+  @override
+  String get proxyProviderXLabel => 'X';
+
+  @override
+  String get proxyRefused =>
+      '투‍표 체‍인‍이 아‍직 이 위‍임‍을 받‍아‍들‍이‍지 않‍았‍어‍요. Vizor‍가 투‍표‍가 끝‍날 때‍까‍지 계‍속 시‍도‍해‍요.';
+
+  @override
+  String get proxyRegistrationUnusable =>
+      '지‍금‍은 이 지‍갑‍의 투‍표 권‍한‍으‍로 위‍임‍할 수 없‍어‍요. 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요.';
+
+  @override
+  String get proxyRemoveFromDelegationLabel => '위‍임‍에‍서 제‍거';
+
+  @override
+  String get proxyResultsNote =>
+      '이 합‍계‍에‍는 내‍가 위‍임‍한 ZEC‍가 포‍함‍돼 있‍어‍요. 대‍리‍인‍이 어‍떻‍게 투‍표‍했‍는‍지‍는 라‍운‍드 화‍면‍에‍서 볼 수 있‍어‍요.';
+
+  @override
+  String get proxyReviewAnswersTitle => '내 답‍변';
+
+  @override
+  String get proxyReviewChanged =>
+      '확‍인 화‍면‍을 연 뒤‍에 대‍리‍인 정‍보‍가 바‍뀌‍어‍서 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요. 대‍리‍인‍을 확‍인‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get proxyReviewDelegatesTitle => '내 대‍리‍인';
+
+  @override
+  String get proxyReviewedLabel => '검‍토‍됨';
+
+  @override
+  String get proxyScanLabel => '스‍캔';
+
+  @override
+  String get proxyScanTitle => '대‍리‍인 QR 코‍드 스‍캔';
+
+  @override
+  String get proxySearchHint => 'X 또‍는 GitHub 핸‍들';
+
+  @override
+  String get proxySearchLabel => '핸‍들‍로 검‍색';
+
+  @override
+  String get proxySplitEvenlyLabel => '균‍등‍하‍게 나‍누‍기';
+
+  @override
+  String proxySplitTo(String amount, String name) {
+    return '$name 대‍리‍인‍에‍게 $amount';
+  }
+
+  @override
+  String get proxyStageIncluded => '포‍함‍됨';
+
+  @override
+  String get proxyStageSubmitting => '제‍출 중';
+
+  @override
+  String proxyTimeLeftHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count‍시‍간',
+      one: '$count‍시‍간',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String proxyTimeLeftMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count‍분',
+      one: '$count‍분',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get proxyTimingUnavailable =>
+      '지‍금‍은 투‍표 종‍료 시‍간‍을 확‍인‍할 수 없‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String proxyTimingWithClosingSoon(String votingEnds, String closingSoon) {
+    return '$votingEnds $closingSoon';
+  }
+
+  @override
+  String get proxyTooLate => '투‍표‍가 끝‍나‍서 이‍번 라‍운‍드‍에‍는 위‍임‍할 수 없‍어‍요.';
+
+  @override
+  String get proxyUnsupported => '이‍번 라‍운‍드‍에‍는 위‍임‍을 사‍용‍할 수 없‍어‍요.';
+
+  @override
+  String get proxyUsedElsewhere =>
+      '이 ZEC‍는 이‍번 라‍운‍드‍에 다‍른 기‍기‍에‍서 사‍용‍돼‍서 여‍기‍서 위‍임‍할 수 없‍어‍요.';
+
+  @override
+  String proxyVotingEnds(String time) {
+    return '투‍표‍와 마‍찬‍가‍지‍로 투‍표‍가 끝‍나‍는 $time‍까‍지 위‍임‍할 수 있‍어‍요.';
+  }
+
+  @override
+  String proxyVotingPower(String amount) {
+    return '내 투‍표‍권: $amount';
+  }
+
+  @override
+  String get proxyYouLabel => '나';
+
+  @override
+  String get proxyYourDelegationTitle => '내 위‍임';
+
+  @override
   String get receiveAboutAddressType => '이 주‍소 유‍형 알‍아‍보‍기';
 
   @override
@@ -11819,6 +12232,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String votingBundleOf(int number, int total) {
     return '$total‍개 중 $number‍번‍째 묶‍음';
   }
+
+  @override
+  String get votingCastsNeedSignature =>
+      '투‍표‍가 서‍명‍을 기‍다‍리‍고 있‍어‍요. 다‍시 시‍도‍해‍서 서‍명‍하‍고 전‍송‍해 주‍세‍요.';
 
   @override
   String votingChoiceFallback(int number) {

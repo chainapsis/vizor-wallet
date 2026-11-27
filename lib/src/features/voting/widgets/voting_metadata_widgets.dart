@@ -152,6 +152,7 @@ class VotingProposalCard extends StatelessWidget {
     this.titleCollapsedMaxLines,
     this.onDisabledOptionTap,
     this.onChoice,
+    this.footer,
     super.key,
   });
 
@@ -165,6 +166,10 @@ class VotingProposalCard extends StatelessWidget {
   final int? titleCollapsedMaxLines;
   final VoidCallback? onDisabledOptionTap;
   final ValueChanged<int?>? onChoice;
+
+  /// Shown under the options; a proxy delegation puts its delegates'
+  /// answers here.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -194,6 +199,7 @@ class VotingProposalCard extends StatelessWidget {
         missingSelectedOption: missingSelectedOption,
         onDisabledOptionTap: onDisabledOptionTap,
         onChoice: onChoice,
+        footer: footer,
       );
     }
     final titleStyle = AppTypography.headlineSmall.copyWith(
@@ -297,6 +303,10 @@ class VotingProposalCard extends StatelessWidget {
               onTap: () {},
             ),
           ],
+          if (footer case final footer?) ...[
+            const SizedBox(height: AppSpacing.s),
+            footer,
+          ],
         ],
       ),
     );
@@ -315,6 +325,7 @@ class _MobileVotingProposalCard extends StatelessWidget {
     required this.missingSelectedOption,
     required this.onDisabledOptionTap,
     required this.onChoice,
+    required this.footer,
   });
 
   final VotingProposalView proposal;
@@ -327,6 +338,7 @@ class _MobileVotingProposalCard extends StatelessWidget {
   final VotingOptionView? missingSelectedOption;
   final VoidCallback? onDisabledOptionTap;
   final ValueChanged<int?>? onChoice;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -395,6 +407,10 @@ class _MobileVotingProposalCard extends StatelessWidget {
             ),
             if (index != options.length - 1)
               const SizedBox(height: AppSpacing.s),
+          ],
+          if (footer case final footer?) ...[
+            const SizedBox(height: AppSpacing.s),
+            footer,
           ],
         ],
       ),

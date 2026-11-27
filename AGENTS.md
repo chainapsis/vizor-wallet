@@ -161,6 +161,46 @@ attempts and a seven-day retry interval. Legacy history keeps its attempt budget
 and dates when the classification field is added. Blocked startup must not be
 classified as a new user; retry recovery supplies the successful snapshot.
 
+## Proxy delegation (VIZOR_PROXY_DELEGATION_ENABLED)
+
+Proxy delegation is dormant. Its entry points, routes and job restorer
+exist only in a build that passes
+`--dart-define=VIZOR_PROXY_DELEGATION_ENABLED=true`; every shipped build
+leaves it off.
+
+Delegating is one way of answering a round's ballot, not a separate flow.
+The round screen's line (`ProxyVotingPowerLine`) opens the directory and the
+split, which return to the questions; the vote review shows the delegates,
+the finality checkbox and the kept share's answers, and its one submit
+commits the delegation and starts the job (`submitProxyBallot`). A
+delegation that keeps a share needs that share's answers: they are recorded
+as ballot intents before the commit, which zcash_voting refuses without
+them, and the vote job sends the 0x09 delegation before the casts. One that
+delegates everything needs no answers and starts the proxy job. The vote
+status screen draws the delegation's rows, and the round's voted view shows
+each delegate's ballot per question. A hardware
+account signs once per submit: the batch's signing round also signs the kept
+bundles whose first cast signs their delegation
+(`keptBundlesSigningFirstCast`), and the casts use those stored signatures
+once the batch lands. After a restart the job restorer reads the round's
+plan: recorded answers not yet confirmed (`roundPlanOwesBallotCasts`) get
+the vote job, so the casts go out in the background once the batch lands.
+
+zcash_voting keeps its own switch off as well, so a flag-on build still reads
+every round as unsupported. To develop against a gate-open chain, a debug
+build can turn that switch on with the dev-only Rust feature
+`unstable-proxy-delegation`:
+
+```bash
+VIZOR_UNSTABLE_PROXY_DELEGATION=1 fvm flutter run --dart-define=VIZOR_PROXY_DELEGATION_ENABLED=true
+cd rust && cargo test --lib --features unstable-proxy-delegation
+```
+
+Never enable it for a shipped build: a profile or release build refuses to
+compile it, cargokit adds it only to debug builds, and
+`unstable_proxy_delegation_guard` fails when `rust/Cargo.toml`, a script or a
+workflow turns it on.
+
 ## Deep-link Host (VIZOR_DEEPLINK_BASE_URL)
 
 The HTTPS origin Vizor claims for incoming links has **one** knob on

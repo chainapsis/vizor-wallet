@@ -1162,6 +1162,14 @@
   "@addressScanZcashPrompt": {
     "description": "Caption under the viewfinder of the mobile QR scanner."
   },
+  "appBackDelegate": "Delegate",
+  "@appBackDelegate": {
+    "description": "Back-link name of a delegate's profile screen."
+  },
+  "appBackDelegates": "Delegates",
+  "@appBackDelegates": {
+    "description": "Back-link name of the choose-delegates directory screen."
+  },
   "appBackDonation": "Donation",
   "@appBackDonation": {
     "description": "Back-link name of the donation screen."
@@ -1185,6 +1193,10 @@
   "appBackSend": "Send",
   "@appBackSend": {
     "description": "Back-link name of the Send screen."
+  },
+  "appBackSplit": "Split",
+  "@appBackSplit": {
+    "description": "Back-link name of the split screen, where the user divides voting power between delegates."
   },
   "appBackStatus": "Status",
   "@appBackStatus": {
@@ -11017,6 +11029,584 @@
   "@profilePictureUpdateFailed": {
     "description": "Error in the profile picture picker when saving failed."
   },
+  "proxyAddDelegateLabel": "Add delegate",
+  "@proxyAddDelegateLabel": {
+    "description": "Label or button on the split screen, where the user divides voting power between delegates."
+  },
+  "proxyAddLabel": "Add",
+  "@proxyAddLabel": {
+    "description": "Label or button on the choose-delegates directory screen."
+  },
+  "proxyAddToDelegationLabel": "Add to delegation",
+  "@proxyAddToDelegationLabel": {
+    "description": "Label or button on a delegate's profile screen."
+  },
+  "proxyAddedLabel": "Added",
+  "@proxyAddedLabel": {
+    "description": "Label or button on the choose-delegates directory screen."
+  },
+  "proxyAllocationTitle": "Split your voting power",
+  "@proxyAllocationTitle": {
+    "description": "Title on the mobile delegator screens and the split screen, where the user divides voting power between delegates."
+  },
+  "proxyAlreadyStartedVoting": "You've already started voting in this round, so you can't delegate.",
+  "@proxyAlreadyStartedVoting": {
+    "description": "Message on the delegator's status, progress and error text. Preview or commit refused: a vote of this wallet in the round started."
+  },
+  "proxyAlreadyVoted": "You've already voted in this round, so you can't delegate.",
+  "@proxyAlreadyVoted": {
+    "description": "Message on the delegator's status, progress and error text and the round screen's delegation section."
+  },
+  "proxyAnswerKeptShare": "Answer at least one question for the ZEC you keep, or delegate all of it, before submitting.",
+  "@proxyAnswerKeptShare": {
+    "description": "Message on the vote review screen. The review of a delegation that keeps a share with no answers yet."
+  },
+  "proxyAnswersForYou": "{count, plural, =1{{names} answers these for you} other{{names} answer these for you}}",
+  "@proxyAnswersForYou": {
+    "description": "Under each question that delegates answer for the user. {names} names {count} delegates, such as @alice and @bob.",
+    "placeholders": {
+      "names": {
+        "type": "String",
+        "example": "@alice and @bob"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "proxyBeforeYouDelegateTitle": "Before you delegate",
+  "@proxyBeforeYouDelegateTitle": {
+    "description": "Title on the vote review's delegation section."
+  },
+  "proxyBlockedRetired": "{name} has retired as a delegate.",
+  "@proxyBlockedRetired": {
+    "description": "Why a retired delegate can't be chosen, on the directory and the review. {name} is the delegate's name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "@alice"
+      }
+    }
+  },
+  "proxyBlockedSuspended": "{name} is suspended, so you can't delegate to them.",
+  "@proxyBlockedSuspended": {
+    "description": "Why a suspended delegate can't be chosen, on the directory and the review. {name} is the delegate's name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "@alice"
+      }
+    }
+  },
+  "proxyBrowseEmpty": "Vizor lists no delegates yet.",
+  "@proxyBrowseEmpty": {
+    "description": "Message on the choose-delegates directory screen."
+  },
+  "proxyCannotVerify": "Can't verify delegates right now. Try again later.",
+  "@proxyCannotVerify": {
+    "description": "Message on delegate mode status text and the delegator's status, progress and error text and the round screen's delegation section and the vote review's delegation section."
+  },
+  "proxyChangeDelegationLabel": "Change",
+  "@proxyChangeDelegationLabel": {
+    "description": "Label or button on the round screen's delegation section."
+  },
+  "proxyCheckingDelegates": "Checking your delegates on the voting chain.",
+  "@proxyCheckingDelegates": {
+    "description": "Message on the vote review's delegation section."
+  },
+  "proxyClosingSoon": "Voting ends in {timeLeft}. Your delegates may not have time to vote.",
+  "@proxyClosingSoon": {
+    "description": "Warning on the round screen's delegation section when voting ends within a day. {timeLeft} is a duration such as 3 hours.",
+    "placeholders": {
+      "timeLeft": {
+        "type": "String",
+        "example": "3 hours"
+      }
+    }
+  },
+  "proxyCommitError": "Couldn't start the delegation. Nothing was sent. Try again.",
+  "@proxyCommitError": {
+    "description": "Message on the vote review's delegation section."
+  },
+  "proxyConfirmCheckboxHint": "Check the box above to delegate.",
+  "@proxyConfirmCheckboxHint": {
+    "description": "Input placeholder on the vote review's delegation section. The review's footer under the finality checkbox while it is unticked, pointing there from the disabled submit button."
+  },
+  "proxyCountedLabel": "Counted",
+  "@proxyCountedLabel": {
+    "description": "Label or button on delegate mode status text and the delegator's status, progress and error text."
+  },
+  "proxyCountsOnlyWithBallot": "Your delegated ZEC counts only if your delegate submits a complete ballot before voting ends. If they don't, it isn't counted this round.",
+  "@proxyCountsOnlyWithBallot": {
+    "description": "Message on the round screen's delegation section and the vote review's delegation section."
+  },
+  "proxyDelegatedLabel": "Delegated",
+  "@proxyDelegatedLabel": {
+    "description": "Label or button on the voting round list. The poll list's status for such a round."
+  },
+  "proxyDelegatedLine": "Delegated {amount} to {name}. {stage}.",
+  "@proxyDelegatedLine": {
+    "description": "One delegation's line in the round status. {amount} is a ZEC amount, {name} the delegate's name and {stage} a stage word such as Sent.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "12.5 ZEC"
+      },
+      "name": {
+        "type": "String",
+        "example": "@alice"
+      },
+      "stage": {
+        "type": "String",
+        "example": "Sent"
+      }
+    }
+  },
+  "proxyDelegatingStep": "Delegating to {handles}",
+  "@proxyDelegatingStep": {
+    "description": "Progress step while a delegation is sent. {handles} names the delegates, such as @a and @b.",
+    "placeholders": {
+      "handles": {
+        "type": "String",
+        "example": "@alice and @bob"
+      }
+    }
+  },
+  "proxyDelegationConfirmed": "Your delegation was sent and can't be changed.",
+  "@proxyDelegationConfirmed": {
+    "description": "Message on the vote confirmation screen. The vote confirmation for a ballot the delegates answer entirely."
+  },
+  "proxyDirectorySubtitle": "Pick up to 8 delegates. Search for others by their exact handle, or paste their post, key, number or fingerprint.",
+  "@proxyDirectorySubtitle": {
+    "description": "Message on the choose-delegates directory screen."
+  },
+  "proxyDirectoryTitle": "Choose delegates",
+  "@proxyDirectoryTitle": {
+    "description": "Title on the choose-delegates directory screen and the mobile delegator screens."
+  },
+  "proxyFinality": "You can delegate once per round. After you confirm, you can't change it.",
+  "@proxyFinality": {
+    "description": "Message on the vote review's delegation section."
+  },
+  "proxyFindLabel": "Find",
+  "@proxyFindLabel": {
+    "description": "Label or button on the choose-delegates directory screen."
+  },
+  "proxyHandedOffLabel": "Sent",
+  "@proxyHandedOffLabel": {
+    "description": "Label or button on the delegator's status, progress and error text."
+  },
+  "proxyHasNotVotedYet": "{name} hasn't voted yet",
+  "@proxyHasNotVotedYet": {
+    "description": "A delegate's line in a question's status before their ballot lands. {name} is the delegate's name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "@alice"
+      }
+    }
+  },
+  "proxyHelperTiming": "Helpers add your delegation to the count before voting ends, at random times if you delegate early, or right away in the final hours. Vote servers can see which delegate you chose, but not who you are.",
+  "@proxyHelperTiming": {
+    "description": "Message on the vote review's delegation section."
+  },
+  "proxyIntro": "Your delegate votes for you on every proposal in this round. Delegate some or all of your voting power to people you trust.",
+  "@proxyIntro": {
+    "description": "Message on the vote review's delegation section."
+  },
+  "proxyKeepForMyselfLabel": "Keep for myself",
+  "@proxyKeepForMyselfLabel": {
+    "description": "Label or button on the split screen, where the user divides voting power between delegates and the vote review's delegation section."
+  },
+  "proxyKeepInstalled": "Keep Vizor installed until your delegation shows Sent. If you reinstall or restore your wallet before then, it may not be counted, and you can vote the ZEC you kept only from this install.",
+  "@proxyKeepInstalled": {
+    "description": "Message on the vote review's delegation section."
+  },
+  "proxyKeptShareUnanswered": "Vizor couldn't save your answers for the ZEC you keep, so nothing was sent. Go back to the questions and submit again.",
+  "@proxyKeptShareUnanswered": {
+    "description": "Message on the delegator's status, progress and error text. Commit refused because the kept share's answers were not recorded. The submit records them first, so this only shows for a bug."
+  },
+  "proxyKeptToAnswer": "{amount} for you to answer",
+  "@proxyKeptToAnswer": {
+    "description": "The kept part of the round screen's split: the ZEC the user still votes on directly.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "4 ZEC"
+      }
+    }
+  },
+  "proxyLetDelegateVoteLabel": "Let a delegate vote some or all",
+  "@proxyLetDelegateVoteLabel": {
+    "description": "Label or button on the round screen's delegation section. The round screen's way into choosing delegates."
+  },
+  "proxyListUnavailable": "Vizor's delegate list isn't available right now. You can still search by handle or paste a delegate's key.",
+  "@proxyListUnavailable": {
+    "description": "Message on the choose-delegates directory screen."
+  },
+  "proxyLoadError": "Couldn't load delegation details. Try again.",
+  "@proxyLoadError": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyLookalike": "Looks like @{handle}. Check the fingerprint before you delegate.",
+  "@proxyLookalike": {
+    "description": "Warning on a delegate whose handle looks like another delegate's. {handle} is the other handle without the @.",
+    "placeholders": {
+      "handle": {
+        "type": "String",
+        "example": "alice"
+      }
+    }
+  },
+  "proxyLookupNotFound": "No delegate is registered with that key, number or fingerprint.",
+  "@proxyLookupNotFound": {
+    "description": "Message on the choose-delegates directory screen."
+  },
+  "proxyLookupUnrecognized": "That isn't a marker post, a delegate key, a number or a fingerprint.",
+  "@proxyLookupUnrecognized": {
+    "description": "Message on the choose-delegates directory screen."
+  },
+  "proxyMismatch": "The details Vizor showed for {name} didn't match the voting chain, so you can't delegate to them.",
+  "@proxyMismatch": {
+    "description": "Review check that found a different key, provider or handle on the voting chain. {name} is the delegate's name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "@alice"
+      }
+    }
+  },
+  "proxyNamesAnd": "{names} and {last}",
+  "@proxyNamesAnd": {
+    "description": "Joins delegate names into one phrase, such as @a, @b and @c. {names} is the comma-separated list before the last name.",
+    "placeholders": {
+      "names": {
+        "type": "String",
+        "example": "@a, @b"
+      },
+      "last": {
+        "type": "String",
+        "example": "@c"
+      }
+    }
+  },
+  "proxyNewThisRound": "New this round. Registered after voting started.",
+  "@proxyNewThisRound": {
+    "description": "Message on a delegate's profile screen."
+  },
+  "proxyNewThisRoundLabel": "New this round",
+  "@proxyNewThisRoundLabel": {
+    "description": "Label or button on shared delegator widgets (delegate rows and notices)."
+  },
+  "proxyNoBallot": "{name} didn't submit a ballot before voting ended, so your delegated ZEC wasn't counted this round.",
+  "@proxyNoBallot": {
+    "description": "Round status after voting closed, for a delegate who submitted no ballot. {name} is the delegate's name, such as @alice.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "@alice"
+      }
+    }
+  },
+  "proxyNoBallotNotCountedLabel": "No ballot. Not counted this round.",
+  "@proxyNoBallotNotCountedLabel": {
+    "description": "Label or button on delegate mode status text and the delegator's status, progress and error text."
+  },
+  "proxyNoBallotYetLabel": "No ballot yet",
+  "@proxyNoBallotYetLabel": {
+    "description": "Label or button on delegate mode status text and the delegator's status, progress and error text."
+  },
+  "proxyNoDelegates": "Choose at least one delegate.",
+  "@proxyNoDelegates": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyNoDelegation": "This round has no delegation to submit.",
+  "@proxyNoDelegation": {
+    "description": "Vote status message from the voting job. A Submit retried on a round with no delegation to send."
+  },
+  "proxyNoSearchResults": "No delegate has the handle \"{query}\". Search needs the exact handle.",
+  "@proxyNoSearchResults": {
+    "description": "Choose-delegates directory screen, when a handle search finds nothing. {query} is what the user typed.",
+    "placeholders": {
+      "query": {
+        "type": "String",
+        "example": "alice"
+      }
+    }
+  },
+  "proxyNotCounted": "Voting ended before a helper could count this delegation. It was not counted.",
+  "@proxyNotCounted": {
+    "description": "Message on the round screen's delegation section and the vote status screen and the voting job's status message."
+  },
+  "proxyNotCountedLabel": "Not counted",
+  "@proxyNotCountedLabel": {
+    "description": "Label or button on the delegator's status, progress and error text."
+  },
+  "proxyNotEnoughVotingPower": "You need at least 0.125 ZEC of voting power for each delegate.",
+  "@proxyNotEnoughVotingPower": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyNotOnChain": "Vizor couldn't find {name} on the voting chain.",
+  "@proxyNotOnChain": {
+    "description": "Review check that found no registry entry for a chosen delegate. {name} is the delegate's name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "@alice"
+      }
+    }
+  },
+  "proxyNotReviewed": "Not reviewed. Vizor hasn't checked this delegate. Compare the fingerprint with the one in their post before you delegate.",
+  "@proxyNotReviewed": {
+    "description": "Message on shared delegator widgets (delegate rows and notices)."
+  },
+  "proxyNotReviewedLabel": "Not reviewed",
+  "@proxyNotReviewedLabel": {
+    "description": "Label or button on shared delegator widgets (delegate rows and notices)."
+  },
+  "proxyNothingLeftToVote": "You delegated all of your voting power in this round, so you have nothing left to vote. Your delegates vote for it.",
+  "@proxyNothingLeftToVote": {
+    "description": "Message on the vote review screen."
+  },
+  "proxyOptionFallback": "Option {number}",
+  "@proxyOptionFallback": {
+    "description": "A delegate's chosen answer when the round lists no label for it. {number} counts options from 1.",
+    "placeholders": {
+      "number": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "proxyPasteHint": "Post text, zvdk1 key, #number or fingerprint",
+  "@proxyPasteHint": {
+    "description": "Input placeholder on the choose-delegates directory screen."
+  },
+  "proxyPasteLabel": "Paste or scan",
+  "@proxyPasteLabel": {
+    "description": "Label or button on the choose-delegates directory screen. The paste or scan entry point."
+  },
+  "proxyPaused": "Delegating is paused for this round. Delegations already made aren't affected, and you can still vote.",
+  "@proxyPaused": {
+    "description": "Message on the delegator's status, progress and error text and the round screen's delegation section."
+  },
+  "proxyPercentLabel": "Share",
+  "@proxyPercentLabel": {
+    "description": "Label or button on the split screen, where the user divides voting power between delegates."
+  },
+  "proxyPercentOver": "Shares can't add up to more than 100%.",
+  "@proxyPercentOver": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyPercentRequired": "Enter a share for each delegate.",
+  "@proxyPercentRequired": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyPickerCount": "{count} of 8 chosen",
+  "@proxyPickerCount": {
+    "description": "Footer of the choose-delegates directory screen: how many of at most 8 delegates are chosen.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "proxyPickerCountFull": "{count} of 8 chosen. You can choose up to 8 delegates.",
+  "@proxyPickerCountFull": {
+    "description": "Footer of the choose-delegates directory screen once 8 delegates, the most allowed, are chosen.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "8"
+      }
+    }
+  },
+  "proxyPickerFull": "You can choose up to 8 delegates.",
+  "@proxyPickerFull": {
+    "description": "Message on the choose-delegates directory screen and the split screen, where the user divides voting power between delegates."
+  },
+  "proxyPlanChanged": "Your voting power changed. Review the split and try again.",
+  "@proxyPlanChanged": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyPrivacy": "Your delegate can't see who you are, and your amount isn't published. Results show only totals per option, never your delegate's total, and your ZEC follows your delegate's public ballot. If nobody voted directly for an option your delegate picked, results can sometimes reveal your delegate's total, and with it your amount if you're their only delegator. Results never reveal who you are.",
+  "@proxyPrivacy": {
+    "description": "Message on the vote review's delegation section."
+  },
+  "proxyProfileTitle": "Delegate",
+  "@proxyProfileTitle": {
+    "description": "Title on a delegate's profile screen and the mobile delegator screens."
+  },
+  "proxyProfileUnavailable": "This delegate isn't loaded any more. Go back and find them again.",
+  "@proxyProfileUnavailable": {
+    "description": "Message on a delegate's profile screen."
+  },
+  "proxyProgressTitle": "Delegating",
+  "@proxyProgressTitle": {
+    "description": "Title on the vote status screen."
+  },
+  "proxyProviderGitHubLabel": "GitHub",
+  "@proxyProviderGitHubLabel": {
+    "description": "Label or button on shared delegator widgets (delegate rows and notices) and the delegate mode dashboard and the delegate registration screen."
+  },
+  "proxyProviderXLabel": "X",
+  "@proxyProviderXLabel": {
+    "description": "Label or button on shared delegator widgets (delegate rows and notices) and the delegate mode dashboard and the delegate registration screen."
+  },
+  "proxyRefused": "The voting chain hasn't accepted this delegation yet. Vizor keeps trying until voting ends.",
+  "@proxyRefused": {
+    "description": "Message on the vote status screen. The progress screen while the chain refuses a sent batch, which the job keeps sending until voting ends. Not in the plan's copy table."
+  },
+  "proxyRegistrationUnusable": "This wallet's voting authorization can't carry a delegation right now. Nothing was sent.",
+  "@proxyRegistrationUnusable": {
+    "description": "Message on the delegator's status, progress and error text. Preview or commit refused: a bundle's registration can't carry a proxy batch, so nothing was committed."
+  },
+  "proxyRemoveFromDelegationLabel": "Remove from delegation",
+  "@proxyRemoveFromDelegationLabel": {
+    "description": "Label or button on a delegate's profile screen."
+  },
+  "proxyResultsNote": "These totals include the ZEC you delegated. The round shows how your delegates voted.",
+  "@proxyResultsNote": {
+    "description": "Message on the round screen's delegation section."
+  },
+  "proxyReviewAnswersTitle": "Your answers",
+  "@proxyReviewAnswersTitle": {
+    "description": "Title on the vote review screen."
+  },
+  "proxyReviewChanged": "A delegate changed since you opened this review, so nothing was sent. Check your delegates and try again.",
+  "@proxyReviewChanged": {
+    "description": "Message on the delegator's status, progress and error text. Commit refused: the check right before it no longer lets every delegate through, so the review shows the new check."
+  },
+  "proxyReviewDelegatesTitle": "Your delegates",
+  "@proxyReviewDelegatesTitle": {
+    "description": "Title on the vote review's delegation section. The review screen's section titles."
+  },
+  "proxyReviewedLabel": "Reviewed",
+  "@proxyReviewedLabel": {
+    "description": "Label or button on shared delegator widgets (delegate rows and notices)."
+  },
+  "proxyScanLabel": "Scan",
+  "@proxyScanLabel": {
+    "description": "Label or button on the choose-delegates directory screen and the delegate key import screen."
+  },
+  "proxyScanTitle": "Scan a delegate's QR code",
+  "@proxyScanTitle": {
+    "description": "Title on the choose-delegates directory screen."
+  },
+  "proxySearchHint": "X or GitHub handle",
+  "@proxySearchHint": {
+    "description": "Input placeholder on the choose-delegates directory screen."
+  },
+  "proxySearchLabel": "Search by handle",
+  "@proxySearchLabel": {
+    "description": "Label or button on the choose-delegates directory screen."
+  },
+  "proxySplitEvenlyLabel": "Split evenly",
+  "@proxySplitEvenlyLabel": {
+    "description": "Label or button on the split screen, where the user divides voting power between delegates."
+  },
+  "proxySplitTo": "{amount} to {name}",
+  "@proxySplitTo": {
+    "description": "One delegate's part of the round screen's split, for example 4 ZEC to @alice.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "4 ZEC"
+      },
+      "name": {
+        "type": "String",
+        "example": "@alice"
+      }
+    }
+  },
+  "proxyStageIncluded": "Included",
+  "@proxyStageIncluded": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyStageSubmitting": "Submitting",
+  "@proxyStageSubmitting": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyTimeLeftHours": "{count, plural, =1{{count} hour} other{{count} hours}}",
+  "@proxyTimeLeftHours": {
+    "description": "A whole number of hours left before voting ends, inserted into the closing-soon warning.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "proxyTimeLeftMinutes": "{count, plural, =1{{count} minute} other{{count} minutes}}",
+  "@proxyTimeLeftMinutes": {
+    "description": "A whole number of minutes left before voting ends, inserted into the closing-soon warning.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "proxyTimingUnavailable": "Can't check when voting ends right now. Try again later.",
+  "@proxyTimingUnavailable": {
+    "description": "Message on the delegator's status, progress and error text and the round screen's delegation section."
+  },
+  "proxyTimingWithClosingSoon": "{votingEnds} {closingSoon}",
+  "@proxyTimingWithClosingSoon": {
+    "description": "The round screen's timing notice in the final day: the voting-ends sentence followed by the closing-soon warning.",
+    "placeholders": {
+      "votingEnds": {
+        "type": "String",
+        "example": "You can delegate until voting ends 12 Dec, 14:00, just like voting."
+      },
+      "closingSoon": {
+        "type": "String",
+        "example": "Voting ends in 3 hours. Your delegates may not have time to vote."
+      }
+    }
+  },
+  "proxyTooLate": "Voting has ended, so you can't delegate in this round.",
+  "@proxyTooLate": {
+    "description": "Message on shared delegator widgets (delegate rows and notices) and the delegator's status, progress and error text and the round screen's delegation section."
+  },
+  "proxyUnsupported": "Delegation isn't available for this round.",
+  "@proxyUnsupported": {
+    "description": "Message on the delegator's status, progress and error text."
+  },
+  "proxyUsedElsewhere": "This ZEC was used from another device this round, so you can't delegate it here.",
+  "@proxyUsedElsewhere": {
+    "description": "Message on the delegator's status, progress and error text and the round screen's delegation section."
+  },
+  "proxyVotingEnds": "You can delegate until voting ends {time}, just like voting.",
+  "@proxyVotingEnds": {
+    "description": "Timing notice on the round screen's delegation section. {time} is the formatted vote end, such as 12 Dec, 14:00.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "12 Dec, 14:00"
+      }
+    }
+  },
+  "proxyVotingPower": "Your voting power: {amount}",
+  "@proxyVotingPower": {
+    "description": "Line on the split screen with the user's total voting power. {amount} is a ZEC amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "12.5 ZEC"
+      }
+    }
+  },
+  "proxyYouLabel": "You",
+  "@proxyYouLabel": {
+    "description": "Label or button on the delegator's status, progress and error text. The wallet's own line in a question's status."
+  },
+  "proxyYourDelegationTitle": "Your delegation",
+  "@proxyYourDelegationTitle": {
+    "description": "Title on the round screen's delegation section."
+  },
   "receiveAboutAddressType": "About this address type",
   "@receiveAboutAddressType": {
     "description": "Accessibility label of the help button that explains shielded versus transparent addresses."
@@ -15318,6 +15908,10 @@
         "type": "int"
       }
     }
+  },
+  "votingCastsNeedSignature": "Your votes are waiting for a signature. Retry to sign and send them.",
+  "@votingCastsNeedSignature": {
+    "description": "Vote status message when the votes kept after a delegation stopped for a hardware signature again."
   },
   "votingChoiceFallback": "Choice {number}",
   "@votingChoiceFallback": {

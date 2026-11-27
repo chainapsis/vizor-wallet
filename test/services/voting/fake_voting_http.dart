@@ -17,6 +17,7 @@ class FakeVotingHttpClient implements VotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     requests.add(
       FakeVotingHttpRequest('GET', uri, headers: headers, timeout: timeout),
@@ -43,10 +44,18 @@ class FakeVotingHttpClient implements VotingHttpClient {
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   }) async {
     requests.add(
-      FakeVotingHttpRequest('POST', uri, body: body, timeout: timeout),
+      FakeVotingHttpRequest(
+        'POST',
+        uri,
+        body: body,
+        headers: headers,
+        timeout: timeout,
+      ),
     );
     return _responseFor(uri);
   }

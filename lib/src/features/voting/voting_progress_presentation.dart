@@ -29,6 +29,17 @@ import 'voting_resume_plan.dart';
 /// by index, and both the desktop and mobile screens read the result.
 enum VotingSubmissionProgressStep { provingAuthority, castingVotes, finalizing }
 
+/// The row label of [step], shared by both progress screens and a ballot
+/// that carries a proxy delegation.
+String votingSubmissionProgressStepLabel(
+  AppLocalizations l10n,
+  VotingSubmissionProgressStep step,
+) => switch (step) {
+  VotingSubmissionProgressStep.provingAuthority => l10n.votingStepProving,
+  VotingSubmissionProgressStep.castingVotes => l10n.votingStepCasting,
+  VotingSubmissionProgressStep.finalizing => l10n.votingStepFinalizing,
+};
+
 /// How far the delegation proof for this round has come.
 class VotingAuthorityProgress {
   const VotingAuthorityProgress({

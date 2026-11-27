@@ -18,6 +18,7 @@ import 'src/providers/wallet_pir_server_provider.dart';
 import 'src/providers/account_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
+import 'src/core/config/proxy_delegation_feature_config.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
@@ -138,6 +139,7 @@ import 'src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import 'src/features/swap/models/swap_activity_navigation.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
 import 'src/features/swap/screens/swap_screen.dart';
+import 'src/features/voting/proxy/proxy_delegation_route_table.dart';
 import 'src/features/voting/screens/keystone_voting_scan_screen.dart';
 import 'src/features/voting/screens/voting_polls_screen.dart';
 import 'src/features/voting/screens/voting_proposal_detail_screen.dart';
@@ -164,6 +166,7 @@ import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/migration_send_gate_provider.dart';
 import 'src/providers/payment_uri_prefill_provider.dart';
 import 'src/providers/shared_payment_inbox_provider.dart';
+import 'src/providers/voting/voting_proxy_job_restorer_provider.dart';
 import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
@@ -1831,6 +1834,8 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       VotingResultsScreen(roundId: state.pathParameters['roundId'] ?? ''),
     ),
   ),
+  if (kVizorProxyDelegationEnabled)
+    ...proxyDelegationDesktopRoutes(guard: _guardVotingScreen),
 ];
 
 Widget _guardVotingScreen(Widget child) {
@@ -1908,6 +1913,9 @@ class ZcashWalletApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(votingShareTrackingRestorerProvider);
+    if (ref.watch(proxyDelegationFeatureEnabledProvider)) {
+      ref.watch(votingProxyJobRestorerProvider);
+    }
     ref.watch(paymentLinkClaimCoordinatorProvider);
     ref.watch(walletPirServerActivatorProvider);
     final appRouter = ref.watch(_routerProvider);

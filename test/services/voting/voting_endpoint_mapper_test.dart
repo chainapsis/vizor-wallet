@@ -74,6 +74,7 @@ void main() {
     await client.postJson(
       Uri.parse('https://vote.vizor-vote.invalid/api'),
       const {'vote': 1},
+      headers: const {'x-svote-codespace': '1'},
     );
 
     expect(
@@ -84,6 +85,7 @@ void main() {
       inner.postUris.single,
       Uri.parse('http://localhost:18080/vote.vizor-vote.invalid/api'),
     );
+    expect(inner.postHeaders.single, {'x-svote-codespace': '1'});
   });
 }
 
@@ -91,12 +93,16 @@ class _RecordingVotingHttpClient implements VotingHttpClient {
   final List<Uri> getUris = [];
   final List<Uri> postUris = [];
 
+  /// The headers each POST carried, in order.
+  final List<Map<String, String>?> postHeaders = [];
+
   @override
   Future<VotingHttpResponse> get(
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     getUris.add(uri);
     return VotingHttpResponse(statusCode: 200, bodyBytes: Uint8List(0));
@@ -106,9 +112,12 @@ class _RecordingVotingHttpClient implements VotingHttpClient {
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   }) async {
     postUris.add(uri);
+    postHeaders.add(headers);
     return VotingHttpResponse(statusCode: 200, bodyBytes: Uint8List(0));
   }
 }

@@ -179,6 +179,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         VotingRoundView.fromSummary(
           round,
           voted: recoveryStates[round.roundId]?.voted ?? false,
+          delegated: recoveryStates[round.roundId]?.delegated ?? false,
           inProgress: recoveryStates[round.roundId]?.inProgress ?? false,
           recoveryError: recoveryStates[round.roundId]?.recoveryError ?? false,
         ),
@@ -220,6 +221,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
           ),
         );
         if (recoveryState.voted ||
+            recoveryState.delegated ||
             recoveryState.inProgress ||
             recoveryState.recoveryError) {
           states[round.roundId] = recoveryState;
@@ -270,6 +272,16 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         record: (cache, plan) => cache.recordPlan(factKey, plan),
       );
     }
+    // Delegates took every bundle's weight; pending DC shares are the proxy
+    // job's, not a vote to resume.
+    if (roundPlanNothingLeftToVote(roundPlan)) {
+      return const _RoundListRecoveryState(
+        voted: false,
+        delegated: true,
+        inProgress: false,
+        recoveryError: false,
+      );
+    }
     if (hasBlockingRoundRecoveryWork(roundPlan)) {
       return const _RoundListRecoveryState(
         voted: false,
@@ -284,10 +296,9 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         recoveryError: false,
       );
     }
-
     return _RoundListRecoveryState(
       voted: false,
-      inProgress: roundPlan?.pendingRecovery ?? false,
+      inProgress: roundPlanHasPendingRecovery(roundPlan),
       recoveryError: false,
     );
   }
@@ -348,9 +359,14 @@ class _RoundListRecoveryState {
     required this.voted,
     required this.inProgress,
     required this.recoveryError,
+    this.delegated = false,
   });
 
   final bool voted;
+
+  /// Delegates took every bundle's weight, so nothing is left to vote.
+  final bool delegated;
+
   final bool inProgress;
   final bool recoveryError;
 }

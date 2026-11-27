@@ -880,6 +880,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressScanZcashPrompt => 'Scan a Zcash QR code to continue';
 
   @override
+  String get appBackDelegate => 'Delegate';
+
+  @override
+  String get appBackDelegates => 'Delegates';
+
+  @override
   String get appBackDonation => 'Donation';
 
   @override
@@ -896,6 +902,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get appBackSend => 'Send';
+
+  @override
+  String get appBackSplit => 'Split';
 
   @override
   String get appBackStatus => 'Status';
@@ -8643,6 +8652,416 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profilePictureUpdateFailed => 'Couldn\'t update profile picture.';
 
   @override
+  String get proxyAddDelegateLabel => 'Add delegate';
+
+  @override
+  String get proxyAddLabel => 'Add';
+
+  @override
+  String get proxyAddToDelegationLabel => 'Add to delegation';
+
+  @override
+  String get proxyAddedLabel => 'Added';
+
+  @override
+  String get proxyAllocationTitle => 'Split your voting power';
+
+  @override
+  String get proxyAlreadyStartedVoting =>
+      'You\'ve already started voting in this round, so you can\'t delegate.';
+
+  @override
+  String get proxyAlreadyVoted =>
+      'You\'ve already voted in this round, so you can\'t delegate.';
+
+  @override
+  String get proxyAnswerKeptShare =>
+      'Answer at least one question for the ZEC you keep, or delegate all of it, before submitting.';
+
+  @override
+  String proxyAnswersForYou(String names, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$names answer these for you',
+      one: '$names answers these for you',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get proxyBeforeYouDelegateTitle => 'Before you delegate';
+
+  @override
+  String proxyBlockedRetired(String name) {
+    return '$name has retired as a delegate.';
+  }
+
+  @override
+  String proxyBlockedSuspended(String name) {
+    return '$name is suspended, so you can\'t delegate to them.';
+  }
+
+  @override
+  String get proxyBrowseEmpty => 'Vizor lists no delegates yet.';
+
+  @override
+  String get proxyCannotVerify =>
+      'Can\'t verify delegates right now. Try again later.';
+
+  @override
+  String get proxyChangeDelegationLabel => 'Change';
+
+  @override
+  String get proxyCheckingDelegates =>
+      'Checking your delegates on the voting chain.';
+
+  @override
+  String proxyClosingSoon(String timeLeft) {
+    return 'Voting ends in $timeLeft. Your delegates may not have time to vote.';
+  }
+
+  @override
+  String get proxyCommitError =>
+      'Couldn\'t start the delegation. Nothing was sent. Try again.';
+
+  @override
+  String get proxyConfirmCheckboxHint => 'Check the box above to delegate.';
+
+  @override
+  String get proxyCountedLabel => 'Counted';
+
+  @override
+  String get proxyCountsOnlyWithBallot =>
+      'Your delegated ZEC counts only if your delegate submits a complete ballot before voting ends. If they don\'t, it isn\'t counted this round.';
+
+  @override
+  String get proxyDelegatedLabel => 'Delegated';
+
+  @override
+  String proxyDelegatedLine(String amount, String name, String stage) {
+    return 'Delegated $amount to $name. $stage.';
+  }
+
+  @override
+  String proxyDelegatingStep(String handles) {
+    return 'Delegating to $handles';
+  }
+
+  @override
+  String get proxyDelegationConfirmed =>
+      'Your delegation was sent and can\'t be changed.';
+
+  @override
+  String get proxyDirectorySubtitle =>
+      'Pick up to 8 delegates. Search for others by their exact handle, or paste their post, key, number or fingerprint.';
+
+  @override
+  String get proxyDirectoryTitle => 'Choose delegates';
+
+  @override
+  String get proxyFinality =>
+      'You can delegate once per round. After you confirm, you can\'t change it.';
+
+  @override
+  String get proxyFindLabel => 'Find';
+
+  @override
+  String get proxyHandedOffLabel => 'Sent';
+
+  @override
+  String proxyHasNotVotedYet(String name) {
+    return '$name hasn\'t voted yet';
+  }
+
+  @override
+  String get proxyHelperTiming =>
+      'Helpers add your delegation to the count before voting ends, at random times if you delegate early, or right away in the final hours. Vote servers can see which delegate you chose, but not who you are.';
+
+  @override
+  String get proxyIntro =>
+      'Your delegate votes for you on every proposal in this round. Delegate some or all of your voting power to people you trust.';
+
+  @override
+  String get proxyKeepForMyselfLabel => 'Keep for myself';
+
+  @override
+  String get proxyKeepInstalled =>
+      'Keep Vizor installed until your delegation shows Sent. If you reinstall or restore your wallet before then, it may not be counted, and you can vote the ZEC you kept only from this install.';
+
+  @override
+  String get proxyKeptShareUnanswered =>
+      'Vizor couldn\'t save your answers for the ZEC you keep, so nothing was sent. Go back to the questions and submit again.';
+
+  @override
+  String proxyKeptToAnswer(String amount) {
+    return '$amount for you to answer';
+  }
+
+  @override
+  String get proxyLetDelegateVoteLabel => 'Let a delegate vote some or all';
+
+  @override
+  String get proxyListUnavailable =>
+      'Vizor\'s delegate list isn\'t available right now. You can still search by handle or paste a delegate\'s key.';
+
+  @override
+  String get proxyLoadError => 'Couldn\'t load delegation details. Try again.';
+
+  @override
+  String proxyLookalike(String handle) {
+    return 'Looks like @$handle. Check the fingerprint before you delegate.';
+  }
+
+  @override
+  String get proxyLookupNotFound =>
+      'No delegate is registered with that key, number or fingerprint.';
+
+  @override
+  String get proxyLookupUnrecognized =>
+      'That isn\'t a marker post, a delegate key, a number or a fingerprint.';
+
+  @override
+  String proxyMismatch(String name) {
+    return 'The details Vizor showed for $name didn\'t match the voting chain, so you can\'t delegate to them.';
+  }
+
+  @override
+  String proxyNamesAnd(String names, String last) {
+    return '$names and $last';
+  }
+
+  @override
+  String get proxyNewThisRound =>
+      'New this round. Registered after voting started.';
+
+  @override
+  String get proxyNewThisRoundLabel => 'New this round';
+
+  @override
+  String proxyNoBallot(String name) {
+    return '$name didn\'t submit a ballot before voting ended, so your delegated ZEC wasn\'t counted this round.';
+  }
+
+  @override
+  String get proxyNoBallotNotCountedLabel =>
+      'No ballot. Not counted this round.';
+
+  @override
+  String get proxyNoBallotYetLabel => 'No ballot yet';
+
+  @override
+  String get proxyNoDelegates => 'Choose at least one delegate.';
+
+  @override
+  String get proxyNoDelegation => 'This round has no delegation to submit.';
+
+  @override
+  String proxyNoSearchResults(String query) {
+    return 'No delegate has the handle \"$query\". Search needs the exact handle.';
+  }
+
+  @override
+  String get proxyNotCounted =>
+      'Voting ended before a helper could count this delegation. It was not counted.';
+
+  @override
+  String get proxyNotCountedLabel => 'Not counted';
+
+  @override
+  String get proxyNotEnoughVotingPower =>
+      'You need at least 0.125 ZEC of voting power for each delegate.';
+
+  @override
+  String proxyNotOnChain(String name) {
+    return 'Vizor couldn\'t find $name on the voting chain.';
+  }
+
+  @override
+  String get proxyNotReviewed =>
+      'Not reviewed. Vizor hasn\'t checked this delegate. Compare the fingerprint with the one in their post before you delegate.';
+
+  @override
+  String get proxyNotReviewedLabel => 'Not reviewed';
+
+  @override
+  String get proxyNothingLeftToVote =>
+      'You delegated all of your voting power in this round, so you have nothing left to vote. Your delegates vote for it.';
+
+  @override
+  String proxyOptionFallback(int number) {
+    return 'Option $number';
+  }
+
+  @override
+  String get proxyPasteHint => 'Post text, zvdk1 key, #number or fingerprint';
+
+  @override
+  String get proxyPasteLabel => 'Paste or scan';
+
+  @override
+  String get proxyPaused =>
+      'Delegating is paused for this round. Delegations already made aren\'t affected, and you can still vote.';
+
+  @override
+  String get proxyPercentLabel => 'Share';
+
+  @override
+  String get proxyPercentOver => 'Shares can\'t add up to more than 100%.';
+
+  @override
+  String get proxyPercentRequired => 'Enter a share for each delegate.';
+
+  @override
+  String proxyPickerCount(int count) {
+    return '$count of 8 chosen';
+  }
+
+  @override
+  String proxyPickerCountFull(int count) {
+    return '$count of 8 chosen. You can choose up to 8 delegates.';
+  }
+
+  @override
+  String get proxyPickerFull => 'You can choose up to 8 delegates.';
+
+  @override
+  String get proxyPlanChanged =>
+      'Your voting power changed. Review the split and try again.';
+
+  @override
+  String get proxyPrivacy =>
+      'Your delegate can\'t see who you are, and your amount isn\'t published. Results show only totals per option, never your delegate\'s total, and your ZEC follows your delegate\'s public ballot. If nobody voted directly for an option your delegate picked, results can sometimes reveal your delegate\'s total, and with it your amount if you\'re their only delegator. Results never reveal who you are.';
+
+  @override
+  String get proxyProfileTitle => 'Delegate';
+
+  @override
+  String get proxyProfileUnavailable =>
+      'This delegate isn\'t loaded any more. Go back and find them again.';
+
+  @override
+  String get proxyProgressTitle => 'Delegating';
+
+  @override
+  String get proxyProviderGitHubLabel => 'GitHub';
+
+  @override
+  String get proxyProviderXLabel => 'X';
+
+  @override
+  String get proxyRefused =>
+      'The voting chain hasn\'t accepted this delegation yet. Vizor keeps trying until voting ends.';
+
+  @override
+  String get proxyRegistrationUnusable =>
+      'This wallet\'s voting authorization can\'t carry a delegation right now. Nothing was sent.';
+
+  @override
+  String get proxyRemoveFromDelegationLabel => 'Remove from delegation';
+
+  @override
+  String get proxyResultsNote =>
+      'These totals include the ZEC you delegated. The round shows how your delegates voted.';
+
+  @override
+  String get proxyReviewAnswersTitle => 'Your answers';
+
+  @override
+  String get proxyReviewChanged =>
+      'A delegate changed since you opened this review, so nothing was sent. Check your delegates and try again.';
+
+  @override
+  String get proxyReviewDelegatesTitle => 'Your delegates';
+
+  @override
+  String get proxyReviewedLabel => 'Reviewed';
+
+  @override
+  String get proxyScanLabel => 'Scan';
+
+  @override
+  String get proxyScanTitle => 'Scan a delegate\'s QR code';
+
+  @override
+  String get proxySearchHint => 'X or GitHub handle';
+
+  @override
+  String get proxySearchLabel => 'Search by handle';
+
+  @override
+  String get proxySplitEvenlyLabel => 'Split evenly';
+
+  @override
+  String proxySplitTo(String amount, String name) {
+    return '$amount to $name';
+  }
+
+  @override
+  String get proxyStageIncluded => 'Included';
+
+  @override
+  String get proxyStageSubmitting => 'Submitting';
+
+  @override
+  String proxyTimeLeftHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count hours',
+      one: '$count hour',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String proxyTimeLeftMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count minutes',
+      one: '$count minute',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get proxyTimingUnavailable =>
+      'Can\'t check when voting ends right now. Try again later.';
+
+  @override
+  String proxyTimingWithClosingSoon(String votingEnds, String closingSoon) {
+    return '$votingEnds $closingSoon';
+  }
+
+  @override
+  String get proxyTooLate =>
+      'Voting has ended, so you can\'t delegate in this round.';
+
+  @override
+  String get proxyUnsupported => 'Delegation isn\'t available for this round.';
+
+  @override
+  String get proxyUsedElsewhere =>
+      'This ZEC was used from another device this round, so you can\'t delegate it here.';
+
+  @override
+  String proxyVotingEnds(String time) {
+    return 'You can delegate until voting ends $time, just like voting.';
+  }
+
+  @override
+  String proxyVotingPower(String amount) {
+    return 'Your voting power: $amount';
+  }
+
+  @override
+  String get proxyYouLabel => 'You';
+
+  @override
+  String get proxyYourDelegationTitle => 'Your delegation';
+
+  @override
   String get receiveAboutAddressType => 'About this address type';
 
   @override
@@ -12001,6 +12420,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String votingBundleOf(int number, int total) {
     return 'Bundle $number of $total';
   }
+
+  @override
+  String get votingCastsNeedSignature =>
+      'Your votes are waiting for a signature. Retry to sign and send them.';
 
   @override
   String votingChoiceFallback(int number) {

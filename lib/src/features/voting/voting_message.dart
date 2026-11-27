@@ -51,6 +51,9 @@ enum VotingNoticeKind {
   chainNoUsableTransaction,
   chainRecoveryPending,
   chainCancelled,
+  proxyNoDelegation,
+  proxyNotCounted,
+  castsNeedSignature,
 }
 
 /// A message voting state keeps. It records what happened; [text] builds the
@@ -143,6 +146,9 @@ final class VotingNotice extends VotingMessage {
     VotingNoticeKind.chainRecoveryPending =>
       l10n.votingErrorChainRecoveryPending,
     VotingNoticeKind.chainCancelled => l10n.votingErrorChainCancelled,
+    VotingNoticeKind.proxyNoDelegation => l10n.proxyNoDelegation,
+    VotingNoticeKind.proxyNotCounted => l10n.proxyNotCounted,
+    VotingNoticeKind.castsNeedSignature => l10n.votingCastsNeedSignature,
   };
 
   @override

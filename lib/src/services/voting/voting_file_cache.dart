@@ -158,6 +158,12 @@ class VotingFileCache {
     });
   }
 
+  /// Deletes the folder at [relative] and everything in it, if present.
+  Future<void> removeFolder(String relative) async {
+    final folder = Directory('${(await directory()).path}/$relative');
+    if (await folder.exists()) await folder.delete(recursive: true);
+  }
+
   Future<void> removeAccount(String account) async {
     final folder = Directory('${(await directory()).path}/${digest(account)}');
     if (await folder.exists()) await folder.delete(recursive: true);

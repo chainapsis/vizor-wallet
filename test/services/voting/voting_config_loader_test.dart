@@ -960,6 +960,98 @@ void main() {
       );
     },
   );
+
+  group('proxy delegation hook', () {
+    final staticSource = parseStaticVotingConfigSource(
+      'https://voting.example/static-voting-config.json?checksum=sha256:'
+      '0000000000000000000000000000000000000000000000000000000000000000',
+    );
+    const mirrorA = 'https://voting.example/dynamic-voting-config.json';
+    const mirrorB = 'https://mirror.example/dynamic-voting-config.json';
+
+    /// A loader whose resolver refuses the first document alone, so a load
+    /// fetches both mirrors, and which hands each load to [observer].
+    VotingConfigLoader loader(
+      FakeVotingHttpClient http,
+      VotingDynamicConfigObserver? observer,
+    ) => VotingConfigLoader(
+      httpClient: http,
+      sourceUrl: staticSource.raw,
+      onDynamicConfigFetched: observer,
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => [mirrorA, mirrorB],
+      resolveVotingConfigFromAttempts:
+          ({
+            required source,
+            required staticBytes,
+            required attempts,
+            previous,
+          }) async {
+            if (attempts.length < 2) throw StateError('bad signature');
+            return rust_config_api.VotingConfigResolution(
+              config: _resolvedConfig(),
+              switchKind: rust_config.ConfigSwitchKind.initialLoad,
+              skippedMirrors: const [],
+            );
+          },
+    );
+
+    test('a load hands every fetched document to the observer, in order, '
+        'and waits for it', () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          staticSource.uri.toString(): '{"static":true}',
+          mirrorA: '{"a":true}',
+          mirrorB: '{"b":true}',
+        },
+      );
+      final fetches = <VotingDynamicConfigFetch>[];
+      var finished = false;
+      await loader(http, (fetch) async {
+        await Future<void>.delayed(Duration.zero);
+        fetches.add(fetch);
+        finished = true;
+      }).load();
+
+      expect(finished, isTrue);
+      expect(fetches.single.documents, [
+        utf8.encode('{"a":true}'),
+        utf8.encode('{"b":true}'),
+      ]);
+      expect(http.requests, hasLength(3), reason: 'the hook fetches nothing');
+    });
+
+    test('a failed load reaches no observer', () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          staticSource.uri.toString(): '{"static":true}',
+          mirrorA: '{"a":true}',
+          mirrorB: textResponse('down', statusCode: 503),
+        },
+      );
+      var calls = 0;
+      await expectLater(
+        loader(http, (_) async => calls++).load(),
+        throwsA(isA<VotingHttpException>()),
+      );
+      expect(calls, 0);
+    });
+
+    test('an observer that throws cannot fail the load', () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          staticSource.uri.toString(): '{"static":true}',
+          mirrorA: '{"a":true}',
+          mirrorB: '{"b":true}',
+        },
+      );
+      final resolution = await loader(
+        http,
+        (_) async => throw StateError('observer exploded'),
+      ).load();
+      expect(resolution.config.authenticatedRounds, isNotEmpty);
+    });
+  });
 }
 
 rust_config.ResolvedVotingConfig _resolvedConfig({

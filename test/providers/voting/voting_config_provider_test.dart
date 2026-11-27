@@ -324,6 +324,7 @@ class _NoopVotingHttpClient implements VotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     throw UnimplementedError('HTTP should not be used in this test.');
   }
@@ -332,7 +333,9 @@ class _NoopVotingHttpClient implements VotingHttpClient {
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   }) async {
     throw UnimplementedError('HTTP should not be used in this test.');
   }

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/voting/proxy/proxy_registry_providers.dart';
 import '../../features/voting/voting_recovery_service.dart';
 import '../../core/config/rpc_endpoint_config.dart';
 import '../../core/storage/app_secure_store.dart';
@@ -50,6 +51,7 @@ final votingConfigLoaderProvider = Provider<VotingConfigLoader>((ref) {
     httpClient: ref.watch(votingHttpClientProvider),
     sourceUrl: source?.sourceUrl,
     timeout: ref.watch(votingConfigLoaderTimeoutProvider),
+    onDynamicConfigFetched: ref.watch(proxyDynamicConfigObserverProvider),
   );
 });
 
@@ -316,7 +318,9 @@ abstract interface class VotingRoundSession {
     rust_session.ApiShareTrackingDrivePolicy? policy,
   });
 
-  /// Re-reads whether this round's designated immediate share is confirmed.
+  /// Re-reads whether this round's designated immediate share is confirmed,
+  /// or with [dcSlot], share [shareIndex] of the DC in that slot of
+  /// [bundleIndex].
   ///
   /// Answers now rather than on the tracking cadence, and never resubmits a
   /// share or picks a new helper, so it stays safe after the round has ended.
@@ -324,6 +328,7 @@ abstract interface class VotingRoundSession {
     required int bundleIndex,
     required int proposalId,
     required int shareIndex,
+    int? dcSlot,
   });
 }
 
@@ -544,11 +549,13 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
     required int bundleIndex,
     required int proposalId,
     required int shareIndex,
+    int? dcSlot,
   }) => _typed(
     () => inner.confirmImmediateShare(
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       shareIndex: shareIndex,
+      dcSlot: dcSlot,
     ),
   );
 }

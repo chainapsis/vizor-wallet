@@ -493,15 +493,6 @@ class _VotingSubmissionSteps extends StatelessWidget {
   final VotingSubmissionProgressStep activeStep;
   final double? activeStepProgress;
 
-  static String _label(
-    AppLocalizations l10n,
-    VotingSubmissionProgressStep step,
-  ) => switch (step) {
-    VotingSubmissionProgressStep.provingAuthority => l10n.votingStepProving,
-    VotingSubmissionProgressStep.castingVotes => l10n.votingStepCasting,
-    VotingSubmissionProgressStep.finalizing => l10n.votingStepFinalizing,
-  };
-
   @override
   Widget build(BuildContext context) {
     final steps = VotingSubmissionProgressStep.values;
@@ -518,7 +509,10 @@ class _VotingSubmissionSteps extends StatelessWidget {
                   ? _VotingSubmissionStepState.active.name
                   : _VotingSubmissionStepState.pending.name}',
             ),
-            label: _label(context.l10n, steps[index]),
+            label: votingSubmissionProgressStepLabel(
+              context.l10n,
+              steps[index],
+            ),
             state: index < activeStep.index
                 ? _VotingSubmissionStepState.complete
                 : index == activeStep.index

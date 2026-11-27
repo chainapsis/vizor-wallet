@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../core/config/proxy_delegation_feature_config.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/formatting/number_format.dart';
 import '../../../core/formatting/zec_amount.dart';
@@ -23,6 +24,7 @@ import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../services/voting/voting_models.dart';
 import '../../../services/voting/resolved_voting_config_extensions.dart';
+import '../proxy/screens/proxy_round_delegation.dart';
 import '../voting_choice_style.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
@@ -168,6 +170,9 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
                   session.value?.accountUuid,
                 ),
                 showDesktopToolbar: widget.showDesktopToolbar,
+                footer: ref.watch(proxyDelegationFeatureEnabledProvider)
+                    ? ProxyResultsDelegationNote(roundId: widget.roundId)
+                    : null,
               );
             },
           ),
@@ -209,6 +214,7 @@ class VotingResultsContent extends StatelessWidget {
     this.selectedChoices = const {},
     this.profilePictureId,
     this.showDesktopToolbar = false,
+    this.footer,
   });
 
   final String title;
@@ -220,6 +226,9 @@ class VotingResultsContent extends StatelessWidget {
   final Map<int, int?> selectedChoices;
   final String? profilePictureId;
   final bool showDesktopToolbar;
+
+  /// Shown below the result cards; the proxy delegation note (PD-8) uses it.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -280,6 +289,7 @@ class VotingResultsContent extends StatelessWidget {
                   profilePictureId: profilePictureId,
                 ),
               ),
+          ?footer,
         ],
       ),
     );

@@ -12,6 +12,7 @@ class VotingShareTrackingRegistry {
       {};
   final Map<Completer<void>, String?> _backgroundWork = {};
   final Set<VoidCallback> _restoreRequestListeners = {};
+  final Set<VoidCallback> _resumeListeners = {};
   final Map<String, int> _accountQuiescenceDepths = {};
   int _globalQuiescenceDepth = 0;
 
@@ -46,6 +47,17 @@ class VotingShareTrackingRegistry {
 
   void removeRestoreRequestListener(VoidCallback listener) {
     _restoreRequestListeners.remove(listener);
+  }
+
+  /// Calls [listener] after every [resume], so work refused while the
+  /// registry was quiesced can try again.
+  void addResumeListener(VoidCallback listener) {
+    _resumeListeners.add(listener);
+  }
+
+  /// Stops calling [listener] after a resume.
+  void removeResumeListener(VoidCallback listener) {
+    _resumeListeners.remove(listener);
   }
 
   void requestRestore() {
@@ -125,6 +137,9 @@ class VotingShareTrackingRegistry {
       } else {
         _accountQuiescenceDepths[accountUuid] = depth - 1;
       }
+    }
+    for (final listener in List<VoidCallback>.of(_resumeListeners)) {
+      listener();
     }
   }
 
