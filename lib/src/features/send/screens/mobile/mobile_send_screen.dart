@@ -2301,6 +2301,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       });
     });
     final colors = context.colors;
+    final safePadding = MediaQuery.paddingOf(context);
     final showRecipientFocusOverlay = _showRecipientFocusOverlay;
     final showRecipientFieldLayer =
         _phase == _SendPhase.compose && _step == _SendStep.recipient;
@@ -2377,12 +2378,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 if (showRecipientFieldLayer)
                   Positioned(
                     key: const ValueKey('mobile_send_recipient_field_layer'),
-                    top:
-                        MediaQuery.paddingOf(context).top +
-                        kMobileTopNavHeight +
-                        AppSpacing.s,
-                    left: kMobilePageMargin,
-                    right: kMobilePageMargin,
+                    top: safePadding.top + kMobileTopNavHeight + AppSpacing.s,
+                    // This layer sits outside SafeArea to paint the focus
+                    // backdrop, but its controls share the body's safe bounds.
+                    left: safePadding.left + kMobilePageMargin,
+                    right: safePadding.right + kMobilePageMargin,
                     child: _buildAddressFieldGroup(context),
                   ),
                 if (showRecipientFocusOverlay) ...[
@@ -2391,11 +2391,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       key: const ValueKey(
                         'mobile_send_recipient_focus_continue_layer',
                       ),
-                      left: kMobilePageMargin,
-                      right: kMobilePageMargin,
-                      bottom:
-                          MediaQuery.paddingOf(context).bottom +
-                          kMobileFooterGap,
+                      left: safePadding.left + kMobilePageMargin,
+                      right: safePadding.right + kMobilePageMargin,
+                      bottom: safePadding.bottom + kMobileFooterGap,
                       child: _buildRecipientContinueButton(
                         context,
                         useBackdropColors: true,
