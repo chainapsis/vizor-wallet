@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/features/voting/proxy/delegate_key_store.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import '../../support/test_l10n.dart';
@@ -370,6 +371,35 @@ void main() {
       ),
       [7],
     );
+  });
+
+  test("a delegate key's export is an app-managed secret: encrypted, "
+      'rotated by a password change, read only unlocked and deleted', () async {
+    await store.configurePassword(_oldPassword);
+    final keys = SecureStoreDelegateKeyStore(store);
+    const dk = 'zvdk1delegate';
+    const secret = 'zvdsk1756mzhlxkxgt8uffx9mgffjumf2mt2gmud8fw5xctdcpsgsp3j2s';
+    await keys.write(dk, secret);
+    final key = AppSecureStore.delegateKeyStorageKey(dk);
+    expect(key, 'zcash_delegate_key_$dk');
+    final payload = await store.readPlain(key);
+    expect(payload, isNot(contains('zvdsk1')));
+
+    expect(
+      await store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      ),
+      isTrue,
+    );
+    expect(await store.readPlain(key), isNot(payload));
+    expect(await keys.read(dk), secret);
+
+    store.clearSessionPassword();
+    expect(await keys.read(dk), isNull, reason: 'a locked wallet reads none');
+    store.setSessionPassword(_newPassword);
+    await keys.delete(dk);
+    expect(await keys.read(dk), isNull);
   });
 
   test('deleteVotingHotkeysForAccount only clears matching account', () async {

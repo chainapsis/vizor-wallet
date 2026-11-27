@@ -139,6 +139,7 @@ import 'src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import 'src/features/swap/models/swap_activity_navigation.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
 import 'src/features/swap/screens/swap_screen.dart';
+import 'src/features/voting/proxy/delegate_mode_providers.dart';
 import 'src/features/voting/proxy/proxy_delegation_route_table.dart';
 import 'src/features/voting/screens/keystone_voting_scan_screen.dart';
 import 'src/features/voting/screens/voting_polls_screen.dart';
@@ -1834,8 +1835,10 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       VotingResultsScreen(roundId: state.pathParameters['roundId'] ?? ''),
     ),
   ),
-  if (kVizorProxyDelegationEnabled)
+  if (kVizorProxyDelegationEnabled) ...[
     ...proxyDelegationDesktopRoutes(guard: _guardVotingScreen),
+    ...delegateModeDesktopRoutes(guard: _guardVotingScreen),
+  ],
 ];
 
 Widget _guardVotingScreen(Widget child) {
@@ -1915,6 +1918,7 @@ class ZcashWalletApp extends ConsumerWidget {
     ref.watch(votingShareTrackingRestorerProvider);
     if (ref.watch(proxyDelegationFeatureEnabledProvider)) {
       ref.watch(votingProxyJobRestorerProvider);
+      ref.watch(delegateBallotResendRestorerProvider);
     }
     ref.watch(paymentLinkClaimCoordinatorProvider);
     ref.watch(walletPirServerActivatorProvider);

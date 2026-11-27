@@ -13,6 +13,7 @@ import '../../../services/voting/voting_http.dart';
 import '../../../services/voting/voting_participation_client.dart';
 import '../voting_flow_models.dart';
 import 'composite_proxy_delegation_repository.dart';
+import 'delegate_verifier_client.dart';
 import 'proxy_delegation_presentation.dart';
 import 'proxy_delegation_repository.dart';
 import 'proxy_delegator_client.dart';
@@ -69,6 +70,11 @@ final proxyRegistryProofClientProvider = Provider<ProxyRegistryProofClient>(
     ref.watch(proxyHttpClientProvider),
     clock: ref.watch(proxyClockProvider),
   ),
+);
+
+/// Verifier API requests over the proxy HTTP client.
+final delegateVerifierClientProvider = Provider<DelegateVerifierClient>(
+  (ref) => DelegateVerifierClient(ref.watch(proxyHttpClientProvider)),
 );
 
 /// Registry document fetches over the proxy HTTP client.

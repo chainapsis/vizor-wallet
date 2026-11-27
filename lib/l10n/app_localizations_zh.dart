@@ -829,7 +829,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanZcashPrompt => '请扫描 Zcash 二维码以继续';
 
   @override
+  String get appBackBallot => '选票';
+
+  @override
   String get appBackDelegate => '代理人';
+
+  @override
+  String get appBackDelegateMode => '代理人模式';
 
   @override
   String get appBackDelegates => '代理人列表';
@@ -841,10 +847,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appBackHardwareWallets => '硬件钱包';
 
   @override
+  String get appBackImportKey => '导入密钥';
+
+  @override
   String get appBackImportMethods => '导入方式';
 
   @override
   String get appBackReceive => '接收';
+
+  @override
+  String get appBackRegister => '注册';
+
+  @override
+  String get appBackRetire => '退出';
 
   @override
   String get appBackReview => '确认';
@@ -1898,6 +1913,448 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonZcashAddress => 'Zcash 地址';
+
+  @override
+  String get delegateAlreadySubmitted => '你已提交本轮的选票。';
+
+  @override
+  String delegateAnswered(int answered, int total) {
+    return '已回答 $answered/$total';
+  }
+
+  @override
+  String get delegateAttestationRejected => '投票链未接受验证服务器的校验结果。请重新验证你的帖子。';
+
+  @override
+  String get delegateBackToDelegateModeLabel => '返回代理人模式';
+
+  @override
+  String get delegateBallotConfirmTitle => '确认选票';
+
+  @override
+  String get delegateBallotCounted => '已计入。你的选票已在链上。';
+
+  @override
+  String get delegateBallotFailed => '无法提交你的选票。请重试。';
+
+  @override
+  String get delegateBallotInvalidOption => '投票链拒绝了此选票，因为其中有答案不是有效选项。';
+
+  @override
+  String get delegateBallotOnChain => '选票已提交并在链上确认。投票结束时计入。';
+
+  @override
+  String get delegateBallotPendingLabel => '选票已提交，正在链上确认';
+
+  @override
+  String get delegateBallotProgress => '请保持 Vizor 打开。选票通常会在一分钟内确认。';
+
+  @override
+  String get delegateBallotProgressTitle => '正在提交选票';
+
+  @override
+  String get delegateBallotRejected => '投票链拒绝了你的选票。';
+
+  @override
+  String delegateBallotReminder(String time) {
+    return '请在 $time 投票结束前提交选票，否则委托给你的 ZEC 不计入本轮。';
+  }
+
+  @override
+  String get delegateBallotRoundNoBallots => '本轮不接受代理人选票。';
+
+  @override
+  String get delegateBallotStillConfirming => '仍在确认中。Vizor 会在后台继续尝试。';
+
+  @override
+  String get delegateBallotSubmittedLabel => '选票已提交';
+
+  @override
+  String get delegateBallotSubmittedTitle => '选票已提交';
+
+  @override
+  String get delegateBallotTitle => '你的选票';
+
+  @override
+  String get delegateBallotTooLate => '你的选票上链前投票已结束，因此选票未被接受。委托给你的 ZEC 不计入本轮。';
+
+  @override
+  String get delegateBallotUnknownRound => '投票链无法识别此轮次。';
+
+  @override
+  String get delegateContinueRegistrationLabel => '继续注册';
+
+  @override
+  String get delegateCopyKeyLabel => '复制密钥';
+
+  @override
+  String get delegateCopyMarkerLabel => '复制标记文本';
+
+  @override
+  String delegateCountAtLeast(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '至少 $count 次委托',
+      one: '至少 $count 次委托',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get delegateCountNone => '暂无已公开的委托';
+
+  @override
+  String get delegateCreateKeyError => '无法创建代理人密钥。未保存任何内容。请重试。';
+
+  @override
+  String get delegateCreateKeyLabel => '创建代理人密钥';
+
+  @override
+  String get delegateDifferentBallotOnChain => '本轮链上已有另一张选票。Vizor 不会再提交另一张选票。';
+
+  @override
+  String get delegateExportError => '无法读取代理人密钥。请重试。';
+
+  @override
+  String get delegateExportKeyLabel => '导出密钥';
+
+  @override
+  String get delegateExportedKey => '任何人获得此文本或二维码，都能以你的身份投票。请离线保存。';
+
+  @override
+  String get delegateFinalMinute => '投票结束后才上链的选票会被拒绝，委托给你的 ZEC 也不计入本轮。';
+
+  @override
+  String get delegateFinalMinuteTitle => '投票即将结束';
+
+  @override
+  String delegateFinalMinutes(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: '投票将在 $minutes 分钟后结束。请立即提交选票。',
+      one: '投票将在 $minutes 分钟后结束。请立即提交选票。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get delegateFinishRegistering => '此密钥尚未注册。请发布它的标记文本并完成验证，即可开始接收委托。';
+
+  @override
+  String get delegateFinishRegisteringTitle => '完成注册';
+
+  @override
+  String get delegateHandleTaken =>
+      '此用户名已有代理人登记，在该登记退出之前无法再次注册。如果你有它的密钥，请在此导入该密钥并点按“退出”，然后重新注册。如果密钥已丢失，请让投票协调方将该代理人登记退出。';
+
+  @override
+  String get delegateHideKeyLabel => '隐藏密钥';
+
+  @override
+  String get delegateHowPeopleFindYou =>
+      '其他人可以通过你准确的用户名找到你，也可以粘贴你的密钥、编号或指纹来查找。各钱包也可能在完成自己的审核后将你列出。';
+
+  @override
+  String get delegateImport => '请粘贴或扫描你从代理人模式导出的密钥。它以 zvdsk1 开头。切勿在此输入钱包助记词。';
+
+  @override
+  String get delegateImportFieldLabel => '代理人密钥';
+
+  @override
+  String get delegateImportHint => 'zvdsk1...';
+
+  @override
+  String get delegateImportInvalid => '这不是代理人密钥。导出的密钥以 zvdsk1 开头。';
+
+  @override
+  String get delegateImportKeyLabel => '导入代理人密钥';
+
+  @override
+  String get delegateImportLabel => '导入';
+
+  @override
+  String get delegateImportScanTitle => '扫描代理人密钥二维码';
+
+  @override
+  String get delegateImportTitle => '导入代理人密钥';
+
+  @override
+  String get delegateImportedTitle => '密钥已导入';
+
+  @override
+  String get delegateImportedUnregistered => '此密钥尚未注册。注册后即可开始接收委托。';
+
+  @override
+  String get delegateIntroLostKey =>
+      '代理人密钥丢失且没有备份？请让投票协调方将你的代理人登记退出。之后你可以使用新密钥重新注册。';
+
+  @override
+  String get delegateIntroTitle => '成为代理人';
+
+  @override
+  String get delegateKeepPost => '请保留这条帖子。它是证明此密钥属于你的公开凭证。';
+
+  @override
+  String get delegateKeyBackup =>
+      '你的代理人密钥存储在此设备上。导出密钥可进行备份，或将其转移到其他设备。它不是钱包助记词，也不持有任何 ZEC。';
+
+  @override
+  String get delegateKeyLabel => '代理人密钥';
+
+  @override
+  String get delegateKeyRegisteredBefore => '此密钥之前已注册过，因此无法再次注册。请使用新密钥重新开始。';
+
+  @override
+  String get delegateKeyTitle => '你的代理人密钥';
+
+  @override
+  String get delegateKeyUnregistrable => '此密钥无法注册。请使用新密钥重新开始。';
+
+  @override
+  String get delegateLoadError => '无法加载代理人模式。请重试。';
+
+  @override
+  String get delegateMarkerGitHub => '请用你的 GitHub 账户创建一个公开 Gist，内容与此文本完全一致。';
+
+  @override
+  String get delegateMarkerTitle => '你的标记文本';
+
+  @override
+  String get delegateMarkerX => '请用你的 X 账户将此文本原样发布为一条新帖子，不要以回复或引用的形式发布。';
+
+  @override
+  String get delegateModeEntry => '代表委托给你的人投票。';
+
+  @override
+  String get delegateModeTitle => '代理人模式';
+
+  @override
+  String get delegateNoEntryForKey => '投票链上没有你的密钥对应的代理人登记。';
+
+  @override
+  String get delegateNoRounds => '目前没有接受委托的投票轮次。';
+
+  @override
+  String get delegateNotRegistered => '提交选票前，请先注册成为代理人。';
+
+  @override
+  String get delegateNothingToRegister => '此设备上没有可注册的密钥。';
+
+  @override
+  String get delegateNothingToRetire => '此设备上没有可退出的代理人登记。';
+
+  @override
+  String get delegateOpenBallotLabel => '打开选票';
+
+  @override
+  String get delegateOpenDashboardLabel => '打开代理人模式';
+
+  @override
+  String get delegateProofLinkGitHubHint =>
+      'https://gist.github.com/yourhandle/...';
+
+  @override
+  String get delegateProofLinkGitHubInvalid =>
+      '请粘贴你在 gist.github.com 上的 Gist 链接。';
+
+  @override
+  String get delegateProofLinkGitHubLabel => '你的 Gist 链接';
+
+  @override
+  String get delegateProofLinkXHint => 'https://x.com/yourhandle/status/...';
+
+  @override
+  String get delegateProofLinkXInvalid => '请粘贴你在 x.com 上的帖子链接。';
+
+  @override
+  String get delegateProofLinkXLabel => '你的帖子链接';
+
+  @override
+  String get delegateProviderTitle => '证明账户归属';
+
+  @override
+  String get delegateReauthBallotBiometricReason => '验证身份以签名选票';
+
+  @override
+  String get delegateReauthBallotSubtitle => '用于签名你的选票。';
+
+  @override
+  String get delegateReauthExportBiometricReason => '验证身份以访问代理人密钥';
+
+  @override
+  String get delegateReauthExportSubtitle => '用于导出代理人密钥。';
+
+  @override
+  String get delegateReauthFailed => '无法验证身份。请重试。';
+
+  @override
+  String get delegateReauthRegisterBiometricReason => '验证身份以注册代理人密钥';
+
+  @override
+  String get delegateReauthRegisterSubtitle => '用于注册代理人密钥。';
+
+  @override
+  String get delegateReauthRetireBiometricReason => '验证身份以退出代理人身份';
+
+  @override
+  String get delegateReauthRetireSubtitle => '用于退出代理人身份。';
+
+  @override
+  String get delegateRegisterClosed => '代理人注册目前已关闭。请稍后重试。';
+
+  @override
+  String get delegateRegisterFailed => '无法注册此密钥。请重试。';
+
+  @override
+  String get delegateRegisterRejected => '投票链拒绝了此注册。请稍后重试。';
+
+  @override
+  String get delegateRegisterTitle => '注册成为代理人';
+
+  @override
+  String delegateRegistered(String handle) {
+    return 'Vizor 已验证 @$handle。你现在可以提交选票，包括已在进行中的轮次。';
+  }
+
+  @override
+  String get delegateRegisteredTitle => '你已注册';
+
+  @override
+  String get delegateRegistrationPending =>
+      '你的注册已发送，但尚未上链。Vizor 会持续检查。你也可以重新验证你的帖子。';
+
+  @override
+  String get delegateRegistryFull => '代理人注册表已满。请稍后重试。';
+
+  @override
+  String get delegateRetireEntryTitle => '将退出的代理人登记';
+
+  @override
+  String get delegateRetireFailed => '无法退出。你的代理人登记仍可投票。请重试。';
+
+  @override
+  String get delegateRetireLabel => '退出';
+
+  @override
+  String get delegateRetireSuspended => '投票协调方已暂停你的代理人登记，因此它无法自行退出。';
+
+  @override
+  String get delegateRetired =>
+      '你的代理人登记已退出，因此此密钥无法再投票。如需重新成为代理人，请使用新密钥重新开始并再次注册。';
+
+  @override
+  String get delegateRetiredBallot => '你的代理人登记已退出，因此无法提交选票。';
+
+  @override
+  String get delegateRetiredDone => '你的代理人登记已无法再投票。';
+
+  @override
+  String get delegateRetiredTitle => '你已退出';
+
+  @override
+  String get delegateRoundsTitle => '投票轮次';
+
+  @override
+  String get delegateStartOver => '这会从此设备上删除该密钥。除非你已导出该密钥，否则此操作无法撤销。';
+
+  @override
+  String get delegateStartOverConfirmLabel => '移除密钥';
+
+  @override
+  String get delegateStartOverError => '无法移除此密钥。已注册的密钥会一直保留，直到其代理人登记退出。请重试。';
+
+  @override
+  String get delegateStartOverLabel => '使用新密钥重新开始';
+
+  @override
+  String get delegateStartOverSaveKey => '重新开始前请保存此密钥。如果此次注册最终仍上链，你需要用它来投票或退出。';
+
+  @override
+  String get delegateStartOverSavedLabel => '我已保存此密钥';
+
+  @override
+  String get delegateStartOverTitle => '要移除此密钥吗？';
+
+  @override
+  String get delegateStepCheckingPost => '正在检查你的帖子';
+
+  @override
+  String get delegateStepConfirming => '正在链上确认';
+
+  @override
+  String get delegateStepRegistering => '正在投票链上注册';
+
+  @override
+  String get delegateStepSigning => '正在签名选票';
+
+  @override
+  String get delegateStepSubmitting => '正在提交选票';
+
+  @override
+  String get delegateSubmitAnywayLabel => '仍然提交';
+
+  @override
+  String get delegateSubmitBallotLabel => '提交选票';
+
+  @override
+  String get delegateSuspended => '投票协调方已暂停你的代理人登记，因此你无法提交选票。';
+
+  @override
+  String get delegateUnavailable => '无法连接到投票链。请重试。';
+
+  @override
+  String get delegateUseDifferentKeyLabel => '使用其他密钥';
+
+  @override
+  String get delegateVerifierBadRequest => '验证服务器无法读取此请求。请检查链接后重试。';
+
+  @override
+  String get delegateVerifierMarkerMismatch =>
+      '帖子内容与你的标记文本不符。请按显示内容原样发布标记文本，帖子中不要包含其他内容。';
+
+  @override
+  String get delegateVerifierPostNotFound => '验证服务器在该链接处找不到帖子。请检查链接，并确保帖子是公开的。';
+
+  @override
+  String get delegateVerifierProviderUnavailable => '验证服务器目前无法检查帖子。请稍后重试。';
+
+  @override
+  String delegateVerifierProviderUnavailableUntil(String time) {
+    return '验证服务器目前无法检查帖子。请在 $time 之后重试。';
+  }
+
+  @override
+  String get delegateVerifierRateLimited => '验证服务器当前检查的帖子过多。请稍后重试。';
+
+  @override
+  String delegateVerifierRateLimitedUntil(String time) {
+    return '验证服务器当前检查的帖子过多。请在 $time 之后重试。';
+  }
+
+  @override
+  String get delegateVerifierUnknown => '验证服务器无法检查此帖子。请稍后重试。';
+
+  @override
+  String get delegateVerifierUnreachable => '无法连接到验证服务器。请检查网络连接后重试。';
+
+  @override
+  String get delegateVerifyAgainLabel => '重新验证';
+
+  @override
+  String get delegateVerifyAndRegisterLabel => '验证并注册';
+
+  @override
+  String get delegateViewBallotLabel => '查看选票';
+
+  @override
+  String get delegateVotingEnded => '本轮投票已结束，因此你无法提交选票。';
+
+  @override
+  String delegateVotingEnds(String time) {
+    return '投票于 $time 结束';
+  }
 
   @override
   String get donationDonatingTo => '捐赠对象';
@@ -8035,6 +8492,15 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String proxyBallotConfirm(int questionCount) {
+    return '要提交选票吗？它涵盖全部 $questionCount 个问题，代表所有委托给你的人。选票是公开的，且无法更改。';
+  }
+
+  @override
+  String get proxyBallotRules =>
+      '每轮你只投票一次，对每个问题作答，代表所有委托给你的人。选票提交后无法更改。如果你未在投票结束前提交，委托给你的 ZEC 不计入本轮。';
+
+  @override
   String get proxyBeforeYouDelegateTitle => '委托前须知';
 
   @override
@@ -8076,6 +8542,18 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get proxyCountsOnlyWithBallot =>
       '只有你的代理人在投票结束前提交完整选票，你委托的 ZEC 才会计入。否则，本轮不计入。';
+
+  @override
+  String get proxyDelegateIntroCount =>
+      '投票链上会公开你收到的委托的大致数量。Vizor 只在你的控制面板上显示它。';
+
+  @override
+  String get proxyDelegateIntroPrivateVotes =>
+      '你的私密投票对公众隐藏。除非开启 Tor，否则投票服务器可以将这些投票与你关联。';
+
+  @override
+  String get proxyDelegateIntroPublicVotes =>
+      '你的公开投票会永久与你的 X 或 GitHub 账户关联，即使你删除帖子或账户也是如此。';
 
   @override
   String get proxyDelegatedLabel => '已委托';
@@ -8287,6 +8765,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get proxyResultsNote => '这些总数包含你委托的 ZEC。本轮会显示你的代理人的投票方式。';
+
+  @override
+  String get proxyRetire =>
+      '要退出代理人身份吗？这会永久退出你的代理人登记。如果你尚未提交本轮的选票，本轮委托给你的 ZEC 将不会被计入。如需重新成为代理人，请使用新密钥重新注册，你将获得新的代理人编号。';
 
   @override
   String get proxyReviewAnswersTitle => '你的答案';

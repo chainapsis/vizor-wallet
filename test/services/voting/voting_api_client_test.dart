@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/network/network_http_client.dart';
@@ -615,7 +617,66 @@ void main() {
       );
     });
 
-    test('every read asks for the codespace, on every server tried', () async {
+    test('a post sends the body byte for byte and returns the first '
+        'verdict', () async {
+      final body = utf8.encode(
+        '{"ballot":{"vote_round_id":"AQE=","delegate_index":17,'
+        '"options":[1,0],"dk_sig":"c2ln/+=="}}',
+      );
+      final http = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/api/shielded-vote/v1/delegate-op':
+              textResponse('404 page not found', statusCode: 404),
+          'https://vote-secondary.example/shielded-vote/v1/delegate-op':
+              jsonResponse({'code': 57, 'codespace': 'vote'}, statusCode: 422),
+        },
+      );
+      final answer = await client(http).postChainBody(
+        '/shielded-vote/v1/delegate-op',
+        Uint8List.fromList(body),
+      );
+      expect(answer.statusCode, 422, reason: 'a 404 is no verdict');
+      expect(http.requests.map((request) => request.method), ['POST', 'POST']);
+      for (final request in http.requests) {
+        expect(utf8.encode(jsonEncode(request.body)), body);
+      }
+    });
+
+    test('a post with no verdict anywhere returns the last answer, and one '
+        'nothing answered throws', () async {
+      final body = Uint8List.fromList(
+        utf8.encode('{"retire":{"delegate_index":1}}'),
+      );
+      final noVerdict = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/api/shielded-vote/v1/delegate-op':
+              timeoutResponse(),
+          'https://vote-secondary.example/shielded-vote/v1/delegate-op':
+              textResponse('bad gateway', statusCode: 502),
+        },
+      );
+      final answer = await client(
+        noVerdict,
+      ).postChainBody('/shielded-vote/v1/delegate-op', body);
+      expect(answer.statusCode, 502);
+      final unreachable = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/api/shielded-vote/v1/delegate-op':
+              timeoutResponse(),
+          'https://vote-secondary.example/shielded-vote/v1/delegate-op':
+              timeoutResponse(),
+        },
+      );
+      await expectLater(
+        client(
+          unreachable,
+        ).postChainBody('/shielded-vote/v1/delegate-op', body),
+        throwsA(isA<TimeoutException>()),
+      );
+    });
+
+    test('every read and post asks for the codespace, on every server '
+        'tried', () async {
       final http = FakeVotingHttpClient(
         responses: {
           'https://vote-primary.example/api/shielded-vote/v1/delegates/by-key/ab':
@@ -624,15 +685,44 @@ void main() {
               jsonResponse({
                 'delegate': {'index': 17},
               }),
+          'https://vote-primary.example/api/shielded-vote/v1/delegate-op':
+              timeoutResponse(),
+          'https://vote-secondary.example/shielded-vote/v1/delegate-op':
+              jsonResponse({'tx_hash': 'AB', 'code': 0, 'codespace': ''}),
         },
       );
       await client(
         http,
       ).getChainAnswer('/shielded-vote/v1/delegates/by-key/ab');
-      expect(http.requests.map((request) => request.method), ['GET', 'GET']);
+      await client(http).postChainBody(
+        '/shielded-vote/v1/delegate-op',
+        Uint8List.fromList(utf8.encode('{"retire":{"delegate_index":1}}')),
+      );
+      expect(http.requests.map((request) => request.method), [
+        'GET',
+        'GET',
+        'POST',
+        'POST',
+      ]);
       for (final request in http.requests) {
         expect(request.headers, {'x-svote-codespace': '1'});
       }
+    });
+
+    test('a body that would not post byte for byte is refused before '
+        'sending', () async {
+      final http = FakeVotingHttpClient();
+      for (final text in ['{"a": 1}', '[1]', '{"a":1e2}', r'{"a":"\u0041"}']) {
+        await expectLater(
+          client(http).postChainBody(
+            '/shielded-vote/v1/delegate-op',
+            Uint8List.fromList(utf8.encode(text)),
+          ),
+          throwsA(isA<ArgumentError>()),
+          reason: text,
+        );
+      }
+      expect(http.requests, isEmpty);
     });
   });
 

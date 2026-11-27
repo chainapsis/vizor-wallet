@@ -1599,11 +1599,23 @@ abstract class AppLocalizations {
   /// **'Scan a Zcash QR code to continue'**
   String get addressScanZcashPrompt;
 
+  /// Back-link name of the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Ballot'**
+  String get appBackBallot;
+
   /// Back-link name of a delegate's profile screen.
   ///
   /// In en, this message translates to:
   /// **'Delegate'**
   String get appBackDelegate;
+
+  /// Back-link name of the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate mode'**
+  String get appBackDelegateMode;
 
   /// Back-link name of the choose-delegates directory screen.
   ///
@@ -1623,6 +1635,12 @@ abstract class AppLocalizations {
   /// **'Hardware wallets'**
   String get appBackHardwareWallets;
 
+  /// Back-link name of the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Import key'**
+  String get appBackImportKey;
+
   /// Back-link label shown during desktop import that returns to the list of import methods.
   ///
   /// In en, this message translates to:
@@ -1634,6 +1652,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Receive'**
   String get appBackReceive;
+
+  /// Back-link name of the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Register'**
+  String get appBackRegister;
+
+  /// Back-link name of the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Retire'**
+  String get appBackRetire;
 
   /// Back-link name of a review step (send, swap, vote).
   ///
@@ -3442,6 +3472,816 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Zcash address'**
   String get commonZcashAddress;
+
+  /// Message on the delegate's ballot screen. DG-10 when a ballot is already on chain (plan section 4.5).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve already submitted your ballot for this round.'**
+  String get delegateAlreadySubmitted;
+
+  /// Progress on the delegate's ballot screen: how many questions are answered.
+  ///
+  /// In en, this message translates to:
+  /// **'{answered} of {total} answered'**
+  String delegateAnswered(int answered, int total);
+
+  /// Delegate registration error: the voting chain refused the verifier's signed check.
+  ///
+  /// In en, this message translates to:
+  /// **'The voting chain didn\'t accept the verifier\'s check. Verify your post again.'**
+  String get delegateAttestationRejected;
+
+  /// Label or button on the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to delegate mode'**
+  String get delegateBackToDelegateModeLabel;
+
+  /// Title on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm ballot'**
+  String get delegateBallotConfirmTitle;
+
+  /// Message on the delegate's ballot screen. DG-9 once voting ended with the delegate's ballot counted.
+  ///
+  /// In en, this message translates to:
+  /// **'Counted. Your ballot is on chain.'**
+  String get delegateBallotCounted;
+
+  /// Message on the delegate's ballot screen. A ballot that failed without a chain verdict, such as one the vote server refused before the chain saw it.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t submit your ballot. Try again.'**
+  String get delegateBallotFailed;
+
+  /// Delegate ballot error: an answer is outside the question's options.
+  ///
+  /// In en, this message translates to:
+  /// **'The voting chain rejected this ballot because an answer isn\'t a valid option.'**
+  String get delegateBallotInvalidOption;
+
+  /// Message on the delegate's ballot screen. DG-9 while voting is open and the round's ballot list shows the delegate's ballot.
+  ///
+  /// In en, this message translates to:
+  /// **'Ballot submitted and confirmed on chain. It\'s counted when voting ends.'**
+  String get delegateBallotOnChain;
+
+  /// Label or button on the delegate mode dashboard and the delegate's ballot screen. DG-8 and DG-9 once a ballot is submitted, until the round's ballot list shows it; the app keeps sending it meanwhile.
+  ///
+  /// In en, this message translates to:
+  /// **'Ballot submitted, confirming on chain'**
+  String get delegateBallotPendingLabel;
+
+  /// Message on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open. Your ballot is usually confirmed within a minute.'**
+  String get delegateBallotProgress;
+
+  /// Title on the delegate's ballot screen. DG-9's processing view after Submit, as a vote's progress screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting your ballot'**
+  String get delegateBallotProgressTitle;
+
+  /// Message on delegate mode text built from a chain answer. Shown only for a chain verdict, see delegateBallotRejectionCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'The voting chain rejected your ballot.'**
+  String get delegateBallotRejected;
+
+  /// Delegate mode dashboard reminder while no ballot is on chain. {time} is the formatted vote end.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit your ballot before voting ends {time}, or ZEC delegated to you isn\'t counted this round.'**
+  String delegateBallotReminder(String time);
+
+  /// Delegate ballot error: the round has proxy delegation turned off.
+  ///
+  /// In en, this message translates to:
+  /// **'This round doesn\'t take delegate ballots.'**
+  String get delegateBallotRoundNoBallots;
+
+  /// Message on the delegate's ballot screen. The processing view once the confirm timeout passes without the round's ballot list showing the ballot.
+  ///
+  /// In en, this message translates to:
+  /// **'Still confirming. Vizor will keep trying in the background.'**
+  String get delegateBallotStillConfirming;
+
+  /// Label or button on delegate mode status text. DG-8 while voting is open and the round's ballot list shows the delegate's ballot. Its weight is counted at close.
+  ///
+  /// In en, this message translates to:
+  /// **'Ballot submitted'**
+  String get delegateBallotSubmittedLabel;
+
+  /// Title on the delegate's ballot screen. The processing view once the round's ballot list shows the ballot.
+  ///
+  /// In en, this message translates to:
+  /// **'Ballot submitted'**
+  String get delegateBallotSubmittedTitle;
+
+  /// Title on the delegate's ballot screen and the mobile delegate mode screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Your ballot'**
+  String get delegateBallotTitle;
+
+  /// Delegate ballot error: the ballot reached the voting chain after voting ended.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting ended before your ballot landed, so it wasn\'t accepted. ZEC delegated to you isn\'t counted this round.'**
+  String get delegateBallotTooLate;
+
+  /// Delegate ballot error: the voting chain has no such round.
+  ///
+  /// In en, this message translates to:
+  /// **'The voting chain doesn\'t know this round.'**
+  String get delegateBallotUnknownRound;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue registration'**
+  String get delegateContinueRegistrationLabel;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy key'**
+  String get delegateCopyKeyLabel;
+
+  /// Label or button on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy marker'**
+  String get delegateCopyMarkerLabel;
+
+  /// Delegate mode dashboard: the approximate count of delegations to this delegate, the only delegation count Vizor shows.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{At least {count} delegation} other{At least {count} delegations}}'**
+  String delegateCountAtLeast(int count);
+
+  /// Delegate mode dashboard: the approximate delegation count before any delegation is revealed.
+  ///
+  /// In en, this message translates to:
+  /// **'No delegations revealed yet'**
+  String get delegateCountNone;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t create your delegate key. Nothing was stored. Try again.'**
+  String get delegateCreateKeyError;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a delegate key'**
+  String get delegateCreateKeyLabel;
+
+  /// Message on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'A different ballot is already on chain for this round. Vizor won\'t submit another.'**
+  String get delegateDifferentBallotOnChain;
+
+  /// [security] Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read your delegate key. Try again.'**
+  String get delegateExportError;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Export key'**
+  String get delegateExportKeyLabel;
+
+  /// [security] Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone with this text or QR code can vote as you. Keep it offline.'**
+  String get delegateExportedKey;
+
+  /// Message on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'A ballot that lands after voting ends is rejected, and ZEC delegated to you isn\'t counted this round.'**
+  String get delegateFinalMinute;
+
+  /// Title on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting is about to end'**
+  String get delegateFinalMinuteTitle;
+
+  /// Delegate mode dashboard warning in the last 5 minutes of voting. {minutes} is at least 1.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes, plural, =1{Voting ends in {minutes} minute. Submit your ballot now.} other{Voting ends in {minutes} minutes. Submit your ballot now.}}'**
+  String delegateFinalMinutes(int minutes);
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'This key isn\'t registered yet. Post its marker and verify it to start receiving delegations.'**
+  String get delegateFinishRegistering;
+
+  /// Title on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish registering'**
+  String get delegateFinishRegisteringTitle;
+
+  /// Message on delegate mode text built from a chain answer. A registration the chain refused because the handle already has a live entry (`ErrHandleTaken`), and how that gets resolved.
+  ///
+  /// In en, this message translates to:
+  /// **'This handle already has a delegate entry, so it can\'t register again until that entry is retired. If you have its key, import that key here and press Retire, then register again. If the key is lost, ask the vote coordinators to retire the entry.'**
+  String get delegateHandleTaken;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide key'**
+  String get delegateHideKeyLabel;
+
+  /// Message on the delegate mode dashboard and the delegate registration screen. After registering: how people find the new delegate.
+  ///
+  /// In en, this message translates to:
+  /// **'People can find you by your exact handle, or by pasting your key, number or fingerprint. Wallets may also list you after their own review.'**
+  String get delegateHowPeopleFindYou;
+
+  /// [security] Message on the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste or scan the key you exported from delegate mode. It starts with zvdsk1. Never enter a wallet recovery phrase here.'**
+  String get delegateImport;
+
+  /// Label or button on the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate key'**
+  String get delegateImportFieldLabel;
+
+  /// Input placeholder on the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'zvdsk1...'**
+  String get delegateImportHint;
+
+  /// Message on the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'This isn\'t a delegate key. An exported key starts with zvdsk1.'**
+  String get delegateImportInvalid;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Import a delegate key'**
+  String get delegateImportKeyLabel;
+
+  /// Label or button on the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get delegateImportLabel;
+
+  /// Title on the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan your delegate key\'s QR code'**
+  String get delegateImportScanTitle;
+
+  /// Title on the delegate key import screen and the mobile delegate mode screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Import delegate key'**
+  String get delegateImportTitle;
+
+  /// Title on the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Key imported'**
+  String get delegateImportedTitle;
+
+  /// Message on the delegate key import screen.
+  ///
+  /// In en, this message translates to:
+  /// **'This key isn\'t registered yet. Register it to start receiving delegations.'**
+  String get delegateImportedUnregistered;
+
+  /// Message on the delegate mode dashboard. DG-1's way back for a delegate who lost its key with no copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Lost your delegate key and have no copy? Ask the vote coordinators to retire your delegate entry. You can then register again with a new key.'**
+  String get delegateIntroLostKey;
+
+  /// Title on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Become a delegate'**
+  String get delegateIntroTitle;
+
+  /// Message on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the post up. It is the public proof that this key is yours.'**
+  String get delegateKeepPost;
+
+  /// [security] Message on the delegate mode dashboard. The key card's backup line and the export it leads to (contracts-v1 section 11.2).
+  ///
+  /// In en, this message translates to:
+  /// **'Your delegate key is stored on this device. Export it to back it up or to move it to another device. It is not a wallet recovery phrase and holds no ZEC.'**
+  String get delegateKeyBackup;
+
+  /// Label or button on the delegate key import screen and the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate key'**
+  String get delegateKeyLabel;
+
+  /// Delegate registration error: the voting chain already saw this delegate key.
+  ///
+  /// In en, this message translates to:
+  /// **'This key was registered before, so it can\'t register again. Start over with a new key.'**
+  String get delegateKeyRegisteredBefore;
+
+  /// Title on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Your delegate key'**
+  String get delegateKeyTitle;
+
+  /// Delegate registration error: the voting chain refused this delegate key.
+  ///
+  /// In en, this message translates to:
+  /// **'This key can\'t be registered. Start over with a new key.'**
+  String get delegateKeyUnregistrable;
+
+  /// Message on delegate mode status text.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load delegate mode. Try again.'**
+  String get delegateLoadError;
+
+  /// Message on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a public gist from your GitHub account with this exact text.'**
+  String get delegateMarkerGitHub;
+
+  /// Title on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Your marker'**
+  String get delegateMarkerTitle;
+
+  /// Message on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Post this exact text from your X account as a new post, not a reply or quote.'**
+  String get delegateMarkerX;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote on behalf of the people who delegate to you.'**
+  String get delegateModeEntry;
+
+  /// Title on the delegate mode dashboard and the mobile delegate mode screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate mode'**
+  String get delegateModeTitle;
+
+  /// Delegate ballot and retire error: the voting chain has no registry entry for this device's delegate key.
+  ///
+  /// In en, this message translates to:
+  /// **'The voting chain has no delegate entry for your key.'**
+  String get delegateNoEntryForKey;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'No voting rounds take delegations right now.'**
+  String get delegateNoRounds;
+
+  /// Message on delegate mode status text.
+  ///
+  /// In en, this message translates to:
+  /// **'Register as a delegate before you submit a ballot.'**
+  String get delegateNotRegistered;
+
+  /// Message on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no key to register on this device.'**
+  String get delegateNothingToRegister;
+
+  /// Message on the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no delegate entry on this device to retire.'**
+  String get delegateNothingToRetire;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Open ballot'**
+  String get delegateOpenBallotLabel;
+
+  /// Label or button on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open delegate mode'**
+  String get delegateOpenDashboardLabel;
+
+  /// Input placeholder on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'https://gist.github.com/yourhandle/...'**
+  String get delegateProofLinkGitHubHint;
+
+  /// Message on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste the link to your gist on gist.github.com.'**
+  String get delegateProofLinkGitHubInvalid;
+
+  /// Label or button on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Link to your gist'**
+  String get delegateProofLinkGitHubLabel;
+
+  /// Input placeholder on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'https://x.com/yourhandle/status/...'**
+  String get delegateProofLinkXHint;
+
+  /// Message on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste the link to your post on x.com.'**
+  String get delegateProofLinkXInvalid;
+
+  /// Label or button on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Link to your post'**
+  String get delegateProofLinkXLabel;
+
+  /// Title on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Prove your account'**
+  String get delegateProviderTitle;
+
+  /// [security] Reason shown in the system biometric prompt before it signs the delegate's ballot.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm access to sign your ballot'**
+  String get delegateReauthBallotBiometricReason;
+
+  /// [security] Subtitle of delegate mode's password or passcode sheet before it signs the delegate's ballot.
+  ///
+  /// In en, this message translates to:
+  /// **'To sign your ballot.'**
+  String get delegateReauthBallotSubtitle;
+
+  /// [security] Reason shown in the system biometric prompt before it shows the delegate key.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm access to your delegate key'**
+  String get delegateReauthExportBiometricReason;
+
+  /// [security] Subtitle of delegate mode's password or passcode sheet before it shows the delegate key.
+  ///
+  /// In en, this message translates to:
+  /// **'To export your delegate key.'**
+  String get delegateReauthExportSubtitle;
+
+  /// Message on delegate mode's re-authentication sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t confirm access. Try again.'**
+  String get delegateReauthFailed;
+
+  /// [security] Reason shown in the system biometric prompt before it registers the delegate key.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm access to register your delegate key'**
+  String get delegateReauthRegisterBiometricReason;
+
+  /// [security] Subtitle of delegate mode's password or passcode sheet before it registers the delegate key.
+  ///
+  /// In en, this message translates to:
+  /// **'To register your delegate key.'**
+  String get delegateReauthRegisterSubtitle;
+
+  /// [security] Reason shown in the system biometric prompt before it retires the delegate entry.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm access to retire as a delegate'**
+  String get delegateReauthRetireBiometricReason;
+
+  /// [security] Subtitle of delegate mode's password or passcode sheet before it retires the delegate entry.
+  ///
+  /// In en, this message translates to:
+  /// **'To retire as a delegate.'**
+  String get delegateReauthRetireSubtitle;
+
+  /// Delegate registration error: the voting chain has registration turned off.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate registration is closed right now. Try again later.'**
+  String get delegateRegisterClosed;
+
+  /// Message on the delegate registration screen. A registration that failed without a chain verdict, such as one the vote server refused before the chain saw it.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t register this key. Try again.'**
+  String get delegateRegisterFailed;
+
+  /// Message on delegate mode text built from a chain answer. Shown only for a chain verdict, see delegateRegisterRejectionCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'The voting chain rejected this registration. Try again later.'**
+  String get delegateRegisterRejected;
+
+  /// Title on the delegate registration screen and the mobile delegate mode screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Register as a delegate'**
+  String get delegateRegisterTitle;
+
+  /// Success message on the delegate registration screen. {handle} is the verified handle without the @.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor verified @{handle}. You can submit ballots now, including in rounds already running.'**
+  String delegateRegistered(String handle);
+
+  /// Title on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re registered'**
+  String get delegateRegisteredTitle;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Your registration was sent and has not landed yet. Vizor keeps checking. You can also verify your post again.'**
+  String get delegateRegistrationPending;
+
+  /// Delegate registration error: the voting chain's delegate registry has no room.
+  ///
+  /// In en, this message translates to:
+  /// **'The delegate registry is full. Try again later.'**
+  String get delegateRegistryFull;
+
+  /// Title on the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Entry this retires'**
+  String get delegateRetireEntryTitle;
+
+  /// Message on the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t retire. Your delegate entry can still vote. Try again.'**
+  String get delegateRetireFailed;
+
+  /// Label or button on the delegate mode dashboard and the mobile delegate mode screens and the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Retire'**
+  String get delegateRetireLabel;
+
+  /// Retire error: a suspended entry can't retire.
+  ///
+  /// In en, this message translates to:
+  /// **'Coordinators suspended your delegate entry, so it can\'t retire itself.'**
+  String get delegateRetireSuspended;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Your delegate entry is retired, so this key can\'t vote anymore. To come back, start over with a new key and register again.'**
+  String get delegateRetired;
+
+  /// Message on delegate mode status text.
+  ///
+  /// In en, this message translates to:
+  /// **'Your delegate entry is retired, so it can\'t submit a ballot.'**
+  String get delegateRetiredBallot;
+
+  /// Message on the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Your delegate entry can\'t vote anymore.'**
+  String get delegateRetiredDone;
+
+  /// Title on the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve retired'**
+  String get delegateRetiredTitle;
+
+  /// Title on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting rounds'**
+  String get delegateRoundsTitle;
+
+  /// [security] Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes the key from this device. It can\'t be undone unless you exported the key.'**
+  String get delegateStartOver;
+
+  /// [security] Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove key'**
+  String get delegateStartOverConfirmLabel;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove this key. A registered key stays until its entry is retired. Try again.'**
+  String get delegateStartOverError;
+
+  /// Label or button on the delegate mode dashboard. Letting an unregistered or retired key go, and the confirmation it asks first. An unregistered key's confirmation shows its export.
+  ///
+  /// In en, this message translates to:
+  /// **'Start over with a new key'**
+  String get delegateStartOverLabel;
+
+  /// [security] Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Save this key before starting over. If this registration still lands, you\'ll need it to vote or retire.'**
+  String get delegateStartOverSaveKey;
+
+  /// [security] Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'ve saved this key'**
+  String get delegateStartOverSavedLabel;
+
+  /// [security] Title on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this key?'**
+  String get delegateStartOverTitle;
+
+  /// Message on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your post'**
+  String get delegateStepCheckingPost;
+
+  /// Message on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming on chain'**
+  String get delegateStepConfirming;
+
+  /// Message on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Registering on the voting chain'**
+  String get delegateStepRegistering;
+
+  /// Message on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing ballot'**
+  String get delegateStepSigning;
+
+  /// Message on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting ballot'**
+  String get delegateStepSubmitting;
+
+  /// Label or button on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit anyway'**
+  String get delegateSubmitAnywayLabel;
+
+  /// Label or button on the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit ballot'**
+  String get delegateSubmitBallotLabel;
+
+  /// Message on delegate mode status text and the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Coordinators suspended your delegate entry, so you can\'t submit ballots.'**
+  String get delegateSuspended;
+
+  /// Message on delegate mode status text.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach the voting chain. Try again.'**
+  String get delegateUnavailable;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a different key'**
+  String get delegateUseDifferentKeyLabel;
+
+  /// Delegate registration error: the verifier refused the request as malformed.
+  ///
+  /// In en, this message translates to:
+  /// **'The verifier couldn\'t read this request. Check the link and try again.'**
+  String get delegateVerifierBadRequest;
+
+  /// Delegate registration error: the post's text differs from the marker the app showed.
+  ///
+  /// In en, this message translates to:
+  /// **'The post doesn\'t match your marker. Post the marker exactly as shown, with nothing else in the post.'**
+  String get delegateVerifierMarkerMismatch;
+
+  /// Delegate registration error: the verifier found no post at the given link.
+  ///
+  /// In en, this message translates to:
+  /// **'The verifier couldn\'t find a post at that link. Check the link and make sure the post is public.'**
+  String get delegateVerifierPostNotFound;
+
+  /// Delegate registration error: the verifier can't reach X or GitHub and gave no retry time.
+  ///
+  /// In en, this message translates to:
+  /// **'The verifier can\'t check posts right now. Try again later.'**
+  String get delegateVerifierProviderUnavailable;
+
+  /// Delegate registration error: the verifier can't reach X or GitHub. {time} is the formatted time to retry after.
+  ///
+  /// In en, this message translates to:
+  /// **'The verifier can\'t check posts right now. Try again after {time}.'**
+  String delegateVerifierProviderUnavailableUntil(String time);
+
+  /// Delegate registration error: the verifier is rate limited and gave no retry time.
+  ///
+  /// In en, this message translates to:
+  /// **'The verifier is checking too many posts right now. Try again later.'**
+  String get delegateVerifierRateLimited;
+
+  /// Delegate registration error: the verifier is rate limited. {time} is the formatted time to retry after.
+  ///
+  /// In en, this message translates to:
+  /// **'The verifier is checking too many posts right now. Try again after {time}.'**
+  String delegateVerifierRateLimitedUntil(String time);
+
+  /// Delegate registration error: the verifier answered with an error Vizor doesn't know.
+  ///
+  /// In en, this message translates to:
+  /// **'The verifier couldn\'t check this post. Try again later.'**
+  String get delegateVerifierUnknown;
+
+  /// Delegate registration error: the verifier didn't answer.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach the verifier. Check your connection and try again.'**
+  String get delegateVerifierUnreachable;
+
+  /// Label or button on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify again'**
+  String get delegateVerifyAgainLabel;
+
+  /// Label or button on the delegate registration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify and register'**
+  String get delegateVerifyAndRegisterLabel;
+
+  /// Label or button on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'View ballot'**
+  String get delegateViewBallotLabel;
+
+  /// Message on the delegate mode dashboard and the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting has ended for this round, so you can\'t submit a ballot.'**
+  String get delegateVotingEnded;
+
+  /// Delegate mode dashboard deadline line. {time} is the formatted vote end.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting ends {time}'**
+  String delegateVotingEnds(String time);
 
   /// Label of the review row that names the donation recipient.
   ///
@@ -14198,6 +15038,18 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{{names} answers these for you} other{{names} answer these for you}}'**
   String proxyAnswersForYou(String names, int count);
 
+  /// Confirmation dialog body before a delegate submits their ballot. {questionCount} is the number of questions in the round.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit your ballot? It covers all {questionCount} questions for everyone who delegated to you. It\'s public, and you can\'t change it.'**
+  String proxyBallotConfirm(int questionCount);
+
+  /// Message on the delegate mode dashboard and the delegate's ballot screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You vote once per round, on every question, for everyone who delegated to you. You can\'t change your ballot after you submit it. If you don\'t submit it before voting ends, ZEC delegated to you isn\'t counted this round.'**
+  String get proxyBallotRules;
+
   /// Title on the vote review's delegation section.
   ///
   /// In en, this message translates to:
@@ -14269,6 +15121,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your delegated ZEC counts only if your delegate submits a complete ballot before voting ends. If they don\'t, it isn\'t counted this round.'**
   String get proxyCountsOnlyWithBallot;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'An approximate count of delegations to you is public on the voting chain. Vizor shows it only on your dashboard.'**
+  String get proxyDelegateIntroCount;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Your private votes are hidden from the public. Vote servers can link them to you unless Tor is on.'**
+  String get proxyDelegateIntroPrivateVotes;
+
+  /// Message on the delegate mode dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Your public votes stay linked to your X or GitHub account permanently, even if you delete your post or account.'**
+  String get proxyDelegateIntroPublicVotes;
 
   /// Label or button on the voting round list. The poll list's status for such a round.
   ///
@@ -14629,6 +15499,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'These totals include the ZEC you delegated. The round shows how your delegates voted.'**
   String get proxyResultsNote;
+
+  /// [security] Message on the retire-as-delegate screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Retire as a delegate? This retires your delegate entry for good. If you haven\'t submitted this round\'s ballot, ZEC delegated to you this round won\'t be counted. To come back, register again with a new key; you get a new delegate number.'**
+  String get proxyRetire;
 
   /// Title on the vote review screen.
   ///

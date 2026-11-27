@@ -1162,9 +1162,17 @@
   "@addressScanZcashPrompt": {
     "description": "Caption under the viewfinder of the mobile QR scanner."
   },
+  "appBackBallot": "Ballot",
+  "@appBackBallot": {
+    "description": "Back-link name of the delegate's ballot screen."
+  },
   "appBackDelegate": "Delegate",
   "@appBackDelegate": {
     "description": "Back-link name of a delegate's profile screen."
+  },
+  "appBackDelegateMode": "Delegate mode",
+  "@appBackDelegateMode": {
+    "description": "Back-link name of the delegate mode dashboard."
   },
   "appBackDelegates": "Delegates",
   "@appBackDelegates": {
@@ -1178,6 +1186,10 @@
   "@appBackHardwareWallets": {
     "description": "Back-link label shown during desktop import that returns to the hardware wallet list."
   },
+  "appBackImportKey": "Import key",
+  "@appBackImportKey": {
+    "description": "Back-link name of the delegate key import screen."
+  },
   "appBackImportMethods": "Import methods",
   "@appBackImportMethods": {
     "description": "Back-link label shown during desktop import that returns to the list of import methods."
@@ -1185,6 +1197,14 @@
   "appBackReceive": "Receive",
   "@appBackReceive": {
     "description": "Back-link name of the Receive screen."
+  },
+  "appBackRegister": "Register",
+  "@appBackRegister": {
+    "description": "Back-link name of the delegate registration screen."
+  },
+  "appBackRetire": "Retire",
+  "@appBackRetire": {
+    "description": "Back-link name of the retire-as-delegate screen."
   },
   "appBackReview": "Review",
   "@appBackReview": {
@@ -2636,6 +2656,598 @@
   "commonZcashAddress": "Zcash address",
   "@commonZcashAddress": {
     "description": "Title of the sheet that shows a full address of unrecognized type. Shared by: activity, send, swap."
+  },
+  "delegateAlreadySubmitted": "You've already submitted your ballot for this round.",
+  "@delegateAlreadySubmitted": {
+    "description": "Message on the delegate's ballot screen. DG-10 when a ballot is already on chain (plan section 4.5)."
+  },
+  "delegateAnswered": "{answered} of {total} answered",
+  "@delegateAnswered": {
+    "description": "Progress on the delegate's ballot screen: how many questions are answered.",
+    "placeholders": {
+      "answered": {
+        "type": "int",
+        "example": "2"
+      },
+      "total": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "delegateAttestationRejected": "The voting chain didn't accept the verifier's check. Verify your post again.",
+  "@delegateAttestationRejected": {
+    "description": "Delegate registration error: the voting chain refused the verifier's signed check."
+  },
+  "delegateBackToDelegateModeLabel": "Back to delegate mode",
+  "@delegateBackToDelegateModeLabel": {
+    "description": "Label or button on the retire-as-delegate screen."
+  },
+  "delegateBallotConfirmTitle": "Confirm ballot",
+  "@delegateBallotConfirmTitle": {
+    "description": "Title on the delegate's ballot screen."
+  },
+  "delegateBallotCounted": "Counted. Your ballot is on chain.",
+  "@delegateBallotCounted": {
+    "description": "Message on the delegate's ballot screen. DG-9 once voting ended with the delegate's ballot counted."
+  },
+  "delegateBallotFailed": "Couldn't submit your ballot. Try again.",
+  "@delegateBallotFailed": {
+    "description": "Message on the delegate's ballot screen. A ballot that failed without a chain verdict, such as one the vote server refused before the chain saw it."
+  },
+  "delegateBallotInvalidOption": "The voting chain rejected this ballot because an answer isn't a valid option.",
+  "@delegateBallotInvalidOption": {
+    "description": "Delegate ballot error: an answer is outside the question's options."
+  },
+  "delegateBallotOnChain": "Ballot submitted and confirmed on chain. It's counted when voting ends.",
+  "@delegateBallotOnChain": {
+    "description": "Message on the delegate's ballot screen. DG-9 while voting is open and the round's ballot list shows the delegate's ballot."
+  },
+  "delegateBallotPendingLabel": "Ballot submitted, confirming on chain",
+  "@delegateBallotPendingLabel": {
+    "description": "Label or button on the delegate mode dashboard and the delegate's ballot screen. DG-8 and DG-9 once a ballot is submitted, until the round's ballot list shows it; the app keeps sending it meanwhile."
+  },
+  "delegateBallotProgress": "Keep Vizor open. Your ballot is usually confirmed within a minute.",
+  "@delegateBallotProgress": {
+    "description": "Message on the delegate's ballot screen."
+  },
+  "delegateBallotProgressTitle": "Submitting your ballot",
+  "@delegateBallotProgressTitle": {
+    "description": "Title on the delegate's ballot screen. DG-9's processing view after Submit, as a vote's progress screen."
+  },
+  "delegateBallotRejected": "The voting chain rejected your ballot.",
+  "@delegateBallotRejected": {
+    "description": "Message on delegate mode text built from a chain answer. Shown only for a chain verdict, see delegateBallotRejectionCopy."
+  },
+  "delegateBallotReminder": "Submit your ballot before voting ends {time}, or ZEC delegated to you isn't counted this round.",
+  "@delegateBallotReminder": {
+    "description": "Delegate mode dashboard reminder while no ballot is on chain. {time} is the formatted vote end.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "12 Dec, 14:00"
+      }
+    }
+  },
+  "delegateBallotRoundNoBallots": "This round doesn't take delegate ballots.",
+  "@delegateBallotRoundNoBallots": {
+    "description": "Delegate ballot error: the round has proxy delegation turned off."
+  },
+  "delegateBallotStillConfirming": "Still confirming. Vizor will keep trying in the background.",
+  "@delegateBallotStillConfirming": {
+    "description": "Message on the delegate's ballot screen. The processing view once the confirm timeout passes without the round's ballot list showing the ballot."
+  },
+  "delegateBallotSubmittedLabel": "Ballot submitted",
+  "@delegateBallotSubmittedLabel": {
+    "description": "Label or button on delegate mode status text. DG-8 while voting is open and the round's ballot list shows the delegate's ballot. Its weight is counted at close."
+  },
+  "delegateBallotSubmittedTitle": "Ballot submitted",
+  "@delegateBallotSubmittedTitle": {
+    "description": "Title on the delegate's ballot screen. The processing view once the round's ballot list shows the ballot."
+  },
+  "delegateBallotTitle": "Your ballot",
+  "@delegateBallotTitle": {
+    "description": "Title on the delegate's ballot screen and the mobile delegate mode screens."
+  },
+  "delegateBallotTooLate": "Voting ended before your ballot landed, so it wasn't accepted. ZEC delegated to you isn't counted this round.",
+  "@delegateBallotTooLate": {
+    "description": "Delegate ballot error: the ballot reached the voting chain after voting ended."
+  },
+  "delegateBallotUnknownRound": "The voting chain doesn't know this round.",
+  "@delegateBallotUnknownRound": {
+    "description": "Delegate ballot error: the voting chain has no such round."
+  },
+  "delegateContinueRegistrationLabel": "Continue registration",
+  "@delegateContinueRegistrationLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateCopyKeyLabel": "Copy key",
+  "@delegateCopyKeyLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateCopyMarkerLabel": "Copy marker",
+  "@delegateCopyMarkerLabel": {
+    "description": "Label or button on the delegate registration screen."
+  },
+  "delegateCountAtLeast": "{count, plural, =1{At least {count} delegation} other{At least {count} delegations}}",
+  "@delegateCountAtLeast": {
+    "description": "Delegate mode dashboard: the approximate count of delegations to this delegate, the only delegation count Vizor shows.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "delegateCountNone": "No delegations revealed yet",
+  "@delegateCountNone": {
+    "description": "Delegate mode dashboard: the approximate delegation count before any delegation is revealed."
+  },
+  "delegateCreateKeyError": "Couldn't create your delegate key. Nothing was stored. Try again.",
+  "@delegateCreateKeyError": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "delegateCreateKeyLabel": "Create a delegate key",
+  "@delegateCreateKeyLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateDifferentBallotOnChain": "A different ballot is already on chain for this round. Vizor won't submit another.",
+  "@delegateDifferentBallotOnChain": {
+    "description": "Message on the delegate's ballot screen."
+  },
+  "delegateExportError": "Couldn't read your delegate key. Try again.",
+  "@delegateExportError": {
+    "description": "[security] Message on the delegate mode dashboard."
+  },
+  "delegateExportKeyLabel": "Export key",
+  "@delegateExportKeyLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateExportedKey": "Anyone with this text or QR code can vote as you. Keep it offline.",
+  "@delegateExportedKey": {
+    "description": "[security] Message on the delegate mode dashboard."
+  },
+  "delegateFinalMinute": "A ballot that lands after voting ends is rejected, and ZEC delegated to you isn't counted this round.",
+  "@delegateFinalMinute": {
+    "description": "Message on the delegate's ballot screen."
+  },
+  "delegateFinalMinuteTitle": "Voting is about to end",
+  "@delegateFinalMinuteTitle": {
+    "description": "Title on the delegate's ballot screen."
+  },
+  "delegateFinalMinutes": "{minutes, plural, =1{Voting ends in {minutes} minute. Submit your ballot now.} other{Voting ends in {minutes} minutes. Submit your ballot now.}}",
+  "@delegateFinalMinutes": {
+    "description": "Delegate mode dashboard warning in the last 5 minutes of voting. {minutes} is at least 1.",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "delegateFinishRegistering": "This key isn't registered yet. Post its marker and verify it to start receiving delegations.",
+  "@delegateFinishRegistering": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "delegateFinishRegisteringTitle": "Finish registering",
+  "@delegateFinishRegisteringTitle": {
+    "description": "Title on the delegate mode dashboard."
+  },
+  "delegateHandleTaken": "This handle already has a delegate entry, so it can't register again until that entry is retired. If you have its key, import that key here and press Retire, then register again. If the key is lost, ask the vote coordinators to retire the entry.",
+  "@delegateHandleTaken": {
+    "description": "Message on delegate mode text built from a chain answer. A registration the chain refused because the handle already has a live entry (`ErrHandleTaken`), and how that gets resolved."
+  },
+  "delegateHideKeyLabel": "Hide key",
+  "@delegateHideKeyLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateHowPeopleFindYou": "People can find you by your exact handle, or by pasting your key, number or fingerprint. Wallets may also list you after their own review.",
+  "@delegateHowPeopleFindYou": {
+    "description": "Message on the delegate mode dashboard and the delegate registration screen. After registering: how people find the new delegate."
+  },
+  "delegateImport": "Paste or scan the key you exported from delegate mode. It starts with zvdsk1. Never enter a wallet recovery phrase here.",
+  "@delegateImport": {
+    "description": "[security] Message on the delegate key import screen."
+  },
+  "delegateImportFieldLabel": "Delegate key",
+  "@delegateImportFieldLabel": {
+    "description": "Label or button on the delegate key import screen."
+  },
+  "delegateImportHint": "zvdsk1...",
+  "@delegateImportHint": {
+    "description": "Input placeholder on the delegate key import screen."
+  },
+  "delegateImportInvalid": "This isn't a delegate key. An exported key starts with zvdsk1.",
+  "@delegateImportInvalid": {
+    "description": "Message on the delegate key import screen."
+  },
+  "delegateImportKeyLabel": "Import a delegate key",
+  "@delegateImportKeyLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateImportLabel": "Import",
+  "@delegateImportLabel": {
+    "description": "Label or button on the delegate key import screen."
+  },
+  "delegateImportScanTitle": "Scan your delegate key's QR code",
+  "@delegateImportScanTitle": {
+    "description": "Title on the delegate key import screen."
+  },
+  "delegateImportTitle": "Import delegate key",
+  "@delegateImportTitle": {
+    "description": "Title on the delegate key import screen and the mobile delegate mode screens."
+  },
+  "delegateImportedTitle": "Key imported",
+  "@delegateImportedTitle": {
+    "description": "Title on the delegate key import screen."
+  },
+  "delegateImportedUnregistered": "This key isn't registered yet. Register it to start receiving delegations.",
+  "@delegateImportedUnregistered": {
+    "description": "Message on the delegate key import screen."
+  },
+  "delegateIntroLostKey": "Lost your delegate key and have no copy? Ask the vote coordinators to retire your delegate entry. You can then register again with a new key.",
+  "@delegateIntroLostKey": {
+    "description": "Message on the delegate mode dashboard. DG-1's way back for a delegate who lost its key with no copy."
+  },
+  "delegateIntroTitle": "Become a delegate",
+  "@delegateIntroTitle": {
+    "description": "Title on the delegate mode dashboard."
+  },
+  "delegateKeepPost": "Keep the post up. It is the public proof that this key is yours.",
+  "@delegateKeepPost": {
+    "description": "Message on the delegate registration screen."
+  },
+  "delegateKeyBackup": "Your delegate key is stored on this device. Export it to back it up or to move it to another device. It is not a wallet recovery phrase and holds no ZEC.",
+  "@delegateKeyBackup": {
+    "description": "[security] Message on the delegate mode dashboard. The key card's backup line and the export it leads to (contracts-v1 section 11.2)."
+  },
+  "delegateKeyLabel": "Delegate key",
+  "@delegateKeyLabel": {
+    "description": "Label or button on the delegate key import screen and the delegate registration screen."
+  },
+  "delegateKeyRegisteredBefore": "This key was registered before, so it can't register again. Start over with a new key.",
+  "@delegateKeyRegisteredBefore": {
+    "description": "Delegate registration error: the voting chain already saw this delegate key."
+  },
+  "delegateKeyTitle": "Your delegate key",
+  "@delegateKeyTitle": {
+    "description": "Title on the delegate mode dashboard."
+  },
+  "delegateKeyUnregistrable": "This key can't be registered. Start over with a new key.",
+  "@delegateKeyUnregistrable": {
+    "description": "Delegate registration error: the voting chain refused this delegate key."
+  },
+  "delegateLoadError": "Couldn't load delegate mode. Try again.",
+  "@delegateLoadError": {
+    "description": "Message on delegate mode status text."
+  },
+  "delegateMarkerGitHub": "Create a public gist from your GitHub account with this exact text.",
+  "@delegateMarkerGitHub": {
+    "description": "Message on the delegate registration screen."
+  },
+  "delegateMarkerTitle": "Your marker",
+  "@delegateMarkerTitle": {
+    "description": "Title on the delegate registration screen."
+  },
+  "delegateMarkerX": "Post this exact text from your X account as a new post, not a reply or quote.",
+  "@delegateMarkerX": {
+    "description": "Message on the delegate registration screen."
+  },
+  "delegateModeEntry": "Vote on behalf of the people who delegate to you.",
+  "@delegateModeEntry": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "delegateModeTitle": "Delegate mode",
+  "@delegateModeTitle": {
+    "description": "Title on the delegate mode dashboard and the mobile delegate mode screens."
+  },
+  "delegateNoEntryForKey": "The voting chain has no delegate entry for your key.",
+  "@delegateNoEntryForKey": {
+    "description": "Delegate ballot and retire error: the voting chain has no registry entry for this device's delegate key."
+  },
+  "delegateNoRounds": "No voting rounds take delegations right now.",
+  "@delegateNoRounds": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "delegateNotRegistered": "Register as a delegate before you submit a ballot.",
+  "@delegateNotRegistered": {
+    "description": "Message on delegate mode status text."
+  },
+  "delegateNothingToRegister": "There is no key to register on this device.",
+  "@delegateNothingToRegister": {
+    "description": "Message on the delegate registration screen."
+  },
+  "delegateNothingToRetire": "There is no delegate entry on this device to retire.",
+  "@delegateNothingToRetire": {
+    "description": "Message on the retire-as-delegate screen."
+  },
+  "delegateOpenBallotLabel": "Open ballot",
+  "@delegateOpenBallotLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateOpenDashboardLabel": "Open delegate mode",
+  "@delegateOpenDashboardLabel": {
+    "description": "Label or button on the delegate registration screen."
+  },
+  "delegateProofLinkGitHubHint": "https://gist.github.com/yourhandle/...",
+  "@delegateProofLinkGitHubHint": {
+    "description": "Input placeholder on the delegate registration screen."
+  },
+  "delegateProofLinkGitHubInvalid": "Paste the link to your gist on gist.github.com.",
+  "@delegateProofLinkGitHubInvalid": {
+    "description": "Message on the delegate registration screen."
+  },
+  "delegateProofLinkGitHubLabel": "Link to your gist",
+  "@delegateProofLinkGitHubLabel": {
+    "description": "Label or button on the delegate registration screen."
+  },
+  "delegateProofLinkXHint": "https://x.com/yourhandle/status/...",
+  "@delegateProofLinkXHint": {
+    "description": "Input placeholder on the delegate registration screen."
+  },
+  "delegateProofLinkXInvalid": "Paste the link to your post on x.com.",
+  "@delegateProofLinkXInvalid": {
+    "description": "Message on the delegate registration screen."
+  },
+  "delegateProofLinkXLabel": "Link to your post",
+  "@delegateProofLinkXLabel": {
+    "description": "Label or button on the delegate registration screen."
+  },
+  "delegateProviderTitle": "Prove your account",
+  "@delegateProviderTitle": {
+    "description": "Title on the delegate registration screen."
+  },
+  "delegateReauthBallotBiometricReason": "Confirm access to sign your ballot",
+  "@delegateReauthBallotBiometricReason": {
+    "description": "[security] Reason shown in the system biometric prompt before it signs the delegate's ballot."
+  },
+  "delegateReauthBallotSubtitle": "To sign your ballot.",
+  "@delegateReauthBallotSubtitle": {
+    "description": "[security] Subtitle of delegate mode's password or passcode sheet before it signs the delegate's ballot."
+  },
+  "delegateReauthExportBiometricReason": "Confirm access to your delegate key",
+  "@delegateReauthExportBiometricReason": {
+    "description": "[security] Reason shown in the system biometric prompt before it shows the delegate key."
+  },
+  "delegateReauthExportSubtitle": "To export your delegate key.",
+  "@delegateReauthExportSubtitle": {
+    "description": "[security] Subtitle of delegate mode's password or passcode sheet before it shows the delegate key."
+  },
+  "delegateReauthFailed": "Couldn't confirm access. Try again.",
+  "@delegateReauthFailed": {
+    "description": "Message on delegate mode's re-authentication sheet."
+  },
+  "delegateReauthRegisterBiometricReason": "Confirm access to register your delegate key",
+  "@delegateReauthRegisterBiometricReason": {
+    "description": "[security] Reason shown in the system biometric prompt before it registers the delegate key."
+  },
+  "delegateReauthRegisterSubtitle": "To register your delegate key.",
+  "@delegateReauthRegisterSubtitle": {
+    "description": "[security] Subtitle of delegate mode's password or passcode sheet before it registers the delegate key."
+  },
+  "delegateReauthRetireBiometricReason": "Confirm access to retire as a delegate",
+  "@delegateReauthRetireBiometricReason": {
+    "description": "[security] Reason shown in the system biometric prompt before it retires the delegate entry."
+  },
+  "delegateReauthRetireSubtitle": "To retire as a delegate.",
+  "@delegateReauthRetireSubtitle": {
+    "description": "[security] Subtitle of delegate mode's password or passcode sheet before it retires the delegate entry."
+  },
+  "delegateRegisterClosed": "Delegate registration is closed right now. Try again later.",
+  "@delegateRegisterClosed": {
+    "description": "Delegate registration error: the voting chain has registration turned off."
+  },
+  "delegateRegisterFailed": "Couldn't register this key. Try again.",
+  "@delegateRegisterFailed": {
+    "description": "Message on the delegate registration screen. A registration that failed without a chain verdict, such as one the vote server refused before the chain saw it."
+  },
+  "delegateRegisterRejected": "The voting chain rejected this registration. Try again later.",
+  "@delegateRegisterRejected": {
+    "description": "Message on delegate mode text built from a chain answer. Shown only for a chain verdict, see delegateRegisterRejectionCopy."
+  },
+  "delegateRegisterTitle": "Register as a delegate",
+  "@delegateRegisterTitle": {
+    "description": "Title on the delegate registration screen and the mobile delegate mode screens."
+  },
+  "delegateRegistered": "Vizor verified @{handle}. You can submit ballots now, including in rounds already running.",
+  "@delegateRegistered": {
+    "description": "Success message on the delegate registration screen. {handle} is the verified handle without the @.",
+    "placeholders": {
+      "handle": {
+        "type": "String",
+        "example": "alice"
+      }
+    }
+  },
+  "delegateRegisteredTitle": "You're registered",
+  "@delegateRegisteredTitle": {
+    "description": "Title on the delegate registration screen."
+  },
+  "delegateRegistrationPending": "Your registration was sent and has not landed yet. Vizor keeps checking. You can also verify your post again.",
+  "@delegateRegistrationPending": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "delegateRegistryFull": "The delegate registry is full. Try again later.",
+  "@delegateRegistryFull": {
+    "description": "Delegate registration error: the voting chain's delegate registry has no room."
+  },
+  "delegateRetireEntryTitle": "Entry this retires",
+  "@delegateRetireEntryTitle": {
+    "description": "Title on the retire-as-delegate screen."
+  },
+  "delegateRetireFailed": "Couldn't retire. Your delegate entry can still vote. Try again.",
+  "@delegateRetireFailed": {
+    "description": "Message on the retire-as-delegate screen."
+  },
+  "delegateRetireLabel": "Retire",
+  "@delegateRetireLabel": {
+    "description": "Label or button on the delegate mode dashboard and the mobile delegate mode screens and the retire-as-delegate screen."
+  },
+  "delegateRetireSuspended": "Coordinators suspended your delegate entry, so it can't retire itself.",
+  "@delegateRetireSuspended": {
+    "description": "Retire error: a suspended entry can't retire."
+  },
+  "delegateRetired": "Your delegate entry is retired, so this key can't vote anymore. To come back, start over with a new key and register again.",
+  "@delegateRetired": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "delegateRetiredBallot": "Your delegate entry is retired, so it can't submit a ballot.",
+  "@delegateRetiredBallot": {
+    "description": "Message on delegate mode status text."
+  },
+  "delegateRetiredDone": "Your delegate entry can't vote anymore.",
+  "@delegateRetiredDone": {
+    "description": "Message on the retire-as-delegate screen."
+  },
+  "delegateRetiredTitle": "You've retired",
+  "@delegateRetiredTitle": {
+    "description": "Title on the retire-as-delegate screen."
+  },
+  "delegateRoundsTitle": "Voting rounds",
+  "@delegateRoundsTitle": {
+    "description": "Title on the delegate mode dashboard."
+  },
+  "delegateStartOver": "This deletes the key from this device. It can't be undone unless you exported the key.",
+  "@delegateStartOver": {
+    "description": "[security] Message on the delegate mode dashboard."
+  },
+  "delegateStartOverConfirmLabel": "Remove key",
+  "@delegateStartOverConfirmLabel": {
+    "description": "[security] Label or button on the delegate mode dashboard."
+  },
+  "delegateStartOverError": "Couldn't remove this key. A registered key stays until its entry is retired. Try again.",
+  "@delegateStartOverError": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "delegateStartOverLabel": "Start over with a new key",
+  "@delegateStartOverLabel": {
+    "description": "Label or button on the delegate mode dashboard. Letting an unregistered or retired key go, and the confirmation it asks first. An unregistered key's confirmation shows its export."
+  },
+  "delegateStartOverSaveKey": "Save this key before starting over. If this registration still lands, you'll need it to vote or retire.",
+  "@delegateStartOverSaveKey": {
+    "description": "[security] Message on the delegate mode dashboard."
+  },
+  "delegateStartOverSavedLabel": "I've saved this key",
+  "@delegateStartOverSavedLabel": {
+    "description": "[security] Label or button on the delegate mode dashboard."
+  },
+  "delegateStartOverTitle": "Remove this key?",
+  "@delegateStartOverTitle": {
+    "description": "[security] Title on the delegate mode dashboard."
+  },
+  "delegateStepCheckingPost": "Checking your post",
+  "@delegateStepCheckingPost": {
+    "description": "Message on the delegate registration screen."
+  },
+  "delegateStepConfirming": "Confirming on chain",
+  "@delegateStepConfirming": {
+    "description": "Message on the delegate's ballot screen."
+  },
+  "delegateStepRegistering": "Registering on the voting chain",
+  "@delegateStepRegistering": {
+    "description": "Message on the delegate registration screen."
+  },
+  "delegateStepSigning": "Signing ballot",
+  "@delegateStepSigning": {
+    "description": "Message on the delegate's ballot screen."
+  },
+  "delegateStepSubmitting": "Submitting ballot",
+  "@delegateStepSubmitting": {
+    "description": "Message on the delegate's ballot screen."
+  },
+  "delegateSubmitAnywayLabel": "Submit anyway",
+  "@delegateSubmitAnywayLabel": {
+    "description": "Label or button on the delegate's ballot screen."
+  },
+  "delegateSubmitBallotLabel": "Submit ballot",
+  "@delegateSubmitBallotLabel": {
+    "description": "Label or button on the delegate's ballot screen."
+  },
+  "delegateSuspended": "Coordinators suspended your delegate entry, so you can't submit ballots.",
+  "@delegateSuspended": {
+    "description": "Message on delegate mode status text and the delegate mode dashboard."
+  },
+  "delegateUnavailable": "Couldn't reach the voting chain. Try again.",
+  "@delegateUnavailable": {
+    "description": "Message on delegate mode status text."
+  },
+  "delegateUseDifferentKeyLabel": "Use a different key",
+  "@delegateUseDifferentKeyLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateVerifierBadRequest": "The verifier couldn't read this request. Check the link and try again.",
+  "@delegateVerifierBadRequest": {
+    "description": "Delegate registration error: the verifier refused the request as malformed."
+  },
+  "delegateVerifierMarkerMismatch": "The post doesn't match your marker. Post the marker exactly as shown, with nothing else in the post.",
+  "@delegateVerifierMarkerMismatch": {
+    "description": "Delegate registration error: the post's text differs from the marker the app showed."
+  },
+  "delegateVerifierPostNotFound": "The verifier couldn't find a post at that link. Check the link and make sure the post is public.",
+  "@delegateVerifierPostNotFound": {
+    "description": "Delegate registration error: the verifier found no post at the given link."
+  },
+  "delegateVerifierProviderUnavailable": "The verifier can't check posts right now. Try again later.",
+  "@delegateVerifierProviderUnavailable": {
+    "description": "Delegate registration error: the verifier can't reach X or GitHub and gave no retry time."
+  },
+  "delegateVerifierProviderUnavailableUntil": "The verifier can't check posts right now. Try again after {time}.",
+  "@delegateVerifierProviderUnavailableUntil": {
+    "description": "Delegate registration error: the verifier can't reach X or GitHub. {time} is the formatted time to retry after.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "14:05"
+      }
+    }
+  },
+  "delegateVerifierRateLimited": "The verifier is checking too many posts right now. Try again later.",
+  "@delegateVerifierRateLimited": {
+    "description": "Delegate registration error: the verifier is rate limited and gave no retry time."
+  },
+  "delegateVerifierRateLimitedUntil": "The verifier is checking too many posts right now. Try again after {time}.",
+  "@delegateVerifierRateLimitedUntil": {
+    "description": "Delegate registration error: the verifier is rate limited. {time} is the formatted time to retry after.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "14:05"
+      }
+    }
+  },
+  "delegateVerifierUnknown": "The verifier couldn't check this post. Try again later.",
+  "@delegateVerifierUnknown": {
+    "description": "Delegate registration error: the verifier answered with an error Vizor doesn't know."
+  },
+  "delegateVerifierUnreachable": "Couldn't reach the verifier. Check your connection and try again.",
+  "@delegateVerifierUnreachable": {
+    "description": "Delegate registration error: the verifier didn't answer."
+  },
+  "delegateVerifyAgainLabel": "Verify again",
+  "@delegateVerifyAgainLabel": {
+    "description": "Label or button on the delegate registration screen."
+  },
+  "delegateVerifyAndRegisterLabel": "Verify and register",
+  "@delegateVerifyAndRegisterLabel": {
+    "description": "Label or button on the delegate registration screen."
+  },
+  "delegateViewBallotLabel": "View ballot",
+  "@delegateViewBallotLabel": {
+    "description": "Label or button on the delegate mode dashboard."
+  },
+  "delegateVotingEnded": "Voting has ended for this round, so you can't submit a ballot.",
+  "@delegateVotingEnded": {
+    "description": "Message on the delegate mode dashboard and the delegate's ballot screen."
+  },
+  "delegateVotingEnds": "Voting ends {time}",
+  "@delegateVotingEnds": {
+    "description": "Delegate mode dashboard deadline line. {time} is the formatted vote end.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "12 Dec, 14:00"
+      }
+    }
   },
   "donationDonatingTo": "Donating to",
   "@donationDonatingTo": {
@@ -11075,6 +11687,20 @@
       }
     }
   },
+  "proxyBallotConfirm": "Submit your ballot? It covers all {questionCount} questions for everyone who delegated to you. It's public, and you can't change it.",
+  "@proxyBallotConfirm": {
+    "description": "Confirmation dialog body before a delegate submits their ballot. {questionCount} is the number of questions in the round.",
+    "placeholders": {
+      "questionCount": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "proxyBallotRules": "You vote once per round, on every question, for everyone who delegated to you. You can't change your ballot after you submit it. If you don't submit it before voting ends, ZEC delegated to you isn't counted this round.",
+  "@proxyBallotRules": {
+    "description": "Message on the delegate mode dashboard and the delegate's ballot screen."
+  },
   "proxyBeforeYouDelegateTitle": "Before you delegate",
   "@proxyBeforeYouDelegateTitle": {
     "description": "Title on the vote review's delegation section."
@@ -11140,6 +11766,18 @@
   "proxyCountsOnlyWithBallot": "Your delegated ZEC counts only if your delegate submits a complete ballot before voting ends. If they don't, it isn't counted this round.",
   "@proxyCountsOnlyWithBallot": {
     "description": "Message on the round screen's delegation section and the vote review's delegation section."
+  },
+  "proxyDelegateIntroCount": "An approximate count of delegations to you is public on the voting chain. Vizor shows it only on your dashboard.",
+  "@proxyDelegateIntroCount": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "proxyDelegateIntroPrivateVotes": "Your private votes are hidden from the public. Vote servers can link them to you unless Tor is on.",
+  "@proxyDelegateIntroPrivateVotes": {
+    "description": "Message on the delegate mode dashboard."
+  },
+  "proxyDelegateIntroPublicVotes": "Your public votes stay linked to your X or GitHub account permanently, even if you delete your post or account.",
+  "@proxyDelegateIntroPublicVotes": {
+    "description": "Message on the delegate mode dashboard."
   },
   "proxyDelegatedLabel": "Delegated",
   "@proxyDelegatedLabel": {
@@ -11470,6 +12108,10 @@
   "proxyResultsNote": "These totals include the ZEC you delegated. The round shows how your delegates voted.",
   "@proxyResultsNote": {
     "description": "Message on the round screen's delegation section."
+  },
+  "proxyRetire": "Retire as a delegate? This retires your delegate entry for good. If you haven't submitted this round's ballot, ZEC delegated to you this round won't be counted. To come back, register again with a new key; you get a new delegate number.",
+  "@proxyRetire": {
+    "description": "[security] Message on the retire-as-delegate screen."
   },
   "proxyReviewAnswersTitle": "Your answers",
   "@proxyReviewAnswersTitle": {

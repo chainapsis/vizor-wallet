@@ -28,5 +28,6 @@ void main() {
     ]) {
       expect(copy, isNot(contains(claim)));
     }
+    expect(testL10n.proxyBallotConfirm(3), contains("It's public"));
   });
 }

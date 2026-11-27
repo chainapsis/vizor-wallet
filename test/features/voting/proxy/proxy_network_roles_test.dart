@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/network/network_http_client.dart';
+import 'package:zcash_wallet/src/features/voting/proxy/delegate_verifier_client.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_providers.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_repository.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_registry_fetcher.dart';
@@ -153,6 +154,16 @@ VotingHttpResponse _json(String body, {int status = 200}) => VotingHttpResponse(
   bodyBytes: Uint8List.fromList(utf8.encode(body)),
 );
 
+/// The attester's rate-limit refusal.
+const _verifierRefusal = '{"error":"rate_limited","retry_after":1790006400}';
+
+/// An attest request body, as zcash_voting builds it.
+final _attestBody = Uint8List.fromList(
+  utf8.encode(
+    '{"provider":1,"proof_url":"https://x.com/a/status/1","dk":"zvdk1"}',
+  ),
+);
+
 /// One proxy network role: how a host answers, how the client calls a URL
 /// list, and what reaches a host.
 typedef _Role = ({
@@ -216,6 +227,26 @@ final _roles = <_Role>[
     paths: ['/list.json'],
     accepted: (_) => '{"ok":1}',
     maxResponseBytes: ProxyRegistryFetcher.maxResponseBytes,
+  ),
+  (
+    name: 'verifiers',
+    answer: (_) => _json(_verifierRefusal, status: 429),
+    call: (http, network, urls) async {
+      final answer = await DelegateVerifierClient(http).post(
+        network: network,
+        urls: urls,
+        path: '/v1/attest',
+        body: _attestBody,
+        accept: (answer) async => answer,
+      );
+      return answer == null
+          ? null
+          : '${answer.statusCode} ${utf8.decode(answer.body)}';
+    },
+    publicUrl: 'https://verifier.example/api',
+    paths: ['/api/v1/attest'],
+    accepted: (_) => '429 $_verifierRefusal',
+    maxResponseBytes: DelegateVerifierClient.maxResponseBytes,
   ),
 ];
 
@@ -299,7 +330,7 @@ void main() {
           public.host,
         });
         for (final request in tor.requests) {
-          expect(request.body, isNull);
+          expect(request.body, request.method == 'POST' ? _attestBody : null);
           expect(request.limit, role.maxResponseBytes);
         }
       });
@@ -320,7 +351,8 @@ void main() {
     });
   }
 
-  group('vote-chain reads ask for the codespace on the selected route', () {
+  group('vote-chain reads and posts ask for the codespace on the selected '
+      'route', () {
     /// A vote server client at [baseUrl] over [http].
     VotingApiClient voteServer(VotingHttpClient http, Uri baseUrl) =>
         VotingApiClient(
@@ -329,6 +361,11 @@ void main() {
           delay: (_) async {},
         );
 
+    /// A delegate op body, as zcash_voting builds it.
+    final op = Uint8List.fromList(
+      utf8.encode('{"retire":{"delegate_index":1}}'),
+    );
+
     test('over Tor', () async {
       final tor = _RecordingTor((_) => _json('{}'));
       final api = voteServer(
@@ -336,6 +373,7 @@ void main() {
         Uri.parse('https://vote.example'),
       );
       await api.getChainAnswer('/shielded-vote/v1/delegates/by-key/ab');
+      await api.postChainBody('/shielded-vote/v1/delegate-op', op);
       expect(
         [
           for (final request in tor.requests)
@@ -345,7 +383,10 @@ void main() {
               request.headers['x-svote-codespace'],
             ),
         ],
-        [('GET', '/shielded-vote/v1/delegates/by-key/ab', '1')],
+        [
+          ('GET', '/shielded-vote/v1/delegates/by-key/ab', '1'),
+          ('POST', '/shielded-vote/v1/delegate-op', '1'),
+        ],
       );
     });
 
@@ -356,7 +397,11 @@ void main() {
         Uri.parse('http://127.0.0.1:${server.port}'),
       );
       await api.getChainAnswer('/shielded-vote/v1/delegates/by-key/ab');
-      expect(requests, [('GET', '/shielded-vote/v1/delegates/by-key/ab', '1')]);
+      await api.postChainBody('/shielded-vote/v1/delegate-op', op);
+      expect(requests, [
+        ('GET', '/shielded-vote/v1/delegates/by-key/ab', '1'),
+        ('POST', '/shielded-vote/v1/delegate-op', '1'),
+      ]);
     });
   });
 
@@ -366,6 +411,7 @@ void main() {
     final http = container.read(proxyHttpClientProvider);
     expect(container.read(proxyRegistryProofClientProvider).http, same(http));
     expect(container.read(proxyRegistryFetcherProvider).http, same(http));
+    expect(container.read(delegateVerifierClientProvider).http, same(http));
   });
 
   test('proxy delegation builds HTTP only on the route-aware client', () {

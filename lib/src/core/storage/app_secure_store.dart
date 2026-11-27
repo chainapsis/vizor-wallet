@@ -65,6 +65,10 @@ const _ironwoodMigrationPendingTxSaltKeyPrefix =
 const _accountMnemonicMigrationCompleteKey =
     'zcash_mnemonic_storage_migrated_v1';
 const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
+
+/// Delegate mode's key, as its `zvdsk1…` export, app-level rather than an
+/// account's. Only builds with `VIZOR_PROXY_DELEGATION_ENABLED` write it.
+const _delegateKeyPrefix = 'zcash_delegate_key_';
 const _e2eUseFirstUnlockMnemonicKeychain = bool.fromEnvironment(
   'ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN',
 );
@@ -558,10 +562,7 @@ class AppSecureStore {
       });
       return;
     }
-    if (key.startsWith(_votingHotkeyKeyPrefix) ||
-        key == kPaymentLinkRecoveryStorageKey ||
-        key == kPaymentLinkReceivedStorageKey ||
-        key == kPendingAccountMnemonicStorageKey) {
+    if (_isAppManagedGeneralSecretKey(key)) {
       await _secretMutationLock.run(() async {
         await _runStorageOperation(
           'delete "$key"', // l10n-ignore: storage diagnostic label
@@ -616,6 +617,18 @@ class AppSecureStore {
       'write "$key"', // l10n-ignore: storage diagnostic label
       () => _writeValue(_storage, key, value),
     );
+  }
+
+  /// Plain storage entries whose keys start with [prefix].
+  Future<Map<String, String>> readPlainWithPrefix(String prefix) async {
+    final storedValues = await _runStorageOperation(
+      'read keys with prefix "$prefix"', // l10n-ignore: storage diagnostic label
+      _storage.readAll,
+    );
+    return {
+      for (final entry in storedValues.entries)
+        if (entry.key.startsWith(prefix)) entry.key: entry.value,
+    };
   }
 
   /// Deletes plain storage entries whose keys start with [prefix].
@@ -835,6 +848,10 @@ class AppSecureStore {
   }) {
     return '${_votingHotkeyAccountPrefix(accountUuid)}$roundId';
   }
+
+  /// Stable secure-storage key for the secret of delegate key [dk]
+  /// (`zvdk1…`), an app-managed secret encrypted like voting hotkeys.
+  static String delegateKeyStorageKey(String dk) => '$_delegateKeyPrefix$dk';
 
   static String _votingHotkeyAccountPrefix(String accountUuid) {
     return '$_votingHotkeyKeyPrefix${accountUuid}_';
@@ -1361,6 +1378,7 @@ class AppSecureStore {
 
   bool _isAppManagedGeneralSecretKey(String key) {
     return key.startsWith(_votingHotkeyKeyPrefix) ||
+        key.startsWith(_delegateKeyPrefix) ||
         key == kPaymentLinkRecoveryStorageKey ||
         key == kPaymentLinkReceivedStorageKey ||
         key == kPendingAccountMnemonicStorageKey;
