@@ -26,7 +26,7 @@ use crate::wallet::{
     db::{
         open_readonly_conn_with_timeout, open_wallet_db_readonly_with_timeout,
         open_wallet_db_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
-        WalletDatabase, READ_DB_BUSY_TIMEOUT, SYNC_DB_BUSY_TIMEOUT,
+        WalletDatabase, WalletDbReader, READ_DB_BUSY_TIMEOUT, SYNC_DB_BUSY_TIMEOUT,
     },
     keys,
     network::WalletNetwork,
@@ -1119,20 +1119,20 @@ fn parse_sync_meta_u64(key: &str, value: Option<String>) -> Option<u64> {
     }
 }
 
-fn read_witness_check_meta(db_data_path: &str) -> Result<WitnessCheckMeta, String> {
-    let conn = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
-    if !sync_meta_table_exists(&conn)? {
+fn read_witness_check_meta(reader: &mut WalletDbReader<'_>) -> Result<WitnessCheckMeta, String> {
+    let conn = reader.connection()?;
+    if !sync_meta_table_exists(conn)? {
         return Ok(WitnessCheckMeta::default());
     }
 
     Ok(WitnessCheckMeta {
         policy_version: parse_sync_meta_u32(
             WITNESS_CHECK_POLICY_VERSION_KEY,
-            read_sync_meta_value(&conn, WITNESS_CHECK_POLICY_VERSION_KEY)?,
+            read_sync_meta_value(conn, WITNESS_CHECK_POLICY_VERSION_KEY)?,
         ),
         last_clean_height: parse_sync_meta_u64(
             WITNESS_CHECK_LAST_CLEAN_HEIGHT_KEY,
-            read_sync_meta_value(&conn, WITNESS_CHECK_LAST_CLEAN_HEIGHT_KEY)?,
+            read_sync_meta_value(conn, WITNESS_CHECK_LAST_CLEAN_HEIGHT_KEY)?,
         ),
     })
 }
@@ -1141,33 +1141,39 @@ fn read_sync_completion_meta(
     db_data_path: &str,
 ) -> Result<(Option<u32>, Option<u64>, Option<bool>), String> {
     let conn = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
-    if !sync_meta_table_exists(&conn)? {
+    read_sync_completion_meta_on(&conn)
+}
+
+fn read_sync_completion_meta_on(
+    conn: &rusqlite::Connection,
+) -> Result<(Option<u32>, Option<u64>, Option<bool>), String> {
+    if !sync_meta_table_exists(conn)? {
         return Ok((None, None, None));
     }
 
     Ok((
         parse_sync_meta_u32(
             SYNC_COMPLETION_POLICY_VERSION_KEY,
-            read_sync_meta_value(&conn, SYNC_COMPLETION_POLICY_VERSION_KEY)?,
+            read_sync_meta_value(conn, SYNC_COMPLETION_POLICY_VERSION_KEY)?,
         ),
         parse_sync_meta_u64(
             LAST_COMPLETED_SYNC_HEIGHT_KEY,
-            read_sync_meta_value(&conn, LAST_COMPLETED_SYNC_HEIGHT_KEY)?,
+            read_sync_meta_value(conn, LAST_COMPLETED_SYNC_HEIGHT_KEY)?,
         ),
         parse_sync_meta_u32(
             SYNC_IN_PROGRESS_KEY,
-            read_sync_meta_value(&conn, SYNC_IN_PROGRESS_KEY)?,
+            read_sync_meta_value(conn, SYNC_IN_PROGRESS_KEY)?,
         )
         .map(|value| value != 0),
     ))
 }
 
 fn witness_check_decision(
-    db_data_path: &str,
+    reader: &mut WalletDbReader<'_>,
     current_tip_height: u64,
     force_check: bool,
 ) -> WitnessCheckDecision {
-    match read_witness_check_meta(db_data_path) {
+    match read_witness_check_meta(reader) {
         Ok(meta) => decide_witness_check(meta, current_tip_height, force_check),
         Err(e) => {
             log::warn!(
@@ -1469,13 +1475,14 @@ fn validate_complete_tip_hash(
 }
 
 fn queue_witness_repairs_if_needed(
-    db_data_path: &str,
+    reader: &mut WalletDbReader<'_>,
     db: &mut WalletDatabase,
     current_tip_height: u64,
     repair_passes_this_run: &mut u32,
     force_check: bool,
 ) -> Result<Option<u64>, SyncError> {
-    match witness_check_decision(db_data_path, current_tip_height, force_check) {
+    let db_data_path = reader.path();
+    match witness_check_decision(reader, current_tip_height, force_check) {
         WitnessCheckDecision::Run(reason) => {
             log::info!(
                 "[{}] sync: witness repair check running ({})",
@@ -1819,7 +1826,7 @@ struct TransparentRefreshSummary {
 
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
-    db_data_path: &str,
+    reader: &mut WalletDbReader<'_>,
     db: &mut WalletDatabase,
     network: WalletNetwork,
     policy: EnhancementPolicy,
@@ -1830,6 +1837,7 @@ async fn refresh_utxos(
     progress: Option<&(dyn Fn(u64, u64) + Sync)>,
     should_exit: &impl Fn() -> bool,
 ) -> Result<TransparentRefreshSummary, SyncError> {
+    let db_data_path = reader.path();
     let mut refreshes = Vec::new();
     let mut summary = TransparentRefreshSummary::default();
     // GetAddressUtxos discloses every refreshed address, so it is authorized
@@ -1865,8 +1873,8 @@ async fn refresh_utxos(
         let safety_start_height = db
             .utxo_query_height(account_id)
             .map_err(|e| SyncError::db(format!("utxo_query_height: {e}")))?;
-        let account_birthday_height = account_birthday_height(db_data_path, account_id)
-            .unwrap_or_else(|e| {
+        let account_birthday_height =
+            account_birthday_height(reader, account_id).unwrap_or_else(|e| {
                 log::warn!(
                     "sync: failed to read account {} birthday for transparent UTXO sweep: {}",
                     account_uuid,
@@ -1912,9 +1920,8 @@ async fn refresh_utxos(
             TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT
         };
 
-        let external_addresses = keys::get_external_transparent_receive_addresses_from_db(
-            db_data_path,
-            network,
+        let external_addresses = keys::external_transparent_receive_addresses(
+            reader.connection().map_err(SyncError::db)?,
             Some(&account_uuid),
         )
         .map_err(|e| SyncError::db(format!("external transparent receive addresses: {e}")))?;
@@ -2249,8 +2256,12 @@ fn mark_transparent_receive_cache_dirty(db_data_path: &str, account_uuid: &str) 
     }
 }
 
-fn account_birthday_height(db_path: &str, account_id: AccountUuid) -> Result<u64, SyncError> {
-    let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))
+fn account_birthday_height(
+    reader: &mut WalletDbReader<'_>,
+    account_id: AccountUuid,
+) -> Result<u64, SyncError> {
+    let conn = reader
+        .connection()
         .map_err(|e| SyncError::db(format!("open DB for account birthday: {e}")))?;
     let birthday: i64 = conn
         .query_row(
@@ -3802,6 +3813,7 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    let mut reader = WalletDbReader::new(db_data_path);
     let mut enhancement = EnhancementSession::new(network, db_data_path);
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
@@ -3958,7 +3970,7 @@ async fn run_sync_impl(
         let mut critical_received_outputs = false;
         let active_summary = refresh_utxos(
             &mut client,
-            db_data_path,
+            &mut reader,
             &mut db,
             network,
             enhancement.policy(),
@@ -3978,7 +3990,7 @@ async fn run_sync_impl(
             );
             refresh_utxos(
                 &mut client,
-                db_data_path,
+                &mut reader,
                 &mut db,
                 network,
                 enhancement.policy(),
@@ -3998,7 +4010,7 @@ async fn run_sync_impl(
         let mut critical_received_outputs = false;
         refresh_utxos(
             &mut client,
-            db_data_path,
+            &mut reader,
             &mut db,
             network,
             enhancement.policy(),
@@ -4141,7 +4153,9 @@ async fn run_sync_impl(
     // also sizes the batches, and without the subtree heights its 10,000-block
     // averages miss where dense spam starts and stops, so a failed read ends
     // the attempt like any other DB read.
-    let work_model = WorkModel::load(db_data_path, network, BATCH_SIZE_FOREGROUND)
+    let work_model = reader
+        .connection()
+        .and_then(|conn| WorkModel::load(conn, network, BATCH_SIZE_FOREGROUND))
         .map_err(|e| SyncError::db(format!("subtree heights: {e}")))?;
     // Main-scan batches only (`batch_uses_direct_connection`). Checking-stage
     // batches, ranges that follow the wallet's notes, and every request that
@@ -4210,7 +4224,9 @@ async fn run_sync_impl(
     // A job claimed after a completed sync is a catch-up only while it scans
     // the blocks since; checked again whenever the loop reads new ranges.
     let catch_up_completed_height = if job.from_completed_sync() {
-        read_sync_completion_meta(db_data_path)
+        reader
+            .connection()
+            .and_then(read_sync_completion_meta_on)
             .ok()
             .and_then(|(_, height, _)| height)
     } else {
@@ -4638,7 +4654,7 @@ async fn run_sync_impl(
                 }
 
                 if let Some(repair_pending_blocks) = queue_witness_repairs_if_needed(
-                    db_data_path,
+                    &mut reader,
                     &mut db,
                     current_tip_height,
                     &mut witness_repair_passes_this_run,
@@ -5791,7 +5807,14 @@ async fn run_sync_impl(
         .get_account_ids()
         .map_err(|e| SyncError::db(e.to_string()))?
     {
-        if !ledger_discovery::is_ready(db_data_path, network, id).map_err(SyncError::db)? {
+        if !ledger_discovery::is_ready_on(
+            reader.connection().map_err(SyncError::db)?,
+            db_data_path,
+            network,
+            id,
+        )
+        .map_err(SyncError::db)?
+        {
             return Err(SyncError::other(
                 "Ledger recovery was invalidated during sync; retrying",
             ));
@@ -5827,7 +5850,7 @@ async fn run_sync_impl(
         final_scanned_height,
         final_tip_height,
     );
-    refresh_transparent_receive_cache(db_data_path, network, final_scanned_height);
+    refresh_transparent_receive_cache(&mut reader, network, final_scanned_height);
     with_wallet_db_write_lock("sync_engine.mark_sync_completed", || {
         mark_sync_completed(db_data_path, final_tip_height)
     })
@@ -5910,7 +5933,7 @@ async fn run_sync_impl(
         let deferred_result = loop {
             let result = refresh_utxos(
                 &mut client,
-                db_data_path,
+                &mut reader,
                 &mut db,
                 network,
                 enhancement.policy(),
@@ -6115,7 +6138,11 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
         // the cache dirty still restores it below.
         Ok(transparent_ledger::RunOutcome::NotEnabled) => {
             if private {
-                refresh_transparent_receive_cache(db_data_path, network, completed.0);
+                refresh_transparent_receive_cache(
+                    &mut WalletDbReader::new(db_data_path),
+                    network,
+                    completed.0,
+                );
             }
             return;
         }
@@ -6146,7 +6173,7 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
             )
         }
     }
-    refresh_transparent_receive_cache(db_data_path, network, completed.0);
+    refresh_transparent_receive_cache(&mut WalletDbReader::new(db_data_path), network, completed.0);
     progress_fn(followup_updated_event(completed));
 }
 
@@ -6154,12 +6181,12 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
 /// of `scanned_height`, so the receive screen never offers an address the
 /// wallet has seen funds at. Failures are logged; a later sync retries.
 fn refresh_transparent_receive_cache(
-    db_data_path: &str,
+    reader: &mut WalletDbReader<'_>,
     network: WalletNetwork,
     scanned_height: u64,
 ) {
     match transparent_receive_cache::refresh_all_from_wallet_db(
-        db_data_path,
+        reader,
         network,
         Some(scanned_height),
     ) {
@@ -8236,7 +8263,7 @@ mod tests {
         mark_witness_check_clean(db_path, 3_364_776).unwrap();
 
         assert_eq!(
-            read_witness_check_meta(db_path).unwrap(),
+            read_witness_check_meta(&mut WalletDbReader::new(db_path)).unwrap(),
             WitnessCheckMeta {
                 policy_version: Some(WITNESS_CHECK_POLICY_VERSION),
                 last_clean_height: Some(3_364_776),

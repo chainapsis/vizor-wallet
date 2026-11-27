@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -2519,6 +2520,53 @@ void main() {
     releaseNewRun.complete();
     await newStop;
   });
+
+  test('a height observation alone does not start a status sweep', () async {
+    var statusReads = 0;
+    final statuses = {
+      _softwareUuid: _status('waiting_denom_confirmations'),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      loadStatus: (accountUuid) async {
+        statusReads += 1;
+        return statuses[accountUuid]!;
+      },
+      mutableFailover: true,
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    await coordinator.refreshNow();
+    final readsAfterSweep = statusReads;
+    expect(readsAfterSweep, greaterThan(0));
+
+    final failover =
+        container.read(rpcEndpointFailoverProvider.notifier)
+            as _MutableFailoverNotifier;
+    failover.observeHeight(BigInt.from(1_001));
+    await pumpEventQueue();
+    expect(statusReads, readsAfterSweep);
+
+    failover.switchTo(
+      const RpcEndpointConfig(
+        networkName: 'test',
+        lightwalletdUrl: 'https://fallback.example.test:443',
+      ),
+    );
+    await pumpEventQueue();
+    expect(statusReads, greaterThan(readsAfterSweep));
+  });
 }
 
 ProviderContainer _container({
@@ -2539,6 +2587,7 @@ ProviderContainer _container({
   List<String>? backgroundPreparationStarts,
   List<String>? proofReadinessRecords,
   bool mutableAccounts = false,
+  bool mutableFailover = false,
   bool isMobile = true,
   AppSecurityState? initialSecurityState,
   IronwoodMigrationStopper? stopMigrationRun,
@@ -2635,6 +2684,8 @@ ProviderContainer _container({
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       if (mutableAccounts)
         accountProvider.overrideWith(_MutableAccountNotifier.new),
+      if (mutableFailover)
+        rpcEndpointFailoverProvider.overrideWith(_MutableFailoverNotifier.new),
       if (initialSecurityState != null)
         appSecurityProvider.overrideWith(
           () => _MutableSecurityNotifier(initialSecurityState),
@@ -2681,6 +2732,26 @@ class _MutableAccountNotifier extends AccountNotifier {
 
   void clearAccounts() {
     state = const AsyncData(AccountState());
+  }
+}
+
+class _MutableFailoverNotifier extends RpcEndpointFailoverNotifier {
+  @override
+  RpcEndpointFailoverState build() => const RpcEndpointFailoverState(
+    primary: _endpoint,
+    current: _endpoint,
+    fallbackCandidates: [],
+  );
+
+  void observeHeight(BigInt height) {
+    state = state.copyWith(
+      lastObservedHeight: height,
+      lastObservedAt: DateTime.now(),
+    );
+  }
+
+  void switchTo(RpcEndpointConfig endpoint) {
+    state = state.copyWith(current: endpoint);
   }
 }
 

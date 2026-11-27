@@ -198,7 +198,11 @@ fn rewind_invalidates_external_and_internal_completion_without_changing_birthday
         0
     );
     assert_eq!(
-        account_birthday_height(path, keys::parse_account_uuid(&uuid).unwrap()).unwrap(),
+        account_birthday_height(
+            &mut WalletDbReader::new(path),
+            keys::parse_account_uuid(&uuid).unwrap()
+        )
+        .unwrap(),
         2_000_000
     );
 }
@@ -593,7 +597,10 @@ fn public_rewind_fixture(corrupt_cache: bool) {
         return;
     }
     assert_eq!(result.unwrap(), u64::from(target));
-    assert_eq!(account_birthday_height(path, account).unwrap(), birthday);
+    assert_eq!(
+        account_birthday_height(&mut WalletDbReader::new(path), account).unwrap(),
+        birthday
+    );
     let plans = transparent_receive_cache::plan_external_utxo_refresh(
         path, network, &uuid, &external, birthday, birthday, 20, 20,
     )
@@ -917,7 +924,7 @@ mod private_transparent_policy {
         let mut received = false;
         let summary = refresh_utxos(
             &mut lwd.client,
-            &f.path,
+            &mut WalletDbReader::new(&f.path),
             &mut f.db,
             f.network,
             enhancement::EnhancementPolicy::current(f.network),

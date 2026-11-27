@@ -250,6 +250,7 @@ void _invalidateIronwoodMigrationStatusState(
   WidgetRef ref, {
   IronwoodMigrationStatusRequest? statusRequest,
 }) {
+  ref.invalidate(desktopHomeMigrationSweepProvider);
   if (statusRequest != null) {
     ref.invalidate(ironwoodMigrationStatusProvider(statusRequest));
   }

@@ -167,6 +167,7 @@ _continuePrivateMigrationAfterNotificationGate(
 }
 
 void _invalidateStartedPrivateMigration(WidgetRef ref) {
+  ref.invalidate(ironwoodPostMigrationStateProvider);
   ref.invalidate(ironwoodMigrationRouteCtaProvider);
   ref.invalidate(ironwoodHomeMigrationCtaProvider);
   ref.invalidate(ironwoodMigrationFlowDataProvider);

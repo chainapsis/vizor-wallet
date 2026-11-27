@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -41,6 +42,8 @@ class _EpochHarness {
   int authoritativeHeightReads = 0;
   final walletOpenTipHeights = <int?>[];
   FutureOr<void> Function()? onStatusSweep;
+  final statusesAfterStop = <String, rust_sync.MigrationStatus>{};
+  String? failedBatchAccount;
   late final ProviderContainer container;
   late final IronwoodMigrationCoordinator coordinator;
 
@@ -77,26 +80,49 @@ class _TestAppSecurityNotifier extends AppSecurityNotifier {
 
 Future<_EpochHarness> _startCoordinator({
   rust_sync.MigrationStatus? accountStatus,
+  OrchardMigrationStatusGetter? homeStatus,
+  List<AccountInfo> additionalAccounts = const [],
   bool acceptScheduledBroadcast = false,
   bool disposeDuringInitialHeightRead = false,
 }) async {
   final harness = _EpochHarness();
   final status = accountStatus ?? _completeStatus();
+  rust_sync.MigrationStatus currentStatus(String uuid) =>
+      harness.statusesAfterStop[uuid] ?? status;
   final service = IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
     getStatus:
         ({required dbPath, required network, required accountUuid}) async =>
-            status,
+            currentStatus(accountUuid),
     getStatuses:
         ({required dbPath, required network, required accountUuids}) async {
-          await harness.onStatusSweep?.call();
-          return [
+          final snapshot = [
             for (final accountUuid in accountUuids)
               rust_sync.MigrationStatusEntry(
                 accountUuid: accountUuid,
-                status: status,
+                status: accountUuid == harness.failedBatchAccount
+                    ? null
+                    : currentStatus(accountUuid),
+                error: accountUuid == harness.failedBatchAccount
+                    ? 'failed'
+                    : null,
               ),
           ];
+          await harness.onStatusSweep?.call();
+          return snapshot;
+        },
+    stopMigrationRun:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required expectedRunId,
+          required nativeAttemptedTxids,
+        }) async {
+          harness.statusesAfterStop[accountUuid] = _completeStatus(
+            phase: kIronwoodMigrationReadyPhase,
+          );
         },
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
@@ -125,7 +151,29 @@ Future<_EpochHarness> _startCoordinator({
   );
   final container = ProviderContainer(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      if (homeStatus != null) ...[
+        walletDbPathGetterProvider.overrideWithValue(service.getWalletDbPath),
+        orchardMigrationStatusGetterProvider.overrideWithValue(homeStatus),
+        ironwoodMigrationInputsProvider.overrideWithValue(
+          IronwoodMigrationInputs(
+            ironwoodActiveAtTip: true,
+            network: _endpoint.networkName,
+            accountUuid: _accountUuid,
+            accountName: 'Software',
+            profilePictureId: '',
+            hasAccountScopedData: true,
+            isSyncing: false,
+            isBackgroundMode: false,
+            isSyncComplete: true,
+            hasSyncFailure: false,
+            orchardBalance: BigInt.zero,
+            orchardPendingBalance: BigInt.zero,
+            ironwoodBalance: BigInt.one,
+            ironwoodPendingBalance: BigInt.zero,
+          ),
+        ),
+      ],
+      appBootstrapProvider.overrideWithValue(_bootstrap(additionalAccounts)),
       appSecurityProvider.overrideWith(_TestAppSecurityNotifier.new),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       ironwoodMigrationServiceProvider.overrideWithValue(service),
@@ -174,12 +222,112 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
   });
 
+  test('Home reuses only a successful batch from its current scope', () async {
+    final batch = _completeStatus();
+    final direct = _completeStatus();
+    var reads = 0;
+    final h = await _startCoordinator(
+      accountStatus: batch,
+      additionalAccounts: const [
+        AccountInfo(uuid: 'second', name: 'Second', order: 1),
+      ],
+      homeStatus:
+          ({required dbPath, required network, required accountUuid}) async {
+            reads++;
+            return direct;
+          },
+    );
+    final home = ironwoodPostMigrationStateProvider;
+    final sub = h.container.listen(home, (_, _) {});
+    addTearDown(sub.close);
+    expect((await h.container.read(home.future)).status, same(direct));
+    h.failedBatchAccount = 'second';
+    await h.coordinator.refreshNow();
+    expect((await h.container.read(home.future)).status, same(batch));
+    expect(reads, 1);
+
+    expect((await h.container.refresh(home.future)).status, same(direct));
+    h.failedBatchAccount = _accountUuid;
+    await h.coordinator.refreshNow();
+    expect((await h.container.read(home.future)).status, same(direct));
+    expect(reads, 3);
+
+    h.failedBatchAccount = null;
+    h.onStatusSweep = () => throw StateError('batch failed');
+    await h.coordinator.refreshNow();
+    expect((await h.container.read(home.future)).status, same(direct));
+    expect(reads, 4);
+
+    // A scope retired while the batch is in flight cannot supply Home.
+    h.onStatusSweep = () =>
+        h.container.invalidate(desktopHomeMigrationSweepProvider);
+    await h.coordinator.refreshNow();
+    expect((await h.container.read(home.future)).status, same(direct));
+  });
+
   test('stops a height refresh when its provider is disposed', () async {
     await expectLater(
       _startCoordinator(disposeDuringInitialHeightRead: true),
       completes,
     );
   });
+
+  test(
+    'a pre-stop sweep cannot restore a stopped account’s Home CTA',
+    () async {
+      final running = _scheduledStatus(scheduledHeight: 5000, canAbandon: true);
+      late final _EpochHarness h;
+      h = await _startCoordinator(
+        accountStatus: running,
+        additionalAccounts: const [
+          AccountInfo(uuid: 'second', name: 'Second', order: 1),
+        ],
+        homeStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                h.statusesAfterStop[accountUuid] ?? running,
+      );
+      final cta = ironwoodHomeMigrationCtaProvider;
+      final subscription = h.container.listen(cta, (_, _) {});
+      addTearDown(subscription.close);
+      expect(
+        (await h.container.read(cta.future)).mode,
+        IronwoodHomeMigrationCtaMode.resume,
+      );
+
+      final snapshotTaken = Completer<void>();
+      final releaseSnapshot = Completer<void>();
+      final refreshStarted = Completer<void>();
+      final releaseRefresh = Completer<void>();
+      h.onStatusSweep = () {
+        snapshotTaken.complete();
+        h.onStatusSweep = () {
+          refreshStarted.complete();
+          return releaseRefresh.future;
+        };
+        return releaseSnapshot.future;
+      };
+      final refresh = h.coordinator.refreshNow();
+      await snapshotTaken.future;
+      await h.coordinator.stop(
+        accountUuid: _accountUuid,
+        runId: running.activeRunId!,
+      );
+      releaseSnapshot.complete();
+      await refreshStarted.future;
+      final beforeNextResult = await h.container.read(cta.future);
+      releaseRefresh.complete();
+      await refresh;
+      expect(beforeNextResult.visible, isFalse);
+      expect((await h.container.read(cta.future)).visible, isFalse);
+      expect(
+        h.container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .statuses['second']
+            ?.phase,
+        running.phase,
+      );
+    },
+  );
 
   test('desktop visibility changes preserve the epoch', () async {
     final harness = await _startCoordinator();
@@ -519,17 +667,18 @@ void main() {
   });
 }
 
-AppBootstrapState _bootstrap() {
+AppBootstrapState _bootstrap(List<AccountInfo> additionalAccounts) {
   return AppBootstrapState(
     initialLocation: '/home',
-    initialAccountState: const AccountState(
+    initialAccountState: AccountState(
       accounts: [
-        AccountInfo(
+        const AccountInfo(
           uuid: _accountUuid,
           name: 'Software',
           order: 0,
           isSeedAnchor: true,
         ),
+        ...additionalAccounts,
       ],
       activeAccountUuid: _accountUuid,
       activeAddress: 'u1test',
@@ -545,7 +694,10 @@ AppBootstrapState _bootstrap() {
   );
 }
 
-rust_sync.MigrationStatus _scheduledStatus({required int scheduledHeight}) {
+rust_sync.MigrationStatus _scheduledStatus({
+  required int scheduledHeight,
+  bool canAbandon = false,
+}) {
   return rust_sync.MigrationStatus(
     phase: 'broadcast_scheduled',
     activeRunId: 'run-1',
@@ -561,7 +713,7 @@ rust_sync.MigrationStatus _scheduledStatus({required int scheduledHeight}) {
     totalCount: 1,
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
-    canAbandon: false,
+    canAbandon: canAbandon,
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
@@ -589,9 +741,9 @@ rust_sync.IronwoodMigrationResult _migrationResult({bool accepted = false}) {
   );
 }
 
-rust_sync.MigrationStatus _completeStatus() {
+rust_sync.MigrationStatus _completeStatus({String phase = 'complete'}) {
   return rust_sync.MigrationStatus(
-    phase: 'complete',
+    phase: phase,
     targetValuesZatoshi: frb.Uint64List.fromList([100000000]),
     preparedNoteCount: 1,
     denominationConfirmationCount: 3,

@@ -2555,8 +2555,12 @@ async fn the_followup_retires_a_cached_receive_address_recovery_funded() {
     let progress = |_: SyncProgressEvent| {};
     let completed = (u64::from(TIP), u64::from(TIP) + 1);
     // The sync refreshes the cache when it completes, before recovery runs.
-    transparent_receive_cache::refresh_all_from_wallet_db(&wallet.path, NETWORK, Some(completed.0))
-        .unwrap();
+    transparent_receive_cache::refresh_all_from_wallet_db(
+        &mut crate::wallet::db::WalletDbReader::new(&wallet.path),
+        NETWORK,
+        Some(completed.0),
+    )
+    .unwrap();
     assert_eq!(cached(&wallet).as_deref(), Some(funded.as_str()));
     let empty = FixtureSource::new(main_hash);
     empty.trust();

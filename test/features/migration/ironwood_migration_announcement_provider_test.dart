@@ -1080,6 +1080,128 @@ void main() {
     },
   );
 
+  test(
+    'Home shares a pending status read and retries after an error',
+    () async {
+      final reads = <Completer<rust_sync.MigrationStatus>>[];
+      final container = _container(
+        getMigrationStatus:
+            ({required dbPath, required network, required accountUuid}) {
+              final read = Completer<rust_sync.MigrationStatus>();
+              reads.add(read);
+              return read.future;
+            },
+      );
+      addTearDown(container.dispose);
+      await _settleCoreProviders(container);
+
+      final home = container.read(ironwoodPostMigrationStateProvider.future);
+      await container.pump();
+      final cta = container.read(ironwoodHomeMigrationCtaProvider.future);
+      await container.pump();
+      expect(reads, hasLength(1));
+
+      reads.single.completeError(StateError('status read failed'));
+      await home;
+      await cta;
+      final retry = container.refresh(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      await container.pump();
+      expect(reads, hasLength(2));
+      final status = _migrationStatus(kIronwoodMigrationReadyPhase);
+      reads.last.complete(status);
+      expect((await retry).status, same(status));
+
+      final next = container.refresh(ironwoodPostMigrationStateProvider.future);
+      await container.pump();
+      expect(reads, hasLength(3));
+      final running = _migrationStatus(
+        kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      );
+      reads.last.complete(running);
+      expect((await next).status, same(running));
+    },
+  );
+
+  test(
+    'Home ignores a pre-mutation read that finishes after refresh',
+    () async {
+      final beforeStart = Completer<rust_sync.MigrationStatus>();
+      final afterStart = _migrationStatus(
+        kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      );
+      var calls = 0;
+      final container = _container(
+        getMigrationStatus:
+            ({required dbPath, required network, required accountUuid}) {
+              calls++;
+              return calls == 1 ? beforeStart.future : Future.value(afterStart);
+            },
+      );
+      addTearDown(container.dispose);
+      await _settleCoreProviders(container);
+      final cta = ironwoodHomeMigrationCtaProvider;
+      final subscription = container.listen(cta, (_, _) {});
+      addTearDown(subscription.close);
+      await container.pump();
+      expect(calls, 1);
+      container.invalidate(ironwoodPostMigrationStateProvider);
+      expect((await container.read(cta.future)).status, same(afterStart));
+      expect(calls, 2);
+      beforeStart.complete(_migrationStatus(kIronwoodMigrationReadyPhase));
+      await container.pump();
+      expect((await container.read(cta.future)).status, same(afterStart));
+      expect(calls, 2);
+    },
+  );
+
+  test(
+    'pending Home reads are scoped to wallet, network and account',
+    () async {
+      var path = _dbPath;
+      var networkName = 'main';
+      var account = _accountUuid;
+      final reads = <(String, String, String)>[];
+      final pending = Completer<rust_sync.MigrationStatus>();
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          walletDbPathGetterProvider.overrideWithValue(() async => path),
+          ironwoodMigrationInputsProvider.overrideWith(
+            (_) => _migrationInputs(accountUuid: account, network: networkName),
+          ),
+          orchardMigrationStatusGetterProvider.overrideWithValue(({
+            required dbPath,
+            required network,
+            required accountUuid,
+          }) {
+            reads.add((dbPath, network, accountUuid));
+            return pending.future;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      final initial = container.read(ironwoodPostMigrationStateProvider.future);
+      await container.pump();
+      for (final other in [
+        ('/tmp/other.db', 'main', _accountUuid),
+        (_dbPath, 'test', _accountUuid),
+        (_dbPath, 'main', 'another-account'),
+      ]) {
+        (path, networkName, account) = other;
+        container.invalidate(ironwoodMigrationInputsProvider);
+        container.invalidate(ironwoodPostMigrationStateProvider);
+        container.read(ironwoodPostMigrationStateProvider.future);
+        await container.pump();
+        expect(reads.last, other);
+      }
+      expect(reads, hasLength(4));
+      pending.complete(_migrationStatus(kIronwoodMigrationReadyPhase));
+      await initial;
+    },
+  );
+
   test('home presentation cache is scoped to account and network', () async {
     const secondAccountUuid = '550e8400-e29b-41d4-a716-446655440001';
     var inputs = _migrationInputs(accountUuid: _accountUuid);
@@ -1400,11 +1522,12 @@ SyncState _syncingReadyState() {
 
 IronwoodMigrationInputs _migrationInputs({
   required String accountUuid,
+  String network = 'main',
   bool isSyncing = false,
 }) {
   return IronwoodMigrationInputs(
     ironwoodActiveAtTip: true,
-    network: 'main',
+    network: network,
     accountUuid: accountUuid,
     accountName: 'Account 1',
     profilePictureId: '1',

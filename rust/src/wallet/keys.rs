@@ -1053,6 +1053,10 @@ pub(crate) fn get_ledger_account_signing_metadata(
 
 pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    list_account_uuids(&conn)
+}
+
+pub(crate) fn list_account_uuids(conn: &rusqlite::Connection) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare("SELECT uuid FROM accounts ORDER BY id ASC")
         .map_err(|e| format!("Failed to prepare account UUID query: {e}"))?;
@@ -1421,7 +1425,14 @@ pub(crate) fn get_external_transparent_receive_addresses_from_db(
     account_uuid: Option<&str>,
 ) -> Result<Vec<ExternalTransparentAddress>, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
-    let account_uuid_bytes = resolve_account_uuid_bytes_for_read(&conn, account_uuid)?;
+    external_transparent_receive_addresses(&conn, account_uuid)
+}
+
+pub(crate) fn external_transparent_receive_addresses(
+    conn: &rusqlite::Connection,
+    account_uuid: Option<&str>,
+) -> Result<Vec<ExternalTransparentAddress>, String> {
+    let account_uuid_bytes = resolve_account_uuid_bytes_for_read(conn, account_uuid)?;
 
     let mut stmt = conn
         .prepare(

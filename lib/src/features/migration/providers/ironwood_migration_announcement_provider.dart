@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/chain_upgrade_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -610,6 +612,39 @@ final walletDbPathGetterProvider = Provider<WalletDbPathGetter>(
   (_) => getWalletDbPath,
 );
 
+/// Only a completed sweep for the current Home inputs can supply a refresh.
+/// A change during a sweep replaces this object, so a late result stays with
+/// the old inputs even if the user has already switched back to that account.
+final desktopHomeMigrationSweepProvider = Provider((ref) {
+  ref.watch(ironwoodMigrationInputsProvider);
+  ref.watch(appSecurityProvider.select((security) => security.requiresUnlock));
+  return DesktopHomeMigrationSweep();
+});
+
+class DesktopHomeMigrationSweep {
+  ({
+    String dbPath,
+    String network,
+    String accountUuid,
+    rust_sync.MigrationStatus status,
+  })?
+  result;
+
+  rust_sync.MigrationStatus? lookup(
+    String dbPath,
+    String network,
+    String accountUuid,
+  ) {
+    final entry = result;
+    return entry != null &&
+            entry.dbPath == dbPath &&
+            entry.network == network &&
+            entry.accountUuid == accountUuid
+        ? entry.status
+        : null;
+  }
+}
+
 final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
   ref,
 ) {
@@ -834,10 +869,8 @@ final ironwoodMigrationAnnouncementProvider =
 
 final ironwoodHomeMigrationCtaProvider =
     FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {
-      final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      final postMigrationState = await _loadIronwoodPostMigrationState(
-        ref,
-        inputs,
+      final postMigrationState = await ref.watch(
+        ironwoodPostMigrationStateProvider.future,
       );
       return _homeMigrationCtaForPostMigrationState(postMigrationState);
     });
@@ -1137,13 +1170,22 @@ Future<IronwoodPostMigrationState> _loadIronwoodPostMigrationState(
 
   rust_sync.MigrationStatus status;
   try {
-    final dbPath = await ref.watch(walletDbPathGetterProvider)();
     final getStatus = ref.watch(orchardMigrationStatusGetterProvider);
-    status = await getStatus(
-      dbPath: dbPath,
-      network: inputs.network,
-      accountUuid: accountUuid,
-    );
+    final sweep = kAppFormFactor == AppFormFactor.desktop
+        ? ref.watch(desktopHomeMigrationSweepProvider)
+        : null;
+    final useSweep = !ref.isRefresh;
+    final dbPath = await ref.watch(walletDbPathGetterProvider)();
+    final sweptStatus = useSweep
+        ? sweep?.lookup(dbPath, inputs.network, accountUuid)
+        : null;
+    status =
+        sweptStatus ??
+        await getStatus(
+          dbPath: dbPath,
+          network: inputs.network,
+          accountUuid: accountUuid,
+        );
   } catch (_) {
     if (inputs.isSyncing || inputs.isBackgroundMode) {
       return const IronwoodPostMigrationState.unavailable();

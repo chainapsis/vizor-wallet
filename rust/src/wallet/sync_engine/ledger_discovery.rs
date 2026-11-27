@@ -76,6 +76,15 @@ pub(crate) fn is_ready(
     account_id: AccountUuid,
 ) -> Result<bool, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
+    is_ready_on(&conn, db_path, network, account_id)
+}
+
+pub(super) fn is_ready_on(
+    conn: &rusqlite::Connection,
+    db_path: &str,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+) -> Result<bool, String> {
     let source: Option<String> = conn
         .query_row(
             "SELECT key_source FROM accounts WHERE uuid=?1",
@@ -88,13 +97,13 @@ pub(crate) fn is_ready(
     }
     // Reads honor a durable `PrivateRequired`, so a handle retains public
     // authority only when neither the selection nor the wallet withholds it.
-    let mode = wallet_db_on(&conn, db_path, network)
+    let mode = wallet_db_on(conn, db_path, network)
         .transparent_ledger_mode()
         .map_err(|e| e.to_string())?;
     if !mode.retains_public_authority() {
         return Ok(true);
     }
-    if !table_exists(&conn)? {
+    if !table_exists(conn)? {
         return Ok(false);
     }
     conn.query_row(&format!("SELECT COUNT(*)=2 FROM {TABLE} WHERE account_uuid=?1 AND complete=2 AND key_scope IN (0,1)"), [account_id.expose_uuid().as_bytes().as_slice()], |r| r.get(0)).map_err(|e| e.to_string())
