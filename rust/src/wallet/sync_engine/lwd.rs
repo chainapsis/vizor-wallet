@@ -828,43 +828,19 @@ pub(super) fn next_subtree_indices(
     ))
 }
 
-/// Pulls the latest shielded subtree roots from lightwalletd
-/// and writes them into `db` via `put_*_subtree_roots`. The starting
-/// index for each protocol comes from the shard roots already stored in
-/// `db` ([`next_subtree_indices`]), so a follow-up sync only fetches
-/// roots for subtrees the wallet has not seen yet.
-///
-/// Every byte slice from the wire is length-checked: a subtree root
-/// is exactly 32 bytes, and a short or long payload is rejected as a
-/// `SyncError::parse` rather than being sliced with a hard-coded
-/// range (which would panic before `try_into` could catch the
-/// mismatch).
-pub(super) async fn download_subtree_roots(
-    client: &mut CompactTxStreamerClient<Channel>,
-    db: &mut WalletDatabase,
-    network: WalletNetwork,
-    chain_tip: BlockHeight,
-) -> Result<(), SyncError> {
-    let ironwood_enabled = ironwood_sync_enabled(network, chain_tip);
-    let (sap_start, orch_start, ironwood_start) = next_subtree_indices(db, ironwood_enabled)?;
-    if ironwood_enabled {
-        log::info!(
-            "[{}] sync: subtree roots start: sapling={}, orchard={}, ironwood={}",
-            elapsed(),
-            sap_start,
-            orch_start,
-            ironwood_start
-        );
-    } else {
-        log::info!(
-            "[{}] sync: subtree roots start: sapling={}, orchard={}",
-            elapsed(),
-            sap_start,
-            orch_start
-        );
-    }
+pub(super) struct FetchedSubtreeRoots {
+    sap_start: u64,
+    sapling: Vec<CommitmentTreeRoot<sapling_crypto::Node>>,
+    orch_start: u64,
+    orchard: Vec<CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>>,
+    ironwood_start: u64,
+    ironwood: Option<Vec<CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>>>,
+}
 
-    // Sapling
+async fn fetch_sapling_subtree_roots(
+    mut client: CompactTxStreamerClient<Channel>,
+    sap_start: u64,
+) -> Result<Vec<CommitmentTreeRoot<sapling_crypto::Node>>, SyncError> {
     let mut stream = await_tonic_stream(
         "sapling subtree roots",
         LIGHTWALLETD_STREAM_START_TIMEOUT,
@@ -898,19 +874,13 @@ pub(super) async fn download_subtree_roots(
             node,
         ));
     }
-    log::info!(
-        "[{}] sync: downloaded {} sapling subtree roots",
-        elapsed(),
-        roots.len()
-    );
-    if !roots.is_empty() {
-        with_wallet_db_write_lock("sync_engine.put_sapling_subtree_roots", || {
-            db.put_sapling_subtree_roots(sap_start, roots.as_slice())
-                .map_err(|e| SyncError::db(format!("put_sapling_subtree_roots: {e}")))
-        })?;
-    }
+    Ok(roots)
+}
 
-    // Orchard
+async fn fetch_orchard_subtree_roots(
+    mut client: CompactTxStreamerClient<Channel>,
+    orch_start: u64,
+) -> Result<Vec<CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>>, SyncError> {
     let mut stream = await_tonic_stream(
         "orchard subtree roots",
         LIGHTWALLETD_STREAM_START_TIMEOUT,
@@ -938,32 +908,13 @@ pub(super) async fn download_subtree_roots(
             node,
         ));
     }
-    log::info!(
-        "[{}] sync: downloaded {} orchard subtree roots",
-        elapsed(),
-        roots.len()
-    );
-    if !roots.is_empty() {
-        with_wallet_db_write_lock("sync_engine.put_orchard_subtree_roots", || {
-            db.put_orchard_subtree_roots(orch_start, roots.as_slice())
-                .map_err(|e| SyncError::db(format!("put_orchard_subtree_roots: {e}")))
-        })?;
-    }
-
-    if ironwood_enabled {
-        download_ironwood_subtree_roots(client, db, ironwood_start).await?;
-    }
-
-    log::info!("[{}] sync: subtree roots done", elapsed());
-    Ok(())
+    Ok(roots)
 }
 
-/// Fetches only the missing completed Ironwood subtrees.
-pub(super) async fn download_ironwood_subtree_roots(
-    client: &mut CompactTxStreamerClient<Channel>,
-    db: &mut WalletDatabase,
+async fn fetch_ironwood_subtree_roots(
+    mut client: CompactTxStreamerClient<Channel>,
     ironwood_start: u64,
-) -> Result<(), SyncError> {
+) -> Result<Vec<CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>>, SyncError> {
     let mut stream = await_tonic_stream(
         "ironwood subtree roots",
         LIGHTWALLETD_STREAM_START_TIMEOUT,
@@ -992,6 +943,131 @@ pub(super) async fn download_ironwood_subtree_roots(
             node,
         ));
     }
+    Ok(roots)
+}
+
+/// Fetches Sapling, Orchard, and (when enabled) Ironwood subtree roots
+/// concurrently over the shared HTTP/2 channel without touching SQLite.
+pub(super) async fn fetch_subtree_roots(
+    client: CompactTxStreamerClient<Channel>,
+    sap_start: u64,
+    orch_start: u64,
+    ironwood_start: Option<u64>,
+) -> Result<FetchedSubtreeRoots, SyncError> {
+    let sap_fut = fetch_sapling_subtree_roots(client.clone(), sap_start);
+    let orch_fut = fetch_orchard_subtree_roots(client.clone(), orch_start);
+    let ironwood_fut = async {
+        match ironwood_start {
+            Some(start) => Ok(Some(fetch_ironwood_subtree_roots(client, start).await?)),
+            None => Ok(None),
+        }
+    };
+
+    let (sapling, orchard, ironwood) = tokio::try_join!(sap_fut, orch_fut, ironwood_fut)?;
+    Ok(FetchedSubtreeRoots {
+        sap_start,
+        sapling,
+        orch_start,
+        orchard,
+        ironwood_start: ironwood_start.unwrap_or(0),
+        ironwood,
+    })
+}
+
+/// Persists previously fetched subtree roots into `db`.
+pub(super) fn persist_subtree_roots(
+    db: &mut WalletDatabase,
+    fetched: FetchedSubtreeRoots,
+) -> Result<(), SyncError> {
+    log::info!(
+        "[{}] sync: downloaded {} sapling subtree roots",
+        elapsed(),
+        fetched.sapling.len()
+    );
+    if !fetched.sapling.is_empty() {
+        with_wallet_db_write_lock("sync_engine.put_sapling_subtree_roots", || {
+            db.put_sapling_subtree_roots(fetched.sap_start, fetched.sapling.as_slice())
+                .map_err(|e| SyncError::db(format!("put_sapling_subtree_roots: {e}")))
+        })?;
+    }
+
+    log::info!(
+        "[{}] sync: downloaded {} orchard subtree roots",
+        elapsed(),
+        fetched.orchard.len()
+    );
+    if !fetched.orchard.is_empty() {
+        with_wallet_db_write_lock("sync_engine.put_orchard_subtree_roots", || {
+            db.put_orchard_subtree_roots(fetched.orch_start, fetched.orchard.as_slice())
+                .map_err(|e| SyncError::db(format!("put_orchard_subtree_roots: {e}")))
+        })?;
+    }
+
+    if let Some(ironwood) = fetched.ironwood {
+        log::info!(
+            "[{}] sync: downloaded {} ironwood subtree roots",
+            elapsed(),
+            ironwood.len()
+        );
+        if !ironwood.is_empty() {
+            with_wallet_db_write_lock("sync_engine.put_ironwood_subtree_roots", || {
+                db.put_ironwood_subtree_roots(fetched.ironwood_start, ironwood.as_slice())
+                    .map_err(|e| SyncError::db(format!("put_ironwood_subtree_roots: {e}")))
+            })?;
+        }
+    }
+
+    log::info!("[{}] sync: subtree roots done", elapsed());
+    Ok(())
+}
+
+/// Pulls the latest shielded subtree roots from lightwalletd
+/// and writes them into `db` via `put_*_subtree_roots`. The starting
+/// index for each protocol comes from the shard roots already stored in
+/// `db` ([`next_subtree_indices`]), so a follow-up sync only fetches
+/// roots for subtrees the wallet has not seen yet.
+pub(super) async fn download_subtree_roots(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    chain_tip: BlockHeight,
+) -> Result<(), SyncError> {
+    let ironwood_enabled = ironwood_sync_enabled(network, chain_tip);
+    let (sap_start, orch_start, ironwood_start) = next_subtree_indices(db, ironwood_enabled)?;
+    if ironwood_enabled {
+        log::info!(
+            "[{}] sync: subtree roots start: sapling={}, orchard={}, ironwood={}",
+            elapsed(),
+            sap_start,
+            orch_start,
+            ironwood_start
+        );
+    } else {
+        log::info!(
+            "[{}] sync: subtree roots start: sapling={}, orchard={}",
+            elapsed(),
+            sap_start,
+            orch_start
+        );
+    }
+
+    let fetched = fetch_subtree_roots(
+        client.clone(),
+        sap_start,
+        orch_start,
+        ironwood_enabled.then_some(ironwood_start),
+    )
+    .await?;
+    persist_subtree_roots(db, fetched)
+}
+
+/// Fetches only the missing completed Ironwood subtrees.
+pub(super) async fn download_ironwood_subtree_roots(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    ironwood_start: u64,
+) -> Result<(), SyncError> {
+    let roots = fetch_ironwood_subtree_roots(client.clone(), ironwood_start).await?;
     log::info!(
         "[{}] sync: downloaded {} ironwood subtree roots",
         elapsed(),

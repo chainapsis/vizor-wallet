@@ -92,8 +92,8 @@ pub(crate) use lwd::{
     transparent_lookup::TransparentLookupGate,
 };
 use lwd::{
-    download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block,
-    open_block_download_lwd_transport, open_isolated_lwd_transport_until,
+    download_blocks, get_tree_state, get_tree_state_for_block, open_block_download_lwd_transport,
+    open_isolated_lwd_transport_until,
 };
 use progress_work::{JobProgress, WorkModel};
 #[cfg(test)]
@@ -779,7 +779,8 @@ fn post_batch_tip_check_due(
     tip: u64,
     since_last_check: std::time::Duration,
 ) -> bool {
-    batch_end.saturating_add(HISTORY_TIP_CHECK_DISTANCE) >= tip
+    (batch_end.saturating_add(HISTORY_TIP_CHECK_DISTANCE) >= tip
+        && since_last_check >= FINAL_TIP_REFRESH_MIN_AGE)
         || since_last_check >= HISTORY_TIP_CHECK_EVERY
 }
 
@@ -3949,6 +3950,41 @@ async fn run_sync_impl(
         return Ok(());
     }
 
+    // Start fetching incremental subtree roots concurrently with transparent UTXO
+    // refresh over the shared HTTP/2 channel. Neither `refresh_utxos` nor
+    // `resubmit_pending_transactions` modifies the shielded shard tables, so
+    // reading `next_subtree_indices` here is invariant and collapses 4 serial
+    // startup RTTs into 1.
+    let mut subtree_fetch = if should_exit() {
+        None
+    } else {
+        let ironwood_enabled = lwd::ironwood_sync_enabled(network, tip_height);
+        let (sap_start, orch_start, ironwood_start) =
+            lwd::next_subtree_indices(&mut db, ironwood_enabled)?;
+        if ironwood_enabled {
+            log::info!(
+                "[{}] sync: subtree roots start: sapling={}, orchard={}, ironwood={}",
+                elapsed(),
+                sap_start,
+                orch_start,
+                ironwood_start
+            );
+        } else {
+            log::info!(
+                "[{}] sync: subtree roots start: sapling={}, orchard={}",
+                elapsed(),
+                sap_start,
+                orch_start
+            );
+        }
+        Some(tokio::spawn(lwd::fetch_subtree_roots(
+            client.clone(),
+            sap_start,
+            orch_start,
+            ironwood_enabled.then_some(ironwood_start),
+        )))
+    };
+
     let active_utxo_progress = |completed, total| {
         progress_fn(preparation_progress_event(
             current_tip_height,
@@ -4026,6 +4062,9 @@ async fn run_sync_impl(
     };
 
     if should_exit() {
+        if let Some(handle) = subtree_fetch.take() {
+            handle.abort();
+        }
         log::info!(
             "[{}] sync: cancel/mode observed after transparent UTXO refresh",
             elapsed(),
@@ -4085,17 +4124,18 @@ async fn run_sync_impl(
         .await;
     }
 
-    // 3. Download subtree roots (incremental)
-    let Some(subtree_roots) = unless_exiting(
-        &should_exit,
-        download_subtree_roots(&mut client, &mut db, network, tip_height),
-    )
-    .await
-    else {
-        log::info!("[{}] sync: exiting during subtree root download", elapsed());
-        return Ok(());
-    };
-    subtree_roots?;
+    // 3. Download subtree roots (incremental) — streams ran in parallel with
+    //    `refresh_utxos` above; join and persist the results now.
+    if let Some(mut handle) = subtree_fetch.take() {
+        let Some(fetched) = unless_exiting(&should_exit, &mut handle).await else {
+            handle.abort();
+            log::info!("[{}] sync: exiting during subtree root download", elapsed());
+            return Ok(());
+        };
+        let fetched = fetched
+            .map_err(|e| SyncError::other(format!("subtree root fetch task failed: {e}")))??;
+        lwd::persist_subtree_roots(&mut db, fetched)?;
+    }
 
     if migration_anchor_retention_required {
         with_wallet_db_write_lock(
@@ -6468,17 +6508,28 @@ mod tests {
             tip,
             HISTORY_TIP_CHECK_EVERY
         ));
-        // Near the tip: after every batch.
-        assert!(post_batch_tip_check_due(
+        // Near the tip: respect FINAL_TIP_REFRESH_MIN_AGE cooldown so fast
+        // back-to-back batches do not spam GetLatestBlock.
+        assert!(!post_batch_tip_check_due(
             tip - HISTORY_TIP_CHECK_DISTANCE,
             tip,
             second
         ));
-        assert!(post_batch_tip_check_due(tip, tip, second));
+        assert!(post_batch_tip_check_due(
+            tip - HISTORY_TIP_CHECK_DISTANCE,
+            tip,
+            FINAL_TIP_REFRESH_MIN_AGE
+        ));
+        assert!(!post_batch_tip_check_due(tip, tip, second));
+        assert!(post_batch_tip_check_due(
+            tip,
+            tip,
+            FINAL_TIP_REFRESH_MIN_AGE
+        ));
         assert!(!post_batch_tip_check_due(
             tip - HISTORY_TIP_CHECK_DISTANCE - 1,
             tip,
-            second
+            FINAL_TIP_REFRESH_MIN_AGE
         ));
     }
 
