@@ -3679,6 +3679,27 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _pollTimer = null;
   }
 
+  /// Records a tip read from the current endpoint, by the poll or the
+  /// mempool observer, before deciding whether it needs a sync.
+  void _recordTipRead(
+    int tip, {
+    required int lastSynced,
+    required int foregroundEpoch,
+  }) {
+    if (canRunAppProcessWork(isInForeground: false) ||
+        (foregroundEpoch == _foregroundEpoch && _isInForeground)) {
+      _resumeTipCheckPending = false;
+      ref
+          .read(pendingActivityEvidenceProvider.notifier)
+          .networkChecked(
+            tip,
+            allowBackground: canRunAppProcessWork(isInForeground: false),
+          );
+    }
+    // A new chain tip is public: the restart schedule starts over.
+    if (tip > lastSynced) _recoveryRestartGate.reset();
+  }
+
   Future<void> _checkAndSync({int? observerTip}) async {
     if (_isShuttingDown) return;
     if (_recoverySettingTransition || _walletMutationPauseCount > 0) return;
@@ -3719,6 +3740,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         state.value?.isSyncComplete == true &&
         observerTip > state.value!.scannedHeight) {
       _newBlockCheckPending = false;
+      _recordTipRead(
+        observerTip,
+        lastSynced: state.value!.chainTipHeight,
+        foregroundEpoch: foregroundEpoch,
+      );
       startSync();
       return;
     }
@@ -3741,18 +3767,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         log('AutoSync: skipping restart after lock transition');
         return;
       }
-      if (canRunAppProcessWork(isInForeground: false) ||
-          (foregroundEpoch == _foregroundEpoch && _isInForeground)) {
-        _resumeTipCheckPending = false;
-        ref
-            .read(pendingActivityEvidenceProvider.notifier)
-            .networkChecked(
-              tip.toInt(),
-              allowBackground: canRunAppProcessWork(isInForeground: false),
-            );
-      }
-      // A new chain tip is public: the restart schedule starts over.
-      if (tip.toInt() > lastSynced) _recoveryRestartGate.reset();
+      _recordTipRead(
+        tip.toInt(),
+        lastSynced: lastSynced,
+        foregroundEpoch: foregroundEpoch,
+      );
       // Skip the status read entirely when the tip or an incomplete previous
       // sync already calls for a restart: that sync runs recovery anyway.
       var recoveryRestart = false;

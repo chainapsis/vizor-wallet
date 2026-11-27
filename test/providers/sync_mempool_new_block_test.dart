@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -127,6 +128,22 @@ class _Api extends RustLibApi {
     ),
   );
 
+  /// Outstanding private recovery queries the status read reports.
+  int recoveryQueries = 0;
+
+  @override
+  Future<rust_sync.EnhanceRecoveryStatus> crateApiSyncGetEnhanceRecoveryStatus({
+    required String dbPath,
+    required String network,
+  }) async => rust_sync.EnhanceRecoveryStatus(
+    queries: recoveryQueries,
+    rediscovery: 0,
+    suspended: 0,
+    status: 0,
+    transparentRetryDue: false,
+    serviceState: '',
+  );
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -184,6 +201,11 @@ class _NoPrivateQueries extends EnhancePirNotifier {
   bool build() => false;
 }
 
+class _PrivateQueries extends EnhancePirNotifier {
+  @override
+  bool build() => true;
+}
+
 class _Sync extends SyncNotifier {
   _Sync()
     : super(
@@ -221,6 +243,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final api = _Api();
   late _Tip endpoints;
+  late ProviderContainer container;
   setUpAll(() => RustLib.initMock(api: api));
   tearDownAll(RustLib.dispose);
   setUp(() {
@@ -230,19 +253,22 @@ void main() {
     _Tip.height = 100;
     _Tip.checks = 0;
     _Upgrade.hold = null;
+    api.recoveryQueries = 0;
   });
 
   /// A notifier whose first sync is running, with the mempool observer up.
   /// The poll timer is stopped, so only the observer can trigger a check.
-  Future<_Sync> syncing() async {
+  Future<_Sync> syncing({bool privateQueries = false}) async {
     final sync = _Sync();
-    final container = ProviderContainer(
+    container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         accountProvider.overrideWith(_Account.new),
         rpcEndpointFailoverProvider.overrideWith(() => endpoints = _Tip()),
         chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
-        enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+        enhancePirProvider.overrideWith(
+          privateQueries ? _PrivateQueries.new : _NoPrivateQueries.new,
+        ),
         syncProvider.overrideWith(() => sync),
       ],
     );
@@ -259,14 +285,21 @@ void main() {
     return sync;
   }
 
-  /// The first sync has completed and ended; the observer keeps running.
-  Future<_Sync> idle() async {
-    final sync = await syncing();
-    api.syncs[0].add(_complete());
+  /// Completes and ends sync [index]; its end restarts the poll, which the
+  /// test stops again.
+  Future<void> completeSync(_Sync sync, int index, [int height = 100]) async {
+    api.syncs[index].add(_complete(height));
     await pumpEventQueue();
     sync.stopTipChecksForTesting();
-    await api.finish(0);
+    await api.finish(index);
     await pumpEventQueue();
+    sync.stopTipChecksForTesting();
+  }
+
+  /// The first sync has completed and ended; the observer keeps running.
+  Future<_Sync> idle({bool privateQueries = false}) async {
+    final sync = await syncing(privateQueries: privateQueries);
+    await completeSync(sync, 0);
     _Tip.checks = 0;
     return sync;
   }
@@ -335,6 +368,34 @@ void main() {
     await pumpEventQueue();
     expect(api.syncs, hasLength(1));
     expect(_Tip.checks, 0);
+  });
+
+  test('a reconnect tip starts the recovery restart schedule over', () async {
+    final sync = await idle(privateQueries: true);
+    api.recoveryQueries = 1;
+    // At an unchanged tip, outstanding recovery restarts once, then backs off.
+    await sync.checkTipForTesting();
+    await pumpEventQueue();
+    expect(api.syncs, hasLength(2));
+    await completeSync(sync, 1);
+    await sync.checkTipForTesting();
+    await pumpEventQueue();
+    expect(api.syncs, hasLength(2), reason: 'the backoff holds');
+
+    _Tip.height = 101;
+    api.observedTip(101);
+    await pumpEventQueue();
+    expect(api.syncs, hasLength(3));
+    expect(container.read(pendingActivityEvidenceProvider).checkedTip, 101);
+    await completeSync(sync, 2, 101);
+
+    await sync.checkTipForTesting();
+    await pumpEventQueue();
+    expect(
+      api.syncs,
+      hasLength(4),
+      reason: 'the new tip reset the backoff, as a polled one does',
+    );
   });
 
   test(
