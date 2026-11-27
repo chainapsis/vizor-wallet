@@ -453,6 +453,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
+name = "byteorder-lite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -845,7 +851,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "724949bdda5310709ca2f97bf69c2b01e3362f44fef1fb47913445db4c1debb5"
 dependencies = [
  "derive-deftly-macros",
- "heck 0.4.1",
+ "heck 0.5.0",
 ]
 
 [[package]]
@@ -854,9 +860,9 @@ version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17933e749f2502cfcd1c27519292fbbea22e8fc64ce680e863f855e8cd8cce23"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "indexmap",
- "itertools 0.10.5",
+ "itertools 0.15.0",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -928,7 +934,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -990,6 +996,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ed25519-zebra"
+version = "4.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "775765289f7c6336c18d3d66127527820dd45ffd9eb3b6b8ee4708590e6c20f5"
+dependencies = [
+ "curve25519-dalek",
+ "ed25519",
+ "rand_core 0.6.4",
+ "sha2 0.10.9",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1030,7 +1050,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1802,6 +1822,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error 2.0.1",
+]
+
+[[package]]
 name = "imt-tree"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2000,7 +2030,7 @@ version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a1886916523694cd6ea3d175f03a1e5010699a2a4cc13696d83d7bea1d80638"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2733,7 +2763,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -2746,7 +2776,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -2778,6 +2808,12 @@ name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
+
+[[package]]
+name = "quick-error"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quote"
@@ -3091,6 +3127,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "ics23",
+ "image-webp",
  "incrementalmerkletree",
  "ipir-sp",
  "libc",
@@ -3153,6 +3190,7 @@ dependencies = [
  "zakura-service-config",
  "zakura-transparent",
  "zakura-zcash-script",
+ "zcash_vote_delegate",
  "zcash_voting",
  "zeroize",
  "zip32",
@@ -3196,7 +3234,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3247,7 +3285,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc6bf79ff24e648f6da1f8d1f011e9cac26491b619e6b9280f2b47f1774e6ee2"
 dependencies = [
  "fnv",
- "quick-error",
+ "quick-error 1.2.3",
  "tempfile",
  "wait-timeout",
 ]
@@ -3687,7 +3725,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4242,8 +4280,7 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 [[package]]
 name = "vote-commitment-tree"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaa68fe31485dc6dfdf4cd0d24ca4f40a7407bab25993fc7a5c80b82a90d96c6"
+source = "git+https://github.com/valargroup/zcash_voting?rev=36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054#36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054"
 dependencies = [
  "imt-tree",
  "incrementalmerkletree",
@@ -4254,8 +4291,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e71efe335700ae5aa29ad8010081efc7e97e69b02572542ba0531d6a07fd18fe"
+source = "git+https://github.com/valargroup/zcash_voting?rev=36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054#36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054"
 dependencies = [
  "base64",
  "hex",
@@ -4269,8 +4305,7 @@ dependencies = [
 [[package]]
 name = "voting-circuits"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05cb79a5279c7a6bd5fc9d43c1c96b8dc7812054fbfe51ec06807c3c6fa58b61"
+source = "git+https://github.com/valargroup/voting-circuits?rev=aa3ba600ddcd58db23d1c4e9de8c3ed2e28cdb56#aa3ba600ddcd58db23d1c4e9de8c3ed2e28cdb56"
 dependencies = [
  "blake2b_simd",
  "itertools 0.14.0",
@@ -4281,8 +4316,7 @@ dependencies = [
 [[package]]
 name = "voting-crypto-deps"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b141493318a70f263c2ab9c782388a32abde06a9847dd99291cb7005b500a4f"
+source = "git+https://github.com/valargroup/voting-circuits?rev=aa3ba600ddcd58db23d1c4e9de8c3ed2e28cdb56#aa3ba600ddcd58db23d1c4e9de8c3ed2e28cdb56"
 dependencies = [
  "incrementalmerkletree",
  "rand 0.10.3",
@@ -4461,7 +4495,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6408,10 +6442,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcash_vote_delegate"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/zcash_voting?rev=36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054#36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054"
+dependencies = [
+ "base64",
+ "bech32",
+ "blake2b_simd",
+ "curve25519-dalek",
+ "ed25519-zebra",
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+ "zeroize",
+]
+
+[[package]]
 name = "zcash_voting"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b403dff25b41b71171afe1f82ec5f64775f0532425cc56268d897b0151304a8"
+version = "5.4.0"
+source = "git+https://github.com/valargroup/zcash_voting?rev=36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054#36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054"
 dependencies = [
  "anyhow",
  "base64",
@@ -6453,6 +6502,7 @@ dependencies = [
  "zakura-pczt",
  "zakura-protocol",
  "zakura-wallet-lib",
+ "zcash_vote_delegate",
  "zeroize",
 ]
 

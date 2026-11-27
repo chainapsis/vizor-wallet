@@ -197,7 +197,10 @@ where
     let (db, reserved) = reserve(db_path, network, tx, earlier, network_tip).await?;
 
     let (dispatched, signal) = Dispatched::new();
-    let mut send = std::pin::pin!(send(dispatched));
+    // tokio::pin!, not std::pin::pin!: std's expands to `super let`, which
+    // flutter_rust_bridge_codegen's parser rejects.
+    let send = send(dispatched);
+    tokio::pin!(send);
     let release = |db| {
         drop(db);
         let held = reserved.elapsed();

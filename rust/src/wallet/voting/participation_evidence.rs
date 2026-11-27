@@ -158,12 +158,28 @@ pub(super) fn proof(data: &str) -> Result<ics23::CommitmentProof, String> {
     ics23::CommitmentProof::decode(bytes.as_slice()).map_err(|_| INVALID.into())
 }
 
+/// Verifies one governance-nullifier `abci_query` answer under `app_hash`:
+/// whether the nullifier is spent. See [`verify_query_value`].
 pub(super) fn verify_query(
     q: &QueryResponse,
     key: &[u8],
     app_hash: &[u8],
     height: u64,
 ) -> Result<bool, String> {
+    verify_query_value(q, key, app_hash, height, |value| value == [1]).map(|v| v.is_some())
+}
+
+/// Proves `key` in the `vote` store from one `abci_query` answer under
+/// `app_hash`: the proven value, or `None` when the answer proves the key
+/// absent. `admits` decides which non-empty values a membership proof may
+/// claim.
+pub(super) fn verify_query_value(
+    q: &QueryResponse,
+    key: &[u8],
+    app_hash: &[u8],
+    height: u64,
+    admits: impl Fn(&[u8]) -> bool,
+) -> Result<Option<Vec<u8>>, String> {
     if q.code != 0
         || q.height.parse::<u64>().ok() != Some(height)
         || q.key.as_ref().and_then(|k| B64.decode(k).ok()).as_deref() != Some(key)
@@ -201,15 +217,20 @@ pub(super) fn verify_query(
         .transpose()
         .map_err(|_| INVALID)?
         .unwrap_or_default();
-    let valid = if value == [1] {
-        ics23::verify_membership::<VoteStoreHashes>(&p, &ics23::iavl_spec(), &root, key, &[1])
-    } else if value.is_empty() {
+    let valid = if value.is_empty() {
         ics23::verify_non_membership::<VoteStoreHashes>(&p, &ics23::iavl_spec(), &root, key)
     } else {
-        false
+        admits(&value)
+            && ics23::verify_membership::<VoteStoreHashes>(
+                &p,
+                &ics23::iavl_spec(),
+                &root,
+                key,
+                &value,
+            )
     };
     if !valid {
         return Err(INVALID.into());
     }
-    Ok(!value.is_empty())
+    Ok((!value.is_empty()).then_some(value))
 }

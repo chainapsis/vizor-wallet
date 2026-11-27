@@ -266,6 +266,9 @@ fn funded_card_blocks(
 }
 
 struct ClaimFixture {
+    // Claims dial lightwalletd through the route policy; see
+    // `test_route_policy` for why readers hold the lock too.
+    _route: crate::network_privacy::test_route_policy::RoutePolicyGuard,
     _directory: tempfile::TempDir,
     path: String,
     uuid: String,
@@ -277,6 +280,7 @@ struct ClaimFixture {
 
 impl ClaimFixture {
     fn new() -> Self {
+        let route = crate::network_privacy::test_route_policy::lock_route_policy();
         let directory = tempfile::tempdir().unwrap();
         let path = directory
             .path()
@@ -313,6 +317,7 @@ impl ClaimFixture {
             .unwrap()
             .ironwood_commitment_tree_size = 2;
         Self {
+            _route: route,
             _directory: directory,
             path,
             uuid,

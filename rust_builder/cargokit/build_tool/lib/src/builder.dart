@@ -148,9 +148,24 @@ class RustBuilder {
     return releaseOverride;
   }
 
+  /// Cargo features a Vizor build adds: `unstable-proxy-delegation`, which
+  /// turns on zcash_voting's unstable proxy delegation switch, only for a
+  /// debug build started with VIZOR_UNSTABLE_PROXY_DELEGATION=1 (rust/Cargo.toml
+  /// documents it). A profile or release build that asks for it fails.
+  List<String> get _vizorFeatureArgs {
+    final asked = Platform.environment['VIZOR_UNSTABLE_PROXY_DELEGATION'];
+    if (asked == null || asked.isEmpty || asked == '0') return const [];
+    if (!environment.configuration.isDebug) {
+      throw BuildException(
+        'VIZOR_UNSTABLE_PROXY_DELEGATION is for debug development builds only.',
+      );
+    }
+    return const ['--features', 'unstable-proxy-delegation'];
+  }
+
   /// Returns the path of directory containing build artifacts.
   Future<String> build() async {
-    final extraArgs = _buildOptions?.flags ?? [];
+    final extraArgs = [...?_buildOptions?.flags, ..._vizorFeatureArgs];
     final manifestPath = path.join(environment.manifestDir, 'Cargo.toml');
     runCommand(
       'rustup',

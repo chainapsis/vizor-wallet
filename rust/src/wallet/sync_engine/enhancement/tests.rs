@@ -333,6 +333,9 @@ mod tests {
         use prost::Message;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
+        // The checkpoint's transport reads the route policy; see
+        // `test_route_policy` for why readers hold the lock too.
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         let (file, mut db, tx) =
             scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         let conn = rusqlite::Connection::open(file.path()).unwrap();

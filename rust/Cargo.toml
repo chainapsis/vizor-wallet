@@ -6,6 +6,16 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# Development only. Forwards zcash_voting's unstable, test-only switch
+# (`proxy::PROXY_DELEGATION_ENABLED`), so a debug build run with
+# `--dart-define=VIZOR_PROXY_DELEGATION_ENABLED=true` can delegate on a
+# gate-open dev chain. Never in a default, profile or release build:
+# `src/lib.rs` refuses to compile it without debug assertions, cargokit adds
+# it only to a debug build started with VIZOR_UNSTABLE_PROXY_DELEGATION=1,
+# and `unstable_proxy_delegation_guard` tests both.
+unstable-proxy-delegation = ["zcash_voting/unstable-proxy-delegation"]
+
 [dependencies]
 zakura-pir-protocol = { version = "=0.0.1-rc7", default-features = false, features = ["http-endpoint"] }
 zakura-pir-config = "=0.1.3"
@@ -111,6 +121,8 @@ ics23 = { version = "0.12", default-features = false }
 prost13 = { package = "prost", version = "0.13" }
 tendermint = "0.40.4"
 tendermint-light-client-verifier = "0.40.4"
+# Delegate pictures are decoded in pure Rust, never by a platform decoder.
+image-webp = "0.2.4"
 
 # Zcash core. Package names are the Zakura forks; lib names stay upstream so
 # `use orchard` / `use zcash_client_backend` keep working.
@@ -154,8 +166,21 @@ package = "zakura-client-sqlite"
 version = "=0.1.0-rc9.8"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
+# 5.4.0, not main's 5.4.1, only because the zcash_voting rev in
+# `[patch.crates-io]` below still says 5.4.0 in its manifest, and a patch
+# replaces only a version its requirement matches. That rev sits on
+# zcash_voting main, which already has both 5.4.1 changes (the Ledger
+# delegation recovery and the bounded PIR uploads). Go back to the released
+# version when a tag replaces the rev.
 [dependencies.zcash_voting]
-version = "=5.4.1"
+version = "=5.4.0"
+
+# Proxy delegation formats shared with the chain (contracts-v1 section 14).
+# Not on crates.io yet, so only the `[patch.crates-io]` entry below supplies
+# it, from the same zcash_voting rev, and Vizor and zcash_voting build one
+# copy of the crate.
+[dependencies.zcash_vote_delegate]
+version = "=0.1.0"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -231,8 +256,9 @@ package = "zakura-client-backend"
 version = "=0.1.0-rc9.8"
 features = ["test-dependencies"]
 
+# The same version as the runtime dependency above, for the same reason.
 [dev-dependencies.zcash_voting]
-version = "=5.4.1"
+version = "=5.4.0"
 features = ["test-fixtures"]
 
 # Real adapter batches for the coordinator's fixture source, the fake txid
@@ -288,3 +314,17 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Proxy delegation, until zcash_voting and voting-circuits tag releases with
+# it: each crate family comes from one commit of its repository, so a single
+# copy of every crate builds. The zcash_voting rev is the top of its proxy
+# delegation stack, the first with the delegate ballot list reader that the
+# delegator's status also uses. The voting-circuits rev adds ZKP4 to 0.15.0.
+# The direct voting-crypto-deps and test vote-commitment-tree pins follow
+# these revs too.
+[patch.crates-io]
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054" }
+zcash_vote_delegate = { git = "https://github.com/valargroup/zcash_voting", rev = "36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "36845eb4791a8e6bc61ce35f0f3e6bf2c03ed054" }
+voting-circuits = { git = "https://github.com/valargroup/voting-circuits", rev = "aa3ba600ddcd58db23d1c4e9de8c3ed2e28cdb56" }
+voting-crypto-deps = { git = "https://github.com/valargroup/voting-circuits", rev = "aa3ba600ddcd58db23d1c4e9de8c3ed2e28cdb56" }

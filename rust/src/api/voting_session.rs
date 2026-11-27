@@ -563,6 +563,9 @@ impl VotingRoundSession {
             "share_tracking_driver.run",
             ShareTrackingDriver::new(&database, &client, &self.inputs.round_params.vote_round_id)
                 .with_policy(share_tracking_drive_policy(policy))
+                // Lets tracking resend a handed-off DC share, which is
+                // derived again from the round hotkey.
+                .with_round_hotkey_seed(self.hotkey_secret.clone())
                 .run_with_report(
                     &host_source,
                     &self.control,
@@ -579,19 +582,22 @@ impl VotingRoundSession {
         })
     }
 
-    /// Re-reads whether this round's designated immediate share is confirmed.
+    /// Re-reads whether this round's designated immediate share is confirmed,
+    /// or with `dc_slot`, share `share_index` of the DC in that slot of
+    /// `bundle_index` (`proposal_id` is then unused).
     ///
     /// The one confirmation-only exception to the vote-end boundary: a helper
     /// may have confirmed the share before the deadline while the last
     /// tracking pass missed the transition. This never resubmits a share or
     /// selects a new helper, so it is safe after the round has ended, and it
-    /// answers now rather than on the tracking cadence — the submission flow
-    /// gates completion on it.
+    /// answers now rather than on the tracking cadence — the submission flow,
+    /// and the proxy job for an at-once DC's share 0, gate completion on it.
     pub async fn confirm_immediate_share(
         &self,
         bundle_index: u32,
         proposal_id: u32,
         share_index: u32,
+        dc_slot: Option<u8>,
     ) -> Result<bool, VotingErrorView> {
         let database = self.database_handle()?;
         let client = helper_client(&self.health);
@@ -604,10 +610,17 @@ impl VotingRoundSession {
                 &database,
                 &zcash_voting::share_tracking::ShareConfirmationParams {
                     round_id: &self.inputs.round_params.vote_round_id,
-                    share: zcash_voting::share_tracking::ShareKey {
-                        bundle_index,
-                        proposal_id,
-                        share_index,
+                    share: match dc_slot {
+                        Some(dc_slot) => zcash_voting::share_tracking::ShareKey::proxy(
+                            bundle_index,
+                            dc_slot,
+                            share_index,
+                        ),
+                        None => zcash_voting::share_tracking::ShareKey::vote(
+                            bundle_index,
+                            proposal_id,
+                            share_index,
+                        ),
                     },
                     configured_server_urls: &self.binding.configured_helper_urls,
                     now_seconds: unix_now_seconds(0),

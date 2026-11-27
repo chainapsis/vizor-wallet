@@ -1911,7 +1911,10 @@ mod tests {
             TEST_ACCOUNT_UUID,
             vec![first_helper, second_helper],
         );
-        assert!(session.confirm_immediate_share(0, 7, 0).await.unwrap());
+        assert!(session
+            .confirm_immediate_share(0, 7, 0, None)
+            .await
+            .unwrap());
 
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
         assert!(zcash_voting::storage::queries::share_is_confirmed(
@@ -2045,6 +2048,7 @@ mod tests {
                     spend_auth_sig: [6; 64],
                     sighash: [7; 32],
                     tx1_effects: test_tx1_effects(),
+                    proof_key_fingerprint: None,
                 },
                 pczt_bytes: vec![1, 2, 3],
                 eligible_weight_zatoshi: 20,
