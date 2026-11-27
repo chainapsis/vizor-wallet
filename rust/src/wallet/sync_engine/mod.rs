@@ -766,10 +766,12 @@ impl DirectBlockRoute {
 /// route, Tor when it is on, which the loop waits for after the scan: a
 /// restore runs thousands of history batches, and on an iPhone restore five
 /// of those checks timed out, three after the full 20 seconds. Batches within
-/// [`HISTORY_TIP_CHECK_DISTANCE`] of the tip still check after every batch,
-/// so tip promotion, resubmission and the completion check near the tip are
-/// unchanged. The schedule depends only on time and the batch's height, so
-/// the requests still carry no wallet state.
+/// [`HISTORY_TIP_CHECK_DISTANCE`] of the tip still check at most once per
+/// [`FINAL_TIP_REFRESH_MIN_AGE`], avoiding redundant back-to-back tip RPCs on
+/// fast near-tip batches while still requiring completion tip validation
+/// whenever a batch scanned without a post-batch check. The schedule depends
+/// only on time and the batch's height, so the requests still carry no wallet
+/// state.
 const HISTORY_TIP_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
 const HISTORY_TIP_CHECK_DISTANCE: u64 = 10_000;
 
@@ -3181,6 +3183,53 @@ impl Drop for TipPrefetch {
     }
 }
 
+/// Incremental subtree-root streams started concurrently with startup
+/// transparent UTXO refresh so both share one RTT window. Dropping it aborts
+/// the background task on any early error or cancellation exit.
+struct SubtreeFetch {
+    handle: Option<tokio::task::JoinHandle<Result<lwd::FetchedSubtreeRoots, SyncError>>>,
+}
+
+impl SubtreeFetch {
+    fn spawn(
+        client: CompactTxStreamerClient<Channel>,
+        sap_start: u64,
+        orch_start: u64,
+        ironwood_start: Option<u64>,
+    ) -> Self {
+        Self {
+            handle: Some(tokio::spawn(lwd::fetch_subtree_roots(
+                client,
+                sap_start,
+                orch_start,
+                ironwood_start,
+            ))),
+        }
+    }
+
+    async fn resolve(
+        mut self,
+        should_exit: &impl Fn() -> bool,
+    ) -> Option<Result<lwd::FetchedSubtreeRoots, SyncError>> {
+        let handle = self.handle.as_mut()?;
+        let result = unless_exiting(should_exit, handle).await?;
+        self.handle = None;
+        Some(result.unwrap_or_else(|error| {
+            Err(SyncError::other(format!(
+                "subtree root fetch task failed: {error}"
+            )))
+        }))
+    }
+}
+
+impl Drop for SubtreeFetch {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
+
 /// The post-batch tip and when it was requested, or `None` when cancellation
 /// or a mode handoff won. A tip proved unchanged counts as validated when it
 /// was requested, so the final tip check before completion stays as strict as
@@ -3977,12 +4026,12 @@ async fn run_sync_impl(
                 orch_start
             );
         }
-        Some(tokio::spawn(lwd::fetch_subtree_roots(
+        Some(SubtreeFetch::spawn(
             client.clone(),
             sap_start,
             orch_start,
             ironwood_enabled.then_some(ironwood_start),
-        )))
+        ))
     };
 
     let active_utxo_progress = |completed, total| {
@@ -4062,9 +4111,6 @@ async fn run_sync_impl(
     };
 
     if should_exit() {
-        if let Some(handle) = subtree_fetch.take() {
-            handle.abort();
-        }
         log::info!(
             "[{}] sync: cancel/mode observed after transparent UTXO refresh",
             elapsed(),
@@ -4126,15 +4172,12 @@ async fn run_sync_impl(
 
     // 3. Download subtree roots (incremental) — streams ran in parallel with
     //    `refresh_utxos` above; join and persist the results now.
-    if let Some(mut handle) = subtree_fetch.take() {
-        let Some(fetched) = unless_exiting(&should_exit, &mut handle).await else {
-            handle.abort();
+    if let Some(fetch) = subtree_fetch.take() {
+        let Some(fetched) = fetch.resolve(&should_exit).await else {
             log::info!("[{}] sync: exiting during subtree root download", elapsed());
             return Ok(());
         };
-        let fetched = fetched
-            .map_err(|e| SyncError::other(format!("subtree root fetch task failed: {e}")))??;
-        lwd::persist_subtree_roots(&mut db, fetched)?;
+        lwd::persist_subtree_roots(&mut db, fetched?)?;
     }
 
     if migration_anchor_retention_required {
@@ -5721,6 +5764,12 @@ async fn run_sync_impl(
                     );
                 }
             }
+        } else {
+            // A batch scanned without a post-batch tip check must not rely on a
+            // pre-batch Unchanged tip observation to skip completion validation;
+            // otherwise a same-height reorg during a fast batch could complete
+            // on the old chain before `FINAL_TIP_REFRESH_MIN_AGE` expires.
+            completion_tip_validation_required = true;
         }
         if should_exit() {
             log::info!("[{}] sync: exiting after post-batch pass", elapsed());
