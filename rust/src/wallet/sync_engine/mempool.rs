@@ -41,7 +41,7 @@
 //!   * **Reconnect semantics match the SDK.** lightwalletd closes
 //!     the stream every time a new block is mined — normal EOF,
 //!     not an error. We treat that as "sleep 1s, reconnect", and
-//!     pass the end on through `on_new_block` so Dart can check the
+//!     pass the end on through `on_block_event` so Dart can check the
 //!     tip at once instead of at its next poll. Real
 //!     errors use a 1s / 30s backoff ladder (first failure: 1s,
 //!     subsequent consecutive failures: 30s). The counter resets
@@ -64,6 +64,11 @@ use crate::wallet::network::WalletNetwork;
 
 use super::lwd::start_mempool_stream;
 use super::open_lwd_channel;
+
+pub(crate) enum MempoolBlockEvent {
+    StreamEnded,
+    TipAdvanced(u32),
+}
 
 /// Event emitted by [`run_mempool_observer`] for every wallet-relevant
 /// transaction arriving on the mempool stream that we can parse.
@@ -394,20 +399,20 @@ fn average_ms(total: Duration, count: u64) -> f64 {
 /// processed; the Dart-facing FRB wrapper forwards to a
 /// `StreamSink` which is effectively a non-blocking push.
 ///
-/// `on_new_block` is called each time the server ends the stream
-/// cleanly, which lightwalletd does when a block is mined.
+/// `on_block_event` reports clean stream ends and tip advances observed on reconnect.
 pub(crate) async fn run_mempool_observer<F, B>(
     db_path: String,
     network: WalletNetwork,
     lightwalletd_url: String,
     cancel: Arc<AtomicBool>,
     emit: F,
-    on_new_block: B,
+    on_block_event: B,
 ) -> Result<(), String>
 where
     F: Fn(MempoolTxEvent) + Send + Sync,
-    B: Fn() + Send + Sync,
+    B: Fn(MempoolBlockEvent) + Send + Sync,
 {
+    let mut previous_tip = None;
     let mut backoff = ReconnectBackoff::default();
     let mut seen_cache = TxidSeenCache::new(2048);
     let mut unmatched_cache = TxidTtlCache::new(2048, UNMATCHED_TXID_TTL);
@@ -486,6 +491,15 @@ where
                 continue;
             }
         };
+
+        // A second block can arrive after EOF but before the next subscription.
+        // The initial read belongs to the sync that starts this observer.
+        if previous_tip
+            .replace(chain_tip_height)
+            .is_some_and(|previous| chain_tip_height > previous)
+        {
+            on_block_event(MempoolBlockEvent::TipAdvanced(u32::from(chain_tip_height)));
+        }
 
         // Start the mempool stream — also cancel-aware.
         let stream_result = tokio::select! {
@@ -572,7 +586,7 @@ where
                                 "mempool: stream closed by server (new block?)"
                             );
                             stats.record_stream_eof();
-                            on_new_block();
+                            on_block_event(MempoolBlockEvent::StreamEnded);
                             break StreamExit::CleanEof;
                         }
                         Err(e) => {

@@ -3679,7 +3679,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _pollTimer = null;
   }
 
-  Future<void> _checkAndSync() async {
+  Future<void> _checkAndSync({int? observerTip}) async {
     if (_isShuttingDown) return;
     if (_recoverySettingTransition || _walletMutationPauseCount > 0) return;
     if (_privateStatusCoverageNeedsSettings()) {
@@ -3708,6 +3708,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _resumeTipCheckPending = false;
       startSync();
       if (gen == _syncGen && !_requiresUnlock) _startPolling();
+      return;
+    }
+    // A reconnect already read the tip. An idle wallet can go straight to
+    // sync's normal endpoint preflight without another discovery RPC. Busy
+    // callers leave only the pending check, never a height to replay later.
+    if (observerTip != null &&
+        !_storedStatusRestoreNeeded &&
+        !_resumeTipCheckPending &&
+        state.value?.isSyncComplete == true &&
+        observerTip > state.value!.scannedHeight) {
+      _newBlockCheckPending = false;
+      startSync();
       return;
     }
     _pollCheckInFlight = true;
@@ -3838,7 +3850,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   ///      observer has already stored the tx, so switching accounts can
   ///      surface it through the normal account-scoped history read.
   ///   4. On a `newBlock` event, check the tip at once
-  ///      ([_handleMempoolNewBlock]).
+  ///      ([_handleMempoolNewBlock]). An advancing tip read on reconnect
+  ///      also wakes a wallet that is behind, even between EOF checks.
   ///
   /// Reuses [_mempoolSub] as the single subscription handle. The
   /// `startMempoolObserver` FRB call is guarded on the Rust side
@@ -3866,6 +3879,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             _requiresUnlock ||
             _isShuttingDown ||
             !ref.mounted) {
+          return;
+        }
+        final observedTip = event.observedTipHeight;
+        if (observedTip != null) {
+          final active = _endpointConfig;
+          final current = state.value;
+          if (active.networkName == endpoint.networkName &&
+              active.normalizedLightwalletdUrl ==
+                  endpoint.normalizedLightwalletdUrl &&
+              (current?.isSyncComplete != true ||
+                  observedTip > current!.scannedHeight)) {
+            _newBlockCheckPending = true;
+            unawaited(_checkAndSync(observerTip: observedTip));
+          }
           return;
         }
         if (event.newBlock) {

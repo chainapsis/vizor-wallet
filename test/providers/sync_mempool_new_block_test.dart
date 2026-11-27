@@ -108,6 +108,16 @@ class _Api extends RustLibApi {
     await syncs[index].close();
   }
 
+  void observedTip(int height) => mempool.add(
+    rust_sync.ApiMempoolTxEvent(
+      txidHex: '',
+      accountUuids: const [],
+      matched: false,
+      newBlock: false,
+      observedTipHeight: height,
+    ),
+  );
+
   void newBlock() => mempool.add(
     const rust_sync.ApiMempoolTxEvent(
       txidHex: '',
@@ -140,6 +150,12 @@ class _Tip extends RpcEndpointFailoverNotifier {
     current: defaultRpcEndpointConfig('main'),
     fallbackCandidates: const [],
   );
+
+  void changeEndpoint() {
+    state = state.copyWith(
+      current: state.current.copyWith(lightwalletdUrl: 'https://other.invalid'),
+    );
+  }
 
   @override
   Future<BigInt> getLatestBlockHeight() async {
@@ -185,24 +201,26 @@ class _Sync extends SyncNotifier {
   );
 }
 
-rust_sync.ApiSyncProgressEvent _complete() => rust_sync.ApiSyncProgressEvent(
-  kind: rust_sync.ApiSyncEventKind.completed,
-  scannedHeight: BigInt.from(100),
-  chainTipHeight: BigInt.from(100),
-  percentage: 1,
-  displayTargetPercentage: 1,
-  displayTargetBlocks: BigInt.zero,
-  isSyncing: false,
-  hasNewTx: false,
-  phaseCompletedUnits: BigInt.zero,
-  phaseTotalUnits: BigInt.zero,
-  phase: '',
-  syncJobId: '',
-);
+rust_sync.ApiSyncProgressEvent _complete([int height = 100]) =>
+    rust_sync.ApiSyncProgressEvent(
+      kind: rust_sync.ApiSyncEventKind.completed,
+      scannedHeight: BigInt.from(height),
+      chainTipHeight: BigInt.from(height),
+      percentage: 1,
+      displayTargetPercentage: 1,
+      displayTargetBlocks: BigInt.zero,
+      isSyncing: false,
+      hasNewTx: false,
+      phaseCompletedUnits: BigInt.zero,
+      phaseTotalUnits: BigInt.zero,
+      phase: '',
+      syncJobId: '',
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final api = _Api();
+  late _Tip endpoints;
   setUpAll(() => RustLib.initMock(api: api));
   tearDownAll(RustLib.dispose);
   setUp(() {
@@ -222,7 +240,7 @@ void main() {
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         accountProvider.overrideWith(_Account.new),
-        rpcEndpointFailoverProvider.overrideWith(_Tip.new),
+        rpcEndpointFailoverProvider.overrideWith(() => endpoints = _Tip()),
         chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
         enhancePirProvider.overrideWith(_NoPrivateQueries.new),
         syncProvider.overrideWith(() => sync),
@@ -264,6 +282,76 @@ void main() {
     expect(api.syncs, hasLength(2), reason: 'the new tip started a sync');
     expect(_Tip.checks, 2, reason: "the check, then the sync's preflight");
   });
+
+  test(
+    'a higher reconnect tip bypasses the EOF throttle and uses only sync preflight',
+    () async {
+      await idle();
+      api.newBlock();
+      await pumpEventQueue();
+      expect(_Tip.checks, 1);
+
+      _Tip.height = 102;
+      api.newBlock();
+      api.observedTip(102);
+      await pumpEventQueue();
+      expect(api.syncs, hasLength(2));
+      expect(_Tip.checks, 2);
+
+      api.syncs[1].add(_complete(102));
+      await pumpEventQueue();
+      await api.finish(1);
+      api.observedTip(102);
+      api.observedTip(101);
+      await pumpEventQueue();
+      expect(api.syncs, hasLength(2));
+      expect(_Tip.checks, 2);
+    },
+  );
+
+  test(
+    'reconnect hints during a sync coalesce and a run that caught up is not restarted',
+    () async {
+      await syncing();
+      _Tip.height = 102;
+      api.observedTip(101);
+      api.observedTip(102);
+      await pumpEventQueue();
+      expect(api.syncs, hasLength(1));
+
+      api.syncs[0].add(_complete(102));
+      await pumpEventQueue();
+      await api.finish(0);
+      await pumpEventQueue();
+      expect(api.syncs, hasLength(1));
+      expect(_Tip.checks, 2, reason: 'preflight and one deferred tip check');
+    },
+  );
+
+  test('a reconnect hint from a replaced endpoint is ignored', () async {
+    await idle();
+    endpoints.changeEndpoint();
+    api.observedTip(101);
+    await pumpEventQueue();
+    expect(api.syncs, hasLength(1));
+    expect(_Tip.checks, 0);
+  });
+
+  test(
+    'several advances during a scan schedule one follow-up if still behind',
+    () async {
+      await syncing();
+      _Tip.height = 103;
+      api.observedTip(102);
+      api.observedTip(103);
+      await pumpEventQueue();
+      api.syncs[0].add(_complete(101));
+      await pumpEventQueue();
+      await api.finish(0);
+      await pumpEventQueue();
+      expect(api.syncs, hasLength(2));
+    },
+  );
 
   test('a burst of new-block events checks the tip once', () async {
     await idle();

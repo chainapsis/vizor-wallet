@@ -1626,10 +1626,8 @@ class ApiGiftCardCheckProgress {
           complete == other.complete;
 }
 
-/// Event emitted by the mempool observer when a wallet-relevant
-/// transaction appears on lightwalletd's mempool stream. Mirrored
-/// one-to-one from `sync_engine::mempool::MempoolTxEvent` for FRB
-/// codegen.
+/// A wallet-relevant transaction, a clean stream end, or an advancing
+/// chain tip observed before the mempool observer resubscribes.
 class ApiMempoolTxEvent {
   /// Lower-case hex of the tx id.
   final String txidHex;
@@ -1653,11 +1651,15 @@ class ApiMempoolTxEvent {
   /// its next poll.
   final bool newBlock;
 
+  /// An advancing tip read by this observer before resubscribing.
+  final int? observedTipHeight;
+
   const ApiMempoolTxEvent({
     required this.txidHex,
     required this.accountUuids,
     required this.matched,
     required this.newBlock,
+    this.observedTipHeight,
   });
 
   @override
@@ -1665,7 +1667,8 @@ class ApiMempoolTxEvent {
       txidHex.hashCode ^
       accountUuids.hashCode ^
       matched.hashCode ^
-      newBlock.hashCode;
+      newBlock.hashCode ^
+      observedTipHeight.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1675,7 +1678,8 @@ class ApiMempoolTxEvent {
           txidHex == other.txidHex &&
           accountUuids == other.accountUuids &&
           matched == other.matched &&
-          newBlock == other.newBlock;
+          newBlock == other.newBlock &&
+          observedTipHeight == other.observedTipHeight;
 }
 
 /// Progress of one additional scan cycle; absent during ordinary syncing.
