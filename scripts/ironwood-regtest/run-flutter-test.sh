@@ -11,7 +11,9 @@ DRIVER_PORT="${E2E_DRIVER_PORT:-39078}"
 DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
 TEST_FILE="${E2E_TEST_FILE:?set E2E_TEST_FILE to the Flutter integration test}"
 TEST_NAME="$(basename "$TEST_FILE" .dart)"
-DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/${TEST_NAME}-driver.log"
+# Follows scripts/ironwood-regtest/lib.sh's state directory.
+REGTEST_STATE_DIR="${IRONWOOD_REGTEST_STATE_DIR:-$ROOT_DIR/.ironwood-regtest}"
+DRIVER_LOG="$REGTEST_STATE_DIR/${TEST_NAME}-driver.log"
 FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-0.011}"
 FUNDING_CONFIRMATIONS="${E2E_ORCHARD_FUNDING_CONFIRMATIONS:-10}"
 FUNDING_COINBASE_LIMIT="${E2E_ORCHARD_FUNDING_COINBASE_LIMIT:-1}"
@@ -84,9 +86,9 @@ if [[ "$PREFUND_BLOCKS" -gt 0 ]]; then
   scripts/ironwood-regtest/mine.sh "$PREFUND_BLOCKS" >/dev/null
 fi
 
-addresses_file="$ROOT_DIR/.ironwood-regtest/e2e-addresses.json"
+addresses_file="$REGTEST_STATE_DIR/e2e-addresses.json"
 derive_addresses "$addresses_file"
-funding_manifest="$ROOT_DIR/.ironwood-regtest/e2e-funding-manifest.tsv"
+funding_manifest="$REGTEST_STATE_DIR/e2e-funding-manifest.tsv"
 python3 - \
   "$addresses_file" \
   "$FUNDING_AMOUNT" \
@@ -133,7 +135,7 @@ while IFS=$'\t' read -r batch_amount batch_note_count batch_destinations; do
     "$batch_note_count" </dev/null >/dev/null
 done <"$funding_manifest"
 
-mkdir -p "$ROOT_DIR/.ironwood-regtest"
+mkdir -p "$REGTEST_STATE_DIR"
 : > "$DRIVER_LOG"
 python3 -u scripts/e2e/ironwood-regtest-driver.py \
   --repo-root "$ROOT_DIR" \
@@ -179,6 +181,18 @@ scenario_define_args=(
 if [[ -n "${E2E_ORCHARD_FUNDING_ZATOSHI:-}" ]]; then
   scenario_define_args+=(
     --dart-define=ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI="$E2E_ORCHARD_FUNDING_ZATOSHI"
+  )
+fi
+if [[ -n "${E2E_ORCHARD_FUNDING_TEXT:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_ORCHARD_FUNDING_TEXT="$E2E_ORCHARD_FUNDING_TEXT"
+  )
+fi
+# Callers whose later Flutter run reuses this wallet with
+# ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN must store its mnemonic the same way.
+if [[ "${E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN:-}" == "true" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true
   )
 fi
 flutter_args+=(

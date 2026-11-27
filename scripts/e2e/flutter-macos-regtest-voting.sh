@@ -21,8 +21,10 @@ VOTE_SDK_URL="https://github.com/valargroup/vote-sdk.git"
 VOTE_SDK_REV="36f5d828fc5be42d9a80baa38d1145c5541b229e"
 PIR_URL="https://github.com/valargroup/vote-nullifier-pir.git"
 PIR_REV="20356d14f61a825ef28726f38270c37d604cc268"
-VOTE_SDK_DIR="$DEPS_DIR/vote-sdk-$VOTE_SDK_REV"
-PIR_DIR="$DEPS_DIR/vote-nullifier-pir-$PIR_REV"
+# E2E_VOTE_SDK_DIR and E2E_PIR_DIR use local checkouts as they are, built in
+# place, instead of fetching the pinned revisions from GitHub.
+VOTE_SDK_DIR="${E2E_VOTE_SDK_DIR:-$DEPS_DIR/vote-sdk-$VOTE_SDK_REV}"
+PIR_DIR="${E2E_PIR_DIR:-$DEPS_DIR/vote-nullifier-pir-$PIR_REV}"
 
 ACTIVATION_HEIGHT=500
 LWD_PORT="${E2E_IRONWOOD_LIGHTWALLETD_PORT:-19067}"
@@ -109,8 +111,12 @@ require_cmd make
 require_cmd python3
 
 mkdir -p "$DEPS_DIR" "$LOG_DIR" "$CONFIG_DIR" "$SHIM_DIR"
-fetch_exact_revision "$VOTE_SDK_URL" "$VOTE_SDK_REV" "$VOTE_SDK_DIR"
-fetch_exact_revision "$PIR_URL" "$PIR_REV" "$PIR_DIR"
+if [[ -z "${E2E_VOTE_SDK_DIR:-}" ]]; then
+  fetch_exact_revision "$VOTE_SDK_URL" "$VOTE_SDK_REV" "$VOTE_SDK_DIR"
+fi
+if [[ -z "${E2E_PIR_DIR:-}" ]]; then
+  fetch_exact_revision "$PIR_URL" "$PIR_REV" "$PIR_DIR"
+fi
 
 echo "building pinned vote-sdk and PIR services"
 make -C "$VOTE_SDK_DIR" build-ffi build-voting-config

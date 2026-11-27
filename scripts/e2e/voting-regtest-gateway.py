@@ -107,6 +107,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
     simulator: str | None = None
     screenshot_dir: Path | None = None
     enable_zcash_mining = False
+    # The proxy delegation harness's command that posts the delegates' ballots.
+    delegate_ballot_command: str | None = None
     slow_helper_delay: float
     metrics_lock = threading.Lock()
     slow_share_inflight = 0
@@ -162,6 +164,18 @@ class GatewayHandler(BaseHTTPRequestHandler):
             subprocess.run([str(scripts / "mine.sh"), "20"], check=True, timeout=90, capture_output=True)
             height = subprocess.check_output([str(scripts / "rpc.sh"), "getblockcount"], timeout=30)
             self._json(200, {"height": int(height)})
+            return
+        if self.command == "POST" and parsed.path == "/delegate-ballots" and self.delegate_ballot_command:
+            read_request_body(self.rfile, self.headers)
+            # A fixed harness command; the request carries no arguments.
+            result = subprocess.run(
+                self.delegate_ballot_command, shell=True, timeout=300, capture_output=True, text=True,
+            )
+            print(f"[voting-gateway] delegate ballots: exit {result.returncode}\n{result.stdout}{result.stderr}", flush=True)
+            if result.returncode != 0:
+                self._json(500, {"error": "delegate ballots failed"})
+                return
+            self._json(200, {"ok": True})
             return
         if self.command == "GET" and parsed.path in {"/commit", "/validators", "/abci_query"} and self.rpc_target is not None:
             with self.metrics_lock:
@@ -367,6 +381,7 @@ def main() -> None:
     parser.add_argument("--screenshot-dir", type=Path)
     parser.add_argument("--rpc-target", type=parse_target)
     parser.add_argument("--slow-helper-delay", type=float, default=0.0)
+    parser.add_argument("--delegate-ballot-command")
     args = parser.parse_args()
 
     config_dir = args.config_dir.resolve(strict=True)
@@ -386,6 +401,7 @@ def main() -> None:
             "enable_zcash_mining": args.enable_zcash_mining,
             "screenshot_dir": args.screenshot_dir,
             "slow_helper_delay": max(0.0, args.slow_helper_delay),
+            "delegate_ballot_command": args.delegate_ballot_command,
         },
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
