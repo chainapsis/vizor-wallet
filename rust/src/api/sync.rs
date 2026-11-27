@@ -639,10 +639,8 @@ pub(crate) static SYNC_RUNNING: AtomicBool = AtomicBool::new(false);
 
 // ======================== Mempool Observer ========================
 
-/// Event emitted by the mempool observer when a wallet-relevant
-/// transaction appears on lightwalletd's mempool stream. Mirrored
-/// one-to-one from `sync_engine::mempool::MempoolTxEvent` for FRB
-/// codegen.
+/// A wallet-relevant transaction, a clean stream end, or an advancing
+/// chain tip observed before the mempool observer resubscribes.
 pub struct ApiMempoolTxEvent {
     /// Lower-case hex of the tx id.
     pub txid_hex: String,
@@ -662,6 +660,8 @@ pub struct ApiMempoolTxEvent {
     /// then empty. Dart checks the tip on it instead of waiting for
     /// its next poll.
     pub new_block: bool,
+    /// An advancing tip read by this observer before resubscribing.
+    pub observed_tip_height: Option<u32>,
 }
 
 /// Shared lifecycle state for the background mempool observer.
@@ -763,19 +763,26 @@ pub fn start_mempool_observer(
                             account_uuids: event.account_uuids,
                             matched: event.matched,
                             new_block: false,
+                            observed_tip_height: None,
                         })
                         .is_err()
                     {
                         log::warn!("mempool: StreamSink closed, event not delivered");
                     }
                 },
-                move || {
+                move |event| {
+                    use crate::wallet::sync_engine::mempool::MempoolBlockEvent;
+                    let observed_tip_height = match event {
+                        MempoolBlockEvent::StreamEnded => None,
+                        MempoolBlockEvent::TipAdvanced(height) => Some(height),
+                    };
                     if block_sink
                         .add(ApiMempoolTxEvent {
                             txid_hex: String::new(),
                             account_uuids: Vec::new(),
                             matched: false,
-                            new_block: true,
+                            new_block: observed_tip_height.is_none(),
+                            observed_tip_height,
                         })
                         .is_err()
                     {

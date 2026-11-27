@@ -344,7 +344,7 @@ impl Drop for CapturingLwd {
     }
 }
 
-fn grpc_frame(message: &impl Message) -> Bytes {
+pub(crate) fn grpc_frame(message: &impl Message) -> Bytes {
     let message = message.encode_to_vec();
     let mut frame = vec![0];
     frame.extend_from_slice(&(message.len() as u32).to_be_bytes());

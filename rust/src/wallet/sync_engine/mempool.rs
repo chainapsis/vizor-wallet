@@ -41,7 +41,7 @@
 //!   * **Reconnect semantics match the SDK.** lightwalletd closes
 //!     the stream every time a new block is mined — normal EOF,
 //!     not an error. We treat that as "sleep 1s, reconnect", and
-//!     pass the end on through `on_new_block` so Dart can check the
+//!     pass the end on through `on_block_event` so Dart can check the
 //!     tip at once instead of at its next poll. Real
 //!     errors use a 1s / 30s backoff ladder (first failure: 1s,
 //!     subsequent consecutive failures: 30s). The counter resets
@@ -56,7 +56,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use zcash_client_backend::{data_api::WalletRead, proto::service::RawTransaction};
+use tonic::transport::Channel;
+use zcash_client_backend::{
+    data_api::WalletRead,
+    proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
+};
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
@@ -64,6 +68,11 @@ use crate::wallet::network::WalletNetwork;
 
 use super::lwd::start_mempool_stream;
 use super::open_lwd_channel;
+
+pub(crate) enum MempoolBlockEvent {
+    StreamEnded,
+    TipAdvanced(u32),
+}
 
 /// Event emitted by [`run_mempool_observer`] for every wallet-relevant
 /// transaction arriving on the mempool stream that we can parse.
@@ -378,7 +387,8 @@ fn average_ms(total: Duration, count: u64) -> f64 {
 /// This is an infinite-retry loop. Every iteration:
 ///
 ///   1. Opens a fresh lwd channel (plain TLS).
-///   2. Starts a `GetMempoolStream` RPC.
+///   2. Reads the tip, starts a `GetMempoolStream` RPC, and reads the
+///      tip again once the server accepts it.
 ///   3. Consumes incoming [`RawTransaction`]s until the stream
 ///      closes or errors out.
 ///   4. Sleeps according to the backoff ladder, then loops.
@@ -394,20 +404,20 @@ fn average_ms(total: Duration, count: u64) -> f64 {
 /// processed; the Dart-facing FRB wrapper forwards to a
 /// `StreamSink` which is effectively a non-blocking push.
 ///
-/// `on_new_block` is called each time the server ends the stream
-/// cleanly, which lightwalletd does when a block is mined.
+/// `on_block_event` reports clean stream ends and tip advances observed on reconnect.
 pub(crate) async fn run_mempool_observer<F, B>(
     db_path: String,
     network: WalletNetwork,
     lightwalletd_url: String,
     cancel: Arc<AtomicBool>,
     emit: F,
-    on_new_block: B,
+    on_block_event: B,
 ) -> Result<(), String>
 where
     F: Fn(MempoolTxEvent) + Send + Sync,
-    B: Fn() + Send + Sync,
+    B: Fn(MempoolBlockEvent) + Send + Sync,
 {
+    let mut observed_tip = ObservedTip::default();
     let mut backoff = ReconnectBackoff::default();
     let mut seen_cache = TxidSeenCache::new(2048);
     let mut unmatched_cache = TxidTtlCache::new(2048, UNMATCHED_TXID_TTL);
@@ -446,46 +456,33 @@ where
             }
         };
 
-        // Fetch the current network tip before subscribing. Mempool
-        // decryption treats unmined transactions as being at
-        // chain_tip + 1 for ZIP-212 enforcement, and the store path in
-        // librustzcash independently reads the wallet DB chain height.
-        // Updating the DB here keeps both trial-decrypt and store-decrypt
-        // on the same network tip even while foreground sync is still
-        // catching up from an older birthday.
-        let tip_result = tokio::select! {
-            biased;
-            _ = watch_for_cancel(&cancel) => {
+        let chain_tip_height = match refresh_observer_tip(
+            &mut client,
+            &db_path,
+            network,
+            &lightwalletd_url,
+            tip_scope,
+            &cancel,
+            None,
+        )
+        .await
+        {
+            None => {
                 log::info!("mempool: observer cancelled during tip refresh");
                 return Ok(());
             }
-            r = super::get_latest_block_recorded(
-                &mut client,
-                &lightwalletd_url,
-                network,
-                tip_scope,
-                || cancel.load(Ordering::Relaxed),
-            ) => r,
-        };
-        let tip = match tip_result {
-            Ok(tip) => tip,
-            Err(e) => {
-                log::warn!("mempool: get_latest_block before stream failed: {e}");
+            Some(Ok(height)) => height,
+            Some(Err(e)) => {
+                log::warn!("mempool: tip refresh before stream failed: {e}");
                 sleep_respecting_cancel(backoff.record_error(), &cancel).await;
                 continue;
             }
         };
-        let chain_tip_height = match update_mempool_chain_tip(&db_path, network, tip.height) {
-            Ok(height) => height,
-            Err(e) => {
-                log::warn!(
-                    "mempool: update_chain_tip({}) before stream failed: {e}",
-                    tip.height
-                );
-                sleep_respecting_cancel(backoff.record_error(), &cancel).await;
-                continue;
-            }
-        };
+
+        // A second block can arrive after EOF but before the next subscription.
+        if observed_tip.advanced(chain_tip_height) {
+            on_block_event(MempoolBlockEvent::TipAdvanced(u32::from(chain_tip_height)));
+        }
 
         // Start the mempool stream — also cancel-aware.
         let stream_result = tokio::select! {
@@ -502,6 +499,37 @@ where
                 log::warn!("mempool: start_mempool_stream failed: {e}");
                 sleep_respecting_cancel(backoff.record_error(), &cancel).await;
                 continue;
+            }
+        };
+
+        // lightwalletd ends a stream only for blocks it notices after the
+        // stream registered, which precedes the response. Read the tip again
+        // for a block that another subscriber's refresh noticed in between.
+        let chain_tip_height = match refresh_observer_tip(
+            &mut client,
+            &db_path,
+            network,
+            &lightwalletd_url,
+            tip_scope,
+            &cancel,
+            Some(chain_tip_height),
+        )
+        .await
+        {
+            None => {
+                log::info!("mempool: observer cancelled during tip recheck");
+                return Ok(());
+            }
+            Some(Ok(height)) => {
+                if observed_tip.advanced(height) {
+                    on_block_event(MempoolBlockEvent::TipAdvanced(u32::from(height)));
+                }
+                height
+            }
+            // Keep the accepted stream; the periodic poll still finds the block.
+            Some(Err(e)) => {
+                log::warn!("mempool: tip recheck after stream start failed: {e}");
+                chain_tip_height
             }
         };
 
@@ -572,7 +600,7 @@ where
                                 "mempool: stream closed by server (new block?)"
                             );
                             stats.record_stream_eof();
-                            on_new_block();
+                            on_block_event(MempoolBlockEvent::StreamEnded);
                             break StreamExit::CleanEof;
                         }
                         Err(e) => {
@@ -631,6 +659,56 @@ where
 enum StreamExit {
     CleanEof,
     Error,
+}
+
+/// The last tip this observer read. The first read belongs to the sync
+/// that starts the observer, so only a later, higher read is an advance.
+#[derive(Default)]
+struct ObservedTip(Option<BlockHeight>);
+
+impl ObservedTip {
+    fn advanced(&mut self, height: BlockHeight) -> bool {
+        self.0
+            .replace(height)
+            .is_some_and(|previous| height > previous)
+    }
+}
+
+/// Reads the network tip and records it as the wallet DB chain tip, or
+/// returns `None` when cancelled. Mempool decryption treats unmined
+/// transactions as being at chain_tip + 1 for ZIP-212 enforcement, and the
+/// store path in librustzcash independently reads the wallet DB chain
+/// height. Recording it keeps both on the same network tip even while
+/// foreground sync is still catching up from an older birthday. A height
+/// equal to `recorded` skips the write, which waits on the wallet write lock.
+async fn refresh_observer_tip(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db_path: &str,
+    network: WalletNetwork,
+    lightwalletd_url: &str,
+    scope: super::TipRequestScope,
+    cancel: &Arc<AtomicBool>,
+    recorded: Option<BlockHeight>,
+) -> Option<Result<BlockHeight, String>> {
+    let tip = tokio::select! {
+        biased;
+        _ = watch_for_cancel(cancel) => return None,
+        r = super::get_latest_block_recorded(
+            client,
+            lightwalletd_url,
+            network,
+            scope,
+            || cancel.load(Ordering::Relaxed),
+        ) => r,
+    };
+    Some(
+        tip.map_err(|e| format!("get_latest_block: {e}"))
+            .and_then(|tip| match recorded {
+                Some(height) if u64::from(u32::from(height)) == tip.height => Ok(height),
+                _ => update_mempool_chain_tip(db_path, network, tip.height)
+                    .map_err(|e| format!("update_chain_tip({}): {e}", tip.height)),
+            }),
+    )
 }
 
 /// The observer's reconnect ladder: 1s after the first consecutive
@@ -1016,9 +1094,9 @@ mod tests {
     //! Unit tests for the mempool observer's DB-facing helpers and
     //! its cancel-aware sleep.
     //!
-    //! We can't unit-test `run_mempool_observer` itself without a
-    //! live lightwalletd — that's integration-test territory. What
-    //! we *can* test in isolation is:
+    //! `run_mempool_observer` itself runs here only against a scripted
+    //! lightwalletd, for its tip reads around a subscription. What
+    //! we test in isolation is:
     //!
     //!   * `lookup_known_pending_tx`, the read-only lookup that
     //!     decides whether each parsed mempool tx is already known
@@ -1118,6 +1196,150 @@ mod tests {
         backoff.record_error();
         assert_eq!(backoff.record_clean_eof(), ReconnectBackoff::INITIAL);
         assert_eq!(backoff.record_error(), ReconnectBackoff::INITIAL);
+    }
+
+    #[test]
+    fn observed_tip_reports_only_a_read_above_the_previous_one() {
+        let mut tip = ObservedTip::default();
+        let h = BlockHeight::from_u32;
+        assert!(!tip.advanced(h(100)));
+        assert!(!tip.advanced(h(100)));
+        assert!(tip.advanced(h(101)));
+        assert!(!tip.advanced(h(99)));
+        assert!(tip.advanced(h(100)));
+    }
+
+    #[tokio::test]
+    async fn tip_recheck_writes_the_wallet_only_for_a_new_height() {
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let lwd = super::super::test_lwd::CapturingLwd::start_with(Vec::new(), 100, |_| {}).await;
+        // No wallet can be opened here, so only a skipped write succeeds.
+        let path = "/nonexistent-vizor-test-dir/wallet.db";
+        let cancel = Arc::new(AtomicBool::new(false));
+        let read = |recorded| {
+            let mut client = lwd.client.clone();
+            let url = lwd.url.clone();
+            let cancel = cancel.clone();
+            async move {
+                refresh_observer_tip(
+                    &mut client,
+                    path,
+                    WalletNetwork::Regtest,
+                    &url,
+                    super::super::TipRequestScope::capture(),
+                    &cancel,
+                    recorded,
+                )
+                .await
+                .unwrap()
+            }
+        };
+        let h = BlockHeight::from_u32;
+        assert_eq!(read(Some(h(100))).await, Ok(h(100)));
+        assert!(read(Some(h(99)))
+            .await
+            .unwrap_err()
+            .contains("update_chain_tip"));
+        assert!(read(None).await.unwrap_err().contains("update_chain_tip"));
+    }
+
+    /// A scripted lightwalletd: `GetLatestBlock` answers `tip`, and each
+    /// `GetMempoolStream` raises `tip` to `block_on_subscribe` while it
+    /// registers, then stays open with no transactions and no EOF.
+    async fn lwd_with_block_on_subscribe(
+        tip: Arc<std::sync::atomic::AtomicU64>,
+        block_on_subscribe: u64,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use bytes::Bytes;
+        use http_body_util::{BodyExt, Full, StreamBody};
+        use std::convert::Infallible;
+        use zcash_client_backend::proto::service::BlockId;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let tip = tip.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(
+                        move |request: hyper::Request<hyper::body::Incoming>| {
+                            let tip = tip.clone();
+                            async move {
+                                let grpc = hyper::Response::builder()
+                                    .header("content-type", "application/grpc");
+                                let response = if request.uri().path().ends_with("/GetLatestBlock")
+                                {
+                                    let block = BlockId {
+                                        height: tip.load(Ordering::SeqCst),
+                                        hash: vec![0; 32],
+                                    };
+                                    grpc.header("grpc-status", "0").body(
+                                        Full::new(super::super::test_lwd::grpc_frame(&block))
+                                            .boxed(),
+                                    )
+                                } else {
+                                    tip.fetch_max(block_on_subscribe, Ordering::SeqCst);
+                                    grpc.body(
+                                        StreamBody::new(futures::stream::pending::<
+                                            Result<hyper::body::Frame<Bytes>, Infallible>,
+                                        >(
+                                        ))
+                                        .boxed(),
+                                    )
+                                };
+                                Ok::<_, Infallible>(response.unwrap())
+                            }
+                        },
+                    );
+                    let _ = hyper::server::conn::http2::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                    .await;
+                });
+            }
+        });
+        (url, server)
+    }
+
+    /// lightwalletd keeps a new stream open through a block that another
+    /// subscriber's refresh noticed before this stream registered. The tip
+    /// read after the stream is accepted reports it without waiting for
+    /// the next block.
+    #[tokio::test]
+    async fn observer_reports_a_block_that_lands_while_its_stream_registers() {
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        crate::wallet::keys::ensure_db_initialized(&path, WalletNetwork::Regtest).unwrap();
+        let tip = Arc::new(std::sync::atomic::AtomicU64::new(100));
+        let (url, server) = lwd_with_block_on_subscribe(tip, 101).await;
+        let cancel = Arc::new(AtomicBool::new(false));
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = events.clone();
+        let observer = tokio::spawn(run_mempool_observer(
+            path,
+            WalletNetwork::Regtest,
+            url,
+            cancel.clone(),
+            |_| {},
+            move |event| {
+                recorded.lock().unwrap().push(match event {
+                    MempoolBlockEvent::StreamEnded => None,
+                    MempoolBlockEvent::TipAdvanced(height) => Some(height),
+                });
+            },
+        ));
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while events.lock().unwrap().is_empty() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        cancel.store(true, Ordering::Relaxed);
+        observer.await.unwrap().unwrap();
+        server.abort();
+        assert_eq!(*events.lock().unwrap(), [Some(101)]);
     }
 
     #[test]
