@@ -783,6 +783,28 @@ fn post_batch_tip_check_due(
         || since_last_check >= HISTORY_TIP_CHECK_EVERY
 }
 
+/// Whether a downloaded batch ending at `batch_last_height` already proves
+/// chain-tip identity against the startup `initial_tip` within the completion
+/// grace window, letting a short warm sync skip a redundant post-batch
+/// `GetLatestBlock` round trip. Depends only on the public chain tip, elapsed
+/// time, and rewind count — never on wallet state.
+fn batch_verifies_recent_initial_tip(
+    current_tip_height: u64,
+    batch_last_height: u64,
+    initial_tip_height: u64,
+    initial_tip_hash: &[u8],
+    batch_last_hash: Option<&[u8]>,
+    initial_tip_age: std::time::Duration,
+    rewinds_this_run: u32,
+) -> bool {
+    rewinds_this_run == 0
+        && current_tip_height == initial_tip_height
+        && batch_last_height == initial_tip_height
+        && !initial_tip_hash.is_empty()
+        && initial_tip_age < FINAL_TIP_REFRESH_MIN_AGE
+        && batch_last_hash == Some(initial_tip_hash)
+}
+
 /// How often a sync session logs where its time went, in debug builds only.
 const SYNC_TIMING_SUMMARY_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
 
@@ -5117,11 +5139,22 @@ async fn run_sync_impl(
                 );
             }
         }
-        let tip_check_due = post_batch_tip_check_due(
-            u64::from(u32::from(end)),
+        let batch_last_hash = block_source.block_at(end - 1).map(|b| b.hash);
+        let batch_verifies_initial_tip = batch_verifies_recent_initial_tip(
             current_tip_height,
-            last_post_batch_tip_check.elapsed(),
+            u64::from(u32::from(end - 1)),
+            initial_tip_height_u64,
+            &initial_tip_hash,
+            batch_last_hash.as_deref(),
+            initial_tip_observed_at.elapsed(),
+            main_rewinds_this_run.saturating_add(verify_rewinds_this_run),
         );
+        let tip_check_due = !batch_verifies_initial_tip
+            && post_batch_tip_check_due(
+                u64::from(u32::from(end)),
+                current_tip_height,
+                last_post_batch_tip_check.elapsed(),
+            );
         if tip_check_due {
             last_post_batch_tip_check = std::time::Instant::now();
         }
@@ -5485,21 +5518,6 @@ async fn run_sync_impl(
             },
         };
 
-        // If this batch scanned cleanly up to the startup `initial_tip` and its
-        // block hash matches `initial_tip_hash`, tip identity is already verified
-        // as of `initial_tip_observed_at` (within the 5 s completion window).
-        if completion_tip_validation_required
-            && current_tip_height == initial_tip_height_u64
-            && u64::from(u32::from(end - 1)) == initial_tip_height_u64
-            && !initial_tip_hash.is_empty()
-            && block_source
-                .block_at(end - 1)
-                .is_some_and(|b| b.hash == initial_tip_hash)
-        {
-            completion_tip_validation_required = false;
-            last_completion_tip_validation = initial_tip_observed_at;
-        }
-
         if migration_anchor_retention_required {
             let retained = with_wallet_db_write_lock(
                 "sync_engine.retain_migration_anchor_checkpoints",
@@ -5783,6 +5801,15 @@ async fn run_sync_impl(
                     );
                 }
             }
+        } else if batch_verifies_initial_tip {
+            // The batch scanned cleanly up to the startup `initial_tip` and
+            // proved its block hash, so tip identity is verified as of
+            // `initial_tip_observed_at`. If scanning pushed elapsed time past
+            // `FINAL_TIP_REFRESH_MIN_AGE`, queue drain still refreshes the tip;
+            // any status lookups and released-tx resubmission run at queue
+            // drain against a fresh tip when needed.
+            completion_tip_validation_required = false;
+            last_completion_tip_validation = initial_tip_observed_at;
         }
         if should_exit() {
             log::info!("[{}] sync: exiting after post-batch pass", elapsed());
@@ -6581,6 +6608,81 @@ mod tests {
             tip - HISTORY_TIP_CHECK_DISTANCE - 1,
             tip,
             second
+        ));
+    }
+
+    #[test]
+    fn warm_tip_batch_matching_recent_initial_hash_bypasses_post_batch_tip_check() {
+        let tip = 3_500_000;
+        let hash = [0xab; 32];
+        let other_hash = [0xcd; 32];
+        let recent = std::time::Duration::from_secs(1);
+
+        // Matching height, hash, fresh initial tip, and no rewinds: bypasses post-batch check.
+        assert!(batch_verifies_recent_initial_tip(
+            tip,
+            tip,
+            tip,
+            &hash,
+            Some(&hash),
+            recent,
+            0
+        ));
+        // Stale initial tip (>= 5s), hash mismatch, empty hash, wrong height,
+        // advanced tip, or any prior rewind all require the post-batch check.
+        assert!(!batch_verifies_recent_initial_tip(
+            tip,
+            tip,
+            tip,
+            &hash,
+            Some(&hash),
+            FINAL_TIP_REFRESH_MIN_AGE,
+            0
+        ));
+        assert!(!batch_verifies_recent_initial_tip(
+            tip,
+            tip,
+            tip,
+            &hash,
+            Some(&other_hash),
+            recent,
+            0
+        ));
+        assert!(!batch_verifies_recent_initial_tip(
+            tip,
+            tip,
+            tip,
+            &[],
+            Some(&[]),
+            recent,
+            0
+        ));
+        assert!(!batch_verifies_recent_initial_tip(
+            tip,
+            tip - 1,
+            tip,
+            &hash,
+            Some(&hash),
+            recent,
+            0
+        ));
+        assert!(!batch_verifies_recent_initial_tip(
+            tip + 1,
+            tip,
+            tip,
+            &hash,
+            Some(&hash),
+            recent,
+            0
+        ));
+        assert!(!batch_verifies_recent_initial_tip(
+            tip,
+            tip,
+            tip,
+            &hash,
+            Some(&hash),
+            recent,
+            1
         ));
     }
 
