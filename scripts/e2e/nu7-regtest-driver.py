@@ -51,13 +51,15 @@ class DriverHandler(BaseHTTPRequestHandler):
                 }
                 height = info["blocks"]
                 nu7 = upgrades["NU7"]
-                # zcashdHeight keeps the key the shared desktop helpers read.
+                # zcashdHeight and ironwoodActive keep the keys the shared
+                # helpers and the Ironwood driver use.
                 self.respond(
                     200,
                     {
                         "zcashdHeight": height,
                         "nu63ActivationHeight": upgrades["NU6.3"],
                         "nu7ActivationHeight": nu7,
+                        "ironwoodActive": height >= upgrades["NU6.3"],
                         "nu7Active": height >= nu7,
                         "consensusBranchId": info["consensus"]["chaintip"],
                     },
@@ -86,6 +88,21 @@ class DriverHandler(BaseHTTPRequestHandler):
                     )
                 self.respond(200, {"height": int(height)})
                 return
+            if self.path == "/activate":
+                # Mines through NU6.3 and NU7, so the next migration pays the NU7 fee.
+                with self.chain_operation_lock:
+                    info = self.rpc("getblockchaininfo")
+                    nu7 = next(upgrade["activationheight"]
+                               for upgrade in info["upgrades"].values()
+                               if upgrade["name"] == "NU7")
+                    if info["blocks"] < nu7:
+                        run_command(
+                            self.repo_root,
+                            ["scripts/nu7-regtest/mine.sh", str(nu7 - info["blocks"])],
+                            timeout=600,
+                        )
+                self.respond(200, {"ok": True})
+                return
             self.respond(404, {"error": "not found"})
         except Exception as exc:
             self.respond(500, {"error": str(exc)})
@@ -112,11 +129,17 @@ def main() -> None:
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--port-file", type=Path)
     args = parser.parse_args()
 
     DriverHandler.repo_root = Path(args.repo_root).resolve()
     server = ThreadingHTTPServer((args.host, args.port), DriverHandler)
-    print(f"[nu7-driver] listening on http://{args.host}:{args.port}")
+    if args.port_file:
+        # Publish the port only after this process has bound its listening socket.
+        pending = args.port_file.with_suffix(".tmp")
+        pending.write_text(f"{server.server_port}\n")
+        pending.replace(args.port_file)
+    print(f"[nu7-driver] listening on http://{args.host}:{server.server_port}")
     server.serve_forever()
 
 

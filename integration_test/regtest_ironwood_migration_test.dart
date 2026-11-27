@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -14,12 +15,16 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_regtest_flow.dart';
 
-const _driverUrl = String.fromEnvironment(
-  'ZCASH_E2E_DRIVER_URL',
-  defaultValue: 'http://127.0.0.1:39078',
-);
+const _driverUrl = String.fromEnvironment('ZCASH_E2E_DRIVER_URL');
 const _network = 'regtest';
-final _fundedAmount = BigInt.from(1100000);
+const _fundedAmountZatoshi = int.fromEnvironment(
+  'ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI',
+  defaultValue: 1050000,
+);
+final _fundedAmount = BigInt.from(_fundedAmountZatoshi);
+final _fundedAmountText = ZecAmount.fromZatoshi(
+  _fundedAmount,
+).compactBalance.amountText;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +49,7 @@ void main() {
               tester,
               const ValueKey('home_desktop_balance_amount_text'),
             ) ==
-            '0.011',
+            _fundedAmountText,
         description: 'pre-Ironwood Orchard balance to render',
         timeout: const Duration(minutes: 5),
       );
@@ -64,7 +69,9 @@ void main() {
       await ironwoodDriverPost(_driverUrl, '/activate');
       final activeChain = await ironwoodDriverGet(_driverUrl, '/status');
       expect(activeChain['ironwoodActive'], isTrue);
-      expect(activeChain['consensusBranchId'], '37a5165b');
+      expect(activeChain['nu7Active'], isTrue);
+      expect(activeChain['consensusBranchId'], '77190ad9');
+      final activatedHeight = (activeChain['zcashdHeight'] as num).toInt();
 
       final providerContainer = ProviderScope.containerOf(
         tester.element(
@@ -81,7 +88,7 @@ void main() {
           return chain?.ironwoodActiveAtTip == true &&
               sync?.isSyncing == false &&
               sync?.isSyncComplete == true &&
-              (sync?.scannedHeight ?? 0) >= 500;
+              (sync?.scannedHeight ?? 0) >= activatedHeight;
         },
         description: 'active Ironwood chain and completed wallet sync',
         timeout: const Duration(minutes: 5),
@@ -106,28 +113,11 @@ void main() {
         'announcementVisible=${announcement.visible}',
       );
 
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
-        ),
-        description: 'Ironwood announcement after activation',
-        timeout: const Duration(minutes: 5),
+      final modal = find.byKey(
+        const ValueKey('ironwood_migration_announcement_modal'),
       );
-
-      final announcementOverlay = find.byKey(
-        const ValueKey('ironwood_migration_announcement_overlay'),
-      );
-      final overlayOrigin = tester.getTopLeft(announcementOverlay);
-      await tester.tapAt(overlayOrigin + const Offset(16, 16));
-      await tester.pump(const Duration(milliseconds: 250));
-      await pumpUntil(
-        tester,
-        () => !tester.any(
-          find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
-        ),
-        description: 'dismissed announcement to disappear',
-      );
+      expect(announcement.visible, isFalse);
+      expect(modal, findsNothing);
       await openPrivateMigrationReview(tester);
       final approvedPlan = await providerContainer.read(
         ironwoodMigrationPrivatePlanProvider.future,
@@ -142,7 +132,9 @@ void main() {
         ),
         description: 'migration review start button',
       );
-      final displayedSchedule = approvedPlan!.scheduledTransfers;
+      final expectedFee = BigInt.from(19000);
+      expect(approvedPlan!.estimatedTotalFeeZatoshi, expectedFee);
+      final displayedSchedule = approvedPlan.scheduledTransfers;
       await tapAppButton(
         tester,
         const ValueKey('ironwood_migration_authorize_start_button'),
@@ -285,7 +277,13 @@ void main() {
         accountUuid: accountUuid,
       );
       expect(balance.ironwood, approvedPlan.totalMigratableZatoshi);
-      expect(balance.ironwood, lessThan(_fundedAmount));
+      expect(
+        _fundedAmount -
+            balance.ironwood -
+            balance.orchard -
+            balance.uneconomicValue,
+        expectedFee,
+      );
       expect(
         balance.orchard + balance.uneconomicValue,
         approvedPlan.orchardChangeZatoshi ?? BigInt.zero,

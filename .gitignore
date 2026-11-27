@@ -54,6 +54,7 @@ rust/build/
 .regtest-logs/
 .regtest-voting/
 .ironwood-regtest/
+/migration_sim_test/artifacts/
 .ironwood-regtest-snapshots/
 .nu7-regtest/
 

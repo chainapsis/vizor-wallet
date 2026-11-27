@@ -50,10 +50,27 @@ void main() {
           .toSet();
 
       pauseFlutterForNativeBackgroundMigration(tester);
+      expect(persistedTxids, hasLength(persisted.pendingTxCount));
+      await postDriver('/lightwalletd/stop', const {});
+      try {
+        final offlineTick = await runNativeMigrationOutboxTick();
+        expect(offlineTick['outcome'], 'temporarilyUnavailable');
+        final offline = await mobileRegtestMigrationStatus(accountUuid);
+        expectNativeOutboxTickDidNotCreateProofs(persisted, offline);
+        expect(offline.broadcastedTxCount + offline.confirmedTxCount, 0);
+        expect(await nativeMigrationReceipts(accountUuid, runId!), isEmpty);
+        await waitForNativeBackgroundMempoolSize(0);
+      } finally {
+        await postDriver(
+          '/lightwalletd/start',
+          const {},
+          timeout: const Duration(minutes: 5),
+        );
+      }
       final tick = await runNativeMigrationOutboxTick();
       final broadcasted = await mobileRegtestMigrationStatus(accountUuid);
       expect(tick['outcome'], 'accepted');
-      final receipts = await nativeMigrationReceipts(accountUuid, runId!);
+      final receipts = await nativeMigrationReceipts(accountUuid, runId);
       expect(receipts, hasLength(1));
       await expectAcceptedNativeMigrationReceipt(
         receipts.single,

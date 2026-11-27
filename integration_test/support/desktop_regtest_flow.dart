@@ -147,24 +147,6 @@ Future<void> unlockDesktopRegtestWallet(WidgetTester tester) async {
   );
 }
 
-Future<void> dismissIronwoodAnnouncement(WidgetTester tester) async {
-  final overlay = find.byKey(
-    const ValueKey('ironwood_migration_announcement_overlay'),
-  );
-  final origin = tester.getTopLeft(overlay);
-  await tester.tapAt(origin + const Offset(16, 16), pointer: _takeE2ePointer());
-  await tester.pump(const Duration(milliseconds: 250));
-  await pumpUntil(
-    tester,
-    () => !tester.any(
-      find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
-    ),
-    description: 'dismissed Ironwood announcement',
-  );
-}
-
-/// Home's migration CTA through the intro, How it works and What to expect to
-/// the migration options.
 Future<void> openMigrationOptions(WidgetTester tester) async {
   await tapAppButton(
     tester,
@@ -217,36 +199,6 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
       find.byKey(const ValueKey('ironwood_migration_review_screen')),
     ),
     description: 'private migration review',
-  );
-}
-
-Future<void> openImmediateMigrationReview(WidgetTester tester) async {
-  await openMigrationOptions(tester);
-  await tapAppWidget(tester, const ValueKey('ironwood_migration_fast_option'));
-  await tapAppButton(
-    tester,
-    const ValueKey('ironwood_migration_select_review_button'),
-  );
-  await pumpUntil(
-    tester,
-    () => tester.any(
-      find.byKey(const ValueKey('ironwood_migration_immediate_review_screen')),
-    ),
-    description: 'Immediate migration review',
-  );
-}
-
-Future<void> startPrivateMigrationFromReview(WidgetTester tester) async {
-  await pumpUntil(
-    tester,
-    () => tester.any(
-      find.byKey(const ValueKey('ironwood_migration_authorize_start_button')),
-    ),
-    description: 'migration review start button',
-  );
-  await tapAppButton(
-    tester,
-    const ValueKey('ironwood_migration_authorize_start_button'),
   );
 }
 
@@ -439,18 +391,6 @@ int? _aboveTip(int? height, int tip) =>
 List<rust_sync.MigrationPreparationTransactionStatus> _preparationStages(
   rust_sync.MigrationStatus status,
 ) => status.preparationTransactions ?? const [];
-
-/// Preparation transactions per layer. Stage rounds count layers from 1.
-List<int> desktopPreparationLayers(rust_sync.MigrationStatus status) {
-  final layers = <int>[];
-  for (final stage in _preparationStages(status)) {
-    while (layers.length < stage.round) {
-      layers.add(0);
-    }
-    layers[stage.round - 1]++;
-  }
-  return layers;
-}
 
 String _desktopPreparationProgress(rust_sync.MigrationStatus status) => [
   status.phase,

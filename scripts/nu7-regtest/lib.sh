@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.zcash-nu7-regtest.yml"
 STATE_DIR="$ROOT_DIR/.nu7-regtest"
-HEIGHTS_FILE="$STATE_DIR/activation-heights"
+CONFIG_DIR="${NU7_REGTEST_RUN_DIR:-$STATE_DIR}"
+export NU7_REGTEST_ZEBRA_CONFIG="$CONFIG_DIR/zebrad.toml"
+HEIGHTS_FILE="$CONFIG_DIR/activation-heights"
 if [[ -z "${NU7_REGTEST_NU63_HEIGHT:-}${NU7_REGTEST_NU7_HEIGHT:-}" && -f "$HEIGHTS_FILE" ]]; then
   read -r NU7_REGTEST_NU63_HEIGHT NU7_REGTEST_NU7_HEIGHT <"$HEIGHTS_FILE"
 fi
@@ -34,7 +36,7 @@ validate_heights() {
 
 # A chain keeps the heights it was created with; reset before changing them.
 pin_heights() {
-  mkdir -p "$STATE_DIR"
+  mkdir -p "$CONFIG_DIR"
   if [[ -f "$HEIGHTS_FILE" ]]; then
     local pinned
     pinned="$(<"$HEIGHTS_FILE")"
@@ -45,7 +47,7 @@ pin_heights() {
   else
     printf '%s %s\n' "$NU7_REGTEST_NU63_HEIGHT" "$NU7_REGTEST_NU7_HEIGHT" >"$HEIGHTS_FILE"
   fi
-  cat >"$STATE_DIR/zebrad.toml" <<TOML
+  cat >"$NU7_REGTEST_ZEBRA_CONFIG" <<TOML
 [network]
 network = "Regtest"
 listen_addr = "127.0.0.1:0"

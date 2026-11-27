@@ -23,18 +23,13 @@ export '../models/ironwood_migration_phases.dart';
 /// residual value that no denomination can carry.
 final kIronwoodMigrationResidualValueZatoshi = BigInt.from(1000000);
 
-/// Smallest balance that can actually start a migration, in zatoshi.
-///
-/// The planner subtracts both fees before it looks for a denomination, so the
-/// denomination alone is not enough to clear it. Mirrors
-/// `plan_denominations` with `DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI`
-/// and `MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI` in
-/// rust/src/wallet/sync/migration/policy.rs. Gating on the denomination alone
-/// let a balance in between offer a migration that cannot be planned.
-final kIronwoodMigrationMinimumStartableZatoshi =
-    kIronwoodMigrationResidualValueZatoshi +
-    BigInt.from(80000) + // denomination split fee
-    BigInt.from(15000); // migration fee
+/// Matches the Rust planner's smallest denomination plus a 16-action split
+/// and a 3-action transfer at the target block's marginal fee.
+BigInt ironwoodMigrationMinimumStartableZatoshi({required bool nu7Fees}) {
+  final marginalFee = nu7Fees ? 1000 : 5000;
+  return kIronwoodMigrationResidualValueZatoshi +
+      BigInt.from((16 + 3) * marginalFee);
+}
 
 bool isIronwoodMigrationWaitingForConfirmation(
   rust_sync.MigrationStatus? status,
@@ -255,6 +250,7 @@ class IronwoodMigrationInputs {
     required this.orchardPendingBalance,
     required this.ironwoodBalance,
     required this.ironwoodPendingBalance,
+    this.nu7Fees = false,
   });
 
   final bool ironwoodActiveAtTip;
@@ -272,6 +268,10 @@ class IronwoodMigrationInputs {
   final BigInt ironwoodBalance;
   final BigInt ironwoodPendingBalance;
 
+  /// Whether the wallet's next transaction targets NU7. False until
+  /// the tip is known, which keeps the higher pre-NU7 gate.
+  final bool nu7Fees;
+
   /// Whether the Orchard balance can still produce a migration output.
   ///
   /// ZIP 318's smallest denomination is 0.01 ZEC, so a balance below that is
@@ -288,7 +288,8 @@ class IronwoodMigrationInputs {
   /// (`PHASE_WAITING_FOR_SPENDABLE_ORCHARD`), so counting it here offered a
   /// migration that cannot be planned until those funds confirm.
   bool get hasOrchardFunds =>
-      orchardBalance >= kIronwoodMigrationMinimumStartableZatoshi;
+      orchardBalance >=
+      ironwoodMigrationMinimumStartableZatoshi(nu7Fees: nu7Fees);
 
   bool get hasIronwoodSpendableFunds => ironwoodBalance > BigInt.zero;
 
@@ -317,7 +318,8 @@ class IronwoodMigrationInputs {
             other.orchardBalance == orchardBalance &&
             other.orchardPendingBalance == orchardPendingBalance &&
             other.ironwoodBalance == ironwoodBalance &&
-            other.ironwoodPendingBalance == ironwoodPendingBalance;
+            other.ironwoodPendingBalance == ironwoodPendingBalance &&
+            other.nu7Fees == nu7Fees;
   }
 
   @override
@@ -336,6 +338,7 @@ class IronwoodMigrationInputs {
     orchardPendingBalance,
     ironwoodBalance,
     ironwoodPendingBalance,
+    nu7Fees,
   );
 }
 
@@ -698,6 +701,10 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
   final network = ref.watch(
     rpcEndpointProvider.select((endpoint) => endpoint.networkName),
   );
+  // Display gate only: Rust re-checks against the wallet DB's target height.
+  final nu7Fees = ref.watch(
+    walletFeePolicyEpochProvider.select((epoch) => epoch.nu7),
+  );
 
   return IronwoodMigrationInputs(
     ironwoodActiveAtTip: ironwoodActiveAtTip,
@@ -714,6 +721,7 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
     orchardPendingBalance: sync.orchardPendingBalance,
     ironwoodBalance: sync.ironwoodBalance,
     ironwoodPendingBalance: sync.ironwoodPendingBalance,
+    nu7Fees: nu7Fees,
   );
 });
 
