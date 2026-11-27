@@ -111,6 +111,74 @@ function Assert-WindowsBuildArch($fvmCommand, $requestedArch) {
   }
 }
 
+function Get-PeImage($path) {
+  # Returns a PE image's machine type and the DLL names in its import table.
+  $bytes = [System.IO.File]::ReadAllBytes($path)
+  if ($bytes.Length -lt 64 -or [BitConverter]::ToUInt16($bytes, 0) -ne 0x5a4d) {
+    throw "Not a PE image: $path"
+  }
+  $pe = [BitConverter]::ToInt32($bytes, 0x3c)
+  if ([BitConverter]::ToInt32($bytes, $pe) -ne 0x4550) {
+    throw "Not a PE image: $path"
+  }
+  $optionalHeader = $pe + 24
+  $sectionTable = $optionalHeader + [BitConverter]::ToUInt16($bytes, $pe + 20)
+  $sectionCount = [BitConverter]::ToUInt16($bytes, $pe + 6)
+  $toFileOffset = {
+    param($rva)
+    for ($section = $sectionTable; $section -lt $sectionTable + 40 * $sectionCount; $section += 40) {
+      $start = [BitConverter]::ToInt32($bytes, $section + 12)
+      $size = [Math]::Max([BitConverter]::ToInt32($bytes, $section + 8), [BitConverter]::ToInt32($bytes, $section + 16))
+      if ($rva -ge $start -and $rva -lt $start + $size) {
+        return $rva - $start + [BitConverter]::ToInt32($bytes, $section + 20)
+      }
+    }
+    throw "Invalid import table: $path"
+  }
+  # The import table is the second data directory, which follows the first
+  # 112 (PE32+) or 96 (PE32) bytes of the optional header.
+  $pe32Plus = [BitConverter]::ToUInt16($bytes, $optionalHeader) -eq 0x20b
+  $importRva = [BitConverter]::ToInt32($bytes, $optionalHeader + $(if ($pe32Plus) { 120 } else { 104 }))
+  $imports = @()
+  if ($importRva -ne 0) {
+    for ($descriptor = & $toFileOffset $importRva; ($nameRva = [BitConverter]::ToInt32($bytes, $descriptor + 12)) -ne 0; $descriptor += 20) {
+      $name = & $toFileOffset $nameRva
+      $end = [Array]::IndexOf($bytes, [byte]0, $name)
+      if ($end -lt 0) {
+        throw "Invalid import table: $path"
+      }
+      $imports +=[System.Text.Encoding]::ASCII.GetString($bytes, $name, $end - $name)
+    }
+  }
+  [pscustomobject]@{ Machine = [BitConverter]::ToUInt16($bytes, $pe + 4); Imports = $imports }
+}
+
+function Assert-MsvcRuntimeBundled($dir, $arch) {
+  # Windows does not include the MSVC runtime; the Visual C++ Redistributable
+  # installs it. Every runtime DLL that a packaged binary imports must ship next
+  # to the executable, and every bundled one must be built for the package's
+  # architecture.
+  $runtimePattern = '^(concrt|mfcm?|msvcp|msvcr|vcamp|vccorlib|vcomp|vcruntime)\d'
+  $machine = if ($arch -eq "arm64") { 0xaa64 } else { 0x8664 }
+  $bundledFiles = @{}
+  Get-ChildItem -LiteralPath $dir -File | ForEach-Object { $bundledFiles[$_.Name] = $_.FullName }
+  $binaries = Get-ChildItem -LiteralPath $dir -File -Recurse | Where-Object { $_.Extension -in ".exe", ".dll" }
+  foreach ($binary in $binaries) {
+    foreach ($import in @((Get-PeImage $binary.FullName).Imports) -match $runtimePattern) {
+      if (-not $bundledFiles.ContainsKey($import)) {
+        throw "$($binary.Name) imports $import, which the Windows build did not bundle. See the MSVC runtime install rule in windows/CMakeLists.txt."
+      }
+    }
+  }
+  $runtimeDlls = @(@($bundledFiles.Keys) -match $runtimePattern | Sort-Object)
+  foreach ($runtimeDll in $runtimeDlls) {
+    if ((Get-PeImage $bundledFiles[$runtimeDll]).Machine -ne $machine) {
+      throw "$runtimeDll is not built for Windows $arch."
+    }
+  }
+  Write-Host "Bundled MSVC runtime: $($runtimeDlls -join ', ')"
+}
+
 function Get-PubspecVersion {
   $versionLine = Get-Content -Path "pubspec.yaml" |
     Where-Object { $_ -match '^version:\s*' } |
@@ -410,6 +478,7 @@ if ($LASTEXITCODE -ne 0) {
 if (-not (Test-Path $mainExe)) {
   throw "Windows release build did not produce $mainExe"
 }
+Assert-MsvcRuntimeBundled $packDir $Arch
 
 $packArgs = @(
   "pack",

@@ -94,6 +94,28 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
+# The runner, the plugins and the Rust library link the MSVC runtime
+# dynamically. Its DLLs come with the Visual C++ Redistributable, not with
+# Windows, so install the ones they import next to the executable, and the app
+# starts on a PC without the redistributable.
+# scripts/package-windows-velopack.ps1 checks that every such import is bundled.
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+include(InstallRequiredSystemLibraries)
+# Only x64 binaries import vcruntime140_1.dll. The ARM64 redistributable folder
+# has one too, but it is not an ARM64 build.
+set(VIZOR_MSVC_RUNTIME_DLLS "msvcp140|vcruntime140")
+if(MSVC_CXX_ARCHITECTURE_ID STREQUAL "x64")
+  string(APPEND VIZOR_MSVC_RUNTIME_DLLS "|vcruntime140_1")
+endif()
+list(FILTER CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS INCLUDE
+  REGEX "/(${VIZOR_MSVC_RUNTIME_DLLS})\\.dll$")
+if(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+  install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    CONFIGURATIONS Profile;Release
+    COMPONENT Runtime)
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

@@ -74,7 +74,29 @@ if ($args[0] -ne 'flutter' -or $args[1] -ne 'build' -or $args[2] -ne 'windows') 
 ConvertTo-Json -InputObject @($args) | Set-Content $env:VIZOR_TEST_FVM_LOG
 $releaseDir = Join-Path $env:VIZOR_TEST_ROOT "build/windows/$env:VIZOR_TEST_SDK_ARCH/runner/Release"
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-Set-Content (Join-Path $releaseDir 'Vizor.exe') 'fake executable'
+# Minimal PE32+ images: the headers and one section holding the import table.
+# Offsets: the DOS header points to the PE signature at 64, then the COFF header
+# (machine, one section, a 240-byte optional header), the optional header from
+# 88, and the section header at 328, which maps RVA 0x1000 to file offset 0x200.
+function Write-FakePe($path, $machine, $import) {
+  $bytes = New-Object byte[] 1024
+  $fields = @{ 0 = [uint16]0x5a4d; 60 = 64; 64 = 0x4550; 68 = [uint16]$machine; 70 = [uint16]1
+    84 = [uint16]240; 88 = [uint16]0x20b; 336 = 0x200; 340 = 0x1000; 344 = 0x200; 348 = 0x200 }
+  if ($import) {
+    # The import directory (208) points to one descriptor at RVA 0x1000, whose
+    # name RVA (524) points to the DLL name at file offset 0x228.
+    $fields[208] = 0x1000; $fields[524] = 0x1028
+    [System.Text.Encoding]::ASCII.GetBytes($import).CopyTo($bytes, 0x228)
+  }
+  foreach ($offset in $fields.Keys) { [BitConverter]::GetBytes($fields[$offset]).CopyTo($bytes, $offset) }
+  [System.IO.File]::WriteAllBytes($path, $bytes)
+}
+$machine = if ($env:VIZOR_TEST_SDK_ARCH -eq 'arm64') { 0xaa64 } else { 0x8664 }
+Write-FakePe (Join-Path $releaseDir 'Vizor.exe') $machine 'VCRUNTIME140.dll'
+if ($env:VIZOR_TEST_RUNTIME -ne 'missing') {
+  $runtimeMachine = if ($env:VIZOR_TEST_RUNTIME -eq 'x64') { 0x8664 } else { $machine }
+  Write-FakePe (Join-Path $releaseDir 'vcruntime140.dll') $runtimeMachine $null
+}
 $global:LASTEXITCODE = 0
 '@
   Set-Content (Join-Path $mockBin "vpk.ps1") @'
@@ -97,12 +119,15 @@ $global:LASTEXITCODE = 0
     @{ Name = "duplicate same ABI"; Sdk = "x64"; Probe = "VIZOR_WINDOWS_BUILD_ARCH=x64`nVIZOR_WINDOWS_BUILD_ARCH=x64"; Error = "unique Windows architecture" },
     @{ Name = "failed probe"; Sdk = "x64"; Exit = 1; Error = "probe failed" },
     @{ Name = "unrecognized probe"; Sdk = "x64"; Probe = "unknown"; Error = "unique Windows architecture" },
-    @{ Name = "conflicting probe"; Sdk = "x64"; Probe = "VIZOR_WINDOWS_BUILD_ARCH=x64`nVIZOR_WINDOWS_BUILD_ARCH=arm64"; Error = "unique Windows architecture" }
+    @{ Name = "conflicting probe"; Sdk = "x64"; Probe = "VIZOR_WINDOWS_BUILD_ARCH=x64`nVIZOR_WINDOWS_BUILD_ARCH=arm64"; Error = "unique Windows architecture" },
+    @{ Name = "missing MSVC runtime"; Sdk = "x64"; Network = "mainnet"; Runtime = "missing"; Error = "imports VCRUNTIME140.dll" },
+    @{ Name = "MSVC runtime for another architecture"; Sdk = "arm64"; Arch = "arm64"; Network = "mainnet"; Runtime = "x64"; Error = "is not built for Windows arm64" }
   )
   foreach ($case in $cases) {
     $env:PROCESSOR_ARCHITECTURE = "ARM64"
     $env:VIZOR_TEST_PROBE_STDERR = $case.Stderr
     $env:VIZOR_TEST_SDK_ARCH = $case.Sdk
+    $env:VIZOR_TEST_RUNTIME = $case.Runtime
     $env:VIZOR_TEST_PROBE = if ($case.ContainsKey("Probe")) { $case.Probe } else { "VIZOR_WINDOWS_BUILD_ARCH=$($case.Sdk)" }
     $env:VIZOR_TEST_PROBE_EXIT = if ($case.ContainsKey("Exit")) { "$($case.Exit)" } else { "0" }
     Remove-Item $env:VIZOR_TEST_FVM_LOG, $env:VIZOR_TEST_VPK_LOG -ErrorAction SilentlyContinue
@@ -127,9 +152,10 @@ $global:LASTEXITCODE = 0
     try { & $packageScript @options } catch { $failure = $_.Exception.Message }
     if ($case.Error) {
       if (-not $failure -or -not $failure.Contains($case.Error)) { throw "$($case.Name): unexpected error '$failure'." }
-      Assert-Equal (Test-Path $env:VIZOR_TEST_FVM_LOG) $false
+      # A runtime case fails after the build; the others fail before it.
+      Assert-Equal (Test-Path $env:VIZOR_TEST_FVM_LOG) ([bool]$case.Runtime)
       Assert-Equal (Test-Path $env:VIZOR_TEST_VPK_LOG) $false
-      Assert-Equal (Test-Path $sentinel) $true
+      if (-not $case.Runtime) { Assert-Equal (Test-Path $sentinel) $true }
     } else {
       if ($failure) { throw "$($case.Name): $failure" }
       $packArgs = @(Get-Content -Raw $env:VIZOR_TEST_VPK_LOG | ConvertFrom-Json)
