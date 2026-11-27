@@ -4325,10 +4325,29 @@ async fn run_sync_impl(
     // Prefetched anchor `TreeState` overlapped with the tip batch download so
     // `repair_anchor_root_mismatch_if_needed` does not add a serial RTT at the
     // end of warm sync while keeping 100% identical anchor root verification.
-    let mut anchor_tree_state_prefetch: Option<(
-        u64,
-        tokio::task::JoinHandle<Result<zcash_client_backend::proto::service::TreeState, SyncError>>,
-    )> = None;
+    // Aborted on drop and cleared on every reorg/rewind path so a stale fork's
+    // tree state can never survive into completion after a rewind.
+    struct AnchorTreeStatePrefetch(
+        Option<(
+            u64,
+            tokio::task::JoinHandle<
+                Result<zcash_client_backend::proto::service::TreeState, SyncError>,
+            >,
+        )>,
+    );
+    impl AnchorTreeStatePrefetch {
+        fn clear(&mut self) {
+            if let Some((_, handle)) = self.0.take() {
+                handle.abort();
+            }
+        }
+    }
+    impl Drop for AnchorTreeStatePrefetch {
+        fn drop(&mut self) {
+            self.clear();
+        }
+    }
+    let mut anchor_tree_state_prefetch = AnchorTreeStatePrefetch(None);
     // Trial decryption of the next queued batch, started before this batch is
     // written so that it runs while `put_blocks` does. Keyed by the batch's
     // range; `scan_decrypted_blocks` decrypts again unless it covers exactly
@@ -4473,6 +4492,7 @@ async fn run_sync_impl(
                             }
                             main_rewinds_this_run += 1;
                             prefetch.clear();
+                            anchor_tree_state_prefetch.clear();
                             let (actual_height, repair_ranges, pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
@@ -4636,6 +4656,7 @@ async fn run_sync_impl(
                             }
                             main_rewinds_this_run += 1;
                             prefetch.clear();
+                            anchor_tree_state_prefetch.clear();
                             let (actual_height, repair_ranges, repair_pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
@@ -4686,15 +4707,33 @@ async fn run_sync_impl(
                         ));
                     }
                     prefetch.clear();
+                    anchor_tree_state_prefetch.clear();
                     continue;
                 } else if let Some(repair_pending_blocks) = {
-                    let prefetched_anchor = match anchor_tree_state_prefetch.take() {
-                        Some((h, handle)) => match handle.await {
-                            Ok(Ok(ts)) => Some((h, ts)),
-                            _ => None,
-                        },
+                    let prefetched_anchor = match anchor_tree_state_prefetch.0.take() {
+                        Some((h, mut handle)) => {
+                            let Some(res) = unless_exiting(&should_exit, &mut handle).await else {
+                                handle.abort();
+                                log::info!(
+                                    "[{}] sync: exiting while awaiting prefetched anchor tree state",
+                                    elapsed()
+                                );
+                                return Ok(());
+                            };
+                            match res {
+                                Ok(Ok(ts)) => Some((h, ts)),
+                                _ => None,
+                            }
+                        }
                         None => None,
                     };
+                    if should_exit() {
+                        log::info!(
+                            "[{}] sync: exiting before completion anchor root check",
+                            elapsed()
+                        );
+                        return Ok(());
+                    }
                     repair_anchor_root_mismatch_if_needed(
                         db_data_path,
                         &mut client,
@@ -4718,6 +4757,7 @@ async fn run_sync_impl(
                         ));
                     }
                     prefetch.clear();
+                    anchor_tree_state_prefetch.clear();
                     continue;
                 } else {
                     // A previous attempt may have scanned its final batch before
@@ -4956,14 +4996,13 @@ async fn run_sync_impl(
             let trusted_confs = u64::from(u32::from(ConfirmationsPolicy::default().trusted()));
             let predicted_anchor = current_tip_height.saturating_sub(trusted_confs);
             let already_fetching = anchor_tree_state_prefetch
+                .0
                 .as_ref()
                 .is_some_and(|(h, _)| *h == predicted_anchor);
             if predicted_anchor > 0 && !already_fetching {
-                if let Some((_, old)) = anchor_tree_state_prefetch.take() {
-                    old.abort();
-                }
+                anchor_tree_state_prefetch.clear();
                 let mut anchor_client = client.clone();
-                anchor_tree_state_prefetch = Some((
+                anchor_tree_state_prefetch.0 = Some((
                     predicted_anchor,
                     tokio::spawn(async move {
                         get_tree_state(&mut anchor_client, predicted_anchor).await
@@ -5437,6 +5476,7 @@ async fn run_sync_impl(
                         }
                     }
                     prefetch.clear();
+                    anchor_tree_state_prefetch.clear();
                     continue;
                 }
                 RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Fatal => {
@@ -5680,6 +5720,7 @@ async fn run_sync_impl(
                             }
                             main_rewinds_this_run += 1;
                             prefetch.clear();
+                            anchor_tree_state_prefetch.clear();
                             let (actual_height, repair_ranges, pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
