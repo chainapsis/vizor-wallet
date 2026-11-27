@@ -47,7 +47,7 @@ nonempty = "0.11"
 minicbor = "0.19"
 prost = "0.14"
 incrementalmerkletree = "0.8"
-shardtree = "0.7"
+shardtree = { package = "zcashlabs-shardtree", version = "0.7.2" }
 
 # Security
 secrecy = "0.8"
@@ -288,3 +288,21 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Temporary draft pin to zakura-core/wallet-libraries `main` (which rewires
+# `shardtree` onto `zcashlabs-shardtree 0.7.2` and includes PR #409).
+# Replace with published crate versions once released.
+[patch.crates-io]
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-protocol = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-server-core = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-publisher = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-query-server = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-client = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-filters = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-one-time-ivk = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-near-intents = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
+zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", branch = "main" }
