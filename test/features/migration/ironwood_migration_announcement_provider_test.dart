@@ -691,7 +691,10 @@ void main() {
       expect(state.locksNavigation, isFalse);
       expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
       expect(routeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
-      expect(homeBalanceMode, IronwoodHomeBalancePresentationMode.ironwoodOnly);
+      expect(
+        homeBalanceMode,
+        IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
+      );
     },
   );
 
@@ -828,7 +831,7 @@ void main() {
       expect(state.mode, IronwoodPostMigrationMode.required);
       expect(state.locksNavigation, isTrue);
       expect(homeCta.mode, IronwoodHomeMigrationCtaMode.start);
-      expect(homeBalanceMode, IronwoodHomeBalancePresentationMode.allShielded);
+      expect(homeBalanceMode, IronwoodHomeBalancePresentationMode.orchardOnly);
     },
   );
 
@@ -1138,7 +1141,7 @@ void main() {
       await container.read(ironwoodPostMigrationStateProvider.future);
       expect(
         container.read(ironwoodHomeBalancePresentationProvider),
-        IronwoodHomeBalancePresentationMode.ironwoodOnly,
+        IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
       );
 
       inputs = _migrationInputs(

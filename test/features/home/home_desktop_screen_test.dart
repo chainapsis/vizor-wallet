@@ -1,6 +1,8 @@
 import '../../support/home_initialization_checks.dart';
+
 import 'package:zcash_wallet/src/features/home/widgets/home_activity_skeleton.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provider.dart';
+
 import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -55,7 +57,9 @@ import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
+
 import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+
 import '../../support/test_l10n.dart';
 
 void main() {
@@ -951,7 +955,8 @@ void main() {
               SpendableBalanceFreshness.lastCompletedSync,
           totalBalance: BigInt.zero,
           displayTotalBalance: BigInt.from(4_011_000_000),
-          displayShieldedBalance: BigInt.from(4_011_000_000),
+          // Shielded holdings include the 2 ZEC of spendable Orchard.
+          displayShieldedBalance: BigInt.from(4_211_000_000),
         ),
       ),
     );
@@ -1007,7 +1012,7 @@ void main() {
       _appHarness(
         '/home',
         ironwoodHomeBalancePresentationMode:
-            IronwoodHomeBalancePresentationMode.ironwoodOnly,
+            IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -1024,6 +1029,68 @@ void main() {
     expect(find.text('Shielded balance (Ironwood)'), findsNothing);
     expect(find.text('0'), findsNothing);
   });
+
+  testWidgets('home desktop counts Sapling funds after a migration', (
+    tester,
+  ) async {
+    // Ironwood is empty; the account still holds Sapling funds the migration
+    // does not move, and Send can spend them.
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodHomeBalancePresentationMode:
+            IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          saplingBalance: BigInt.from(320_000_000),
+          spendableBalance: BigInt.from(320_000_000),
+          totalBalance: BigInt.from(320_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('3.20'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home_desktop_send_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_desktop_receive_first_button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'home desktop shows only the Orchard to migrate while migration is required',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          ironwoodHomeMigrationCtaState:
+              const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            saplingBalance: BigInt.from(30_000_000),
+            orchardBalance: BigInt.from(150_000_000),
+            ironwoodBalance: BigInt.from(50_000_000),
+            spendableBalance: BigInt.from(230_000_000),
+            totalBalance: BigInt.from(230_000_000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Migration Required'), findsOneWidget);
+      expect(find.text('1.50'), findsOneWidget);
+      expect(find.text('2.30'), findsNothing);
+    },
+  );
 
   testWidgets('home desktop keeps transparent funds a pending spend holds', (
     tester,
@@ -1084,7 +1151,7 @@ void main() {
         _appHarness(
           '/home',
           ironwoodHomeBalancePresentationMode:
-              IronwoodHomeBalancePresentationMode.ironwoodOnly,
+              IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
           syncState: SyncState(
             accountUuid: 'account-1',
             hasAccountScopedData: true,
@@ -2366,12 +2433,16 @@ Widget _appHarness(
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(
         ironwoodHomeMigrationCtaState,
       ),
+      // Pairs the balance with the migration state the way the app does.
       ironwoodHomeBalancePresentationProvider.overrideWithValue(
         ironwoodHomeBalancePresentationMode ??
-            (ironwoodHomeMigrationCtaState.mode ==
-                    IronwoodHomeMigrationCtaMode.resume
-                ? IronwoodHomeBalancePresentationMode.ironwoodOnly
-                : IronwoodHomeBalancePresentationMode.allShielded),
+            switch (ironwoodHomeMigrationCtaState.mode) {
+              IronwoodHomeMigrationCtaMode.start =>
+                IronwoodHomeBalancePresentationMode.orchardOnly,
+              IronwoodHomeMigrationCtaMode.resume =>
+                IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
+              _ => IronwoodHomeBalancePresentationMode.allShielded,
+            },
       ),
       if (migrationCoordinatorStatus != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(

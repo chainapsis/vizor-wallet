@@ -847,7 +847,18 @@ final _ironwoodHomeMigrationPresentationCacheProvider =
       (_) => _IronwoodHomeMigrationPresentationCache(),
     );
 
-enum IronwoodHomeBalancePresentationMode { allShielded, ironwoodOnly }
+/// Which funds Home's balance counts; `homeDisplayedBalance` turns this into
+/// the amount.
+enum IronwoodHomeBalancePresentationMode {
+  /// Every shielded pool.
+  allShielded,
+
+  /// The Orchard funds a required migration will move.
+  orchardOnly,
+
+  /// Every shielded pool except the Orchard funds a migration is moving.
+  ironwoodAndSapling,
+}
 
 final _ironwoodHomeBalancePresentationCacheProvider =
     Provider<_IronwoodHomeBalancePresentationCache>(
@@ -856,12 +867,19 @@ final _ironwoodHomeBalancePresentationCacheProvider =
 
 /// Stable pool selection for the Home shielded-balance card.
 ///
-/// Once migration is running, waiting for Ironwood spendability, or complete,
-/// Home presents only the Ironwood pool. Preserve that selection through
-/// transient sync/status gaps so the amount and its pool label do not flicker
-/// back to the combined shielded balance.
+/// While Home asks for a migration, it shows the Orchard funds to move. Once
+/// migration is running, waiting for Ironwood spendability, or complete, Home
+/// leaves out the Orchard funds still moving. Preserve that selection through
+/// transient sync/status gaps so the amount does not flicker back to the
+/// combined shielded balance.
 final ironwoodHomeBalancePresentationProvider =
     Provider<IronwoodHomeBalancePresentationMode>((ref) {
+      // Follows the card's "Migration required" heading, so the amount and
+      // the heading change together.
+      if (ref.watch(ironwoodHomeMigrationPresentationProvider).mode ==
+          IronwoodHomeMigrationCtaMode.start) {
+        return IronwoodHomeBalancePresentationMode.orchardOnly;
+      }
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
       final postMigrationState = ref
           .watch(ironwoodPostMigrationStateProvider)
@@ -877,7 +895,7 @@ final ironwoodHomeBalancePresentationProvider =
         IronwoodPostMigrationMode.inProgress ||
         IronwoodPostMigrationMode.pendingIronwoodSpendability ||
         IronwoodPostMigrationMode.complete =>
-          IronwoodHomeBalancePresentationMode.ironwoodOnly,
+          IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
         IronwoodPostMigrationMode.inactive ||
         IronwoodPostMigrationMode.notNeeded ||
         IronwoodPostMigrationMode.required =>

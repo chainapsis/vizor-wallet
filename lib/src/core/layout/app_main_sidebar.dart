@@ -485,9 +485,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     // balance card leaves out.
     final displayedBalance = homeDisplayedBalance(
       accountSync,
-      ironwoodOnly:
-          ref.watch(ironwoodHomeBalancePresentationProvider) ==
-          IronwoodHomeBalancePresentationMode.ironwoodOnly,
+      ref.watch(ironwoodHomeBalancePresentationProvider),
     );
     final balanceText =
         '${accountSync.hasDisplayBalance ? _formatSidebarBalance(displayedBalance) : '—'} ' // l10n-ignore: amount format

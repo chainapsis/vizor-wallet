@@ -3897,6 +3897,17 @@ Widget _buildUtilityUseCase(String initialLocation, AccountState accountState) {
 Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
     buildMobileHomeDefaultUseCase(context, votingVisible: false);
 
+/// The balance mode the app picks for [cta]'s migration state.
+IronwoodHomeBalancePresentationMode _previewBalancePresentation(
+  IronwoodHomeMigrationCtaState cta,
+) => switch (cta.mode) {
+  IronwoodHomeMigrationCtaMode.start =>
+    IronwoodHomeBalancePresentationMode.orchardOnly,
+  IronwoodHomeMigrationCtaMode.resume =>
+    IronwoodHomeBalancePresentationMode.ironwoodAndSapling,
+  _ => IronwoodHomeBalancePresentationMode.allShielded,
+};
+
 Widget _buildMobileHomeUseCase({
   bool adaptive = false,
   bool sidebarLocked = false,
@@ -4041,6 +4052,9 @@ Widget _buildMobileHomeUseCase({
         return migrationCta;
       }),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
+      ironwoodHomeBalancePresentationProvider.overrideWithValue(
+        _previewBalancePresentation(migrationCta),
+      ),
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
@@ -4149,9 +4163,7 @@ Widget _buildDesktopHomeUseCase({
       }),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
       ironwoodHomeBalancePresentationProvider.overrideWithValue(
-        migrationCta.mode == IronwoodHomeMigrationCtaMode.resume
-            ? IronwoodHomeBalancePresentationMode.ironwoodOnly
-            : IronwoodHomeBalancePresentationMode.allShielded,
+        _previewBalancePresentation(migrationCta),
       ),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _PreviewMigrationCoordinator(
