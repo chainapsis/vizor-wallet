@@ -205,6 +205,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiBallotIntent dco_decode_api_ballot_intent(dynamic raw);
 
   @protected
+  ApiBallotPreflight dco_decode_api_ballot_preflight(dynamic raw);
+
+  @protected
+  ApiBallotSubmitKind dco_decode_api_ballot_submit_kind(dynamic raw);
+
+  @protected
+  ApiBallotSubmitResult dco_decode_api_ballot_submit_result(dynamic raw);
+
+  @protected
   ApiBundleLayout dco_decode_api_bundle_layout(dynamic raw);
 
   @protected
@@ -235,13 +244,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiDelegateModeErrorKind dco_decode_api_delegate_mode_error_kind(dynamic raw);
 
   @protected
+  ApiDelegateModeScope dco_decode_api_delegate_mode_scope(dynamic raw);
+
+  @protected
+  ApiDelegateOpAnswer dco_decode_api_delegate_op_answer(dynamic raw);
+
+  @protected
+  ApiDelegateOpAnswerKind dco_decode_api_delegate_op_answer_kind(dynamic raw);
+
+  @protected
+  ApiDelegateOpKind dco_decode_api_delegate_op_kind(dynamic raw);
+
+  @protected
   ApiDelegatePicture dco_decode_api_delegate_picture(dynamic raw);
+
+  @protected
+  ApiDelegateRound dco_decode_api_delegate_round(dynamic raw);
+
+  @protected
+  ApiDelegateRoundTiming dco_decode_api_delegate_round_timing(dynamic raw);
 
   @protected
   ApiDelegationSignerInput dco_decode_api_delegation_signer_input(dynamic raw);
 
   @protected
   ApiDelegationSignerKind dco_decode_api_delegation_signer_kind(dynamic raw);
+
+  @protected
+  ApiDeviceDelegateKey dco_decode_api_device_delegate_key(dynamic raw);
 
   @protected
   ApiDynamicConfigAttempt dco_decode_api_dynamic_config_attempt(dynamic raw);
@@ -268,6 +298,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
+
+  @protected
+  ApiNewDelegateKey dco_decode_api_new_delegate_key(dynamic raw);
 
   @protected
   ApiPendingProxyRound dco_decode_api_pending_proxy_round(dynamic raw);
@@ -355,6 +388,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiShareTrackingRunEvent dco_decode_api_share_tracking_run_event(dynamic raw);
 
   @protected
+  ApiSignedDelegateOp dco_decode_api_signed_delegate_op(dynamic raw);
+
+  @protected
   ApiSnapshotBundlePirResult dco_decode_api_snapshot_bundle_pir_result(
     dynamic raw,
   );
@@ -362,6 +398,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ApiSnapshotBundlePrecomputeResult
   dco_decode_api_snapshot_bundle_precompute_result(dynamic raw);
+
+  @protected
+  ApiStoredDelegateBallot dco_decode_api_stored_delegate_ballot(dynamic raw);
 
   @protected
   ApiSyncCheckingProgress dco_decode_api_sync_checking_progress(dynamic raw);
@@ -374,6 +413,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiTransparentLedgerMode dco_decode_api_transparent_ledger_mode(dynamic raw);
+
+  @protected
+  ApiVerifierRequest dco_decode_api_verifier_request(dynamic raw);
 
   @protected
   ApiVotingEligibility dco_decode_api_voting_eligibility(dynamic raw);
@@ -432,12 +474,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_box_autoadd_api_applied_transparent_policy(dynamic raw);
 
   @protected
+  ApiBallotSubmitResult dco_decode_box_autoadd_api_ballot_submit_result(
+    dynamic raw,
+  );
+
+  @protected
   ApiChainDelegateBallot dco_decode_box_autoadd_api_chain_delegate_ballot(
     dynamic raw,
   );
 
   @protected
+  ApiDelegateModeScope dco_decode_box_autoadd_api_delegate_mode_scope(
+    dynamic raw,
+  );
+
+  @protected
+  ApiDelegateRoundTiming dco_decode_box_autoadd_api_delegate_round_timing(
+    dynamic raw,
+  );
+
+  @protected
   ApiDelegationSignerInput dco_decode_box_autoadd_api_delegation_signer_input(
+    dynamic raw,
+  );
+
+  @protected
+  ApiDeviceDelegateKey dco_decode_box_autoadd_api_device_delegate_key(
+    dynamic raw,
+  );
+
+  @protected
+  ApiProvenRegistryEntry dco_decode_box_autoadd_api_proven_registry_entry(
     dynamic raw,
   );
 
@@ -488,6 +555,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_box_autoadd_api_share_tracking_drive_policy(dynamic raw);
 
   @protected
+  ApiSignedDelegateOp dco_decode_box_autoadd_api_signed_delegate_op(
+    dynamic raw,
+  );
+
+  @protected
+  ApiStoredDelegateBallot dco_decode_box_autoadd_api_stored_delegate_ballot(
+    dynamic raw,
+  );
+
+  @protected
   ApiSyncCheckingProgress dco_decode_box_autoadd_api_sync_checking_progress(
     dynamic raw,
   );
@@ -521,7 +598,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DelegateAttestation dco_decode_box_autoadd_delegate_attestation(dynamic raw);
+
+  @protected
   DelegateBallotBlock dco_decode_box_autoadd_delegate_ballot_block(dynamic raw);
+
+  @protected
+  DelegateEntryView dco_decode_box_autoadd_delegate_entry_view(dynamic raw);
+
+  @protected
+  DelegateKeyInfo dco_decode_box_autoadd_delegate_key_info(dynamic raw);
+
+  @protected
+  DelegateModeStatus dco_decode_box_autoadd_delegate_mode_status(dynamic raw);
 
   @protected
   DelegationProgressKind dco_decode_box_autoadd_delegation_progress_kind(
@@ -745,6 +834,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ConfigSwitchKind dco_decode_config_switch_kind(dynamic raw);
 
   @protected
+  DelegateAttestation dco_decode_delegate_attestation(dynamic raw);
+
+  @protected
+  DelegateAttestationSignature dco_decode_delegate_attestation_signature(
+    dynamic raw,
+  );
+
+  @protected
   DelegateBallotBlock dco_decode_delegate_ballot_block(dynamic raw);
 
   @protected
@@ -754,7 +851,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DelegateEntryStatus dco_decode_delegate_entry_status(dynamic raw);
 
   @protected
+  DelegateEntryView dco_decode_delegate_entry_view(dynamic raw);
+
+  @protected
   DelegateKeyInfo dco_decode_delegate_key_info(dynamic raw);
+
+  @protected
+  DelegateModeStatus dco_decode_delegate_mode_status(dynamic raw);
+
+  @protected
+  DelegateVerifierError dco_decode_delegate_verifier_error(dynamic raw);
+
+  @protected
+  DelegateVerifierRefusal dco_decode_delegate_verifier_refusal(dynamic raw);
 
   @protected
   DelegationProgressKind dco_decode_delegation_progress_kind(dynamic raw);
@@ -986,6 +1095,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ConfigCondition> dco_decode_list_config_condition(dynamic raw);
+
+  @protected
+  List<DelegateAttestationSignature>
+  dco_decode_list_delegate_attestation_signature(dynamic raw);
 
   @protected
   List<DelegateCheck> dco_decode_list_delegate_check(dynamic raw);
@@ -1286,6 +1399,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_api_applied_transparent_policy(dynamic raw);
 
   @protected
+  ApiBallotSubmitResult? dco_decode_opt_box_autoadd_api_ballot_submit_result(
+    dynamic raw,
+  );
+
+  @protected
   ApiChainDelegateBallot? dco_decode_opt_box_autoadd_api_chain_delegate_ballot(
     dynamic raw,
   );
@@ -1293,6 +1411,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ApiDelegationSignerInput?
   dco_decode_opt_box_autoadd_api_delegation_signer_input(dynamic raw);
+
+  @protected
+  ApiDeviceDelegateKey? dco_decode_opt_box_autoadd_api_device_delegate_key(
+    dynamic raw,
+  );
+
+  @protected
+  ApiProvenRegistryEntry? dco_decode_opt_box_autoadd_api_proven_registry_entry(
+    dynamic raw,
+  );
 
   @protected
   ApiProxyAllocationStatus?
@@ -1320,6 +1448,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ApiShareTrackingDrivePolicy?
   dco_decode_opt_box_autoadd_api_share_tracking_drive_policy(dynamic raw);
+
+  @protected
+  ApiSignedDelegateOp? dco_decode_opt_box_autoadd_api_signed_delegate_op(
+    dynamic raw,
+  );
+
+  @protected
+  ApiStoredDelegateBallot?
+  dco_decode_opt_box_autoadd_api_stored_delegate_ballot(dynamic raw);
 
   @protected
   ApiSyncCheckingProgress?
@@ -1351,6 +1488,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegateBallotBlock? dco_decode_opt_box_autoadd_delegate_ballot_block(
+    dynamic raw,
+  );
+
+  @protected
+  DelegateEntryView? dco_decode_opt_box_autoadd_delegate_entry_view(
+    dynamic raw,
+  );
+
+  @protected
+  DelegateKeyInfo? dco_decode_opt_box_autoadd_delegate_key_info(dynamic raw);
+
+  @protected
+  DelegateModeStatus? dco_decode_opt_box_autoadd_delegate_mode_status(
     dynamic raw,
   );
 
@@ -2040,6 +2190,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiBallotIntent sse_decode_api_ballot_intent(SseDeserializer deserializer);
 
   @protected
+  ApiBallotPreflight sse_decode_api_ballot_preflight(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiBallotSubmitKind sse_decode_api_ballot_submit_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiBallotSubmitResult sse_decode_api_ballot_submit_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiBundleLayout sse_decode_api_bundle_layout(SseDeserializer deserializer);
 
   @protected
@@ -2088,7 +2253,35 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiDelegateModeScope sse_decode_api_delegate_mode_scope(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDelegateOpAnswer sse_decode_api_delegate_op_answer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDelegateOpAnswerKind sse_decode_api_delegate_op_answer_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDelegateOpKind sse_decode_api_delegate_op_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiDelegatePicture sse_decode_api_delegate_picture(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDelegateRound sse_decode_api_delegate_round(SseDeserializer deserializer);
+
+  @protected
+  ApiDelegateRoundTiming sse_decode_api_delegate_round_timing(
     SseDeserializer deserializer,
   );
 
@@ -2099,6 +2292,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiDelegationSignerKind sse_decode_api_delegation_signer_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDeviceDelegateKey sse_decode_api_device_delegate_key(
     SseDeserializer deserializer,
   );
 
@@ -2133,6 +2331,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiMempoolTxEvent sse_decode_api_mempool_tx_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiNewDelegateKey sse_decode_api_new_delegate_key(
     SseDeserializer deserializer,
   );
 
@@ -2268,6 +2471,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSignedDelegateOp sse_decode_api_signed_delegate_op(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSnapshotBundlePirResult sse_decode_api_snapshot_bundle_pir_result(
     SseDeserializer deserializer,
   );
@@ -2275,6 +2483,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ApiSnapshotBundlePrecomputeResult
   sse_decode_api_snapshot_bundle_precompute_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiStoredDelegateBallot sse_decode_api_stored_delegate_ballot(
     SseDeserializer deserializer,
   );
 
@@ -2293,6 +2506,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiTransparentLedgerMode sse_decode_api_transparent_ledger_mode(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVerifierRequest sse_decode_api_verifier_request(
     SseDeserializer deserializer,
   );
 
@@ -2377,12 +2595,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiBallotSubmitResult sse_decode_box_autoadd_api_ballot_submit_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiChainDelegateBallot sse_decode_box_autoadd_api_chain_delegate_ballot(
     SseDeserializer deserializer,
   );
 
   @protected
+  ApiDelegateModeScope sse_decode_box_autoadd_api_delegate_mode_scope(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDelegateRoundTiming sse_decode_box_autoadd_api_delegate_round_timing(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiDelegationSignerInput sse_decode_box_autoadd_api_delegation_signer_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDeviceDelegateKey sse_decode_box_autoadd_api_device_delegate_key(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiProvenRegistryEntry sse_decode_box_autoadd_api_proven_registry_entry(
     SseDeserializer deserializer,
   );
 
@@ -2439,6 +2682,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSignedDelegateOp sse_decode_box_autoadd_api_signed_delegate_op(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiStoredDelegateBallot sse_decode_box_autoadd_api_stored_delegate_ballot(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSyncCheckingProgress sse_decode_box_autoadd_api_sync_checking_progress(
     SseDeserializer deserializer,
   );
@@ -2480,7 +2733,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DelegateAttestation sse_decode_box_autoadd_delegate_attestation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DelegateBallotBlock sse_decode_box_autoadd_delegate_ballot_block(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateEntryView sse_decode_box_autoadd_delegate_entry_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateKeyInfo sse_decode_box_autoadd_delegate_key_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateModeStatus sse_decode_box_autoadd_delegate_mode_status(
     SseDeserializer deserializer,
   );
 
@@ -2754,6 +3027,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ConfigSwitchKind sse_decode_config_switch_kind(SseDeserializer deserializer);
 
   @protected
+  DelegateAttestation sse_decode_delegate_attestation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateAttestationSignature sse_decode_delegate_attestation_signature(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DelegateBallotBlock sse_decode_delegate_ballot_block(
     SseDeserializer deserializer,
   );
@@ -2767,7 +3050,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DelegateEntryView sse_decode_delegate_entry_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DelegateKeyInfo sse_decode_delegate_key_info(SseDeserializer deserializer);
+
+  @protected
+  DelegateModeStatus sse_decode_delegate_mode_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateVerifierError sse_decode_delegate_verifier_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateVerifierRefusal sse_decode_delegate_verifier_refusal(
+    SseDeserializer deserializer,
+  );
 
   @protected
   DelegationProgressKind sse_decode_delegation_progress_kind(
@@ -3071,6 +3374,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ConfigCondition> sse_decode_list_config_condition(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<DelegateAttestationSignature>
+  sse_decode_list_delegate_attestation_signature(SseDeserializer deserializer);
 
   @protected
   List<DelegateCheck> sse_decode_list_delegate_check(
@@ -3445,6 +3752,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiBallotSubmitResult? sse_decode_opt_box_autoadd_api_ballot_submit_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiChainDelegateBallot? sse_decode_opt_box_autoadd_api_chain_delegate_ballot(
     SseDeserializer deserializer,
   );
@@ -3452,6 +3764,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ApiDelegationSignerInput?
   sse_decode_opt_box_autoadd_api_delegation_signer_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDeviceDelegateKey? sse_decode_opt_box_autoadd_api_device_delegate_key(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiProvenRegistryEntry? sse_decode_opt_box_autoadd_api_proven_registry_entry(
     SseDeserializer deserializer,
   );
 
@@ -3485,6 +3807,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ApiShareTrackingDrivePolicy?
   sse_decode_opt_box_autoadd_api_share_tracking_drive_policy(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiSignedDelegateOp? sse_decode_opt_box_autoadd_api_signed_delegate_op(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiStoredDelegateBallot?
+  sse_decode_opt_box_autoadd_api_stored_delegate_ballot(
     SseDeserializer deserializer,
   );
 
@@ -3528,6 +3861,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegateBallotBlock? sse_decode_opt_box_autoadd_delegate_ballot_block(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateEntryView? sse_decode_opt_box_autoadd_delegate_entry_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateKeyInfo? sse_decode_opt_box_autoadd_delegate_key_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegateModeStatus? sse_decode_opt_box_autoadd_delegate_mode_status(
     SseDeserializer deserializer,
   );
 
@@ -4412,6 +4760,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_ballot_preflight(
+    ApiBallotPreflight self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_ballot_submit_kind(
+    ApiBallotSubmitKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_ballot_submit_result(
+    ApiBallotSubmitResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_bundle_layout(
     ApiBundleLayout self,
     SseSerializer serializer,
@@ -4472,8 +4838,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_delegate_mode_scope(
+    ApiDelegateModeScope self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegate_op_answer(
+    ApiDelegateOpAnswer self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegate_op_answer_kind(
+    ApiDelegateOpAnswerKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegate_op_kind(
+    ApiDelegateOpKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_delegate_picture(
     ApiDelegatePicture self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegate_round(
+    ApiDelegateRound self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegate_round_timing(
+    ApiDelegateRoundTiming self,
     SseSerializer serializer,
   );
 
@@ -4486,6 +4888,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_delegation_signer_kind(
     ApiDelegationSignerKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_device_delegate_key(
+    ApiDeviceDelegateKey self,
     SseSerializer serializer,
   );
 
@@ -4528,6 +4936,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_mempool_tx_event(
     ApiMempoolTxEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_new_delegate_key(
+    ApiNewDelegateKey self,
     SseSerializer serializer,
   );
 
@@ -4694,6 +5108,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_signed_delegate_op(
+    ApiSignedDelegateOp self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_snapshot_bundle_pir_result(
     ApiSnapshotBundlePirResult self,
     SseSerializer serializer,
@@ -4702,6 +5122,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_snapshot_bundle_precompute_result(
     ApiSnapshotBundlePrecomputeResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_stored_delegate_ballot(
+    ApiStoredDelegateBallot self,
     SseSerializer serializer,
   );
 
@@ -4726,6 +5152,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_transparent_ledger_mode(
     ApiTransparentLedgerMode self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_verifier_request(
+    ApiVerifierRequest self,
     SseSerializer serializer,
   );
 
@@ -4826,14 +5258,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_api_ballot_submit_result(
+    ApiBallotSubmitResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_api_chain_delegate_ballot(
     ApiChainDelegateBallot self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_box_autoadd_api_delegate_mode_scope(
+    ApiDelegateModeScope self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_delegate_round_timing(
+    ApiDelegateRoundTiming self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_api_delegation_signer_input(
     ApiDelegationSignerInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_device_delegate_key(
+    ApiDeviceDelegateKey self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_proven_registry_entry(
+    ApiProvenRegistryEntry self,
     SseSerializer serializer,
   );
 
@@ -4898,6 +5360,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_api_signed_delegate_op(
+    ApiSignedDelegateOp self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_stored_delegate_ballot(
+    ApiStoredDelegateBallot self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_api_sync_checking_progress(
     ApiSyncCheckingProgress self,
     SseSerializer serializer,
@@ -4943,8 +5417,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_delegate_attestation(
+    DelegateAttestation self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_delegate_ballot_block(
     DelegateBallotBlock self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_delegate_entry_view(
+    DelegateEntryView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_delegate_key_info(
+    DelegateKeyInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_delegate_mode_status(
+    DelegateModeStatus self,
     SseSerializer serializer,
   );
 
@@ -5273,6 +5771,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_delegate_attestation(
+    DelegateAttestation self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegate_attestation_signature(
+    DelegateAttestationSignature self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_delegate_ballot_block(
     DelegateBallotBlock self,
     SseSerializer serializer,
@@ -5288,8 +5798,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_delegate_entry_view(
+    DelegateEntryView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_delegate_key_info(
     DelegateKeyInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegate_mode_status(
+    DelegateModeStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegate_verifier_error(
+    DelegateVerifierError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegate_verifier_refusal(
+    DelegateVerifierRefusal self,
     SseSerializer serializer,
   );
 
@@ -5662,6 +6196,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_config_condition(
     List<ConfigCondition> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_delegate_attestation_signature(
+    List<DelegateAttestationSignature> self,
     SseSerializer serializer,
   );
 
@@ -6122,6 +6662,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_api_ballot_submit_result(
+    ApiBallotSubmitResult? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_api_chain_delegate_ballot(
     ApiChainDelegateBallot? self,
     SseSerializer serializer,
@@ -6130,6 +6676,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_api_delegation_signer_input(
     ApiDelegationSignerInput? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_device_delegate_key(
+    ApiDeviceDelegateKey? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_proven_registry_entry(
+    ApiProvenRegistryEntry? self,
     SseSerializer serializer,
   );
 
@@ -6166,6 +6724,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_api_share_tracking_drive_policy(
     ApiShareTrackingDrivePolicy? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_signed_delegate_op(
+    ApiSignedDelegateOp? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_stored_delegate_ballot(
+    ApiStoredDelegateBallot? self,
     SseSerializer serializer,
   );
 
@@ -6211,6 +6781,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_delegate_ballot_block(
     DelegateBallotBlock? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_delegate_entry_view(
+    DelegateEntryView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_delegate_key_info(
+    DelegateKeyInfo? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_delegate_mode_status(
+    DelegateModeStatus? self,
     SseSerializer serializer,
   );
 

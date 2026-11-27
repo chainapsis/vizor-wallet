@@ -4,10 +4,167 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'proxy_delegation.dart';
+import 'proxy_delegator.dart';
+import 'voting_session.dart';
 
-// These functions are ignored because they are not marked as `pub`: `chain_ballot_view`, `invalid_input`, `mode_error`, `round_bytes`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `ballot_error`, `ballot_view`, `chain_ballot_record`, `chain_ballot_view`, `decode_key`, `delegate_chain`, `entry_error`, `identity_provider`, `invalid_input`, `mode_error`, `op_answer`, `open`, `proven_entry`, `round_bytes`, `round_timing`, `signed_op`, `signing_key`, `submit_result`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+
+/// Creates a delegate key from the OS RNG (`create_delegate_key`). Nothing
+/// is stored, so an abandoned setup leaves no key behind.
+Future<ApiNewDelegateKey> createDelegateKey() =>
+    RustLib.instance.api.crateApiProxyDelegateCreateDelegateKey();
+
+/// The public key of `secret`, a typed, pasted or scanned `zvdsk1…` export
+/// (`DelegateSigningKey::import`), or `None` when it is not one.
+Future<DelegateKeyInfo?> importDelegateKey({required String secret}) =>
+    RustLib.instance.api.crateApiProxyDelegateImportDelegateKey(secret: secret);
+
+/// Records `dk` as the device's delegate key from `now_seconds`, once its
+/// secret is in secure storage (`record_delegate_key`). Fails with
+/// [`ApiDelegateModeErrorKind::Other`] while the device holds another key.
+Future<void> recordDelegateKey({
+  required ApiDelegateModeScope scope,
+  required String dk,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiProxyDelegateRecordDelegateKey(
+  scope: scope,
+  dk: dk,
+  nowSeconds: nowSeconds,
+);
+
+/// The delegate key the device holds, if any (`device_delegate_key`).
+Future<ApiDeviceDelegateKey?> deviceDelegateKey({
+  required ApiDelegateModeScope scope,
+}) => RustLib.instance.api.crateApiProxyDelegateDeviceDelegateKey(scope: scope);
+
+/// Forgets the device's key with any pending register op in one write, so
+/// another can be created or imported (`forget_delegate_key`). Dart deletes
+/// the secret after.
+Future<void> forgetDelegateKey({required ApiDelegateModeScope scope}) =>
+    RustLib.instance.api.crateApiProxyDelegateForgetDelegateKey(scope: scope);
+
+/// The vote chain path of the lookup by key for `dk`, under a vote
+/// server's base URL (`delegate_by_key_path`).
+Future<String> delegateByKeyPath({required String dk}) =>
+    RustLib.instance.api.crateApiProxyDelegateDelegateByKeyPath(dk: dk);
+
+/// Reads the lookup by key for `dk`: the entry's index, or `None` when the
+/// chain says the key was never registered (`parse_delegate_by_key_response`).
+/// Any other answer fails with [`ApiDelegateModeErrorKind::ChainAnswer`].
+Future<int?> parseDelegateByKeyAnswer({
+  required String dk,
+  required int status,
+  required List<int> body,
+}) => RustLib.instance.api.crateApiProxyDelegateParseDelegateByKeyAnswer(
+  dk: dk,
+  status: status,
+  body: body,
+);
+
+/// The device's delegate key and its entry (`delegate_mode_status`), or
+/// `None` when the device holds no key.
+///
+/// `entry` is the participation reader's proof of the entry the lookup by
+/// key named. It is recorded as the key's entry first (`record_proven_entry`),
+/// which settles a pending registration. An entry proven absent counts as
+/// none: the proof trails the lookup by a block.
+Future<DelegateModeStatus?> delegateModeStatus({
+  required ApiDelegateModeScope scope,
+  ApiProvenRegistryEntry? entry,
+}) => RustLib.instance.api.crateApiProxyDelegateDelegateModeStatus(
+  scope: scope,
+  entry: entry,
+);
+
+/// The marker `dk` is posted with (`delegate_marker_text`).
+Future<String> delegateMarkerText({required String dk}) =>
+    RustLib.instance.api.crateApiProxyDelegateDelegateMarkerText(dk: dk);
+
+/// The verifier request asking it to attest `dk` from the post at
+/// `proof_url` on `provider` (`attest_request`).
+Future<ApiVerifierRequest> delegateAttestRequest({
+  required ProxyDelegateProvider provider,
+  required String proofUrl,
+  required String dk,
+}) => RustLib.instance.api.crateApiProxyDelegateDelegateAttestRequest(
+  provider: provider,
+  proofUrl: proofUrl,
+  dk: dk,
+);
+
+/// Reads the verifier's answer to an attest request for `dk`
+/// (`parse_attest_response`): the attestation, or the refusal it carries.
+Future<DelegateAttestation> parseDelegateAttestAnswer({
+  required String dk,
+  required int status,
+  required List<int> body,
+}) => RustLib.instance.api.crateApiProxyDelegateParseDelegateAttestAnswer(
+  dk: dk,
+  status: status,
+  body: body,
+);
+
+/// Builds the register op for `attestation`, signed with `secret`, the
+/// device's key, and stores it as the pending op before Dart posts it
+/// (`prepare_register_op`).
+///
+/// The attestation must bind what the delegate posted: `provider` is the
+/// one the marker was posted on. `proxy_params` is the body of a 200 answer
+/// to the chain's params, whose verifier set then checks every signature.
+Future<ApiSignedDelegateOp> prepareDelegateRegisterOp({
+  required ApiDelegateModeScope scope,
+  required DelegateAttestation attestation,
+  required ProxyDelegateProvider provider,
+  Uint8List? proxyParams,
+  required String secret,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiProxyDelegatePrepareDelegateRegisterOp(
+  scope: scope,
+  attestation: attestation,
+  provider: provider,
+  proxyParams: proxyParams,
+  secret: secret,
+  nowSeconds: nowSeconds,
+);
+
+/// The register op the device stored, byte for byte, until a proven entry
+/// settles the registration (`pending_register_op`).
+Future<ApiSignedDelegateOp?> pendingDelegateRegisterOp({
+  required ApiDelegateModeScope scope,
+}) => RustLib.instance.api.crateApiProxyDelegatePendingDelegateRegisterOp(
+  scope: scope,
+);
+
+/// The vote chain path signed delegate ops are posted to, under a vote
+/// server's base URL (`DELEGATE_OP_PATH`).
+Future<String> delegateOpPath() =>
+    RustLib.instance.api.crateApiProxyDelegateDelegateOpPath();
+
+/// Reads the node's answer to a posted `op` (`parse_delegate_op_answer`),
+/// classified as zcash_voting classifies that op's answers.
+Future<ApiDelegateOpAnswer> parseDelegateOpAnswer({
+  required ApiDelegateOpKind op,
+  required int status,
+  required List<int> body,
+}) => RustLib.instance.api.crateApiProxyDelegateParseDelegateOpAnswer(
+  op: op,
+  status: status,
+  body: body,
+);
+
+/// The vote chain path of round `round_id`'s ballot list page after
+/// `start_after` (`delegate_ballots_path`).
+Future<String> delegateBallotsPagePath({
+  required String roundId,
+  required int startAfter,
+}) => RustLib.instance.api.crateApiProxyDelegateDelegateBallotsPagePath(
+  roundId: roundId,
+  startAfter: startAfter,
+);
 
 /// Checks the page of round `round_id`'s ballot list fetched with
 /// `start_after` (`parse_delegate_ballots_page`): where the next page
@@ -24,6 +181,200 @@ Future<ApiDelegateBallotSearch> delegateBallotPage({
   page: page,
   delegateIndex: delegateIndex,
 );
+
+/// The `vote` store key, lowercase hex, of `delegate_index`'s pool share
+/// count in round `round_id` (`pool_share_count_store_key`), which Dart
+/// reads with a raw store query.
+Future<String> delegatePoolShareCountKey({
+  required String roundId,
+  required int delegateIndex,
+}) => RustLib.instance.api.crateApiProxyDelegateDelegatePoolShareCountKey(
+  roundId: roundId,
+  delegateIndex: delegateIndex,
+);
+
+/// One round as the delegate sees it (`delegate_round`). `entry` is the
+/// delegate's proven entry, `chain_ballot` its ballot from the round's
+/// whole list and `pool_share_count` the raw store value, `None` when
+/// absent.
+Future<ApiDelegateRound> delegateRoundView({
+  required ApiDelegateModeScope scope,
+  required ApiDelegateRoundTiming round,
+  ApiProvenRegistryEntry? entry,
+  ApiChainDelegateBallot? chainBallot,
+  Uint8List? poolShareCount,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiProxyDelegateDelegateRoundView(
+  scope: scope,
+  round: round,
+  entry: entry,
+  chainBallot: chainBallot,
+  poolShareCount: poolShareCount,
+  nowSeconds: nowSeconds,
+);
+
+/// Whether a ballot is already stored for entry `delegate_index` in round
+/// `round_id`, compared with `options` (`ballot_preflight`). `chain_ballot`
+/// is the delegate's ballot from the round's whole list.
+Future<ApiBallotPreflight> delegateBallotPreflight({
+  required ApiDelegateModeScope scope,
+  required String roundId,
+  required int delegateIndex,
+  ApiChainDelegateBallot? chainBallot,
+  required List<int> options,
+}) => RustLib.instance.api.crateApiProxyDelegateDelegateBallotPreflight(
+  scope: scope,
+  roundId: roundId,
+  delegateIndex: delegateIndex,
+  chainBallot: chainBallot,
+  options: options,
+);
+
+/// Signs `options` as `entry`'s one ballot for `round`, with `secret`, the
+/// entry's key, and stores the op before Dart posts it
+/// (`CompleteBallot::new`, then `sign_ballot`). `proposals` is the
+/// round's authenticated roster. An identical ballot already stored comes
+/// back without a new signature; a different one is refused.
+Future<ApiSignedDelegateOp> signDelegateBallot({
+  required ApiDelegateModeScope scope,
+  required ApiDelegateRoundTiming round,
+  required ApiProvenRegistryEntry entry,
+  required List<ApiProposalRosterEntry> proposals,
+  required List<int> options,
+  required String secret,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiProxyDelegateSignDelegateBallot(
+  scope: scope,
+  round: round,
+  entry: entry,
+  proposals: proposals,
+  options: options,
+  secret: secret,
+  nowSeconds: nowSeconds,
+);
+
+/// The ballot this device signed for entry `delegate_index` in round
+/// `round_id`, if any (`stored_ballot`). A retry posts its op unchanged,
+/// with no secret.
+Future<ApiStoredDelegateBallot?> storedDelegateBallot({
+  required ApiDelegateModeScope scope,
+  required String roundId,
+  required int delegateIndex,
+}) => RustLib.instance.api.crateApiProxyDelegateStoredDelegateBallot(
+  scope: scope,
+  roundId: roundId,
+  delegateIndex: delegateIndex,
+);
+
+/// Settles a code 57 answer to the stored ballot of entry `delegate_index`
+/// in round `round_id` from the delegate's ballot in the round's whole list
+/// (`existing_ballot_result`): `None` while the list does not show it yet,
+/// or when no ballot is stored.
+Future<ApiBallotSubmitResult?> existingDelegateBallotResult({
+  required ApiDelegateModeScope scope,
+  required String roundId,
+  required int delegateIndex,
+  ApiChainDelegateBallot? chainBallot,
+}) => RustLib.instance.api.crateApiProxyDelegateExistingDelegateBallotResult(
+  scope: scope,
+  roundId: roundId,
+  delegateIndex: delegateIndex,
+  chainBallot: chainBallot,
+);
+
+/// Retire's op for `entry`, signed with `secret`, the entry's key
+/// (`build_retire_op`). It counts once the node answers code 55 or the
+/// entry, proven again, is retired (contracts-v1 §11.12).
+Future<ApiSignedDelegateOp> buildDelegateRetireOp({
+  required ApiDelegateModeScope scope,
+  required ApiProvenRegistryEntry entry,
+  required String secret,
+}) => RustLib.instance.api.crateApiProxyDelegateBuildDelegateRetireOp(
+  scope: scope,
+  entry: entry,
+  secret: secret,
+);
+
+/// zcash_voting's `BallotPreflight`, flattened.
+class ApiBallotPreflight {
+  /// A ballot is on chain, or this device signed one.
+  final bool alreadySubmitted;
+
+  /// `already_submitted`: the stored ballot.
+  final Uint32List options;
+
+  /// `already_submitted`: whether it equals the ballot being submitted.
+  /// (Not named `identical`, which would shadow Dart's `identical`.)
+  final bool sameOptions;
+
+  const ApiBallotPreflight({
+    required this.alreadySubmitted,
+    required this.options,
+    required this.sameOptions,
+  });
+
+  @override
+  int get hashCode =>
+      alreadySubmitted.hashCode ^ options.hashCode ^ sameOptions.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiBallotPreflight &&
+          runtimeType == other.runtimeType &&
+          alreadySubmitted == other.alreadySubmitted &&
+          options == other.options &&
+          sameOptions == other.sameOptions;
+}
+
+/// Which submit outcome applies: the variants of zcash_voting's
+/// `BallotSubmitResult`.
+enum ApiBallotSubmitKind {
+  /// The node accepted the ballot.
+  accepted,
+
+  /// The chain already stores this exact ballot.
+  alreadyAccepted,
+
+  /// The chain refused the ballot.
+  rejected,
+}
+
+/// zcash_voting's `BallotSubmitResult`, flattened.
+class ApiBallotSubmitResult {
+  /// The outcome.
+  final ApiBallotSubmitKind kind;
+
+  /// `Rejected`: the ABCI codespace.
+  final String? codespace;
+
+  /// `Rejected`: the error code.
+  final int? code;
+
+  /// `Rejected`: why; diagnostic only.
+  final String? reason;
+
+  const ApiBallotSubmitResult({
+    required this.kind,
+    this.codespace,
+    this.code,
+    this.reason,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ codespace.hashCode ^ code.hashCode ^ reason.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiBallotSubmitResult &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          codespace == other.codespace &&
+          code == other.code &&
+          reason == other.reason;
+}
 
 /// One delegate ballot as the chain's whole-round list shows it.
 class ApiChainDelegateBallot {
@@ -115,4 +466,312 @@ enum ApiDelegateModeErrorKind {
   /// what the delegate posted, a ballot that cannot be signed, or the
   /// device's records.
   other,
+}
+
+/// Where delegate mode keeps its records: the voting sidecar beside the
+/// wallet database, on the wallet's network.
+class ApiDelegateModeScope {
+  /// The main wallet database path; the sidecar lives beside it.
+  final String dbPath;
+
+  /// The wallet network: `main`, `test` or `regtest`.
+  final String network;
+
+  const ApiDelegateModeScope({required this.dbPath, required this.network});
+
+  @override
+  int get hashCode => dbPath.hashCode ^ network.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegateModeScope &&
+          runtimeType == other.runtimeType &&
+          dbPath == other.dbPath &&
+          network == other.network;
+}
+
+/// The node's answer to a posted op, flattened; each field is set only for
+/// the kinds its doc names.
+class ApiDelegateOpAnswer {
+  /// What the answer means.
+  final ApiDelegateOpAnswerKind kind;
+
+  /// `Accepted`: the transaction hash, uppercase hex.
+  final String? txHash;
+
+  /// `Rejected` and `AlreadyApplied`: the ABCI codespace.
+  final String? codespace;
+
+  /// `Rejected` and `AlreadyApplied`: the error code.
+  final int? code;
+
+  /// The node's bounded log line or error; diagnostic only.
+  final String? detail;
+
+  const ApiDelegateOpAnswer({
+    required this.kind,
+    this.txHash,
+    this.codespace,
+    this.code,
+    this.detail,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      txHash.hashCode ^
+      codespace.hashCode ^
+      code.hashCode ^
+      detail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegateOpAnswer &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          txHash == other.txHash &&
+          codespace == other.codespace &&
+          code == other.code &&
+          detail == other.detail;
+}
+
+/// What the node's answer to a posted op means.
+enum ApiDelegateOpAnswerKind {
+  /// CheckTx accepted it (code 0).
+  accepted,
+
+  /// The chain already holds what the op asks for: code 61 for a register
+  /// op, 55 for a retire, 57 for a ballot. A register or ballot still
+  /// settles from what the chain holds (contracts-v1 §11.12).
+  alreadyApplied,
+
+  /// Any other rejection; key on (`codespace`, `code`).
+  rejected,
+
+  /// The node refused the body before CheckTx (HTTP 400); resending it
+  /// cannot help.
+  requestRefused,
+
+  /// No verdict: the op may or may not have reached a mempool, and the
+  /// host resends the same body later.
+  noVerdict,
+}
+
+/// Which delegate op a signed op carries.
+enum ApiDelegateOpKind {
+  /// Registers the device's key in a new entry.
+  register,
+
+  /// Retires the entry.
+  retire,
+
+  /// One round's ballot.
+  ballot,
+}
+
+/// zcash_voting's `DelegateRound` with its enums flattened. Dart adds the
+/// round's title and questions.
+class ApiDelegateRound {
+  /// The round id, lowercase hex.
+  final String roundId;
+
+  /// The round's vote end.
+  final BigInt voteEndTime;
+
+  /// R, the pool shares revealed to the delegate.
+  final BigInt revealedShares;
+
+  /// The delegate's ballot as published.
+  final ApiDelegateBallotView ballot;
+
+  /// A ballot this device signed that is not on chain yet.
+  final Uint32List? storedBallot;
+
+  /// Why this device cannot sign the round's ballot, if it cannot.
+  final DelegateBallotBlock? ballotBlock;
+
+  const ApiDelegateRound({
+    required this.roundId,
+    required this.voteEndTime,
+    required this.revealedShares,
+    required this.ballot,
+    this.storedBallot,
+    this.ballotBlock,
+  });
+
+  @override
+  int get hashCode =>
+      roundId.hashCode ^
+      voteEndTime.hashCode ^
+      revealedShares.hashCode ^
+      ballot.hashCode ^
+      storedBallot.hashCode ^
+      ballotBlock.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegateRound &&
+          runtimeType == other.runtimeType &&
+          roundId == other.roundId &&
+          voteEndTime == other.voteEndTime &&
+          revealedShares == other.revealedShares &&
+          ballot == other.ballot &&
+          storedBallot == other.storedBallot &&
+          ballotBlock == other.ballotBlock;
+}
+
+/// A round's ballot deadline, from the round as ordinary votes read it
+/// (zcash_voting `DelegateRoundTiming`). A wrong `vote_end_time` only makes
+/// the chain refuse the ballot.
+class ApiDelegateRoundTiming {
+  /// The round id, lowercase hex.
+  final String roundId;
+
+  /// The round's vote end, in unix seconds.
+  final BigInt voteEndTime;
+
+  const ApiDelegateRoundTiming({
+    required this.roundId,
+    required this.voteEndTime,
+  });
+
+  @override
+  int get hashCode => roundId.hashCode ^ voteEndTime.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegateRoundTiming &&
+          runtimeType == other.runtimeType &&
+          roundId == other.roundId &&
+          voteEndTime == other.voteEndTime;
+}
+
+/// The device's delegate key, as its records show it.
+class ApiDeviceDelegateKey {
+  /// The key.
+  final DelegateKeyInfo key;
+
+  /// The key's entry, once a proven entry showed it.
+  final int? delegateIndex;
+
+  const ApiDeviceDelegateKey({required this.key, this.delegateIndex});
+
+  @override
+  int get hashCode => key.hashCode ^ delegateIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDeviceDelegateKey &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          delegateIndex == other.delegateIndex;
+}
+
+/// A delegate key just created: its public half and the secret to store.
+class ApiNewDelegateKey {
+  /// The public key.
+  final DelegateKeyInfo key;
+
+  /// The key's `zvdsk1…` export, which Dart puts in secure storage.
+  final String secret;
+
+  const ApiNewDelegateKey({required this.key, required this.secret});
+
+  @override
+  int get hashCode => key.hashCode ^ secret.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiNewDelegateKey &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          secret == other.secret;
+}
+
+/// A signed delegate op, for Dart to post to the vote chain's
+/// `delegate_op_path` byte for byte. Resending the same body is always safe.
+class ApiSignedDelegateOp {
+  /// Which op it is.
+  final ApiDelegateOpKind kind;
+
+  /// The entry it names; 0 for a register op that creates one.
+  final int delegateIndex;
+
+  /// The key that signed it, `zvdk1…`.
+  final String dk;
+
+  /// The JSON body to post.
+  final Uint8List body;
+
+  const ApiSignedDelegateOp({
+    required this.kind,
+    required this.delegateIndex,
+    required this.dk,
+    required this.body,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ delegateIndex.hashCode ^ dk.hashCode ^ body.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiSignedDelegateOp &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          delegateIndex == other.delegateIndex &&
+          dk == other.dk &&
+          body == other.body;
+}
+
+/// The ballot this device signed for a round.
+class ApiStoredDelegateBallot {
+  /// One option per proposal, in proposal order.
+  final Uint32List options;
+
+  /// The op every post of it carries, rebuilt without a new signature.
+  final ApiSignedDelegateOp op;
+
+  const ApiStoredDelegateBallot({required this.options, required this.op});
+
+  @override
+  int get hashCode => options.hashCode ^ op.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiStoredDelegateBallot &&
+          runtimeType == other.runtimeType &&
+          options == other.options &&
+          op == other.op;
+}
+
+/// A request for the verifier API: Dart posts `body` as JSON to a
+/// `verifier_api_urls` entry followed by `path`.
+class ApiVerifierRequest {
+  /// The route under the verifier's base URL.
+  final String path;
+
+  /// The JSON body.
+  final Uint8List body;
+
+  const ApiVerifierRequest({required this.path, required this.body});
+
+  @override
+  int get hashCode => path.hashCode ^ body.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVerifierRequest &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          body == other.body;
 }

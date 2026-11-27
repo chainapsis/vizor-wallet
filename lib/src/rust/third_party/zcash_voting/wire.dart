@@ -7,7 +7,7 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BallotPreflight`, `BallotSubmitResult`, `BoundedU32`, `DelegateAndVoteBatchWire`, `DelegateAttestationSignature`, `DelegateAttestation`, `DelegateEntryView`, `DelegateLookup`, `DelegateModeStatus`, `DelegateRegisterResult`, `DelegateRetireResult`, `DelegateVerifierError`, `DelegateVerifierRefusal`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `ProxyAllocationStatus`, `ProxyAvailability`, `ProxyDelegationProgress`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `RoundStepOutcomeView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BallotPreflight`, `BallotSubmitResult`, `BoundedU32`, `DelegateAndVoteBatchWire`, `DelegateLookup`, `DelegateRegisterResult`, `DelegateRetireResult`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `ProxyAllocationStatus`, `ProxyAvailability`, `ProxyDelegationProgress`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `RoundStepOutcomeView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DelegateBallotView>>
@@ -235,6 +235,91 @@ class CompletedVoteDisplayView {
           votedAt == other.votedAt;
 }
 
+/// The attester's answer to `POST /v1/attest` (contract §12.4). The host
+/// passes it to register while its attestations are valid.
+class DelegateAttestation {
+  /// The attested key.
+  final DelegateKeyInfo key;
+
+  /// The account's provider.
+  final ProxyDelegateProvider provider;
+
+  /// The account's canonical handle, without `@`.
+  final String handle;
+
+  /// The canonical id of the post or gist that carries the marker.
+  final String proofId;
+
+  /// One signature per verifier.
+  final List<DelegateAttestationSignature> attestations;
+
+  const DelegateAttestation({
+    required this.key,
+    required this.provider,
+    required this.handle,
+    required this.proofId,
+    required this.attestations,
+  });
+
+  @override
+  int get hashCode =>
+      key.hashCode ^
+      provider.hashCode ^
+      handle.hashCode ^
+      proofId.hashCode ^
+      attestations.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DelegateAttestation &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          provider == other.provider &&
+          handle == other.handle &&
+          proofId == other.proofId &&
+          attestations == other.attestations;
+}
+
+/// One verifier signature over ATTEST (contract §12.4).
+class DelegateAttestationSignature {
+  /// The verifier's id in the chain's params verifier set.
+  final int verifierId;
+
+  /// First second at which the chain accepts the attestation.
+  final BigInt notBefore;
+
+  /// First second at which it no longer does, at most 72 hours later.
+  final BigInt expiresAt;
+
+  /// The 64-byte Ed25519 signature, as padded standard base64.
+  final String sig;
+
+  const DelegateAttestationSignature({
+    required this.verifierId,
+    required this.notBefore,
+    required this.expiresAt,
+    required this.sig,
+  });
+
+  @override
+  int get hashCode =>
+      verifierId.hashCode ^
+      notBefore.hashCode ^
+      expiresAt.hashCode ^
+      sig.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DelegateAttestationSignature &&
+          runtimeType == other.runtimeType &&
+          verifierId == other.verifierId &&
+          notBefore == other.notBefore &&
+          expiresAt == other.expiresAt &&
+          sig == other.sig;
+}
+
 /// Why the device cannot sign a round's ballot.
 enum DelegateBallotBlock {
   /// The device's key has no registry entry.
@@ -283,6 +368,57 @@ enum DelegateEntryStatus {
   retired,
 }
 
+/// The device's delegate entry, from its proven registry entry.
+class DelegateEntryView {
+  /// Registry index `d`.
+  final int delegateIndex;
+
+  /// The provider of the entry's account.
+  final ProxyDelegateProvider provider;
+
+  /// The entry's handle, without `@`.
+  final String handle;
+
+  /// The id of the post or gist that carries the marker.
+  final String proofId;
+
+  /// Whether the entry is active, suspended or retired.
+  final DelegateEntryStatus status;
+
+  /// The coordinators' reason code for the status, or 0.
+  final int statusReason;
+
+  const DelegateEntryView({
+    required this.delegateIndex,
+    required this.provider,
+    required this.handle,
+    required this.proofId,
+    required this.status,
+    required this.statusReason,
+  });
+
+  @override
+  int get hashCode =>
+      delegateIndex.hashCode ^
+      provider.hashCode ^
+      handle.hashCode ^
+      proofId.hashCode ^
+      status.hashCode ^
+      statusReason.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DelegateEntryView &&
+          runtimeType == other.runtimeType &&
+          delegateIndex == other.delegateIndex &&
+          provider == other.provider &&
+          handle == other.handle &&
+          proofId == other.proofId &&
+          status == other.status &&
+          statusReason == other.statusReason;
+}
+
 /// A delegate key as people compare it: its `zvdk1…` string and fingerprint.
 class DelegateKeyInfo {
   /// The key's canonical lower-case bech32m string, `zvdk1…`.
@@ -303,6 +439,89 @@ class DelegateKeyInfo {
           runtimeType == other.runtimeType &&
           dk == other.dk &&
           fingerprint == other.fingerprint;
+}
+
+/// The one delegate key this device holds on a chain, and its entry.
+class DelegateModeStatus {
+  /// The device's key.
+  final DelegateKeyInfo key;
+
+  /// The key's entry. `None` until a registration lands.
+  final DelegateEntryView? entry;
+
+  /// A signed register op is stored and its registration has not landed.
+  final bool registrationPending;
+
+  const DelegateModeStatus({
+    required this.key,
+    this.entry,
+    required this.registrationPending,
+  });
+
+  @override
+  int get hashCode =>
+      key.hashCode ^ entry.hashCode ^ registrationPending.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DelegateModeStatus &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          entry == other.entry &&
+          registrationPending == other.registrationPending;
+}
+
+/// An attester API error code (contract §12.4).
+enum DelegateVerifierError {
+  /// 400: a malformed request or unsupported provider.
+  badRequest,
+
+  /// 404: no post or gist at the proof URL.
+  postNotFound,
+
+  /// 409: the post's text or the gist's file is not the marker for this key.
+  markerMismatch,
+
+  /// 429: the per-address or daily limit is reached until `retry_after`.
+  rateLimited,
+
+  /// 503: the provider could not be read. Retry later.
+  providerUnavailable,
+
+  /// An unknown code, a code under a status it is not paired with, or an
+  /// answer that is not the API's JSON.
+  unknown,
+}
+
+/// An attester answer other than success.
+class DelegateVerifierRefusal implements FrbException {
+  /// What the attester said.
+  final DelegateVerifierError error;
+
+  /// The unix second after which a retry can succeed, when given.
+  final BigInt? retryAfter;
+
+  /// The answer's `message` or what was wrong with it. Diagnostic only.
+  final String? detail;
+
+  const DelegateVerifierRefusal({
+    required this.error,
+    this.retryAfter,
+    this.detail,
+  });
+
+  @override
+  int get hashCode => error.hashCode ^ retryAfter.hashCode ^ detail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DelegateVerifierRefusal &&
+          runtimeType == other.runtimeType &&
+          error == other.error &&
+          retryAfter == other.retryAfter &&
+          detail == other.detail;
 }
 
 /// Delegation proving and signing stages.
