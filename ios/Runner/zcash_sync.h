@@ -80,10 +80,6 @@ int32_t zcash_list_migration_preparation_txids(
     uintptr_t* output_len
 );
 
-/// NU7 activation height for network ("main", "test", "regtest"), or 0 when
-/// it is unscheduled or the network is unknown.
-uint64_t zcash_nu7_activation_height(const char* network);
-
 /// The first upgrade activation after height on network, or 0 when none is
 /// scheduled or the network is unknown.
 uint64_t zcash_next_upgrade_activation_height(const char* network,

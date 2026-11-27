@@ -56,7 +56,6 @@ class DriverHandler(BaseHTTPRequestHandler):
                     200,
                     {
                         "zcashdHeight": height,
-                        "nu63ActivationHeight": upgrades["NU6.3"],
                         "nu7ActivationHeight": nu7,
                         "nu7Active": height >= nu7,
                         "consensusBranchId": info["consensus"]["chaintip"],

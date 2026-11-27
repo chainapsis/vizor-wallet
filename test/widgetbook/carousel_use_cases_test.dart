@@ -32,7 +32,7 @@ void main() {
 
     expect(
       find.text(
-        'Each Zcash block takes about 75 seconds to create, but timing can '
+        'Each Zcash block takes about 25 seconds to create, but timing can '
         'vary with network conditions.',
       ),
       findsOneWidget,

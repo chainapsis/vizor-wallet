@@ -6,7 +6,7 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/config/ironwood_migration_privacy_lock_config.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -123,12 +123,13 @@ void main({
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
+          find.byKey(
+            const ValueKey('home_desktop_ironwood_migration_cta_button'),
+          ),
         ),
-        description: 'migration announcement',
+        description: 'migration CTA',
         timeout: const Duration(minutes: 2),
       );
-      await dismissIronwoodAnnouncement(tester);
       await openPrivateMigrationReview(tester);
 
       final plan = await providerContainer.read(

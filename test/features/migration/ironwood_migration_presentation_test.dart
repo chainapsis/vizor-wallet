@@ -44,26 +44,26 @@ void main() {
       migrationPlanCompletionDurationLabel(
         testL10n,
         plan,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
-      '~7 hrs',
+      '~3 hrs',
     );
     expect(
       migrationBlockOffsetDurationLabel(
         testL10n,
         148,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
-      '~4 hrs',
+      '~2 hrs',
     );
     expect(
       migrationPlanCompletionTimingLabel(
         testL10n,
         plan,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: DateTime(2026, 7, 17, 12),
       ),
-      'Jul 17, 18:11',
+      'Jul 17, 14:03',
     );
   });
 
@@ -97,18 +97,18 @@ void main() {
       migrationPlanCompletionDurationLabel(
         testL10n,
         plan,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
-      '~4 mins',
+      '~2 mins',
     );
     expect(
       migrationPlanCompletionTimingLabel(
         testL10n,
         plan,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: DateTime(2026, 7, 17, 12),
       ),
-      'Jul 17, 12:03',
+      'Jul 17, 12:01',
     );
   });
 
@@ -143,9 +143,9 @@ void main() {
       migrationPlanCompletionDurationLabel(
         testL10n,
         plan,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
-      '~4 hrs',
+      '~2 hrs',
     );
   });
 
@@ -255,7 +255,7 @@ void main() {
       migrationCompletionTimingLabel(
         testL10n,
         scheduled,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         abbreviateMonth: false,
       ),
       'July 17, 12:03',
@@ -264,7 +264,7 @@ void main() {
       migrationCompletionTimingLabel(
         testL10n,
         confirming,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
       'Jul 17, 12:00',
     );
@@ -282,10 +282,10 @@ void main() {
       migrationCompletionTimingLabel(
         testL10n,
         status,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: now,
       ),
-      'Jul 17, 18:00',
+      'Jul 17, 14:00',
     );
   });
 
@@ -311,11 +311,11 @@ void main() {
       migrationCompletionTimingLabel(
         testL10n,
         status,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: now,
         currentHeight: 1_000,
       ),
-      'Jul 17, 12:25',
+      'Jul 17, 12:08',
     );
   });
 
@@ -331,11 +331,11 @@ void main() {
       migrationCompletionTimingLabel(
         testL10n,
         status,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: now,
         currentHeight: 1_000,
       ),
-      'Jul 17, 12:37',
+      'Jul 17, 12:12',
     );
   });
 
@@ -354,11 +354,11 @@ void main() {
         migrationCompletionTimingLabel(
           testL10n,
           status,
-          blockTimes: BlockTimeEstimate.preNu7,
+          blockTimes: BlockTimeEstimate.nu7Unscheduled,
           now: now,
           currentHeight: 1_000,
         ),
-        'Jul 17, 12:03',
+        'Jul 17, 12:01',
       );
     },
   );
@@ -375,11 +375,11 @@ void main() {
       migrationNextActionTimingLabel(
         testL10n,
         status,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         currentHeight: 1_000,
         now: now,
       ),
-      '~12:25',
+      '~12:08',
     );
   });
 
@@ -395,7 +395,7 @@ void main() {
       migrationCompletionTimingLabel(
         testL10n,
         status,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: now,
         currentHeight: 1_000,
       ),
@@ -420,11 +420,11 @@ void main() {
         migrationApproximateCompletionTimingLabel(
           testL10n,
           status,
-          blockTimes: BlockTimeEstimate.preNu7,
+          blockTimes: BlockTimeEstimate.nu7Unscheduled,
           now: now,
           currentHeight: 1_000,
         ),
-        'Jul 17, 18:28',
+        'Jul 17, 14:09',
       );
     },
   );
@@ -435,8 +435,8 @@ void main() {
     expect(
       migrationHeightTimingLabel(
         testL10n,
-        1_020,
-        blockTimes: BlockTimeEstimate.preNu7,
+        1_060,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         currentHeight: 1_000,
         now: now,
       ),
@@ -448,8 +448,8 @@ void main() {
     expect(
       migrationHeightRemainingDurationLabel(
         testL10n,
-        1_020,
-        blockTimes: BlockTimeEstimate.preNu7,
+        1_060,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         currentHeight: 1_000,
       ),
       '~in 25 minutes',
@@ -458,20 +458,20 @@ void main() {
       migrationHeightRemainingDurationLabel(
         testL10n,
         1_000,
-        blockTimes: BlockTimeEstimate.preNu7,
+        blockTimes: BlockTimeEstimate.nu7Unscheduled,
         currentHeight: 1_000,
       ),
       'ready now',
     );
   });
 
-  test('shortens migration durations across NU7 activation', () {
+  test('uses the NU7 spacing on both sides of activation', () {
     const spacing = BlockSpacing(
       nu7ActivationHeight: 1_010,
       preNu7BlockSeconds: 75,
       nu7BlockSeconds: 25,
     );
-    // 9 blocks at 75 seconds, then 11 at 25 seconds.
+    // 20 blocks at 25 seconds, including the nine before activation.
     expect(
       migrationHeightRemainingDurationLabel(
         testL10n,
@@ -479,7 +479,7 @@ void main() {
         blockTimes: spacing.fromTip(1_000),
         currentHeight: 1_000,
       ),
-      '~in 16 minutes',
+      '~in 9 minutes',
     );
     expect(
       migrationBlockOffsetDurationLabel(

@@ -47,7 +47,7 @@ const _migrationItems = [
   ),
   AppCarouselItem.icon(
     message:
-        'Each Zcash block takes about 75 seconds to create, but timing can '
+        'Each Zcash block takes about 25 seconds to create, but timing can '
         'vary with network conditions.',
     tileColor: _walletTile,
     icon: AppIcons.migrationTimer,

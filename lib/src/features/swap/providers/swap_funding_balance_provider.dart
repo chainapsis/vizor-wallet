@@ -4,7 +4,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../providers/sync_provider.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../migration/providers/ironwood_migration_state_provider.dart';
 
 /// What a swap or payment that sends ZEC can spend ([spendable]), and what an
 /// ordinary one could ([ordinary]).

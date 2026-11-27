@@ -34,7 +34,7 @@ import 'package:zcash_wallet/src/core/widgets/mobile/mobile_radio_card.dart';
 import 'package:zcash_wallet/src/core/widgets/app_loading_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -2312,7 +2312,7 @@ void main() {
     expect(
       find.text(
         'Migrates your entire balance in one batch. '
-        'Fast (~4 mins) but less private.',
+        'Fast (~2 mins) but less private.',
       ),
       findsOneWidget,
     );
@@ -2336,7 +2336,7 @@ void main() {
           .widget<Text>(
             find.text(
               'Migrates your entire balance in one batch. '
-              'Fast (~4 mins) but less private.',
+              'Fast (~2 mins) but less private.',
             ),
           )
           .style
@@ -3577,7 +3577,7 @@ void main() {
     );
     expect(find.text('142.22 ZEC'), findsOneWidget);
     expect(find.text('Migration complete in'), findsOneWidget);
-    expect(find.text('~4 mins'), findsOneWidget);
+    expect(find.text('~2 mins'), findsOneWidget);
     final continueButton = find.byKey(
       const ValueKey('mobile_ironwood_immediate_broadcast_button'),
     );
@@ -3656,7 +3656,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Migration complete in'), findsOneWidget);
-      expect(find.text('~4 mins'), findsOneWidget);
+      expect(find.text('~2 mins'), findsOneWidget);
       expect(find.text('A few minutes'), findsNothing);
     },
   );
@@ -5160,7 +5160,7 @@ void main() {
         currentHeight: 3_000_000,
         broadcastHeight: 3_000_000,
         isKeystone: true,
-        blockSpacing: BlockSpacing.preNu7,
+        blockSpacing: BlockSpacing.nu7Unscheduled,
       )?.count,
       1,
     );
@@ -5234,7 +5234,7 @@ void main() {
         currentHeight: 3_000_000,
         broadcastHeight: 3_000_000,
         isKeystone: true,
-        blockSpacing: BlockSpacing.preNu7,
+        blockSpacing: BlockSpacing.nu7Unscheduled,
       )!;
       expect(attention.count, 40);
       return mobileIronwoodMigrationAttentionFingerprint(
@@ -5627,7 +5627,7 @@ void main() {
       currentHeight: 3_000_000,
       broadcastHeight: 3_000_000,
       isKeystone: true,
-      blockSpacing: BlockSpacing.preNu7,
+      blockSpacing: BlockSpacing.nu7Unscheduled,
     )!;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
       accountUuid: 'account-1',
@@ -8144,7 +8144,7 @@ void main() {
     expect(
       find.text(
         'Next migration step expected in\n'
-        '~25 minutes.\n'
+        '~9 minutes.\n'
         'Notifications are on. You can leave Vizor and check back later.',
       ),
       findsOneWidget,
@@ -8205,7 +8205,7 @@ void main() {
       expect(
         find.text(
           'Next migration step expected in\n'
-          '~25 minutes.\n'
+          '~9 minutes.\n'
           'Notifications are on. You can leave Vizor and check back later.\n'
           'While Vizor is closed, migration continues over a direct '
           'connection.',
@@ -8289,7 +8289,7 @@ void main() {
     expect(
       find.text(
         'Next migration step expected in\n'
-        '~25 minutes.\n'
+        '~9 minutes.\n'
         'Notifications are disabled. Open Vizor again to continue.',
       ),
       findsOneWidget,
@@ -8329,7 +8329,7 @@ void main() {
 
     expect(find.text('All clear. Migration is in progress'), findsOneWidget);
     expect(
-      find.text('Next migration step expected in\n~25 minutes.'),
+      find.text('Next migration step expected in\n~9 minutes.'),
       findsOneWidget,
     );
     expect(find.textContaining('Notifications are'), findsNothing);
@@ -8515,7 +8515,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('~25 minutes'), findsOneWidget);
+    expect(find.textContaining('~9 minutes'), findsOneWidget);
     expect(find.textContaining('~18:'), findsNothing);
     expect(find.text('4.12 ZEC'), findsOneWidget);
     expect(find.text('3,000,020'), findsOneWidget);
@@ -8582,7 +8582,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('~25 minutes'), findsOneWidget);
+    expect(find.textContaining('~9 minutes'), findsOneWidget);
     expect(find.textContaining('Proof'), findsNothing);
     expect(find.text('Sign batch #2'), findsNothing);
     expect(find.text('Next migration'), findsOneWidget);
@@ -8689,7 +8689,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('~25 minutes'), findsOneWidget);
+    expect(find.textContaining('~9 minutes'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ironwood_part_row_0')),
       findsNothing,
