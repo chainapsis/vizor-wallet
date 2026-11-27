@@ -133,8 +133,18 @@ class AutomaticRpcEndpointSettings {
     this.slowResponse = const Duration(seconds: 2),
     this.slowTorResponse = const Duration(seconds: 5),
     this.failureCooldown = const Duration(minutes: 1),
+    this.directSwitchMargin = const Duration(milliseconds: 40),
+    this.directSwitchRatio = 0.8,
+    this.torSwitchMargin = const Duration(milliseconds: 150),
+    this.torSwitchRatio = 0.7,
   });
 
+  /// Minimum absolute margin and latency ratio required to switch off a healthy
+  /// endpoint (wider on Tor to avoid churning on circuit variance).
+  final Duration directSwitchMargin;
+  final double directSwitchRatio;
+  final Duration torSwitchMargin;
+  final double torSwitchRatio;
   final Duration directBudget;
   final Duration torBudget;
   final Duration directProbeTimeout;

@@ -74,7 +74,10 @@ void main() {
         ),
         isTrue,
       );
-      expect(harness.calls.single.maxConcurrency, 4);
+      expect(
+        harness.calls.single.maxConcurrency,
+        harness.calls.single.urls.length,
+      );
       expect(
         harness.calls.single.totalTimeout,
         allOf(
@@ -93,6 +96,80 @@ void main() {
       );
     },
   );
+
+  test('every automatic candidate starts in one wave', () async {
+    final harness = _Harness()
+      ..respond = (call) async => [
+          for (var i = 0; i < call.urls.length; i++)
+            _sample(call.urls[i], i == call.urls.length - 1 ? 20 : 200),
+        ];
+    final selected = await harness.notifier.ensureReady();
+    final call = harness.calls.single;
+    expect(call.urls, hasLength(13));
+    expect(call.maxConcurrency, call.urls.length);
+    expect(selected.lightwalletdUrl, call.urls.last);
+  });
+
+  group('switch threshold', () {
+    _Harness fastRecheck() => _Harness(
+      settings: const AutomaticRpcEndpointSettings(
+        recheckInterval: Duration(minutes: 1),
+        minimumResidence: Duration.zero,
+      ),
+    );
+
+    String current(_Harness h) => h.container
+        .read(rpcEndpointFailoverProvider)
+        .current
+        .lightwalletdUrl;
+
+    test('a candidate a quarter faster replaces a healthy server', () async {
+      final harness = fastRecheck()
+        ..respond = (_) async => [_sample(_eu, 200), _sample(_kr, 400)];
+      expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
+      harness.respond = (_) async => [_sample(_eu, 200), _sample(_kr, 150)];
+      harness.now = harness.now.add(const Duration(minutes: 2));
+      await harness.notifier.ensureReady();
+      await _flush();
+      expect(current(harness), _kr);
+    });
+
+    test('a candidate inside the noise floor keeps the server', () async {
+      final harness = fastRecheck()
+        ..respond = (_) async => [_sample(_eu, 100), _sample(_kr, 400)];
+      expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
+      harness.respond = (_) async => [_sample(_eu, 100), _sample(_kr, 75)];
+      harness.now = harness.now.add(const Duration(minutes: 2));
+      await harness.notifier.ensureReady();
+      await _flush();
+      expect(current(harness), _eu);
+    });
+
+    test('the old threshold would have kept the slower server', () async {
+      final harness = _Harness(
+        settings: const AutomaticRpcEndpointSettings(
+          recheckInterval: Duration(minutes: 1),
+          minimumResidence: Duration.zero,
+          directSwitchMargin: Duration(milliseconds: 150),
+          directSwitchRatio: 0.7,
+        ),
+      )..respond = (_) async => [_sample(_eu, 200), _sample(_kr, 400)];
+      expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
+      harness.respond = (_) async => [_sample(_eu, 200), _sample(_kr, 150)];
+      harness.now = harness.now.add(const Duration(minutes: 2));
+      await harness.notifier.ensureReady();
+      await _flush();
+      expect(current(harness), _eu);
+    });
+
+    test('Tor keeps the wide threshold', () {
+      const settings = AutomaticRpcEndpointSettings();
+      expect(settings.directSwitchMargin, const Duration(milliseconds: 40));
+      expect(settings.directSwitchRatio, 0.8);
+      expect(settings.torSwitchMargin, const Duration(milliseconds: 150));
+      expect(settings.torSwitchRatio, 0.7);
+    });
+  });
 
   for (final invalid in [0, -1, 0x100000000]) {
     test(
@@ -1240,10 +1317,13 @@ void main() {
       await _flush();
       expect(harness.fullCalls, hasLength(1));
       expect(harness.fullCalls.single.urls, hasLength(13));
-      expect(harness.fullCalls.single.maxConcurrency, 4);
+      expect(
+        harness.fullCalls.single.maxConcurrency,
+        harness.fullCalls.single.urls.length,
+      );
       expect(
         harness.fullCalls.single.totalTimeout,
-        const Duration(seconds: 13),
+        const Duration(seconds: 4),
       );
       // The foreground operation is independent of the complete-pool future.
       expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
@@ -1847,7 +1927,10 @@ void main() {
           expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(99));
           expect(h.birthdayCalls, hasLength(1));
           expect(h.birthdayCalls.single.urls, [rocks, _us]);
-          expect(h.birthdayCalls.single.maxConcurrency, tor ? 2 : 4);
+          expect(
+            h.birthdayCalls.single.maxConcurrency,
+            tor ? 2 : h.birthdayCalls.single.urls.length,
+          );
           expect(
             h.birthdayCalls.single.totalTimeout,
             lessThanOrEqualTo(

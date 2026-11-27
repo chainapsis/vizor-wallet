@@ -20,6 +20,11 @@ typedef RpcEndpointLatestBlockHeightGetter =
 
 enum RpcEndpointFailoverEventKind { switchedToFallback, switchedToPrimary }
 
+/// Probe all direct candidates together so queue wait doesn't bias the shared
+/// 250 ms comparison window; keep Tor capped at 2 due to circuit setup cost.
+int _probeConcurrency(List<RpcEndpointConfig> targets, {required bool tor}) =>
+    tor ? 2 : (targets.isEmpty ? 1 : targets.length);
+
 class RpcEndpointFailoverEvent {
   const RpcEndpointFailoverEvent({
     required this.sequence,
@@ -473,7 +478,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
                 ? (tor ? settings.torProbeTimeout : settings.directProbeTimeout)
                 : timeout,
             totalTimeout: timeout,
-            maxConcurrency: tor ? 2 : 4,
+            maxConcurrency: _probeConcurrency(targets, tor: tor),
           ),
           cancelled.future.then<List<RpcEndpointCandidateSample>>(
             (_) => throw _automaticSelectionStopped(),
@@ -743,7 +748,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         )
         .toList();
     final currentObservationVersion = _tipObservationVersion;
-    final concurrency = tor ? 2 : 4;
+    final concurrency = _probeConcurrency(targets, tor: tor);
     final timeout = tor
         ? settings.torProbeTimeout
         : settings.directProbeTimeout;
@@ -812,12 +817,12 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     }
     final winner = ranked.first;
     if (!correctsHeight) {
-      final improvement =
-          current.latency.inMilliseconds - winner.latency.inMilliseconds;
-      if (winner.url == current.url ||
-          improvement < 150 ||
-          winner.latency.inMicroseconds >
-              current.latency.inMicroseconds * 0.7) {
+      if (!_materiallyFaster(
+        current: current,
+        winner: winner,
+        tor: tor,
+        settings: settings,
+      )) {
         return state.current;
       }
     }
@@ -1275,7 +1280,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       probe: probe,
       probeTimeout: timeout,
       remaining: remaining,
-      maxConcurrency: tor ? 2 : 4,
+      maxConcurrency: _probeConcurrency(targets, tor: tor),
     );
 
     try {
@@ -1388,13 +1393,13 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         final residence = _selectedAt == null
             ? Duration.zero
             : now.difference(_selectedAt!);
-        final improvement =
-            currentSample.latency.inMilliseconds -
-            winner.latency.inMilliseconds;
         if (residence < settings.minimumResidence ||
-            improvement < 150 ||
-            winner.latency.inMicroseconds >
-                currentSample.latency.inMicroseconds * 0.7) {
+            !_materiallyFaster(
+              current: currentSample,
+              winner: winner,
+              tor: tor,
+              settings: settings,
+            )) {
           winner = currentSample;
         }
       }
@@ -1929,7 +1934,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           probe: probe,
           probeTimeout: timeout,
           remaining: remaining,
-          maxConcurrency: tor ? 2 : 4,
+          maxConcurrency: _probeConcurrency(targets, tor: tor),
         );
         requireCurrent();
         for (final sample in samples) {
@@ -1949,13 +1954,13 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         final residence = _selectedAt == null
             ? Duration.zero
             : clock().difference(_selectedAt!);
-        final improvement =
-            verifiedCurrent.latency.inMilliseconds -
-            winner.latency.inMilliseconds;
         if (residence < settings.minimumResidence ||
-            improvement < 150 ||
-            winner.latency.inMicroseconds >
-                verifiedCurrent.latency.inMicroseconds * 0.7) {
+            !_materiallyFaster(
+              current: verifiedCurrent,
+              winner: winner,
+              tor: tor,
+              settings: settings,
+            )) {
           winner = verifiedCurrent;
         }
       }
@@ -2617,6 +2622,22 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   BigInt _maxHeight(BigInt? a, BigInt b) {
     if (a == null || b > a) return b;
     return a;
+  }
+
+  /// Returns true if [winner] beats [current] enough to justify switching.
+  /// Expects both samples from the same probe batch so latencies are comparable.
+  bool _materiallyFaster({
+    required RpcEndpointCandidateSample current,
+    required RpcEndpointCandidateSample winner,
+    required bool tor,
+    required AutomaticRpcEndpointSettings settings,
+  }) {
+    if (winner.url == current.url) return false;
+    final margin = tor ? settings.torSwitchMargin : settings.directSwitchMargin;
+    final ratio = tor ? settings.torSwitchRatio : settings.directSwitchRatio;
+    final improvement = current.latency - winner.latency;
+    return improvement >= margin &&
+        winner.latency.inMicroseconds <= current.latency.inMicroseconds * ratio;
   }
 
   Future<RpcEndpointHealth> _checkHealth(RpcEndpointConfig endpoint) {

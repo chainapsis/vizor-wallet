@@ -23,9 +23,12 @@ const COMPARISON_WINDOW: Duration = Duration::from_millis(250);
 const ROUTE_CHECK_INTERVAL: Duration = Duration::from_millis(25);
 const MAX_CANDIDATES: usize = 32;
 const MAX_ACTIVE_SELECTIONS: usize = 16;
+// Caps one full probe wave; must match MAX_SELECTION_BLOCKING_THREADS so DNS
+// lookups don't queue and inflate measured probe latency.
+const MAX_PROBE_CONCURRENCY: usize = 16;
 // Matches the maximum native probe concurrency, including timed-out lookups
 // still running on this worker. Draining workers retain their selection slot.
-const MAX_SELECTION_BLOCKING_THREADS: usize = 8;
+const MAX_SELECTION_BLOCKING_THREADS: usize = MAX_PROBE_CONCURRENCY;
 const LOCAL_WORKER_FAILED: &str = "automatic endpoint selection: local worker failed";
 const MAX_RECENT_IDS: usize = 64;
 const RECENT_ID_LIFETIME: Duration = Duration::from_secs(60);
@@ -301,7 +304,7 @@ pub(crate) fn probe_candidates(
     run_with_selection_runtime(lease, move |runtime, cancellation| {
         runtime.block_on(run_probe_batch(
             urls,
-            max_concurrency.min(8) as usize,
+            max_concurrency.min(MAX_PROBE_CONCURRENCY as u32) as usize,
             Duration::from_millis(u64::from(
                 probe_timeout_ms.min(total_timeout_ms).min(30_000),
             )),
