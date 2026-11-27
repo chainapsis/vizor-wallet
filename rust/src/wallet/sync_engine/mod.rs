@@ -1597,6 +1597,7 @@ async fn repair_anchor_root_mismatch_if_needed(
     network: WalletNetwork,
     current_tip_height: u64,
     repair_passes_this_run: &mut u32,
+    prefetched_anchor: Option<(u64, zcash_client_backend::proto::service::TreeState)>,
 ) -> Result<Option<u64>, SyncError> {
     let Some((target_height, anchor_height)) = db
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
@@ -1621,8 +1622,12 @@ async fn repair_anchor_root_mismatch_if_needed(
         None
     };
 
-    let anchor_chain_state = get_tree_state(client, u32::from(anchor_height) as u64)
-        .await?
+    let anchor_height_u64 = u32::from(anchor_height) as u64;
+    let raw_anchor_tree_state = match prefetched_anchor {
+        Some((h, ts)) if h == anchor_height_u64 => ts,
+        _ => get_tree_state(client, anchor_height_u64).await?,
+    };
+    let anchor_chain_state = raw_anchor_tree_state
         .to_chain_state()
         .map_err(|e| SyncError::parse(format!("parse anchor tree state: {e}")))?;
     if anchor_chain_state.block_height() != anchor_height {
@@ -3842,6 +3847,8 @@ async fn run_sync_impl(
     };
     let tip = tip_result?;
     let initial_tip_observed_at = std::time::Instant::now();
+    let initial_tip_height_u64 = tip.height;
+    let initial_tip_hash = tip.hash.clone();
 
     let tip_height = block_height_from_u64(tip.height, "lightwalletd chain tip")?;
     let db_tip_height = sync::wallet_scan_heights(&mut db)
@@ -4315,6 +4322,13 @@ async fn run_sync_impl(
     // in leaves it for the history batches it holds
     // (`take_queued_batch`).
     let mut prefetch: VecDeque<Prefetch<ScanBatch>> = VecDeque::new();
+    // Prefetched anchor `TreeState` overlapped with the tip batch download so
+    // `repair_anchor_root_mismatch_if_needed` does not add a serial RTT at the
+    // end of warm sync while keeping 100% identical anchor root verification.
+    let mut anchor_tree_state_prefetch: Option<(
+        u64,
+        tokio::task::JoinHandle<Result<zcash_client_backend::proto::service::TreeState, SyncError>>,
+    )> = None;
     // Trial decryption of the next queued batch, started before this batch is
     // written so that it runs while `put_blocks` does. Keyed by the batch's
     // range; `scan_decrypted_blocks` decrypts again unless it covers exactly
@@ -4673,16 +4687,25 @@ async fn run_sync_impl(
                     }
                     prefetch.clear();
                     continue;
-                } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
-                    db_data_path,
-                    &mut client,
-                    &mut db,
-                    network,
-                    current_tip_height,
-                    &mut anchor_root_repair_passes_this_run,
-                )
-                .await?
-                {
+                } else if let Some(repair_pending_blocks) = {
+                    let prefetched_anchor = match anchor_tree_state_prefetch.take() {
+                        Some((h, handle)) => match handle.await {
+                            Ok(Ok(ts)) => Some((h, ts)),
+                            _ => None,
+                        },
+                        None => None,
+                    };
+                    repair_anchor_root_mismatch_if_needed(
+                        db_data_path,
+                        &mut client,
+                        &mut db,
+                        network,
+                        current_tip_height,
+                        &mut anchor_root_repair_passes_this_run,
+                        prefetched_anchor,
+                    )
+                    .await?
+                } {
                     force_witness_check_this_run = true;
                     initial_total = repair_pending_blocks;
                     prev_remaining = repair_pending_blocks;
@@ -4926,6 +4949,29 @@ async fn run_sync_impl(
         // A queued batch reaches the fresh download only when it failed.
         let queued_direct_failed = batch_is_direct && queued.is_some();
         let mut direct_failed = false;
+        // When downloading the batch that reaches `current_tip_height`, overlap the
+        // completion anchor `GetTreeState` RPC with `GetBlockRange` over the same
+        // HTTP/2 channel so anchor-root verification adds 0 ms of serial RTT.
+        if !should_exit() && u64::from(u32::from(end - 1)) == current_tip_height {
+            let trusted_confs = u64::from(u32::from(ConfirmationsPolicy::default().trusted()));
+            let predicted_anchor = current_tip_height.saturating_sub(trusted_confs);
+            let already_fetching = anchor_tree_state_prefetch
+                .as_ref()
+                .is_some_and(|(h, _)| *h == predicted_anchor);
+            if predicted_anchor > 0 && !already_fetching {
+                if let Some((_, old)) = anchor_tree_state_prefetch.take() {
+                    old.abort();
+                }
+                let mut anchor_client = client.clone();
+                anchor_tree_state_prefetch = Some((
+                    predicted_anchor,
+                    tokio::spawn(async move {
+                        get_tree_state(&mut anchor_client, predicted_anchor).await
+                    }),
+                ));
+            }
+        }
+
         let download_started = std::time::Instant::now();
         let batch = resolve_prefetched_or_download(queued, start, end, &should_exit, || {
             let (block_client, client, direct_failed) =
@@ -5398,6 +5444,21 @@ async fn run_sync_impl(
                 }
             },
         };
+
+        // If this batch scanned cleanly up to the startup `initial_tip` and its
+        // block hash matches `initial_tip_hash`, tip identity is already verified
+        // as of `initial_tip_observed_at` (within the 5 s completion window).
+        if completion_tip_validation_required
+            && current_tip_height == initial_tip_height_u64
+            && u64::from(u32::from(end - 1)) == initial_tip_height_u64
+            && !initial_tip_hash.is_empty()
+            && block_source
+                .block_at(end - 1)
+                .is_some_and(|b| b.hash == initial_tip_hash)
+        {
+            completion_tip_validation_required = false;
+            last_completion_tip_validation = initial_tip_observed_at;
+        }
 
         if migration_anchor_retention_required {
             let retained = with_wallet_db_write_lock(
