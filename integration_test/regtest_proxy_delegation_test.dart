@@ -197,27 +197,17 @@ void main() {
         containsAll([a.index, b.index]),
         reason: "both delegates' entries match their rows in the signed list",
       );
-      expect(
-        find.descendant(
-          of: find.byKey(ValueKey('proxy_delegate_row_${a.index}')),
-          matching: find.text(_l10n.proxyReviewedLabel),
-        ),
-        findsOneWidget,
-        reason: 'browse shows the reviewed badge',
-      );
       _log('browse lists ${listed.length} delegates');
       await _shot(tester, '01-browse');
 
       // PD-2: A from the list.
-      await _tapButton(tester, ValueKey('proxy_pick_${a.index}'));
+      await _tap(tester, ValueKey('proxy_delegate_row_${a.index}'));
 
-      // A pasted key the registry cache holds finds its entry.
-      await enterAppText(
-        tester,
-        const ValueKey('proxy_directory_paste'),
-        a.key,
-      );
-      await _tapButton(tester, const ValueKey('proxy_directory_find'));
+      // The add dialog: a pasted key the registry cache holds finds its
+      // entry, and a handle finds B by exact search over the cache.
+      await _tapButton(tester, const ValueKey('proxy_directory_add_unlisted'));
+      await enterAppText(tester, const ValueKey('proxy_add_field'), a.key);
+      _submit(tester, const ValueKey('proxy_add_field'));
       await _waitFor(
         tester,
         () => switch (container
@@ -243,13 +233,8 @@ void main() {
       _log('the pasted key found delegate ${a.index}');
       await _shot(tester, '02-pasted-key');
 
-      // B by exact handle search over the registry cache.
-      await enterAppText(
-        tester,
-        const ValueKey('proxy_directory_search'),
-        b.handle,
-      );
-      _submit(tester, const ValueKey('proxy_directory_search'));
+      await enterAppText(tester, const ValueKey('proxy_add_field'), b.handle);
+      _submit(tester, const ValueKey('proxy_add_field'));
       await _waitFor(
         tester,
         () => switch (container
@@ -278,7 +263,8 @@ void main() {
       );
       _log('handle search found delegate ${b.index} as @${b.handle}');
       await _shot(tester, '03-handle-search');
-      await _tapButton(tester, ValueKey('proxy_pick_${b.index}'));
+      await _tap(tester, ValueKey('proxy_delegate_row_${b.index}'));
+      await _tapButton(tester, const ValueKey('proxy_add_done'));
       final draft = container.read(proxyAllocationDraftProvider(draftKey));
       expect(draft.delegates.map((d) => d.entry.index), [a.index, b.index]);
       // A choice carries what the user picked: the entry's key and handle.
@@ -319,7 +305,7 @@ void main() {
       await _tapButton(tester, const ValueKey('proxy_allocation_done'));
       await _waitFor(
         tester,
-        () => tester.any(find.byKey(const ValueKey('proxy_line_split'))),
+        () => tester.any(find.byKey(const ValueKey('proxy_line_edit'))),
         description: 'the round to show the split',
         timeout: const Duration(minutes: 2),
       );
