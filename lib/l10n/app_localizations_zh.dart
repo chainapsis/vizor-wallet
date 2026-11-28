@@ -8003,13 +8003,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyAddDelegateLabel => '添加代理人';
 
   @override
-  String get proxyAddLabel => '添加';
+  String get proxyAddDialogBody =>
+      '用于添加不在 Vizor 列表中的代理人。请输入其 X 或 GitHub 用户名，或粘贴其代理人密钥。';
 
   @override
-  String get proxyAddToDelegationLabel => '加入委托';
+  String get proxyAddDialogTitle => '添加代理人';
 
   @override
-  String get proxyAddedLabel => '已添加';
+  String get proxyAddUnlistedLabel => '添加列表外的代理人';
 
   @override
   String get proxyAllocationTitle => '分配你的投票权';
@@ -8054,10 +8055,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyCannotVerify => '目前无法验证代理人。请稍后重试。';
 
   @override
-  String get proxyChangeDelegationLabel => '更改';
+  String get proxyCheckingDelegates => '正在投票链上检查你的代理人。';
 
   @override
-  String get proxyCheckingDelegates => '正在投票链上检查你的代理人。';
+  String proxyChosenCount(int count) {
+    return '已选择 $count 位';
+  }
+
+  @override
+  String proxyChosenFull(int count) {
+    return '已选择 $count 位，已达上限';
+  }
 
   @override
   String proxyClosingSoon(String timeLeft) {
@@ -8078,6 +8086,17 @@ class AppLocalizationsZh extends AppLocalizations {
       '只有你的代理人在投票结束前提交完整选票，你委托的 ZEC 才会计入。否则，本轮不计入。';
 
   @override
+  String get proxyDelegateVoteBody => '让你信任的人代你作答。';
+
+  @override
+  String get proxyDelegateVoteTitle => '委托你的投票';
+
+  @override
+  String proxyDelegatedAll(String total) {
+    return '已委托全部 $total';
+  }
+
+  @override
   String get proxyDelegatedLabel => '已委托';
 
   @override
@@ -8086,16 +8105,45 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String proxyDelegatedPart(String delegated, String total) {
+    return '已委托 $total 中的 $delegated';
+  }
+
+  @override
+  String proxyDelegatingAll(String total) {
+    return '正在委托全部 $total';
+  }
+
+  @override
+  String proxyDelegatingPart(String delegated, String total) {
+    return '正在委托 $total 中的 $delegated';
+  }
+
+  @override
   String proxyDelegatingStep(String handles) {
     return '正在委托给 $handles';
+  }
+
+  @override
+  String proxyDelegatingTo(String names) {
+    return '正在委托给 $names';
   }
 
   @override
   String get proxyDelegationConfirmed => '你的委托已发送，无法更改。';
 
   @override
-  String get proxyDirectorySubtitle =>
-      '最多选择 8 位代理人。如需查找其他代理人，请搜索其准确的用户名，或粘贴其帖子、密钥、编号或指纹。';
+  String proxyDelegationSplit(String parts) {
+    return '$parts。';
+  }
+
+  @override
+  String proxyDelegationSplitWithRest(String parts, String kept) {
+    return '$parts。其余 $kept 由你作答。';
+  }
+
+  @override
+  String get proxyDirectorySubtitle => '最多选择 8 位代理人。此列表中的代理人均已经过 Vizor 审核。';
 
   @override
   String get proxyDirectoryTitle => '选择代理人';
@@ -8104,10 +8152,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyFinality => '每轮只能委托一次。确认后无法更改。';
 
   @override
-  String get proxyFindLabel => '查找';
+  String get proxyHandedOffLabel => '已发送';
 
   @override
-  String get proxyHandedOffLabel => '已发送';
+  String proxyHandleOnNetwork(String handle, String network) {
+    return '$network 上的 @$handle';
+  }
 
   @override
   String proxyHasNotVotedYet(String name) {
@@ -8133,15 +8183,26 @@ class AppLocalizationsZh extends AppLocalizations {
       'Vizor 无法保存你为保留的 ZEC 所作的回答，因此未发送任何内容。请返回问题页面并重新提交。';
 
   @override
-  String proxyKeptToAnswer(String amount) {
-    return '$amount 由你作答';
+  String proxyListCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 位代理人',
+      one: '$count 位代理人',
+    );
+    return '$_temp0';
   }
 
   @override
-  String get proxyLetDelegateVoteLabel => '让代理人代投部分或全部';
+  String get proxyListLabel => 'Vizor 列表';
 
   @override
-  String get proxyListUnavailable => 'Vizor 的代理人列表目前不可用。你仍可按用户名搜索，或粘贴代理人的密钥。';
+  String proxyListMatches(int matches, int total) {
+    return '$matches/$total';
+  }
+
+  @override
+  String get proxyListUnavailable => 'Vizor 的代理人列表目前不可用。你仍可通过用户名或密钥添加代理人。';
 
   @override
   String get proxyLoadError => '无法加载委托详情。请重试。';
@@ -8155,7 +8216,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyLookupNotFound => '没有代理人使用该密钥、编号或指纹注册。';
 
   @override
-  String get proxyLookupUnrecognized => '这不是包含标记文本的帖子、代理人密钥、编号或指纹。';
+  String get proxyManualFieldHint => 'X 或 GitHub 用户名，或 zvdk1...';
+
+  @override
+  String get proxyManualFieldLabel => '用户名或代理人密钥';
 
   @override
   String proxyMismatch(String name) {
@@ -8191,6 +8255,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyNoDelegation => '本轮没有需要提交的委托。';
 
   @override
+  String proxyNoListMatches(String query) {
+    return 'Vizor 列表中没有与“$query”匹配的代理人。';
+  }
+
+  @override
   String proxyNoSearchResults(String query) {
     return '没有用户名为“$query”的代理人。搜索需要输入准确的用户名。';
   }
@@ -8219,15 +8288,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyNothingLeftToVote => '你已在本轮委托了全部投票权，因此没有剩余可投的部分。由你的代理人代为投票。';
 
   @override
-  String proxyOptionFallback(int number) {
-    return '选项 $number';
+  String proxyOnNetwork(String network) {
+    return '$network 账号';
   }
 
   @override
-  String get proxyPasteHint => '帖子文本、zvdk1 密钥、#编号 或指纹';
-
-  @override
-  String get proxyPasteLabel => '粘贴或扫描';
+  String proxyOptionFallback(int number) {
+    return '选项 $number';
+  }
 
   @override
   String get proxyPaused => '本轮委托已暂停。已完成的委托不受影响，你仍然可以投票。';
@@ -8242,16 +8310,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyPercentRequired => '请为每位代理人输入份额。';
 
   @override
-  String proxyPickerCount(int count) {
-    return '已选择 $count/8';
-  }
-
-  @override
-  String proxyPickerCountFull(int count) {
-    return '已选择 $count/8。最多可选择 8 位代理人。';
-  }
-
-  @override
   String get proxyPickerFull => '最多可选择 8 位代理人。';
 
   @override
@@ -8260,12 +8318,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get proxyPrivacy =>
       '你的代理人看不到你是谁，你的金额也不会公开。结果只显示每个选项的总数，从不显示你的代理人的总数，你的 ZEC 会跟随代理人的公开选票。如果没有人直接投票给你的代理人所选的选项，结果有时会暴露你的代理人的总数；如果你是其唯一的委托人，你的金额也会随之暴露。结果永远不会暴露你是谁。';
-
-  @override
-  String get proxyProfileTitle => '代理人';
-
-  @override
-  String get proxyProfileUnavailable => '此代理人的信息已不再加载。请返回并重新查找该代理人。';
 
   @override
   String get proxyProgressTitle => '正在委托';
@@ -8283,7 +8335,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyRegistrationUnusable => '此钱包的投票授权目前无法用于委托。未发送任何内容。';
 
   @override
-  String get proxyRemoveFromDelegationLabel => '从委托中移除';
+  String get proxyRemoveDelegationLabel => '移除委托';
 
   @override
   String get proxyResultsNote => '这些总数包含你委托的 ZEC。本轮会显示你的代理人的投票方式。';
@@ -8302,16 +8354,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyReviewedLabel => '已审核';
 
   @override
-  String get proxyScanLabel => '扫描';
-
-  @override
   String get proxyScanTitle => '扫描代理人二维码';
 
   @override
-  String get proxySearchHint => 'X 或 GitHub 用户名';
+  String get proxySearchHint => '按名称或用户名搜索';
 
   @override
-  String get proxySearchLabel => '按用户名搜索';
+  String get proxySearchLabel => '搜索 Vizor 列表';
 
   @override
   String get proxySplitEvenlyLabel => '平均分配';

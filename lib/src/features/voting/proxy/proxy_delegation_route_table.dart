@@ -5,13 +5,12 @@ import 'proxy_delegation_routes.dart';
 import 'screens/mobile/mobile_proxy_delegation_screens.dart';
 import 'screens/proxy_allocation_screen.dart';
 import 'screens/proxy_delegate_directory_screen.dart';
-import 'screens/proxy_delegate_profile_screen.dart';
 
 /// Wraps a voting screen in the router's account guard.
 typedef ProxyRouteGuard = Widget Function(Widget child);
 
-/// Desktop routes for the delegator screens: choosing delegates, a profile and
-/// the split, which return to the round's questions. Registered only when
+/// Desktop routes for the delegator screens: choosing delegates and the
+/// split, which return to the round's questions. Registered only when
 /// the dormant flag is on.
 List<GoRoute> proxyDelegationDesktopRoutes({required ProxyRouteGuard guard}) {
   /// A guarded route for [screen] at [path].
@@ -21,13 +20,6 @@ List<GoRoute> proxyDelegationDesktopRoutes({required ProxyRouteGuard guard}) {
     route(
       kProxyDelegateDirectoryPath,
       (state) => ProxyDelegateDirectoryScreen(roundId: _roundId(state)),
-    ),
-    route(
-      kProxyDelegateProfilePath,
-      (state) => ProxyDelegateProfileScreen(
-        roundId: _roundId(state),
-        delegateIndex: _delegateIndex(state),
-      ),
     ),
     route(
       kProxyAllocationPath,
@@ -52,13 +44,6 @@ List<GoRoute> proxyDelegationMobileRoutes({required ProxyRouteGuard guard}) {
       (state) => MobileProxyDelegateDirectoryScreen(roundId: _roundId(state)),
     ),
     route(
-      kProxyDelegateProfilePath,
-      (state) => MobileProxyDelegateProfileScreen(
-        roundId: _roundId(state),
-        delegateIndex: _delegateIndex(state),
-      ),
-    ),
-    route(
       kProxyAllocationPath,
       (state) => MobileProxyAllocationScreen(roundId: _roundId(state)),
     ),
@@ -67,8 +52,3 @@ List<GoRoute> proxyDelegationMobileRoutes({required ProxyRouteGuard guard}) {
 
 /// The `roundId` path parameter.
 String _roundId(GoRouterState state) => state.pathParameters['roundId'] ?? '';
-
-/// The `delegateIndex` path parameter; 0 when malformed, which no
-/// registry entry uses.
-int _delegateIndex(GoRouterState state) =>
-    int.tryParse(state.pathParameters['delegateIndex'] ?? '') ?? 0;

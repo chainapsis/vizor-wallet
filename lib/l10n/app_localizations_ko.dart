@@ -8528,13 +8528,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get proxyAddDelegateLabel => '대‍리‍인 추‍가';
 
   @override
-  String get proxyAddLabel => '추‍가';
+  String get proxyAddDialogBody =>
+      'Vizor 목‍록‍에 없‍는 대‍리‍인‍을 추‍가‍해‍요. X 또‍는 GitHub 핸‍들‍을 입‍력‍하‍거‍나 대‍리‍인 키‍를 붙‍여 넣‍으‍세‍요.';
 
   @override
-  String get proxyAddToDelegationLabel => '위‍임‍에 추‍가';
+  String get proxyAddDialogTitle => '대‍리‍인 추‍가';
 
   @override
-  String get proxyAddedLabel => '추‍가‍됨';
+  String get proxyAddUnlistedLabel => '목‍록‍에 없‍는 대‍리‍인 추‍가';
 
   @override
   String get proxyAllocationTitle => '투‍표‍권 나‍누‍기';
@@ -8582,10 +8583,17 @@ class AppLocalizationsKo extends AppLocalizations {
       '지‍금‍은 대‍리‍인‍을 확‍인‍할 수 없‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
-  String get proxyChangeDelegationLabel => '변‍경';
+  String get proxyCheckingDelegates => '투‍표 체‍인‍에‍서 대‍리‍인‍을 확‍인‍하‍는 중‍이‍에‍요.';
 
   @override
-  String get proxyCheckingDelegates => '투‍표 체‍인‍에‍서 대‍리‍인‍을 확‍인‍하‍는 중‍이‍에‍요.';
+  String proxyChosenCount(int count) {
+    return '$count‍명 선‍택‍됨';
+  }
+
+  @override
+  String proxyChosenFull(int count) {
+    return '$count‍명 선‍택‍됨, 최‍대 인‍원‍이‍에‍요';
+  }
 
   @override
   String proxyClosingSoon(String timeLeft) {
@@ -8607,6 +8615,17 @@ class AppLocalizationsKo extends AppLocalizations {
       '위‍임‍한 ZEC‍는 대‍리‍인‍이 투‍표‍가 끝‍나‍기 전‍에 완‍성‍된 투‍표‍용‍지‍를 제‍출‍해‍야‍만 집‍계‍돼‍요. 제‍출‍하‍지 않‍으‍면 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍아‍요.';
 
   @override
+  String get proxyDelegateVoteBody => '신‍뢰‍하‍는 사‍람‍이 대‍신 답‍하‍게 하‍세‍요.';
+
+  @override
+  String get proxyDelegateVoteTitle => '투‍표 위‍임‍하‍기';
+
+  @override
+  String proxyDelegatedAll(String total) {
+    return '$total 전‍부 위‍임‍됨';
+  }
+
+  @override
   String get proxyDelegatedLabel => '위‍임‍됨';
 
   @override
@@ -8615,16 +8634,46 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String proxyDelegatedPart(String delegated, String total) {
+    return '$total 중 $delegated 위‍임‍됨';
+  }
+
+  @override
+  String proxyDelegatingAll(String total) {
+    return '$total 전‍부 위‍임 중';
+  }
+
+  @override
+  String proxyDelegatingPart(String delegated, String total) {
+    return '$total 중 $delegated 위‍임 중';
+  }
+
+  @override
   String proxyDelegatingStep(String handles) {
     return '$handles 대‍리‍인‍에‍게 위‍임 중';
+  }
+
+  @override
+  String proxyDelegatingTo(String names) {
+    return '$names 대‍리‍인‍에‍게 위‍임 중';
   }
 
   @override
   String get proxyDelegationConfirmed => '위‍임‍을 전‍송‍했‍고 변‍경‍할 수 없‍어‍요.';
 
   @override
+  String proxyDelegationSplit(String parts) {
+    return '$parts.';
+  }
+
+  @override
+  String proxyDelegationSplitWithRest(String parts, String kept) {
+    return '$parts. 나‍머‍지 $kept‍만‍큼‍은 직‍접 답‍해‍요.';
+  }
+
+  @override
   String get proxyDirectorySubtitle =>
-      '대‍리‍인‍을 최‍대 8‍명‍까‍지 선‍택‍하‍세‍요. 다‍른 대‍리‍인‍은 정‍확‍한 핸‍들‍로 검‍색‍하‍거‍나 게‍시‍물, 키, 번‍호 또‍는 지‍문‍을 붙‍여 넣‍어 찾‍을 수 있‍어‍요.';
+      '대‍리‍인‍을 최‍대 8‍명‍까‍지 선‍택‍하‍세‍요. 이 목‍록‍의 대‍리‍인‍은 모‍두 Vizor‍가 검‍토‍했‍어‍요.';
 
   @override
   String get proxyDirectoryTitle => '대‍리‍인 선‍택';
@@ -8634,10 +8683,12 @@ class AppLocalizationsKo extends AppLocalizations {
       '위‍임‍은 라‍운‍드‍마‍다 한 번‍만 할 수 있‍어‍요. 확‍인‍한 뒤‍에‍는 변‍경‍할 수 없‍어‍요.';
 
   @override
-  String get proxyFindLabel => '찾‍기';
+  String get proxyHandedOffLabel => '전‍송‍됨';
 
   @override
-  String get proxyHandedOffLabel => '전‍송‍됨';
+  String proxyHandleOnNetwork(String handle, String network) {
+    return '$network‍의 @$handle';
+  }
 
   @override
   String proxyHasNotVotedYet(String name) {
@@ -8664,16 +8715,27 @@ class AppLocalizationsKo extends AppLocalizations {
       'Vizor‍가 남‍겨 둔 ZEC‍에 대‍한 답‍변‍을 저‍장‍하‍지 못‍해‍서 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요. 질‍문‍으‍로 돌‍아‍가 다‍시 제‍출‍해 주‍세‍요.';
 
   @override
-  String proxyKeptToAnswer(String amount) {
-    return '직‍접 답‍할 $amount';
+  String proxyListCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '대‍리‍인 $count‍명',
+      one: '대‍리‍인 $count‍명',
+    );
+    return '$_temp0';
   }
 
   @override
-  String get proxyLetDelegateVoteLabel => '대‍리‍인‍에‍게 일‍부 또‍는 전‍부 위‍임';
+  String get proxyListLabel => 'Vizor 목‍록';
+
+  @override
+  String proxyListMatches(int matches, int total) {
+    return '$total‍명 중 $matches‍명';
+  }
 
   @override
   String get proxyListUnavailable =>
-      '지‍금‍은 Vizor 대‍리‍인 목‍록‍을 사‍용‍할 수 없‍어‍요. 핸‍들‍로 검‍색‍하‍거‍나 대‍리‍인 키‍를 붙‍여 넣‍을 수‍는 있‍어‍요.';
+      '지‍금‍은 Vizor 대‍리‍인 목‍록‍을 사‍용‍할 수 없‍어‍요. 핸‍들‍이‍나 키‍로 대‍리‍인‍을 추‍가‍할 수‍는 있‍어‍요.';
 
   @override
   String get proxyLoadError => '위‍임 정‍보‍를 불‍러‍오‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
@@ -8687,8 +8749,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get proxyLookupNotFound => '그 키, 번‍호 또‍는 지‍문‍으‍로 등‍록‍된 대‍리‍인‍이 없‍어‍요.';
 
   @override
-  String get proxyLookupUnrecognized =>
-      '마‍커 게‍시‍물, 대‍리‍인 키, 번‍호, 지‍문 중 어‍느 것‍에‍도 해‍당‍하‍지 않‍아‍요.';
+  String get proxyManualFieldHint => 'X 또‍는 GitHub 핸‍들, 또‍는 zvdk1...';
+
+  @override
+  String get proxyManualFieldLabel => '핸‍들 또‍는 대‍리‍인 키';
 
   @override
   String proxyMismatch(String name) {
@@ -8725,6 +8789,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get proxyNoDelegation => '이‍번 라‍운‍드‍에‍는 제‍출‍할 위‍임‍이 없‍어‍요.';
 
   @override
+  String proxyNoListMatches(String query) {
+    return 'Vizor 목‍록‍에 \"$query\" 검‍색‍어‍와 일‍치‍하‍는 대‍리‍인‍이 없‍어‍요.';
+  }
+
+  @override
   String proxyNoSearchResults(String query) {
     return '\"$query\" 핸‍들‍을 쓰‍는 대‍리‍인‍이 없‍어‍요. 정‍확‍한 핸‍들‍로 검‍색‍해‍야 해‍요.';
   }
@@ -8757,15 +8826,14 @@ class AppLocalizationsKo extends AppLocalizations {
       '이‍번 라‍운‍드‍의 투‍표‍권‍을 모‍두 위‍임‍해‍서 직‍접 투‍표‍할 투‍표‍권‍이 남‍아 있‍지 않‍아‍요. 대‍리‍인‍이 그 투‍표‍권‍으‍로 투‍표‍해‍요.';
 
   @override
-  String proxyOptionFallback(int number) {
-    return '선‍택‍지 $number';
+  String proxyOnNetwork(String network) {
+    return '$network 계‍정';
   }
 
   @override
-  String get proxyPasteHint => '게‍시‍물 텍‍스‍트, zvdk1 키, #번‍호 또‍는 지‍문';
-
-  @override
-  String get proxyPasteLabel => '붙‍여 넣‍기 또‍는 스‍캔';
+  String proxyOptionFallback(int number) {
+    return '선‍택‍지 $number';
+  }
 
   @override
   String get proxyPaused =>
@@ -8781,16 +8849,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get proxyPercentRequired => '대‍리‍인‍마‍다 비‍율‍을 입‍력‍해 주‍세‍요.';
 
   @override
-  String proxyPickerCount(int count) {
-    return '8‍명 중 $count‍명 선‍택‍됨';
-  }
-
-  @override
-  String proxyPickerCountFull(int count) {
-    return '8‍명 중 $count‍명‍을 선‍택‍했‍어‍요. 대‍리‍인‍은 최‍대 8‍명‍까‍지 선‍택‍할 수 있‍어‍요.';
-  }
-
-  @override
   String get proxyPickerFull => '대‍리‍인‍은 최‍대 8‍명‍까‍지 선‍택‍할 수 있‍어‍요.';
 
   @override
@@ -8800,13 +8858,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get proxyPrivacy =>
       '대‍리‍인‍은 내‍가 누‍구‍인‍지 볼 수 없‍고, 내 금‍액‍은 공‍개‍되‍지 않‍아‍요. 결‍과‍에‍는 선‍택‍지‍별 합‍계‍만 표‍시‍되‍고 대‍리‍인‍의 합‍계‍는 절‍대 표‍시‍되‍지 않‍으‍며, 내 ZEC‍는 대‍리‍인‍의 공‍개 투‍표‍용‍지‍를 따‍라‍요. 대‍리‍인‍이 고‍른 선‍택‍지‍에 직‍접 투‍표‍한 사‍람‍이 아‍무‍도 없‍으‍면 결‍과‍에‍서 대‍리‍인‍의 합‍계‍가 드‍러‍날 때‍가 있‍고, 내‍가 그 대‍리‍인‍의 유‍일‍한 위‍임‍자‍라‍면 내 금‍액‍도 함‍께 드‍러‍날 수 있‍어‍요. 결‍과‍에‍서 내‍가 누‍구‍인‍지‍는 절‍대 드‍러‍나‍지 않‍아‍요.';
-
-  @override
-  String get proxyProfileTitle => '대‍리‍인';
-
-  @override
-  String get proxyProfileUnavailable =>
-      '이 대‍리‍인 정‍보‍가 더 이‍상 남‍아 있‍지 않‍아‍요. 돌‍아‍가‍서 다‍시 찾‍아 주‍세‍요.';
 
   @override
   String get proxyProgressTitle => '위‍임 중';
@@ -8826,7 +8877,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '지‍금‍은 이 지‍갑‍의 투‍표 권‍한‍으‍로 위‍임‍할 수 없‍어‍요. 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요.';
 
   @override
-  String get proxyRemoveFromDelegationLabel => '위‍임‍에‍서 제‍거';
+  String get proxyRemoveDelegationLabel => '위‍임 삭‍제';
 
   @override
   String get proxyResultsNote =>
@@ -8846,16 +8897,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get proxyReviewedLabel => '검‍토‍됨';
 
   @override
-  String get proxyScanLabel => '스‍캔';
-
-  @override
   String get proxyScanTitle => '대‍리‍인 QR 코‍드 스‍캔';
 
   @override
-  String get proxySearchHint => 'X 또‍는 GitHub 핸‍들';
+  String get proxySearchHint => '이‍름 또‍는 핸‍들‍로 검‍색';
 
   @override
-  String get proxySearchLabel => '핸‍들‍로 검‍색';
+  String get proxySearchLabel => 'Vizor 목‍록 검‍색';
 
   @override
   String get proxySplitEvenlyLabel => '균‍등‍하‍게 나‍누‍기';

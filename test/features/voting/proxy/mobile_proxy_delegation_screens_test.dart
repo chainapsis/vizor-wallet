@@ -85,13 +85,37 @@ void main() {
       'alice_votes',
       'dana_research',
     ], ballot: proxyBallot(ApiDelegateBallotKind.counted, [0, 2, 1]));
-    for (final location in [
+    await _pumpMobile(
+      tester,
       '/voting/poll/$kProxyTestRoundId',
-      proxyDelegateProfileRoute(kProxyTestRoundId, 4),
-    ]) {
-      await _pumpMobile(tester, location, scenario: scenario, textScale: 2);
-      expect(tester.takeException(), isNull, reason: location);
-    }
+      scenario: scenario,
+      textScale: 2,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the add sheet fits a phone at 200% text', (tester) async {
+    await _pumpMobile(
+      tester,
+      proxyDelegateDirectoryRoute(kProxyTestRoundId),
+      scenario: proxyTestScenario(),
+      textScale: 2,
+    );
+    final link = find.byKey(const ValueKey('proxy_directory_add_unlisted'));
+    await tester.ensureVisible(link);
+    await tester.tap(link);
+    await settleProxy(tester);
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey('proxy_add_field')),
+        matching: find.byType(EditableText),
+      ),
+      'a1ice_votes',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await settleProxy(tester);
+    expect(find.text(testL10n.proxyLookalike('alice_votes')), findsOne);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('the picker, editor and review fit a phone at 200% text', (

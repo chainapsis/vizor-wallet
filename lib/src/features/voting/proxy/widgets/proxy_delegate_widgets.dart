@@ -464,6 +464,191 @@ class _ProxyDelegateAvatarState extends ConsumerState<ProxyDelegateAvatar> {
   }
 }
 
+/// A round check: empty while not chosen, filled with a tick once chosen,
+/// and greyed out when it can't be chosen.
+class ProxyCheckCircle extends StatelessWidget {
+  /// Creates the check.
+  const ProxyCheckCircle({
+    required this.selected,
+    this.enabled = true,
+    super.key,
+  });
+
+  /// Whether the delegate is chosen.
+  final bool selected;
+
+  /// Whether an empty check can be ticked.
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: selected ? colors.background.inverse : null,
+        border: selected
+            ? null
+            : Border.all(
+                color: enabled ? colors.border.medium : colors.border.subtle,
+                width: 1.5,
+              ),
+      ),
+      child: selected
+          ? AppIcon(AppIcons.check, color: colors.icon.inverse)
+          : null,
+    );
+  }
+}
+
+/// One delegate in a list: picture, name, handle on its network and the
+/// check. Tapping the row adds or removes the delegate.
+class ProxyDelegateListRow extends StatelessWidget {
+  /// Creates the row.
+  const ProxyDelegateListRow({
+    required this.entry,
+    required this.selected,
+    this.onToggle,
+    this.showKey = false,
+    super.key,
+  });
+
+  /// Delegate to show.
+  final ProxyDelegateListing entry;
+
+  /// Whether the delegate is chosen.
+  final bool selected;
+
+  /// Adds or removes the delegate; null when it can't be added, because
+  /// the picker is full or the delegate is suspended or retired.
+  final VoidCallback? onToggle;
+
+  /// Shows the number and fingerprint, to compare with a delegate's post.
+  final bool showKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final l10n = context.l10n;
+    final name = entry.displayName;
+    final network = switch (entry.provider) {
+      ProxyDelegateProvider.x => l10n.proxyProviderXLabel,
+      ProxyDelegateProvider.gitHub => l10n.proxyProviderGitHubLabel,
+    };
+    final secondary = AppTypography.bodySmall.copyWith(
+      color: colors.text.secondary,
+    );
+    final onToggle = this.onToggle;
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        checked: selected,
+        enabled: onToggle != null,
+        child: MouseRegion(
+          cursor: onToggle == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          child: GestureDetector(
+            key: ValueKey('proxy_delegate_row_${entry.index}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.s,
+              ),
+              child: Row(
+                children: [
+                  ProxyDelegateAvatar(
+                    fingerprint: entry.key.fingerprint,
+                    picture: entry.listPicture,
+                    size: 36,
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name ?? proxyListingName(entry),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                        Text(
+                          name == null
+                              ? l10n.proxyOnNetwork(network)
+                              : l10n.proxyHandleOnNetwork(
+                                  entry.handle,
+                                  network,
+                                ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: secondary,
+                        ),
+                        if (showKey)
+                          Text(
+                            formatProxyDelegateId(
+                              entry.index,
+                              entry.key.fingerprint,
+                            ),
+                            style: AppTypography.codeSmall.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  ProxyCheckCircle(
+                    selected: selected,
+                    enabled: onToggle != null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Rows in one surface, split by hairlines.
+class ProxyDelegateGroup extends StatelessWidget {
+  /// Creates the group.
+  const ProxyDelegateGroup({required this.rows, super.key});
+
+  /// The rows, in order.
+  final List<Widget> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        border: Border.all(color: colors.border.subtle),
+      ),
+      child: Column(
+        children: [
+          for (final (i, row) in rows.indexed) ...[
+            if (i > 0)
+              Divider(height: 1, thickness: 1, color: colors.border.subtle),
+            row,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Identity block for a delegate: picture or identicon, Vizor's list name,
 /// handle and key, plus its labels, the provider first. A delegate
 /// Vizor's list does not name shows no name or picture.

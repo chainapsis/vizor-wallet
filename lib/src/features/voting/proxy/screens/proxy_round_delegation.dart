@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/config/proxy_delegation_feature_config.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_icon.dart';
 import '../../voting_flow_models.dart';
 import '../proxy_delegation_models.dart';
 import '../proxy_delegation_presentation.dart';
@@ -14,15 +14,15 @@ import '../proxy_delegation_repository.dart';
 import '../proxy_delegation_routes.dart';
 import '../widgets/proxy_delegate_widgets.dart';
 
-/// The round screen's delegation line: the wallet's voting power, and a way
-/// to let delegates answer some or all of the ballot. Renders nothing when
-/// the dormant flag is off or the round is not a proxy round for this
-/// wallet.
+/// The round screen's delegation card: a way into choosing delegates, the
+/// drafted or committed split once there is one, or why delegating isn't
+/// open. Renders nothing when the dormant flag is off or the round is not a
+/// proxy round for this wallet.
 class ProxyVotingPowerLine extends ConsumerWidget {
-  /// Creates the line for [roundId].
+  /// Creates the card for [roundId].
   const ProxyVotingPowerLine({required this.roundId, super.key});
 
-  /// Round whose questions the line sits above.
+  /// Round whose questions the card sits above.
   final String roundId;
 
   @override
@@ -35,15 +35,14 @@ class ProxyVotingPowerLine extends ConsumerWidget {
     }
     return ProxyVotingPowerLineContent(
       kind: kind,
-      eligibleBallots: ref
-          .watch(proxyRoundContextProvider(key))
-          .value
-          ?.eligibleBallots,
       delegation: ref.watch(proxyBallotDelegationProvider(key)),
-      onLetDelegateVote: () =>
-          context.push(proxyDelegateDirectoryRoute(roundId)),
-      onRemove: () =>
-          ref.read(proxyAllocationDraftProvider(key).notifier).clear(),
+      onChoose: () => context.push(proxyDelegateDirectoryRoute(roundId)),
+      // Under the split sits delegate choice, as when the draft was made,
+      // so the split's Add delegate goes back to it.
+      onEdit: () {
+        context.push(proxyDelegateDirectoryRoute(roundId));
+        context.push(proxyAllocationRoute(roundId));
+      },
       onRetry: () {
         ref.invalidate(proxyAvailabilityProvider(key));
         ref.invalidate(proxyRoundContextProvider(key));
@@ -52,15 +51,14 @@ class ProxyVotingPowerLine extends ConsumerWidget {
   }
 }
 
-/// Session-free round screen line shared by the live widget and tests.
+/// Session-free round screen card shared by the live widget and tests.
 class ProxyVotingPowerLineContent extends StatelessWidget {
   /// Creates the content.
   const ProxyVotingPowerLineContent({
     required this.kind,
-    this.eligibleBallots,
     this.delegation,
-    this.onLetDelegateVote,
-    this.onRemove,
+    this.onChoose,
+    this.onEdit,
     this.onRetry,
     super.key,
   });
@@ -68,17 +66,14 @@ class ProxyVotingPowerLineContent extends StatelessWidget {
   /// What the round allows.
   final ProxyEntryKind kind;
 
-  /// Voting power the wallet can allocate, in ballots, once known.
-  final BigInt? eligibleBallots;
-
   /// The delegation the ballot carries, drafted or committed.
   final ProxyBallotDelegation? delegation;
 
-  /// Opens delegate choice, to choose or change delegates.
-  final VoidCallback? onLetDelegateVote;
+  /// Opens delegate choice.
+  final VoidCallback? onChoose;
 
-  /// Drops the drafted delegation.
-  final VoidCallback? onRemove;
+  /// Opens the drafted split to change it.
+  final VoidCallback? onEdit;
 
   /// Retries a failed check.
   final VoidCallback? onRetry;
@@ -86,140 +81,138 @@ class ProxyVotingPowerLineContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (kind == ProxyEntryKind.hidden) return const SizedBox.shrink();
-    final power = _votingPower();
-    final body = _body(context);
+    final l10n = context.l10n;
+    final delegation = this.delegation;
+    if (delegation != null) {
+      final issue = delegation.issue;
+      return _DelegationCard(
+        key: const ValueKey('proxy_voting_power_line'),
+        tapKey: const ValueKey('proxy_line_edit'),
+        title: proxyDelegationTitle(l10n, delegation),
+        body: proxyDelegationSplitText(l10n, delegation),
+        notice: issue == null
+            ? null
+            : ProxyNotice(
+                key: const ValueKey('proxy_line_issue'),
+                message: proxyDraftIssueCopy(l10n, issue),
+                tone: ProxyNoticeTone.warning,
+              ),
+        // A committed delegation is final.
+        onTap: delegation.committed ? null : onEdit,
+      );
+    }
+    if (kind == ProxyEntryKind.available) {
+      return _DelegationCard(
+        key: const ValueKey('proxy_voting_power_line'),
+        tapKey: const ValueKey('proxy_let_delegate_vote'),
+        title: l10n.proxyDelegateVoteTitle,
+        body: l10n.proxyDelegateVoteBody,
+        onTap: onChoose,
+      );
+    }
     return ProxyCard(
       key: const ValueKey('proxy_voting_power_line'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: switch (kind) {
+        ProxyEntryKind.timingUnavailable ||
+        ProxyEntryKind.cannotVerify => ProxyNotice(
+          key: ValueKey('proxy_line_${kind.name}'),
+          message: kind == ProxyEntryKind.cannotVerify
+              ? l10n.proxyCannotVerify
+              : l10n.proxyTimingUnavailable,
+          tone: ProxyNoticeTone.warning,
+          actionLabel: l10n.commonTryAgain,
+          onAction: onRetry,
+        ),
+        _ => Text(
+          switch (kind) {
+            ProxyEntryKind.paused => l10n.proxyPaused,
+            ProxyEntryKind.alreadyVoted => l10n.proxyAlreadyVoted,
+            ProxyEntryKind.usedElsewhere => l10n.proxyUsedElsewhere,
+            _ => l10n.proxyTooLate,
+          },
+          key: ValueKey('proxy_line_${kind.name}'),
+          style: AppTypography.bodyMedium.copyWith(
+            color: context.colors.text.secondary,
+          ),
+        ),
+      },
+    );
+  }
+}
+
+/// The card's title and line, an optional notice under them, and, when it
+/// opens something, a chevron and the whole card as the button.
+class _DelegationCard extends StatelessWidget {
+  const _DelegationCard({
+    required this.title,
+    required this.tapKey,
+    this.body,
+    this.notice,
+    this.onTap,
+    super.key,
+  });
+
+  final String title;
+  final Key tapKey;
+  final String? body;
+  final Widget? notice;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final body = this.body;
+    final notice = this.notice;
+    final onTap = this.onTap;
+    final card = ProxyCard(
+      child: Row(
         children: [
-          if (power != null)
-            ProxyBodyText(
-              context.l10n.proxyVotingPower(formatProxyBallots(power)),
-              strong: true,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                if (body != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    body,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
+                if (notice != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  notice,
+                ],
+              ],
             ),
-          if (power != null && body.isNotEmpty)
-            const SizedBox(height: AppSpacing.xs),
-          ...body,
+          ),
+          if (onTap != null) ...[
+            const SizedBox(width: AppSpacing.s),
+            AppIcon(AppIcons.chevronForward, color: colors.icon.muted),
+          ],
         ],
       ),
     );
-  }
-
-  /// The wallet's whole voting power: the committed split's parts, or what
-  /// the round still lets it allocate. None once the wallet voted or the
-  /// round ended, which the reason line says instead.
-  BigInt? _votingPower() {
-    final delegation = this.delegation;
-    if (delegation == null &&
-        (kind == ProxyEntryKind.alreadyVoted ||
-            kind == ProxyEntryKind.usedElsewhere ||
-            kind == ProxyEntryKind.voteEnded)) {
-      return null;
-    }
-    if (delegation != null && delegation.committed) {
-      return delegation.delegates.fold<BigInt>(
-        delegation.keptBallots ?? BigInt.zero,
-        (sum, delegate) => sum + (delegate.ballots ?? BigInt.zero),
-      );
-    }
-    return eligibleBallots;
-  }
-
-  /// What follows the voting power for [kind].
-  List<Widget> _body(BuildContext context) {
-    final delegation = this.delegation;
-    if (delegation != null) return _split(context, delegation);
-    switch (kind) {
-      case ProxyEntryKind.available:
-        return [
-          AppButton(
-            key: const ValueKey('proxy_let_delegate_vote'),
-            onPressed: onLetDelegateVote,
-            variant: AppButtonVariant.secondary,
-            expand: true,
-            growWithContent: true,
-            constrainContent: true,
-            child: Text(context.l10n.proxyLetDelegateVoteLabel),
-          ),
-        ];
-      // A committed allocation always names a delegate, so it shows its
-      // split above.
-      case ProxyEntryKind.locked || ProxyEntryKind.hidden:
-        return const [];
-      case ProxyEntryKind.timingUnavailable || ProxyEntryKind.cannotVerify:
-        return [
-          ProxyNotice(
-            key: ValueKey('proxy_line_${kind.name}'),
-            message: kind == ProxyEntryKind.cannotVerify
-                ? context.l10n.proxyCannotVerify
-                : context.l10n.proxyTimingUnavailable,
-            tone: ProxyNoticeTone.warning,
-            actionLabel: context.l10n.commonTryAgain,
-            onAction: onRetry,
-          ),
-        ];
-      case ProxyEntryKind.paused ||
-          ProxyEntryKind.alreadyVoted ||
-          ProxyEntryKind.usedElsewhere ||
-          ProxyEntryKind.voteEnded:
-        return [
-          Text(
-            switch (kind) {
-              ProxyEntryKind.paused => context.l10n.proxyPaused,
-              ProxyEntryKind.alreadyVoted => context.l10n.proxyAlreadyVoted,
-              ProxyEntryKind.usedElsewhere => context.l10n.proxyUsedElsewhere,
-              _ => context.l10n.proxyTooLate,
-            },
-            key: ValueKey('proxy_line_${kind.name}'),
-            style: AppTypography.bodySmall.copyWith(
-              color: context.colors.text.secondary,
-            ),
-          ),
-        ];
-    }
-  }
-
-  /// The split line, and for a draft its issue and the ways to change it.
-  List<Widget> _split(BuildContext context, ProxyBallotDelegation delegation) {
-    final issue = delegation.issue;
-    return [
-      ProxyBodyText(
-        proxyBallotSplitText(context.l10n, delegation),
-        key: const ValueKey('proxy_line_split'),
+    if (onTap == null) return card;
+    return Semantics(
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: tapKey,
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: card,
+        ),
       ),
-      if (issue != null) ...[
-        const SizedBox(height: AppSpacing.xs),
-        ProxyNotice(
-          key: const ValueKey('proxy_line_issue'),
-          message: proxyDraftIssueCopy(context.l10n, issue),
-          tone: ProxyNoticeTone.warning,
-        ),
-      ],
-      if (!delegation.committed) ...[
-        const SizedBox(height: AppSpacing.xs),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xs,
-          children: [
-            AppButton(
-              key: const ValueKey('proxy_line_change'),
-              onPressed: onLetDelegateVote,
-              variant: AppButtonVariant.secondary,
-              size: AppButtonSize.small,
-              child: Text(context.l10n.proxyChangeDelegationLabel),
-            ),
-            AppButton(
-              key: const ValueKey('proxy_line_remove'),
-              onPressed: onRemove,
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.small,
-              child: Text(context.l10n.commonRemove),
-            ),
-          ],
-        ),
-      ],
-    ];
+    );
   }
 }
 
