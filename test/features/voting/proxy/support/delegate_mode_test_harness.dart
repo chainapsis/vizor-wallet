@@ -76,40 +76,38 @@ class DelegateTestHarness {
   String get location => topRouteLocation(router);
 }
 
-/// The delegate-mode views hosted without the desktop shell. [desktop]
-/// picks the toolbar layout or the mobile body.
-List<RouteBase> delegateTestRoutes({required bool desktop}) {
+/// The delegate-mode views hosted without the desktop shell, with their
+/// desktop toolbars.
+List<RouteBase> _delegateTestRoutes() {
   /// Hosts [child] in a [Scaffold] for Material ancestors.
   Widget page(Widget child) => Scaffold(body: child);
   return [
     GoRoute(path: '/voting', builder: (_, _) => page(const Text('voting'))),
     GoRoute(
       path: kDelegateModePath,
-      builder: (_, _) =>
-          page(DelegateModeHomeView(showDesktopToolbar: desktop)),
+      builder: (_, _) => page(DelegateModeHomeView(showDesktopToolbar: true)),
     ),
     GoRoute(
       path: kDelegateKeyImportPath,
-      builder: (_, _) =>
-          page(DelegateKeyImportView(showDesktopToolbar: desktop)),
+      builder: (_, _) => page(DelegateKeyImportView(showDesktopToolbar: true)),
     ),
     GoRoute(
       path: kDelegateRegistrationPath,
       builder: (_, _) =>
-          page(DelegateRegistrationView(showDesktopToolbar: desktop)),
+          page(DelegateRegistrationView(showDesktopToolbar: true)),
     ),
     GoRoute(
       path: kDelegateBallotPath,
       builder: (_, state) => page(
         DelegateRoundBallotView(
           roundId: state.pathParameters['roundId'] ?? '',
-          showDesktopToolbar: desktop,
+          showDesktopToolbar: true,
         ),
       ),
     ),
     GoRoute(
       path: kDelegateRetirePath,
-      builder: (_, _) => page(DelegateRetireView(showDesktopToolbar: desktop)),
+      builder: (_, _) => page(DelegateRetireView(showDesktopToolbar: true)),
     ),
   ];
 }
@@ -122,7 +120,6 @@ Future<DelegateTestHarness> pumpDelegateRoute(
   String location, {
   DelegateModeMockScenario? scenario,
   DateTime? now,
-  bool desktop = true,
   Size size = const Size(1000, 2400),
   List<RouteBase>? routes,
   double textScale = 1,
@@ -141,7 +138,7 @@ Future<DelegateTestHarness> pumpDelegateRoute(
   final fakeReauth = reauth ?? FakeDelegateReauth();
   final router = GoRouter(
     initialLocation: location,
-    routes: routes ?? delegateTestRoutes(desktop: desktop),
+    routes: routes ?? _delegateTestRoutes(),
   );
   final container = await pumpProxyApp(
     tester,

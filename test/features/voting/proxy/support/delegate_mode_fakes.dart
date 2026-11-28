@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/voting/proxy/delegate_key_store.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/delegate_verifier_client.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_repository.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/rust/api/proxy_delegate.dart' as rust;
 import 'package:zcash_wallet/src/rust/api/proxy_delegation.dart' as rust_proofs;
@@ -29,12 +30,6 @@ final kDelegateVoteServer = Uri.parse('https://vote.example');
 
 /// The attester the round config names.
 const kDelegateVerifier = 'https://verifier.example';
-
-/// The fake `zvdk1` key number [seed]: the mock's.
-String fakeDelegateDk(int seed) => mockDelegateKey(seed).dk;
-
-/// The fake `zvdsk1…` export of key number [seed]: the mock's.
-String fakeDelegateSecret(int seed) => mockDelegateSecret(seed);
 
 /// The key a fake export holds, or null for text that is not one.
 rust_wire.DelegateKeyInfo? fakeSecretKey(String secret) {
@@ -154,9 +149,6 @@ class FakeDelegateChain implements VotingHttpClient {
   /// throw. When empty, posts are applied.
   final postAnswers = <Object>[];
 
-  /// Ballot posts wait for this before they are answered, when set.
-  Completer<void>? holdBallots;
-
   /// Makes the lookup by key fail in transport.
   bool lookupsDown = false;
 
@@ -246,7 +238,6 @@ class FakeDelegateChain implements VotingHttpClient {
     int? maxBodyBytes,
   }) async {
     posts.add(body);
-    if (body.containsKey('ballot')) await holdBallots?.future;
     if (postAnswers.isNotEmpty) {
       final answer = postAnswers.removeAt(0);
       if (answer is VotingHttpResponse) return answer;
@@ -328,6 +319,10 @@ class FakeVerifierHosts implements VotingHttpClient {
   /// an optional `retry_after`.
   final refusals = <({int status, String code, int? retryAfter})>[];
 
+  /// Answers by host, before everything else: a response, or an error to
+  /// throw.
+  final byHost = <String, Object>{};
+
   /// Raw answers for the next requests, in order, before refusals and
   /// attestations: a status and its body.
   final rawAnswers = <({int status, String body})>[];
@@ -363,6 +358,10 @@ class FakeVerifierHosts implements VotingHttpClient {
   }) async {
     requests.add(body);
     hosts.add(uri.host);
+    if (byHost[uri.host] case final answer?) {
+      if (answer is VotingHttpResponse) return answer;
+      throw answer;
+    }
     if (down) throw downError;
     if (rawAnswers.isNotEmpty) {
       final answer = rawAnswers.removeAt(0);
@@ -415,25 +414,20 @@ class FakeProxyDelegateRust {
   /// The keys whose export a signing call was given, in order.
   final signedWith = <String>[];
 
-  /// Names of the calls made, in order.
-  final calls = <String>[];
-
   /// Thrown by [recordKey] when set, as a failed write.
   Object? recordFailure;
 
   int _created = 0;
 
   Future<rust.ApiNewDelegateKey> createKey() async {
-    calls.add('createKey');
     final seed = 1000 + ++_created;
     return rust.ApiNewDelegateKey(
-      key: fakeKeyInfo(fakeDelegateDk(seed)),
-      secret: fakeDelegateSecret(seed),
+      key: mockDelegateKey(seed),
+      secret: mockDelegateSecret(seed),
     );
   }
 
   Future<rust_wire.DelegateKeyInfo?> importKey(String secret) async {
-    calls.add('importKey');
     return fakeSecretKey(secret);
   }
 
@@ -442,7 +436,6 @@ class FakeProxyDelegateRust {
     required String dk,
     required BigInt nowSeconds,
   }) async {
-    calls.add('recordKey');
     if (recordFailure case final failure?) throw failure;
     _hold(dk);
   }
@@ -469,7 +462,6 @@ class FakeProxyDelegateRust {
   };
 
   Future<void> forgetKey(rust.ApiDelegateModeScope scope) async {
-    calls.add('forgetKey');
     heldDk = null;
     heldIndex = null;
     pendingRegister = null;
@@ -496,7 +488,6 @@ class FakeProxyDelegateRust {
     rust.ApiDelegateModeScope scope, {
     required rust_proofs.ApiProvenRegistryEntry? entry,
   }) async {
-    calls.add('status');
     final dk = heldDk;
     if (dk == null) return null;
     // An entry proven absent counts as none.
@@ -601,16 +592,10 @@ class FakeProxyDelegateRust {
     }
   }
 
-  /// The section 12.4 error codes with the status each pairs with.
+  /// The section 12.4 error codes the tests use, with the status each
+  /// pairs with.
   static const _verifierCodes = {
-    'bad_request': (rust_wire.DelegateVerifierError.badRequest, 400),
-    'post_not_found': (rust_wire.DelegateVerifierError.postNotFound, 404),
     'marker_mismatch': (rust_wire.DelegateVerifierError.markerMismatch, 409),
-    'rate_limited': (rust_wire.DelegateVerifierError.rateLimited, 429),
-    'provider_unavailable': (
-      rust_wire.DelegateVerifierError.providerUnavailable,
-      503,
-    ),
   };
 
   Future<rust.ApiSignedDelegateOp> prepareRegisterOp(
@@ -621,7 +606,6 @@ class FakeProxyDelegateRust {
     required String secret,
     required BigInt nowSeconds,
   }) async {
-    calls.add('prepareRegisterOp');
     final dk = attestation.key.dk;
     // As check_attestation: the attested key is the signer's, on the
     // provider the marker was posted on.
@@ -632,12 +616,6 @@ class FakeProxyDelegateRust {
       );
     }
     _hold(dk);
-    if (heldIndex != null) {
-      throw const rust.ApiDelegateModeError(
-        kind: rust.ApiDelegateModeErrorKind.other,
-        message: 'registered',
-      );
-    }
     final op = {
       'register': {
         'dk': dk,
@@ -790,7 +768,6 @@ class FakeProxyDelegateRust {
     required rust.ApiChainDelegateBallot? chainBallot,
     required List<int> options,
   }) async {
-    calls.add('preflight');
     final existing =
         chainBallot?.options.toList() ??
         stored['$roundId/$delegateIndex']?.options;
@@ -810,28 +787,10 @@ class FakeProxyDelegateRust {
     required String secret,
     required BigInt nowSeconds,
   }) async {
-    calls.add('signBallot');
+    // The repository checks the stored ballot and the entry's block
+    // before it signs, so this only builds the op.
     final proven = _entry(entry);
     final signer = _signer(secret);
-    rust.ApiDelegateModeError refuse(String why) => rust.ApiDelegateModeError(
-      kind: rust.ApiDelegateModeErrorKind.other,
-      message: why,
-    );
-    final key = '${round.roundId}/${proven.index}';
-    final existing = stored[key];
-    if (existing != null) {
-      if (!listEquals(existing.options, options)) {
-        throw refuse('a different ballot is stored');
-      }
-      return _op(rust.ApiDelegateOpKind.ballot, existing.op);
-    }
-    if (nowSeconds >= round.voteEndTime) throw refuse('voting ended');
-    if (options.length != proposals.length) throw refuse('incomplete');
-    for (final (i, proposal) in proposals.indexed) {
-      if (options[i] >= proposal.numOptions) throw refuse('no such option');
-    }
-    if (_block(proven) != null) throw refuse('blocked');
-    if (proven.dk != signer) throw refuse("not the entry's key");
     final op = {
       'ballot': {
         'round': round.roundId,
@@ -840,7 +799,10 @@ class FakeProxyDelegateRust {
         'dk': signer,
       },
     };
-    stored[key] = (options: [...options], op: op);
+    stored['${round.roundId}/${proven.index}'] = (
+      options: [...options],
+      op: op,
+    );
     return _op(rust.ApiDelegateOpKind.ballot, op);
   }
 
@@ -882,7 +844,6 @@ class FakeProxyDelegateRust {
     required rust_proofs.ApiProvenRegistryEntry entry,
     required String secret,
   }) async {
-    calls.add('retireOp');
     final proven = _entry(entry);
     final signer = _signer(secret);
     if (proven.dk != signer) {
@@ -951,6 +912,35 @@ class FakeProxyDelegateRust {
       body: Uint8List.fromList(utf8.encode(jsonEncode(op))),
     );
   }
+}
+
+/// The wallet lock for delegate-mode tests: checks passwords against
+/// [password], recording each attempt, and starts [locked] or not.
+class FakeDelegateSecurity extends AppSecurityNotifier {
+  /// Creates the fake.
+  FakeDelegateSecurity({this.password = '', this.locked = false});
+
+  /// The password, or passcode, that confirms.
+  final String password;
+
+  /// Whether the wallet starts locked.
+  final bool locked;
+
+  /// Every password tried, in order.
+  final attempts = <String>[];
+
+  @override
+  AppSecurityState build() =>
+      AppSecurityState(isPasswordConfigured: true, isUnlocked: !locked);
+
+  @override
+  Future<bool> confirmPassword(String password) async {
+    attempts.add(password);
+    return password == this.password;
+  }
+
+  /// Unlocks the wallet without a password.
+  void setUnlocked() => state = state.copyWith(isUnlocked: true);
 }
 
 /// A delegate key store in memory.
@@ -1034,9 +1024,6 @@ class FakeDelegateModeHost implements DelegateModeHost {
   /// proves the entry absent.
   int laggingProofs = 0;
 
-  /// Makes every share count read fail.
-  bool storeDown = false;
-
   /// Vizor's list pictures by entry.
   final pictures = <int, ProxyDelegatePicture>{};
 
@@ -1110,7 +1097,6 @@ class FakeDelegateModeHost implements DelegateModeHost {
 
   @override
   Future<Uint8List?> storeValue(String keyHex) async {
-    if (storeDown) throw StateError('No proof host answered');
     final [round, index] = keyHex.substring(2).split('/');
     final count = chain.shareCounts[round]?[int.parse(index)];
     if (count == null) return null;
@@ -1188,8 +1174,8 @@ class RealDelegateMode {
   /// Key number [seed] on this device, stored and recorded as zcash_voting
   /// would, without going through the repository. Returns its key.
   String holdsKey(int seed) {
-    final dk = fakeDelegateDk(seed);
-    keys.secrets[dk] = fakeDelegateSecret(seed);
+    final dk = mockDelegateKey(seed).dk;
+    keys.secrets[dk] = mockDelegateSecret(seed);
     bridge.heldDk = dk;
     return dk;
   }

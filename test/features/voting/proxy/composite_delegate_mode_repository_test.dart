@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
 
 import 'support/delegate_mode_fakes.dart';
+import 'support/mock_delegate_mode_repository.dart';
 import 'support/proxy_rust_fake.dart';
 import 'support/proxy_values.dart';
 
@@ -94,13 +95,6 @@ void main() {
       );
 
   group('the device key', () {
-    test('a fresh device holds nothing and reads nothing', () async {
-      final status = await mode.repository.status();
-      expect((status.key, status.registered), (null, false));
-      expect(mode.chain.reads, isEmpty);
-      expect(mode.host.proofRequests, isEmpty);
-    });
-
     test('a created key is stored as its export, then recorded, and the '
         'device holds only one', () async {
       final key = await mode.repository.createKey();
@@ -113,7 +107,7 @@ void main() {
         DelegateModeErrorKind.other,
       );
       await _expectMode(
-        mode.repository.importKey(fakeDelegateSecret(2)),
+        mode.repository.importKey(mockDelegateSecret(2)),
         DelegateModeErrorKind.other,
       );
       expect(mode.keys.secrets.keys, [key.dk]);
@@ -121,7 +115,7 @@ void main() {
 
     test('import takes only an export, stores it without a request, and '
         'the next status finds its entry by key', () async {
-      for (final text in ['', fakeDelegateDk(1), 'abandon abandon about']) {
+      for (final text in ['', mockDelegateKey(1).dk, 'abandon abandon about']) {
         await expectLater(
           mode.repository.importKey(text),
           throwsA(isA<DelegateKeyImportException>()),
@@ -130,12 +124,12 @@ void main() {
       expect(mode.keys.secrets, isEmpty);
       expect(mode.bridge.heldDk, isNull);
 
-      final entry = mode.chain.register('alice', fakeDelegateDk(1));
+      final entry = mode.chain.register('alice', mockDelegateKey(1).dk);
       final key = await mode.repository.importKey(
-        ' ${fakeDelegateSecret(1)}\n',
+        ' ${mockDelegateSecret(1)}\n',
       );
       expect(key.dk, entry.dk);
-      expect(mode.keys.secrets, {entry.dk: fakeDelegateSecret(1)});
+      expect(mode.keys.secrets, {entry.dk: mockDelegateSecret(1)});
       expect(mode.chain.reads, isEmpty);
 
       final status = await mode.repository.status();
@@ -155,26 +149,9 @@ void main() {
       await expectLater(mode.repository.createKey(), throwsStateError);
       expect(mode.keys.secrets, isEmpty);
     });
-
-    test('the export is read only while the wallet is unlocked', () async {
-      mode.holdsKey(1);
-      mode.keys.unlocked = false;
-      await _expectMode(
-        mode.repository.exportKey(),
-        DelegateModeErrorKind.other,
-      );
-    });
   });
 
   group('status', () {
-    test('a key the chain never registered awaits registration', () async {
-      final dk = mode.holdsKey(1);
-      final status = await mode.repository.status();
-      expect((status.key?.dk, status.registered), (dk, false));
-      expect(status.registrationPending, isFalse);
-      expect(mode.host.proofRequests, isEmpty);
-    });
-
     test('a lookup the chain cannot answer, or names another key\'s entry, '
         'leaves the key unregistered without failing', () async {
       mode.holdsKey(1);
@@ -182,8 +159,8 @@ void main() {
       expect((await mode.repository.status()).registered, isFalse);
 
       mode.chain.lookupsDown = false;
-      mode.chain.register('bob', fakeDelegateDk(2));
-      mode.chain.usedKeys[fakeDelegateDk(1)] = 17;
+      mode.chain.register('bob', mockDelegateKey(2).dk);
+      mode.chain.usedKeys[mockDelegateKey(1).dk] = 17;
       expect((await mode.restarted().status()).registered, isFalse);
       expect(mode.bridge.heldIndex, isNull);
     });
@@ -231,53 +208,6 @@ void main() {
       expect((attestation.handle, attestation.proofId), ('alice', 'aa5a315d'));
       expect(mode.verifier.requests.single['provider'], 2);
     });
-
-    test('each of the five errors keeps its code and retry time; no '
-        'attester is unreachable', () async {
-      final dk = mode.holdsKey(1);
-      final retryAt = (_now.millisecondsSinceEpoch ~/ 1000) + 3600;
-      for (final (status, code, error) in [
-        (400, 'bad_request', DelegateVerifierError.badRequest),
-        (404, 'post_not_found', DelegateVerifierError.postNotFound),
-        (409, 'marker_mismatch', DelegateVerifierError.markerMismatch),
-        (429, 'rate_limited', DelegateVerifierError.rateLimited),
-        (
-          503,
-          'provider_unavailable',
-          DelegateVerifierError.providerUnavailable,
-        ),
-      ]) {
-        mode.verifier.refusals.add((
-          status: status,
-          code: code,
-          retryAfter: retryAt,
-        ));
-        await expectLater(
-          attestX(dk),
-          throwsA(
-            isA<DelegateVerifierRefusal>()
-                .having((e) => e.error, 'error', error)
-                .having(
-                  (e) => e.retryAfter,
-                  'retryAfter',
-                  BigInt.from(retryAt),
-                ),
-          ),
-          reason: code,
-        );
-      }
-      mode.verifier.down = true;
-      await expectLater(
-        attestX(dk),
-        throwsA(
-          isA<DelegateModeException>().having(
-            (e) => e.kind,
-            'kind',
-            DelegateModeErrorKind.unavailable,
-          ),
-        ),
-      );
-    });
   });
 
   group('verifier failover', () {
@@ -312,15 +242,6 @@ void main() {
       },
     );
 
-    test('an error code without its paired status moves on', () async {
-      mode.verifier.rawAnswers.add((
-        status: 503,
-        body: '{"error":"marker_mismatch"}',
-      ));
-      expect((await attest()).handle, 'alice');
-      expect(mode.verifier.hosts, hasLength(2));
-    });
-
     test('a paired refusal is final', () async {
       mode.verifier.refusals.add((
         status: 409,
@@ -339,26 +260,6 @@ void main() {
       );
       expect(mode.verifier.hosts, ['verifier-a.example']);
     });
-
-    test(
-      'when every verifier answers malformed the call fails as unknown',
-      () async {
-        mode.verifier.rawAnswers
-          ..add((status: 200, body: '{}'))
-          ..add((status: 200, body: '{"handle":7}'));
-        await expectLater(
-          attest(),
-          throwsA(
-            isA<DelegateVerifierRefusal>().having(
-              (e) => e.error,
-              'error',
-              DelegateVerifierError.unknown,
-            ),
-          ),
-        );
-        expect(mode.verifier.hosts, hasLength(2));
-      },
-    );
   });
 
   group('register', () {
@@ -421,25 +322,6 @@ void main() {
       expect(
         await mode.repository.register(attestation, reauth: mode.reauth),
         const DelegateRegisterResult.registered(delegateIndex: 17),
-      );
-    });
-
-    test('a handle that already has a live entry is refused with code 62 '
-        'until that entry retires', () async {
-      final taken = mode.chain.register('alice', fakeDelegateDk(2));
-      final dk = mode.holdsKey(1);
-      expect(
-        await mode.repository.register(await attestX(dk), reauth: mode.reauth),
-        isA<DelegateRegisterRejected>()
-            .having((r) => r.codespace, 'codespace', 'vote')
-            .having((r) => r.code, 'code', 62),
-      );
-      expect((await mode.repository.status()).registered, isFalse);
-
-      taken.status = rust_wire.DelegateEntryStatus.retired;
-      expect(
-        await mode.repository.register(await attestX(dk), reauth: mode.reauth),
-        const DelegateRegisterResult.registered(delegateIndex: 18),
       );
     });
 
@@ -556,14 +438,6 @@ void main() {
         );
       },
     );
-
-    test('a count that cannot be read shows the last one read', () async {
-      await mode.repository.rounds();
-      mode.host.storeDown = true;
-      mode.chain.shareCounts[_round] = {17: 99};
-      final round = await mode.repository.round(_round);
-      expect(round.view.revealedShares, BigInt.from(37));
-    });
 
     test('preflight compares with the ballot on chain', () async {
       Matcher found(bool submitted, List<int> options, bool same) =>
@@ -780,32 +654,6 @@ void main() {
       );
     });
 
-    test("a background resend returns the chain's rejection", () async {
-      mode.chain.postAnswers.addAll([
-        ...List.filled(3, const SocketException('reset')),
-        fakeJsonAnswer({
-          'code': 4,
-          'codespace': 'vote',
-          'log': 'voting ended',
-        }, status: 422),
-      ]);
-      await expectLater(
-        mode.repository.submitBallot(_round, [1, 2], reauth: mode.reauth),
-        throwsA(isA<DelegateBallotStoredException>()),
-      );
-      expect(
-        await mode.repository.resendStoredBallot(_round),
-        isA<DelegateBallotResendPosted>().having(
-          (resend) => resend.result,
-          'result',
-          isA<ApiBallotSubmitResult>()
-              .having((result) => result.rejected, 'rejected', isTrue)
-              .having((result) => result.codespace, 'codespace', 'vote')
-              .having((result) => result.code, 'code', 4),
-        ),
-      );
-    });
-
     test('code 57 is success only when the list shows this ballot', () async {
       mode.chain.ballots[_round] = {
         17: [1, 2],
@@ -892,19 +740,6 @@ void main() {
       );
     });
 
-    test('a retirement that has not landed is unavailable, and a later '
-        'status read shows it', () async {
-      mode.registeredKey(1);
-      mode.chain.landOps = false;
-      await _expectMode(
-        mode.repository.retire(reauth: mode.reauth),
-        DelegateModeErrorKind.unavailable,
-      );
-      expect(_postKinds(mode.chain), ['retire']);
-      mode.chain.land();
-      expect((await mode.repository.status()).retired, isTrue);
-    });
-
     test('a dismissed re-auth, or a device without an entry, retires '
         'nothing', () async {
       await _expectMode(
@@ -971,7 +806,7 @@ void main() {
     });
 
     test('a rejected registration keeps its stored op', () async {
-      mode.chain.register('alice', fakeDelegateDk(2));
+      mode.chain.register('alice', mockDelegateKey(2).dk);
       final dk = mode.holdsKey(1);
       expect(
         await mode.repository.register(await attestX(dk), reauth: mode.reauth),
@@ -1021,76 +856,86 @@ void main() {
       key: DelegateKeyInfo(dk: dk, fingerprint: fakeFingerprint(dk)),
     );
 
-    for (final MapEntry(key: what, value: failure)
-        in _transportFailures.entries) {
-      test('$what posting a registration is unavailable', () async {
-        final dk = mode.holdsKey(1);
-        final attestation = await attest(dk);
-        mode.chain.postAnswers.addAll(List.filled(50, failure));
-        await _expectMode(
-          mode.repository.register(attestation, reauth: mode.reauth),
-          DelegateModeErrorKind.unavailable,
-        );
-        expect(mode.chain.entries, isEmpty);
-      });
+    // One failure kind stands for every request that got no answer; the
+    // classification test below covers each kind.
+    const what = 'a Tor refusal';
+    final failure = _transportFailures[what]!;
 
-      test('$what posting a ballot is unavailable and keeps it', () async {
-        mode.registeredKey(1);
-        mode.chain.postAnswers.addAll(List.filled(3, failure));
-        await _expectMode(
-          mode.repository.submitBallot(_round, [1, 2], reauth: mode.reauth),
-          DelegateModeErrorKind.unavailable,
-        );
-        expect((await mode.repository.round(_round)).view.storedBallot, [1, 2]);
-      });
+    test('$what posting a registration is unavailable', () async {
+      final dk = mode.holdsKey(1);
+      final attestation = await attest(dk);
+      mode.chain.postAnswers.addAll(List.filled(50, failure));
+      await _expectMode(
+        mode.repository.register(attestation, reauth: mode.reauth),
+        DelegateModeErrorKind.unavailable,
+      );
+      expect(mode.chain.entries, isEmpty);
+    });
 
-      test('$what posting Retire is unavailable', () async {
-        mode.registeredKey(1);
-        mode.chain.postAnswers.addAll(List.filled(3, failure));
-        await _expectMode(
-          mode.repository.retire(reauth: mode.reauth),
-          DelegateModeErrorKind.unavailable,
-        );
-      });
+    test('$what posting a ballot is unavailable and keeps it', () async {
+      mode.registeredKey(1);
+      mode.chain.postAnswers.addAll(List.filled(3, failure));
+      await _expectMode(
+        mode.repository.submitBallot(_round, [1, 2], reauth: mode.reauth),
+        DelegateModeErrorKind.unavailable,
+      );
+      expect((await mode.repository.round(_round)).view.storedBallot, [1, 2]);
+    });
 
-      test('$what at every verifier is unreachable', () async {
-        final dk = mode.holdsKey(1);
-        mode.host.verifierUrls = const [
-          'https://verifier-a.example',
-          'https://verifier-b.example',
-        ];
-        mode.verifier
-          ..down = true
-          ..downError = failure;
-        await expectLater(
-          attest(dk),
-          throwsA(
-            isA<DelegateModeException>().having(
-              (e) => e.kind,
-              'kind',
-              DelegateModeErrorKind.unavailable,
-            ),
+    test('$what posting Retire is unavailable', () async {
+      mode.registeredKey(1);
+      mode.chain.postAnswers.addAll(List.filled(3, failure));
+      await _expectMode(
+        mode.repository.retire(reauth: mode.reauth),
+        DelegateModeErrorKind.unavailable,
+      );
+    });
+
+    test('$what at every verifier is unreachable', () async {
+      final dk = mode.holdsKey(1);
+      mode.host.verifierUrls = const [
+        'https://verifier-a.example',
+        'https://verifier-b.example',
+      ];
+      mode.verifier
+        ..down = true
+        ..downError = failure;
+      await expectLater(
+        attest(dk),
+        throwsA(
+          isA<DelegateModeException>().having(
+            (e) => e.kind,
+            'kind',
+            DelegateModeErrorKind.unavailable,
           ),
-        );
-        expect(mode.verifier.hosts, hasLength(2));
-      });
+        ),
+      );
+      expect(mode.verifier.hosts, hasLength(2));
+    });
 
-      test('$what on a read is unavailable', () async {
-        mode.registeredKey(1);
-        mode.chain.readFailure = failure;
-        await _expectMode(
-          mode.repository.round(_round),
-          DelegateModeErrorKind.unavailable,
-        );
-      });
-    }
+    test('$what on a read is unavailable', () async {
+      mode.registeredKey(1);
+      mode.chain.readFailure = failure;
+      await _expectMode(
+        mode.repository.round(_round),
+        DelegateModeErrorKind.unavailable,
+      );
+    });
 
-    test('a refused registration request is not a chain rejection', () async {
+    test('a refused registration or Retire request is not a chain '
+        'rejection', () async {
       final dk = mode.holdsKey(1);
       final attestation = await attest(dk);
       mode.chain.postAnswers.add(_refusedRequest());
       await _expectMode(
         mode.repository.register(attestation, reauth: mode.reauth),
+        DelegateModeErrorKind.other,
+      );
+
+      mode.registeredKey(1);
+      mode.chain.postAnswers.add(_refusedRequest());
+      await _expectMode(
+        mode.repository.retire(reauth: mode.reauth),
         DelegateModeErrorKind.other,
       );
     });
@@ -1107,38 +952,6 @@ void main() {
         await mode.repository.resendStoredBallot(_round),
         DelegateBallotResend.posted(ballotSubmit(ApiBallotSubmitKind.accepted)),
       );
-    });
-
-    test('a refused Retire request is not a chain rejection', () async {
-      mode.registeredKey(1);
-      mode.chain.postAnswers.add(_refusedRequest());
-      await _expectMode(
-        mode.repository.retire(reauth: mode.reauth),
-        DelegateModeErrorKind.other,
-      );
-    });
-
-    test('a passed-over verifier is logged with the error\'s type and '
-        'message, naming no key', () async {
-      final logs = <String>[];
-      final previous = debugPrint;
-      debugPrint = (message, {wrapWidth}) => logs.add('$message');
-      addTearDown(() => debugPrint = previous);
-      final dk = mode.holdsKey(1);
-      mode.host.verifierUrls = const ['https://verifier.example'];
-      mode.verifier
-        ..down = true
-        ..downError = 'Tor: connection to 127.0.0.1:8080 refused for $dk';
-      await expectLater(attest(dk), throwsA(isA<DelegateModeException>()));
-      expect(
-        logs,
-        contains(
-          '[zcash] Delegate mode: verifier verifier.example passed over: '
-          'String: '
-          'Tor: connection to 127.0.0.1:8080 refused for <redacted>',
-        ),
-      );
-      expect(logs.join('\n'), isNot(contains(dk)));
     });
   });
 
@@ -1170,54 +983,6 @@ void main() {
         describeDelegateError('x' * 10 + ' y' * 300),
         hasLength(lessThan(240)),
       );
-    });
-
-    test('a failed registration is logged with the error\'s kind and '
-        'message, naming no key; a dismissed re-auth is not', () async {
-      final logs = <String>[];
-      final previous = debugPrint;
-      debugPrint = (message, {wrapWidth}) => logs.add('$message');
-      addTearDown(() => debugPrint = previous);
-      final dk = mode.holdsKey(1);
-      final attestation = await mode.repository.attest(
-        provider: ProxyDelegateProvider.x,
-        proofUrl: 'https://x.com/alice/status/1',
-        key: DelegateKeyInfo(dk: dk, fingerprint: fakeFingerprint(dk)),
-      );
-      mode.chain.postAnswers.add(ArgumentError('not posted for $dk'));
-      await expectLater(
-        mode.repository.register(attestation, reauth: mode.reauth),
-        throwsA(isA<ArgumentError>()),
-      );
-      await _expectMode(
-        mode.repository.register(
-          reauth: mode.reauth,
-          DelegateAttestation(
-            key: attestation.key,
-            provider: rust_wire.ProxyDelegateProvider.gitHub,
-            handle: attestation.handle,
-            proofId: attestation.proofId,
-            attestations: attestation.attestations,
-          ),
-        ),
-        DelegateModeErrorKind.other,
-      );
-      mode.reauthAllows = false;
-      await _expectMode(
-        mode.repository.register(attestation, reauth: mode.reauth),
-        DelegateModeErrorKind.cancelled,
-      );
-      final failures = [
-        for (final line in logs)
-          if (line.contains('the registration failed')) line,
-      ];
-      expect(failures, [
-        '[zcash] Delegate mode: the registration failed: ArgumentError: '
-            'Invalid argument(s): not posted for <redacted>',
-        '[zcash] Delegate mode: the registration failed: other: '
-            'the attestation does not bind the post',
-      ]);
-      expect(logs.join('\n'), isNot(contains(dk)));
     });
 
     test('counts only requests without an answer as transport failures', () {

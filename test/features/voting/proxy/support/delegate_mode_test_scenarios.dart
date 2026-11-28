@@ -17,20 +17,19 @@ final kDelegateTestKey = mockDelegateKey(100);
 final kDelegateTestSecret = mockDelegateSecret(100);
 
 /// A round ending three days after [kProxyTestNow] unless [voteEnd] says
-/// otherwise, with the development round's three questions.
+/// otherwise, with the development round's three questions and 37 revealed
+/// pool shares.
 DelegateMockRound delegateTestRound({
   DateTime? voteEnd,
-  int revealedShares = 37,
   ApiDelegateBallotView? ballot,
-  String roundId = kDelegateTestRoundId,
 }) {
   final delegator = ProxyMockScenario.development(now: kProxyTestNow);
   return DelegateMockRound(
-    roundId: roundId,
+    roundId: kDelegateTestRoundId,
     title: 'Test proxy round',
     proposals: delegator.round.proposals,
     voteEndTime: voteEnd ?? kProxyTestNow.add(const Duration(days: 3)),
-    revealedShares: BigInt.from(revealedShares),
+    revealedShares: BigInt.from(37),
     ballot: ballot,
   );
 }

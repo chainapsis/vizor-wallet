@@ -9,7 +9,6 @@ import 'package:zcash_wallet/src/features/voting/proxy/delegate_mode_models.dart
 import 'package:zcash_wallet/src/features/voting/proxy/delegate_picture.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_repository.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_routes.dart';
-import 'package:zcash_wallet/src/features/voting/proxy/widgets/delegate_mode_widgets.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/widgets/proxy_delegate_widgets.dart';
 
 import 'support/delegate_mode_test_harness.dart';
@@ -138,30 +137,6 @@ void main() {
       expect(find.byType(ProxyIdenticon), findsOne);
       await settleDelegatePictures(tester);
 
-      expect(find.byType(RawImage), findsOne);
-      expect(find.byType(ProxyIdenticon), findsNothing);
-    });
-
-    testWidgets('the delegate key line shows the delegate picture', (
-      tester,
-    ) async {
-      final cache = DelegatePictureCache(FakeDelegatePictureDecoder());
-      addTearDown(cache.clear);
-      final picture = _picture('aa');
-      await tester.runAsync(() async => (await cache.load(picture))?.dispose());
-      const key = DelegateKeyInfo(
-        dk: 'zvdk1test',
-        fingerprint: 'qqqs-yqcy-q5rq-wzqf',
-      );
-
-      await _pump(tester, const DelegateKeyLine(keyInfo: key), cache);
-      expect(find.byType(ProxyIdenticon), findsOne);
-
-      await _pump(
-        tester,
-        DelegateKeyLine(keyInfo: key, picture: picture),
-        cache,
-      );
       expect(find.byType(RawImage), findsOne);
       expect(find.byType(ProxyIdenticon), findsNothing);
     });

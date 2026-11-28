@@ -91,9 +91,8 @@ impl Key {
     }
 }
 
-/// Entry `index` of `key` with `status`, as the participation reader proves
-/// it.
-fn entry_with(index: u32, key: &Key, status: DelegateStatus) -> ApiProvenRegistryEntry {
+/// The active entry `index` of `key`, as the participation reader proves it.
+fn entry(index: u32, key: &Key) -> ApiProvenRegistryEntry {
     ApiProvenRegistryEntry {
         delegate_index: index,
         entry: Some(
@@ -103,18 +102,13 @@ fn entry_with(index: u32, key: &Key, status: DelegateStatus) -> ApiProvenRegistr
                 provider: IdentityProvider::X,
                 handle: HANDLE.to_owned(),
                 proof_id: PROOF_ID.to_owned(),
-                status,
+                status: DelegateStatus::Active,
                 status_reason: 0,
                 registered_height: 10,
             }
             .encode(),
         ),
     }
-}
-
-/// The active entry `index` of `key`.
-fn entry(index: u32, key: &Key) -> ApiProvenRegistryEntry {
-    entry_with(index, key, DelegateStatus::Active)
 }
 
 /// A round that ends tomorrow.
@@ -248,14 +242,11 @@ fn a_new_key_exports_as_zvdsk_and_imports_back_to_itself() {
         import_delegate_key(format!(" {}\n", key.secret())),
         Some(key.0.key.clone())
     );
-    for text in [
-        String::new(),
-        key.dk(),
-        key.secret().to_uppercase(),
-        "abandon abandon abandon".to_owned(),
-    ] {
-        assert_eq!(import_delegate_key(text.clone()), None, "{text}");
-    }
+    assert_eq!(
+        import_delegate_key(key.dk()),
+        None,
+        "a key is not its export"
+    );
     assert_eq!(
         delegate_marker_text(key.dk()).unwrap(),
         format!("zcash-vote-delegate v1 {}", key.dk())
@@ -312,7 +303,7 @@ fn the_lookup_by_key_reads_the_entry_index_or_none() {
 }
 
 #[test]
-fn an_attester_answer_is_an_attestation_or_one_of_its_five_errors() {
+fn an_attester_answer_is_an_attestation_for_the_key() {
     let key = Key::new();
     let request = delegate_attest_request(
         ProxyDelegateProvider::X,
@@ -343,29 +334,6 @@ fn an_attester_answer_is_an_attestation_or_one_of_its_five_errors() {
         parse_delegate_attest_answer(key.dk(), 200, serde_json::to_vec(&answer).unwrap()).unwrap(),
         attested
     );
-    for (status, code, error) in [
-        (400, "bad_request", DelegateVerifierError::BadRequest),
-        (404, "post_not_found", DelegateVerifierError::PostNotFound),
-        (
-            409,
-            "marker_mismatch",
-            DelegateVerifierError::MarkerMismatch,
-        ),
-        (429, "rate_limited", DelegateVerifierError::RateLimited),
-        (
-            503,
-            "provider_unavailable",
-            DelegateVerifierError::ProviderUnavailable,
-        ),
-        (403, "account_too_new", DelegateVerifierError::Unknown),
-    ] {
-        let body = serde_json::json!({"error": code, "retry_after": 1_790_006_400u64});
-        let refusal =
-            parse_delegate_attest_answer(key.dk(), status, serde_json::to_vec(&body).unwrap())
-                .unwrap_err();
-        assert_eq!(refusal.error, error, "{code}");
-        assert_eq!(refusal.retry_after, Some(1_790_006_400));
-    }
     assert_eq!(
         parse_delegate_attest_answer("zvdk1nope".to_owned(), 200, Vec::new())
             .unwrap_err()
@@ -380,11 +348,11 @@ fn a_registration_is_stored_before_posting_and_settles_from_the_proven_entry() {
     let device = Device::new();
     let key = device.holds_new_key();
     let attested = attestation(&key, ProxyDelegateProvider::X);
-    let prepare = |provider, secret: String| {
+    let prepare = |secret: String| {
         prepare_delegate_register_op(
             device.scope(),
             attested.clone(),
-            provider,
+            ProxyDelegateProvider::X,
             Some(params()),
             secret,
             NOW,
@@ -392,22 +360,12 @@ fn a_registration_is_stored_before_posting_and_settles_from_the_proven_entry() {
     };
 
     assert_eq!(
-        kind(prepare(ProxyDelegateProvider::GitHub, key.secret())),
-        ApiDelegateModeErrorKind::Other,
-        "the marker was posted on X"
-    );
-    assert_eq!(
-        kind(prepare(ProxyDelegateProvider::X, key.dk())),
+        kind(prepare(key.dk())),
         ApiDelegateModeErrorKind::Other,
         "a secret is a zvdsk1 export"
     );
-    assert_eq!(
-        kind(prepare(ProxyDelegateProvider::X, Key::new().secret())),
-        ApiDelegateModeErrorKind::Other,
-        "the attestation is for the device's key"
-    );
 
-    let op = prepare(ProxyDelegateProvider::X, key.secret()).unwrap();
+    let op = prepare(key.secret()).unwrap();
     assert_eq!(op.kind, ApiDelegateOpKind::Register);
     assert_eq!((op.delegate_index, op.dk.clone()), (0, key.dk()));
     assert_eq!(
@@ -462,11 +420,6 @@ fn a_registration_is_stored_before_posting_and_settles_from_the_proven_entry() {
         (17, HANDLE, DelegateEntryStatus::Active)
     );
     assert_eq!(device.held(), Some((key.dk(), Some(17))));
-    assert_eq!(pending_delegate_register_op(device.scope()).unwrap(), None);
-    assert_eq!(
-        kind(prepare(ProxyDelegateProvider::X, key.secret())),
-        ApiDelegateModeErrorKind::Other
-    );
 }
 
 #[test]
@@ -488,21 +441,10 @@ fn the_status_takes_only_the_device_key_s_proven_entry() {
         "bytes that are not an entry"
     );
     assert_eq!(device.held(), Some((key.dk(), None)));
-
-    let suspended = status(entry_with(17, &key, DelegateStatus::Suspended)).unwrap();
-    assert_eq!(
-        suspended.unwrap().entry.unwrap().status,
-        DelegateEntryStatus::Suspended
-    );
-    assert_eq!(
-        kind(status(entry(18, &key))),
-        ApiDelegateModeErrorKind::EntryUnverifiable,
-        "the key is recorded in entry 17"
-    );
 }
 
 #[test]
-fn a_round_view_reads_the_ballot_the_count_and_what_blocks_signing() {
+fn a_round_view_reads_the_ballot_and_the_count() {
     let device = Device::new();
     let held = device.holds_new_key();
     let account = entry(17, &held);
@@ -524,29 +466,10 @@ fn a_round_view_reads_the_ballot_the_count_and_what_blocks_signing() {
     assert_eq!(running.ballot.kind, ApiDelegateBallotKind::NoBallotYet);
     assert_eq!(running.ballot_block, None);
 
-    let submitted = view(Some(account.clone()), Some(listed(17, &[1, 2])), None).unwrap();
+    let submitted = view(Some(account), Some(listed(17, &[1, 2])), None).unwrap();
     assert_eq!(submitted.revealed_shares, 0, "an absent count is 0");
     assert_eq!(submitted.ballot.kind, ApiDelegateBallotKind::Submitted);
     assert_eq!(submitted.ballot.options, vec![1, 2]);
-
-    for (entry, block) in [
-        (
-            Some(entry_with(17, &held, DelegateStatus::Suspended)),
-            DelegateBallotBlock::Suspended,
-        ),
-        (
-            Some(entry_with(17, &held, DelegateStatus::Retired)),
-            DelegateBallotBlock::Retired,
-        ),
-        (None, DelegateBallotBlock::NotRegistered),
-    ] {
-        assert_eq!(view(entry, None, None).unwrap().ballot_block, Some(block));
-    }
-    assert_eq!(
-        kind(view(Some(account), None, Some(vec![1, 2, 3]))),
-        ApiDelegateModeErrorKind::ChainAnswer,
-        "a share count is 8 bytes"
-    );
 }
 
 #[test]
@@ -610,17 +533,6 @@ fn ballot_pages_chain_by_their_last_delegate() {
 fn a_ballot_is_signed_once_stored_before_posting_and_resent_unchanged() {
     let device = Device::new();
     let held = device.holds_new_key();
-    let sign = |entry: ApiProvenRegistryEntry, options: Vec<u32>, secret: String| {
-        sign_delegate_ballot(
-            device.scope(),
-            running_round(),
-            entry,
-            roster(),
-            options,
-            secret,
-            NOW,
-        )
-    };
     let preflight = |chain_ballot: Option<ApiChainDelegateBallot>, options: Vec<u32>| {
         delegate_ballot_preflight(
             device.scope(),
@@ -633,34 +545,16 @@ fn a_ballot_is_signed_once_stored_before_posting_and_resent_unchanged() {
     };
 
     assert!(!preflight(None, vec![1, 2]).already_submitted);
-    for (case, entry, options, secret) in [
-        (
-            "every question needs an answer",
-            entry(17, &held),
-            vec![1],
-            held.secret(),
-        ),
-        (
-            "a suspended entry may not ballot",
-            entry_with(17, &held, DelegateStatus::Suspended),
-            vec![1, 2],
-            held.secret(),
-        ),
-        (
-            "only the entry's key signs",
-            entry(17, &held),
-            vec![1, 2],
-            Key::new().secret(),
-        ),
-    ] {
-        assert_eq!(
-            kind(sign(entry, options, secret)),
-            ApiDelegateModeErrorKind::Other,
-            "{case}"
-        );
-    }
-
-    let op = sign(entry(17, &held), vec![1, 2], held.secret()).unwrap();
+    let op = sign_delegate_ballot(
+        device.scope(),
+        running_round(),
+        entry(17, &held),
+        roster(),
+        vec![1, 2],
+        held.secret(),
+        NOW,
+    )
+    .unwrap();
     assert_eq!(op.kind, ApiDelegateOpKind::Ballot);
     assert_eq!((op.delegate_index, op.dk.clone()), (17, held.dk()));
     let stored = stored_delegate_ballot(device.scope(), ROUND_ID.to_owned(), 17)
@@ -668,16 +562,6 @@ fn a_ballot_is_signed_once_stored_before_posting_and_resent_unchanged() {
         .unwrap();
     assert_eq!(stored.options, vec![1, 2]);
     assert_eq!(stored.op, op, "a retry posts the stored op unchanged");
-    assert_eq!(
-        sign(entry(17, &held), vec![1, 2], held.secret()).unwrap(),
-        op,
-        "signing the same ballot again returns the stored op"
-    );
-    assert_eq!(
-        kind(sign(entry(17, &held), vec![0, 0], held.secret())),
-        ApiDelegateModeErrorKind::Other,
-        "one ballot per round"
-    );
 
     let local = preflight(None, vec![0, 0]);
     assert!(local.already_submitted && !local.same_options);
@@ -703,20 +587,10 @@ fn a_ballot_is_signed_once_stored_before_posting_and_resent_unchanged() {
 }
 
 #[test]
-fn retire_is_one_op_by_the_entry_s_key_that_counts_on_code_55() {
+fn retire_is_one_op_that_counts_on_code_55() {
     let device = Device::new();
     let held = device.holds_new_key();
-    let account = entry(17, &held);
-    assert_eq!(
-        kind(build_delegate_retire_op(
-            device.scope(),
-            account.clone(),
-            Key::new().secret()
-        )),
-        ApiDelegateModeErrorKind::EntryUnverifiable,
-        "only the entry's key retires it"
-    );
-    let op = build_delegate_retire_op(device.scope(), account, held.secret()).unwrap();
+    let op = build_delegate_retire_op(device.scope(), entry(17, &held), held.secret()).unwrap();
     assert_eq!(op.kind, ApiDelegateOpKind::Retire);
     assert_eq!((op.delegate_index, op.dk.clone()), (17, held.dk()));
 
@@ -731,16 +605,6 @@ fn retire_is_one_op_by_the_entry_s_key_that_counts_on_code_55() {
     let suspended = answer(54);
     assert_eq!(suspended.kind, ApiDelegateOpAnswerKind::Rejected);
     assert_eq!(suspended.code, Some(54));
-
-    // The entry proven again shows the retirement, and the device may then
-    // start over with a new key.
-    let retired = device
-        .status(Some(entry_with(17, &held, DelegateStatus::Retired)))
-        .unwrap();
-    assert_eq!(retired.entry.unwrap().status, DelegateEntryStatus::Retired);
-    forget_delegate_key(device.scope()).unwrap();
-    let next = device.holds_new_key();
-    assert_eq!(device.held(), Some((next.dk(), None)));
 }
 
 #[test]

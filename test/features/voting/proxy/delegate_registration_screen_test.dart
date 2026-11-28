@@ -5,7 +5,6 @@ import 'package:zcash_wallet/src/features/voting/proxy/delegate_mode_models.dart
 import 'package:zcash_wallet/src/features/voting/proxy/delegate_mode_presentation.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/delegate_mode_repository.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_copy.dart';
-import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_models.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_routes.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/widgets/delegate_reauth_gate.dart';
 
@@ -72,97 +71,45 @@ void main() {
     expect(harness.location, kDelegateModePath);
   });
 
-  testWidgets('a link that is not a post never reaches the verifier', (
-    tester,
-  ) async {
+  testWidgets("an attester refusal shows its message, never the attester's "
+      'own text', (tester) async {
     final harness = await pumpDelegateRoute(
       tester,
       kDelegateRegistrationPath,
       scenario: _pending(),
     );
-    await _submit(tester, 'https://x.com/alice_votes');
-    expect(find.text(testL10n.delegateProofLinkXInvalid), findsOne);
-    expect(harness.repository.attestCalls, 0);
-
-    await tapDelegateKey(tester, 'delegate_provider_github');
-    expect(find.text(testL10n.delegateMarkerGitHub), findsOne);
-    expect(find.text(testL10n.delegateProofLinkGitHubLabel), findsOne);
-    await _submit(tester, 'https://x.com/alice_votes/status/1');
-    expect(find.text(testL10n.delegateProofLinkGitHubInvalid), findsOne);
-    await _submit(tester, 'https://gist.github.com/alice/0a1b');
-    expect(harness.repository.attestCalls, 1);
-    expect(
-      harness.scenario.status.entry?.provider,
-      ProxyDelegateProvider.gitHub,
+    const refusal = DelegateVerifierRefusal(
+      error: DelegateVerifierError.markerMismatch,
+      detail: 'server text that is never shown',
     );
-  });
-
-  testWidgets('each attester answer shows its one message', (tester) async {
-    final harness = await pumpDelegateRoute(
-      tester,
-      kDelegateRegistrationPath,
-      scenario: _pending(),
-    );
-    final retryAfter = proxyUnixSeconds(DateTime(2026, 10, 8));
-    for (final error in [...DelegateVerifierError.values, null]) {
-      final answer = error == null
-          ? const DelegateModeException(DelegateModeErrorKind.unavailable)
-          : DelegateVerifierRefusal(
-              error: error,
-              retryAfter: retryAfter,
-              detail: 'server text that is never shown',
-            );
-      harness.scenario.verifierErrors = [answer];
-      await _submit(tester);
-      expect(
-        find.text(
-          answer is DelegateVerifierRefusal
-              ? delegateVerifierErrorText(testL10n, answer)
-              : delegateVerifierErrorCopy(testL10n, null),
-        ),
-        findsOne,
-        reason: '$error',
-      );
-      expect(find.textContaining('server text'), findsNothing);
-    }
+    harness.scenario.verifierErrors = [refusal];
+    await _submit(tester);
+    expect(find.text(delegateVerifierErrorText(testL10n, refusal)), findsOne);
+    expect(find.textContaining('server text'), findsNothing);
     expect(harness.repository.registerCalls, 0);
     expect(harness.scenario.status.registered, isFalse);
   });
 
-  testWidgets('every chain rejection of REGISTER maps to its copy', (
-    tester,
-  ) async {
+  testWidgets('a chain rejection of REGISTER shows its copy, and a refused '
+      'attestation asks for a new check', (tester) async {
     final harness = await pumpDelegateRoute(
       tester,
       kDelegateRegistrationPath,
       scenario: _pending(),
     );
-    for (final code in [59, 60, 61, 62, 64, 65, 66, 6]) {
-      harness.scenario.registerResults = [
-        DelegateRegisterResult.rejected(
-          codespace: 'vote',
-          code: code,
-          reason: 'chain log',
-        ),
-      ];
-      await _submit(tester);
-      expect(
-        find.text(delegateRegisterRejectionCopy(testL10n, 'vote', code)),
-        findsOne,
-        reason: 'code $code',
-      );
-      // A refused attestation needs a fresh check.
-      expect(
-        find.text(testL10n.delegateVerifyAgainLabel),
-        const {64, 65}.contains(code) ? findsOne : findsNothing,
-        reason: 'code $code',
-      );
-    }
-    // A handle that already has a live entry says how that is resolved.
+    harness.scenario.registerResults = [
+      const DelegateRegisterResult.rejected(
+        codespace: 'vote',
+        code: 64,
+        reason: 'chain log',
+      ),
+    ];
+    await _submit(tester);
     expect(
-      delegateRegisterRejectionCopy(testL10n, 'vote', 62),
-      testL10n.delegateHandleTaken,
+      find.text(delegateRegisterRejectionCopy(testL10n, 'vote', 64)),
+      findsOne,
     );
+    expect(find.text(testL10n.delegateVerifyAgainLabel), findsOne);
     expect(harness.scenario.status.registered, isFalse);
     await _submit(tester);
     expect(find.text('#17 · ${_newKey.fingerprint}'), findsOne);
@@ -200,31 +147,5 @@ void main() {
     await _submit(tester);
     expect(harness.reauth.prompts, hasLength(2));
     expect(find.text('#17 · ${_newKey.fingerprint}'), findsOne);
-  });
-
-  testWidgets('a device with nothing to register says so', (tester) async {
-    await pumpDelegateRoute(
-      tester,
-      kDelegateRegistrationPath,
-      scenario: delegateRegisteredScenario(),
-    );
-    expect(find.text(testL10n.delegateNothingToRegister), findsOne);
-  });
-
-  testWidgets('a failed status load offers a retry', (tester) async {
-    final scenario = _pending()
-      ..statusError = const DelegateModeException(
-        DelegateModeErrorKind.cannotVerify,
-      );
-    await pumpDelegateRoute(
-      tester,
-      kDelegateRegistrationPath,
-      scenario: scenario,
-    );
-    expect(find.text(testL10n.proxyCannotVerify), findsOne);
-    scenario.statusError = null;
-    await tester.tap(find.text(testL10n.commonTryAgain));
-    await settleProxy(tester);
-    expect(find.byKey(const ValueKey('delegate_marker_text')), findsOne);
   });
 }

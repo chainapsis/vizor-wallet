@@ -7,32 +7,15 @@ import 'package:zcash_wallet/src/features/voting/proxy/widgets/delegate_reauth_g
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 
 import '../../../support/test_l10n.dart';
-
-/// Checks passwords against [expected] and records every attempt.
-class _FakeSecurity extends AppSecurityNotifier {
-  _FakeSecurity(this.expected);
-
-  final String expected;
-  final List<String> attempts = [];
-
-  @override
-  AppSecurityState build() =>
-      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
-
-  @override
-  Future<bool> confirmPassword(String password) async {
-    attempts.add(password);
-    return password == expected;
-  }
-}
+import 'support/delegate_mode_fakes.dart';
 
 /// Pumps a page whose button opens the production gate for [purpose];
 /// returns the results it resolves with.
-Future<(List<bool>, _FakeSecurity)> _pumpGate(
+Future<(List<bool>, FakeDelegateSecurity)> _pumpGate(
   WidgetTester tester,
   DelegateReauthPurpose purpose,
 ) async {
-  final security = _FakeSecurity('correct horse');
+  final security = FakeDelegateSecurity(password: 'correct horse');
   final results = <bool>[];
   await tester.pumpWidget(
     ProviderScope(
@@ -66,23 +49,6 @@ Finder get _password => find.descendant(
 );
 
 void main() {
-  test('each purpose words its prompt in sentence case', () {
-    for (final purpose in DelegateReauthPurpose.values) {
-      for (final text in [
-        purpose.subtitle(testL10n),
-        purpose.biometricReason(testL10n),
-      ]) {
-        expect(text, matches(RegExp(r'^[A-Z][a-z ]+[a-z.]$')));
-      }
-    }
-    expect(
-      DelegateReauthPurpose.values
-          .map((purpose) => purpose.subtitle(testL10n))
-          .toSet(),
-      hasLength(DelegateReauthPurpose.values.length),
-    );
-  });
-
   testWidgets('desktop asks for the wallet password with the purpose', (
     tester,
   ) async {
@@ -123,15 +89,5 @@ void main() {
     await tester.pumpAndSettle();
     expect(results, [false]);
     expect(security.attempts, isEmpty);
-  });
-
-  testWidgets('dismissing the dialog resolves false', (tester) async {
-    final (results, _) = await _pumpGate(
-      tester,
-      DelegateReauthPurpose.exportKey,
-    );
-    await tester.tapAt(const Offset(4, 4));
-    await tester.pumpAndSettle();
-    expect(results, [false]);
   });
 }

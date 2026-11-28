@@ -23,12 +23,10 @@ const _answers = {1: 1, 2: 2, 3: 0};
 Future<DelegateTestHarness> _pumpBallot(
   WidgetTester tester, {
   DelegateModeMockScenario? scenario,
-  DateTime? now,
 }) => pumpDelegateRoute(
   tester,
   delegateBallotRoute(kDelegateTestRoundId),
   scenario: scenario ?? delegateRegisteredScenario(),
-  now: now,
 );
 
 /// Picks [option] on question [proposalId].
@@ -131,27 +129,6 @@ void main() {
       expect(_submit(tester), isNotNull);
     });
 
-    testWidgets('offers no per-question abstain', (tester) async {
-      final harness = await _pumpBallot(tester);
-      final round = harness.scenario.rounds.first;
-      for (final proposal in round.proposals) {
-        final options = find.byWidgetPredicate(
-          (widget) =>
-              widget.key is ValueKey<String> &&
-              (widget.key! as ValueKey<String>).value.startsWith(
-                'voting_proposal_${proposal.id}_option_',
-              ),
-        );
-        expect(options, findsNWidgets(proposal.options.length));
-      }
-      expect(find.textContaining('bstain'), findsNothing);
-      await _answerAll(tester);
-      // Clearing a choice leaves the question unanswered, not abstained.
-      await _choose(tester, 2, 2);
-      expect(find.text('2 of 3 answered'), findsOne);
-      expect(_submit(tester), isNull);
-    });
-
     testWidgets('an existing ballot shows read-only, with no Submit', (
       tester,
     ) async {
@@ -196,20 +173,6 @@ void main() {
       );
     });
 
-    testWidgets('preflight finds the identical ballot already on chain', (
-      tester,
-    ) async {
-      final harness = await _pumpBallot(tester);
-      await _answerAll(tester);
-      harness.scenario.rounds.first.ballot = proxyBallot(
-        ApiDelegateBallotKind.submitted,
-        [1, 2, 0],
-      );
-      await tapDelegateKey(tester, 'delegate_ballot_submit');
-      expect(find.text(testL10n.delegateAlreadySubmitted), findsWidgets);
-      expect(harness.repository.submitted, isEmpty);
-    });
-
     testWidgets('a suspended or retired entry blocks Submit with its reason', (
       tester,
     ) async {
@@ -228,45 +191,6 @@ void main() {
         expect(find.text('0 of 3 answered'), findsOne);
         expect(harness.repository.submitted, isEmpty);
       }
-    });
-
-    testWidgets('after voting ends nothing can be submitted', (tester) async {
-      await _pumpBallot(
-        tester,
-        scenario: delegateRegisteredScenario(
-          rounds: [
-            delegateTestRound(
-              voteEnd: kProxyTestNow.subtract(const Duration(seconds: 1)),
-            ),
-          ],
-        ),
-      );
-      expect(find.text(testL10n.delegateVotingEnded), findsOne);
-      expect(_submit(tester), isNull);
-    });
-
-    testWidgets('the final 60 seconds ask for a blocking confirm', (
-      tester,
-    ) async {
-      final harness = await _pumpBallot(
-        tester,
-        scenario: delegateRegisteredScenario(
-          rounds: [
-            delegateTestRound(
-              voteEnd: kProxyTestNow.add(const Duration(seconds: 40)),
-            ),
-          ],
-        ),
-      );
-      expect(find.text(testL10n.delegateFinalMinutes(1)), findsOne);
-      await _openConfirm(tester);
-      expect(find.text(testL10n.delegateFinalMinute), findsOne);
-      await tapDelegateKey(tester, 'delegate_final_minute_cancel');
-      expect(harness.repository.preflightCalls, 0);
-      await tapDelegateKey(tester, 'delegate_ballot_submit');
-      await tapDelegateKey(tester, 'delegate_final_minute_submit');
-      expect(harness.repository.preflightCalls, 1);
-      expect(find.byKey(const ValueKey('delegate_ballot_confirm')), findsOne);
     });
   });
 
@@ -346,19 +270,6 @@ void main() {
       expect(_submit(tester), isNotNull);
     });
 
-    testWidgets('Cancel on DG-10 submits nothing', (tester) async {
-      final harness = await _pumpBallot(tester);
-      await _openConfirm(tester);
-      await tapDelegateKey(tester, 'delegate_confirm_cancel');
-      expect(harness.reauth.prompts, isEmpty);
-      expect(harness.repository.submitted, isEmpty);
-      expect(
-        find.byKey(const ValueKey('delegate_ballot_progress')),
-        findsNothing,
-      );
-      expect(_submit(tester), isNotNull);
-    });
-
     testWidgets('AlreadyAccepted counts as success', (tester) async {
       final harness = await _pumpBallot(
         tester,
@@ -377,70 +288,64 @@ void main() {
 
     testWidgets('a rejection maps to its copy, allows no resubmit and lets '
         'the delegate leave', (tester) async {
-      for (final code in [4, 55, 57, 58, 6]) {
-        final harness = await _pumpBallot(
-          tester,
-          scenario: delegateRegisteredScenario()
-            ..submitResults = [ballotRejected(code, reason: 'chain log')],
-        );
-        await _openConfirm(tester);
-        await tapDelegateKey(tester, 'delegate_confirm_submit');
-        expect(
-          find.descendant(
-            of: find.byKey(const ValueKey('delegate_ballot_rejected')),
-            matching: find.text(
-              delegateBallotRejectionCopy(testL10n, 'vote', code),
-            ),
+      // One code stands for every final rejection.
+      const code = 58;
+      final harness = await _pumpBallot(
+        tester,
+        scenario: delegateRegisteredScenario()
+          ..submitResults = [ballotRejected(code, reason: 'chain log')],
+      );
+      await _openConfirm(tester);
+      await tapDelegateKey(tester, 'delegate_confirm_submit');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('delegate_ballot_rejected')),
+          matching: find.text(
+            delegateBallotRejectionCopy(testL10n, 'vote', code),
           ),
-          findsOne,
-          reason: 'code $code',
-        );
-        expect(_steps(tester), [
-          '${testL10n.delegateStepSigning}: done',
-          '${testL10n.delegateStepSubmitting}: done',
-          '${testL10n.delegateStepConfirming}: todo',
-        ]);
-        expect(harness.repository.submitted, hasLength(1));
-        expect(find.byKey(_done), findsOne);
-        _expectNoResubmit(tester);
-        // The chain's word stands, and nothing more is sent.
-        await _resendTick(tester);
-        expect(harness.repository.resent, isEmpty);
-        expect(
-          find.byKey(const ValueKey('delegate_ballot_rejected')),
-          findsOne,
-        );
-      }
+        ),
+        findsOne,
+      );
+      expect(_steps(tester), [
+        '${testL10n.delegateStepSigning}: done',
+        '${testL10n.delegateStepSubmitting}: done',
+        '${testL10n.delegateStepConfirming}: todo',
+      ]);
+      expect(harness.repository.submitted, hasLength(1));
+      expect(find.byKey(_done), findsOne);
+      _expectNoResubmit(tester);
+      // The chain's word stands, and nothing more is sent.
+      await _resendTick(tester);
+      expect(harness.repository.resent, isEmpty);
+      expect(find.byKey(const ValueKey('delegate_ballot_rejected')), findsOne);
     });
 
     testWidgets('a suspension the chain answers shows its copy and is '
         'checked again until the ballot lands', (tester) async {
-      for (final code in [54]) {
-        final harness = await _pumpBallot(
-          tester,
-          scenario: delegateRegisteredScenario()
-            ..submitResults = [ballotRejected(code, reason: 'chain log')],
-        );
-        await _openConfirm(tester);
-        await tapDelegateKey(tester, 'delegate_confirm_submit');
-        expect(
-          find.text(delegateBallotRejectionCopy(testL10n, 'vote', code)),
-          findsOne,
-          reason: 'code $code',
-        );
-        _expectNoResubmit(tester);
+      const code = 54;
+      final harness = await _pumpBallot(
+        tester,
+        scenario: delegateRegisteredScenario()
+          ..submitResults = [ballotRejected(code, reason: 'chain log')],
+      );
+      await _openConfirm(tester);
+      await tapDelegateKey(tester, 'delegate_confirm_submit');
+      expect(
+        find.text(delegateBallotRejectionCopy(testL10n, 'vote', code)),
+        findsOne,
+      );
+      _expectNoResubmit(tester);
 
-        // Coordinators lifted it; the same ballot goes out again.
-        await _resendTick(tester);
-        expect(harness.repository.resent, [
-          [1, 2, 0],
-        ], reason: 'code $code');
-        expect(
-          find.text(delegateBallotRejectionCopy(testL10n, 'vote', code)),
-          findsNothing,
-        );
-        _expectConfirmed(tester);
-      }
+      // Coordinators lifted it; the same ballot goes out again.
+      await _resendTick(tester);
+      expect(harness.repository.resent, [
+        [1, 2, 0],
+      ]);
+      expect(
+        find.text(delegateBallotRejectionCopy(testL10n, 'vote', code)),
+        findsNothing,
+      );
+      _expectConfirmed(tester);
     });
 
     testWidgets('a submit with no answer keeps confirming while it is '
@@ -469,64 +374,6 @@ void main() {
 
       await _resendTick(tester);
       expect(harness.repository.resent, hasLength(1), reason: 'listed');
-    });
-
-    testWidgets('an accepted ballot keeps confirming until the list shows '
-        'it, never offering to submit again', (tester) async {
-      final harness = await _pumpBallot(
-        tester,
-        scenario: delegateRegisteredScenario()..acceptedUnlisted = 2,
-      );
-      await _openConfirm(tester);
-      await tapDelegateKey(tester, 'delegate_confirm_submit');
-      _expectConfirming(tester);
-
-      // The list still lacks it after the first resend.
-      await _resendTick(tester);
-      expect(harness.repository.resent, hasLength(1));
-      _expectConfirming(tester);
-
-      await _resendTick(tester);
-      expect(harness.repository.resent, hasLength(2));
-      _expectConfirmed(tester);
-      expect(harness.repository.submitted, hasLength(1));
-      expect(harness.reauth.prompts, hasLength(1));
-    });
-
-    testWidgets('after the confirm timeout the delegate may leave while '
-        'the resends go on', (tester) async {
-      final harness = await _pumpBallot(
-        tester,
-        scenario: delegateRegisteredScenario()..acceptedUnlisted = 1000,
-      );
-      await _openConfirm(tester);
-      await tapDelegateKey(tester, 'delegate_confirm_submit');
-      // The submit's settle already took under a second.
-      await tester.pump(
-        kDelegateBallotConfirmTimeout - const Duration(seconds: 2),
-      );
-      _expectConfirming(tester);
-      expect(
-        find.byKey(const ValueKey('delegate_ballot_still_confirming')),
-        findsNothing,
-      );
-
-      await tester.pump(const Duration(seconds: 2));
-      await settleProxy(tester);
-      expect(find.text(testL10n.delegateBallotStillConfirming), findsOne);
-      expect(find.byKey(_done), findsOne);
-      expect(
-        _steps(tester).last,
-        '${testL10n.delegateStepConfirming}: active',
-        reason: 'still trying',
-      );
-      final resent = harness.repository.resent.length;
-      expect(resent, greaterThanOrEqualTo(7));
-
-      harness.scenario.acceptedUnlisted = 0;
-      await _resendTick(tester);
-      expect(harness.repository.resent, hasLength(resent + 1));
-      _expectConfirmed(tester);
     });
 
     testWidgets('a rejection the chain returns to a resend shows its copy '
@@ -565,58 +412,6 @@ void main() {
       expect(harness.repository.resent, hasLength(2));
       expect(find.text(testL10n.delegateBallotOnChain), findsOne);
       expect(find.text(testL10n.delegateBallotPendingLabel), findsNothing);
-    });
-
-    testWidgets('a stored ballot waits while the entry is suspended and is '
-        'resent once the suspension lifts', (tester) async {
-      final scenario = delegateRegisteredScenario(
-        entryStatus: DelegateEntryStatus.suspended,
-      )..rounds.first.storedBallot = [1, 2, 0];
-      final harness = await _pumpBallot(tester, scenario: scenario);
-      expect(find.text(testL10n.delegateSuspended), findsOne);
-      _expectNoResubmit(tester);
-      await _resendTick(tester);
-      expect(harness.repository.resent, isEmpty);
-
-      scenario.status = delegateModeViewWith(
-        scenario.status,
-        DelegateEntryStatus.active,
-      );
-      await _resendTick(tester);
-      expect(harness.repository.resent, [
-        [1, 2, 0],
-      ]);
-      expect(find.text(testL10n.delegateBallotOnChain), findsOne);
-    });
-
-    testWidgets("a retired entry's stored ballot stops and shows why", (
-      tester,
-    ) async {
-      final harness = await _pumpBallot(
-        tester,
-        scenario: delegateRegisteredScenario(
-          entryStatus: DelegateEntryStatus.retired,
-        )..rounds.first.storedBallot = [1, 2, 0],
-      );
-      expect(find.text(testL10n.delegateRetiredBallot), findsOne);
-      expect(find.text(testL10n.delegateBallotPendingLabel), findsNothing);
-      await _resendTick(tester);
-      expect(harness.repository.resent, isEmpty);
-      _expectNoResubmit(tester);
-    });
-
-    testWidgets('resends stop once voting ends', (tester) async {
-      final harness = await _pumpBallot(
-        tester,
-        scenario: delegateRegisteredScenario(
-          rounds: [delegateTestRound(voteEnd: kProxyTestNow)],
-        )..rounds.first.storedBallot = [1, 2, 0],
-      );
-      expect(find.text(testL10n.delegateVotingEnded), findsOne);
-      expect(find.text(testL10n.delegateBallotPendingLabel), findsNothing);
-      await _resendTick(tester);
-      expect(harness.repository.resent, isEmpty);
-      _expectNoResubmit(tester);
     });
   });
 

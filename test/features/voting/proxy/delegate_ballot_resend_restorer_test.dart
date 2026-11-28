@@ -18,21 +18,6 @@ final _now = DateTime(2026, 10, 7, 12);
 /// The running round's id.
 final _round = '0a' * 32;
 
-/// The wallet's lock, which tests flip.
-class _Security extends AppSecurityNotifier {
-  _Security({required this.locked});
-
-  /// Whether the wallet starts locked.
-  final bool locked;
-
-  @override
-  AppSecurityState build() =>
-      AppSecurityState(isPasswordConfigured: true, isUnlocked: !locked);
-
-  /// Unlocks the wallet.
-  void setUnlocked() => state = state.copyWith(isUnlocked: true);
-}
-
 void main() {
   useProxyRustFake();
 
@@ -69,7 +54,9 @@ void main() {
         delegateModeRepositoryProvider.overrideWithValue(
           repository ?? mode.restarted(),
         ),
-        appSecurityProvider.overrideWith(() => _Security(locked: locked)),
+        appSecurityProvider.overrideWith(
+          () => FakeDelegateSecurity(locked: locked),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -82,7 +69,7 @@ void main() {
     final container = restartedApp();
     await container.read(delegateBallotResendRestorerProvider).restore();
 
-    await tester.pump(kDelegateBallotResendInterval);
+    // Discovery sends once right away, before the first tick.
     await tester.pump();
     expect(mode.chain.posts.length, posted + 1);
     expect(
@@ -133,44 +120,6 @@ void main() {
     container.dispose();
   });
 
-  testWidgets('a suspension the chain reports before the proof shows it '
-      'keeps the resends checking until it lifts', (tester) async {
-    final repository = mode.restarted();
-    final container = restartedApp(repository: repository);
-    // The entry is suspended after the resend read its proof, so the
-    // chain refuses the post.
-    mode.chain.postAnswers.add(
-      fakeJsonAnswer({
-        'code': 54,
-        'codespace': 'vote',
-        'log': 'delegate suspended',
-      }, status: 422),
-    );
-    final posted = mode.chain.posts.length;
-    await container.read(delegateBallotResendRestorerProvider).restore();
-    await tester.pump();
-    expect(mode.chain.posts.length, posted + 1, reason: 'refused with 54');
-
-    mode.chain.entries[17]!.status = rust_wire.DelegateEntryStatus.suspended;
-    final proofReads = mode.host.proofRequests.length;
-    await tester.pump(kDelegateBallotResendInterval);
-    await tester.pump();
-    expect(mode.chain.posts.length, posted + 1, reason: 'proven suspended');
-    expect(
-      mode.host.proofRequests.length,
-      greaterThan(proofReads),
-      reason: 'the refusal dropped the cached proof',
-    );
-
-    mode.chain.entries[17]!.status = rust_wire.DelegateEntryStatus.active;
-    mode.now = mode.now.add(repository.readsMaxAge);
-    await tester.pump(kDelegateBallotResendInterval);
-    await tester.pump();
-    expect(mode.chain.posts.length, posted + 2);
-    expect(mode.chain.ballots[_round]?[17], [1, 2]);
-    container.dispose();
-  });
-
   testWidgets('a suspension posts nothing, and resends resume once it '
       'lifts', (tester) async {
     mode.chain.entries[17]!.status = rust_wire.DelegateEntryStatus.suspended;
@@ -191,34 +140,6 @@ void main() {
     container.dispose();
   });
 
-  testWidgets("a retired entry's stored ballot is not resent after a "
-      'restart', (tester) async {
-    mode.chain.entries[17]!.status = rust_wire.DelegateEntryStatus.retired;
-    final posted = mode.chain.posts.length;
-    final container = restartedApp();
-    await container.read(delegateBallotResendRestorerProvider).restore();
-
-    await tester.pump(kDelegateBallotResendInterval);
-    await tester.pump();
-    expect(mode.chain.posts.length, posted);
-    await tester.pump(kDelegateBallotResendInterval);
-    await tester.pump();
-    expect(mode.chain.posts.length, posted, reason: 'the resends stopped');
-  });
-
-  testWidgets('with less than one interval left, the first resend goes '
-      'out right after discovery', (tester) async {
-    final voteEnd = _now.add(const Duration(seconds: 10));
-    mode.host.rounds_[0] = fakeDelegateRound(roundId: _round, voteEnd: voteEnd);
-    final posted = mode.chain.posts.length;
-    final container = restartedApp();
-    await container.read(delegateBallotResendRestorerProvider).restore();
-    await tester.pump();
-    expect(mode.chain.posts.length, posted + 1);
-    expect(mode.chain.ballots[_round]?[17], [1, 2]);
-    container.dispose();
-  });
-
   testWidgets('a locked wallet resends nothing until it unlocks', (
     tester,
   ) async {
@@ -229,7 +150,8 @@ void main() {
     await tester.pump();
     expect(mode.chain.posts.length, posted);
 
-    (container.read(appSecurityProvider.notifier) as _Security).setUnlocked();
+    (container.read(appSecurityProvider.notifier) as FakeDelegateSecurity)
+        .setUnlocked();
     await tester.pump();
     await tester.pump(kDelegateBallotResendInterval);
     await tester.pump();

@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 
 import '../../../figma_compare/figma_compare_font_loader.dart';
 import '../../../support/test_l10n.dart';
+import 'support/delegate_mode_fakes.dart';
 import 'support/delegate_mode_test_harness.dart';
 import 'support/mock_delegate_mode_repository.dart';
 
@@ -46,20 +47,6 @@ Future<DelegateTestHarness> _pumpMobile(
   routes: _mobileRoutes(),
   textScale: textScale,
 );
-
-/// Checks passwords against [expected].
-class _FakeSecurity extends AppSecurityNotifier {
-  _FakeSecurity(this.expected);
-
-  final String expected;
-
-  @override
-  AppSecurityState build() =>
-      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
-
-  @override
-  Future<bool> confirmPassword(String password) async => password == expected;
-}
 
 /// Biometrics off, so the gate offers only the numpad.
 class _NoBiometrics extends BiometricUnlockNotifier {
@@ -163,7 +150,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          appSecurityProvider.overrideWith(() => _FakeSecurity('123456')),
+          appSecurityProvider.overrideWith(
+            () => FakeDelegateSecurity(password: '123456'),
+          ),
           biometricUnlockProvider.overrideWith(_NoBiometrics.new),
         ],
         child: MaterialApp(

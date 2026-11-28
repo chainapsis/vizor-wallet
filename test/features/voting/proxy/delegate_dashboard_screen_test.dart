@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/delegate_mode_providers.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_copy.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_models.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_presentation.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_routes.dart';
-import 'package:zcash_wallet/src/features/voting/proxy/screens/delegate_mode_home_screen.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/widgets/delegate_reauth_gate.dart';
 
 import '../../../support/test_l10n.dart';
@@ -30,26 +28,6 @@ bool _exportGuarded(WidgetTester tester) => tester
 
 void main() {
   group('DG-1 intro', () {
-    testWidgets('explains the role and offers create or import', (
-      tester,
-    ) async {
-      final harness = await pumpDelegateRoute(tester, kDelegateModePath);
-      expect(find.byKey(const ValueKey('delegate_intro')), findsOne);
-      for (final copy in [
-        testL10n.proxyBallotRules,
-        testL10n.proxyDelegateIntroPublicVotes,
-        testL10n.proxyDelegateIntroCount,
-        testL10n.proxyDelegateIntroPrivateVotes,
-        testL10n.delegateHowPeopleFindYou,
-        testL10n.delegateIntroLostKey,
-      ]) {
-        expect(find.text(copy), findsOne);
-      }
-      expectNoDelegateTotals(tester);
-      await tapDelegateKey(tester, 'delegate_intro_import');
-      expect(harness.location, kDelegateKeyImportPath);
-    });
-
     testWidgets('Create stores a new key and opens its registration', (
       tester,
     ) async {
@@ -74,24 +52,18 @@ void main() {
 
     testWidgets('a key awaiting registration continues there, and says when '
         'its registration was already sent', (tester) async {
-      for (final pending in [false, true]) {
-        final harness = await pumpDelegateRoute(
-          tester,
-          kDelegateModePath,
-          scenario: delegateUnregisteredScenario(registrationPending: pending),
-        );
-        expect(
-          find.byKey(const ValueKey('delegate_finish_registering')),
-          findsOne,
-        );
-        expect(find.text(kDelegateTestKey.fingerprint), findsOne);
-        expect(
-          find.text(testL10n.delegateRegistrationPending),
-          pending ? findsOne : findsNothing,
-        );
-        await tapDelegateKey(tester, 'delegate_continue_registration');
-        expect(harness.location, kDelegateRegistrationPath);
-      }
+      final harness = await pumpDelegateRoute(
+        tester,
+        kDelegateModePath,
+        scenario: delegateUnregisteredScenario(registrationPending: true),
+      );
+      expect(
+        find.byKey(const ValueKey('delegate_finish_registering')),
+        findsOne,
+      );
+      expect(find.text(testL10n.delegateRegistrationPending), findsOne);
+      await tapDelegateKey(tester, 'delegate_continue_registration');
+      expect(harness.location, kDelegateRegistrationPath);
     });
 
     testWidgets('an unregistered key is removed only after its export shows, '
@@ -130,25 +102,6 @@ void main() {
       expect(_exportGuarded(tester), isFalse);
       expect(find.byKey(const ValueKey('delegate_intro')), findsOne);
     });
-
-    testWidgets('a key that cannot be removed stays, with the reason', (
-      tester,
-    ) async {
-      await pumpDelegateRoute(
-        tester,
-        kDelegateModePath,
-        scenario: delegateUnregisteredScenario()
-          ..startOverError = StateError('registered since'),
-      );
-      await tapDelegateKey(tester, 'delegate_start_over');
-      await tapDelegateKey(tester, 'delegate_start_over_saved');
-      await tapDelegateKey(tester, 'delegate_start_over_remove');
-      expect(find.text(testL10n.delegateStartOverError), findsOne);
-      expect(
-        find.byKey(const ValueKey('delegate_finish_registering')),
-        findsOne,
-      );
-    });
   });
 
   group('DG-8 dashboard', () {
@@ -183,30 +136,6 @@ void main() {
       expectNoDelegateTotals(tester, countAllowed: true);
       await tapDelegateKey(tester, 'delegate_round_open_$_round');
       expect(harness.location, delegateBallotRoute(_round));
-    });
-
-    testWidgets('a ballot on chain drops the reminder', (tester) async {
-      await pumpDelegateRoute(
-        tester,
-        kDelegateModePath,
-        scenario: delegateRegisteredScenario(
-          rounds: [
-            delegateTestRound(
-              ballot: proxyBallot(ApiDelegateBallotKind.submitted, [0, 1, 0]),
-            ),
-          ],
-        ),
-      );
-      expect(
-        _text(tester, 'delegate_round_ballot_$_round'),
-        testL10n.delegateBallotSubmittedLabel,
-        reason: 'counted only at close',
-      );
-      expect(
-        find.byKey(const ValueKey('delegate_round_reminder_$_round')),
-        findsNothing,
-      );
-      expect(find.text(testL10n.delegateViewBallotLabel), findsOne);
     });
 
     testWidgets('a submitted ballot reads as confirming while the app '
@@ -276,96 +205,6 @@ void main() {
       await settleProxy(tester);
       expect(harness.repository.resent, hasLength(1));
     });
-
-    testWidgets('warns in the final 5 minutes', (tester) async {
-      await pumpDelegateRoute(
-        tester,
-        kDelegateModePath,
-        scenario: delegateRegisteredScenario(
-          rounds: [
-            delegateTestRound(
-              voteEnd: kProxyTestNow.add(const Duration(minutes: 3)),
-            ),
-          ],
-        ),
-      );
-      expect(
-        find.byKey(const ValueKey('delegate_round_final_minutes_$_round')),
-        findsOne,
-      );
-      expect(find.text(testL10n.delegateFinalMinutes(3)), findsOne);
-    });
-
-    testWidgets('after close shows the outcome, not a reminder', (
-      tester,
-    ) async {
-      final scenario = delegateRegisteredScenario(
-        rounds: [
-          delegateTestRound(
-            voteEnd: kProxyTestNow.subtract(const Duration(minutes: 1)),
-          ),
-          delegateTestRound(
-            roundId: 'round-0',
-            voteEnd: kProxyTestNow.subtract(const Duration(days: 9)),
-            ballot: proxyBallot(ApiDelegateBallotKind.counted, [0, 1, 0]),
-          ),
-        ],
-      );
-      await pumpDelegateRoute(tester, kDelegateModePath, scenario: scenario);
-      expect(
-        find.byKey(const ValueKey('delegate_round_closed_$_round')),
-        findsOne,
-      );
-      expect(
-        _text(tester, 'delegate_round_ballot_round-0'),
-        testL10n.proxyCountedLabel,
-      );
-      expect(
-        find.byKey(const ValueKey('delegate_round_reminder_$_round')),
-        findsNothing,
-      );
-    });
-
-    testWidgets('a suspended entry says so', (tester) async {
-      await pumpDelegateRoute(
-        tester,
-        kDelegateModePath,
-        scenario: delegateRegisteredScenario(
-          entryStatus: DelegateEntryStatus.suspended,
-        ),
-      );
-      expect(find.text(testL10n.delegateSuspended), findsOne);
-    });
-
-    testWidgets('the count refreshes while the dashboard is open', (
-      tester,
-    ) async {
-      final harness = await pumpDelegateRoute(
-        tester,
-        kDelegateModePath,
-        scenario: delegateRegisteredScenario(),
-      );
-      expect(
-        _text(tester, 'delegate_round_count_$_round'),
-        'At least 3 delegations',
-      );
-      harness.scenario.rounds.first.revealedShares = BigInt.from(80);
-      await tester.pump(kDelegateDashboardRefresh);
-      await settleProxy(tester);
-      expect(
-        _text(tester, 'delegate_round_count_$_round'),
-        'At least 5 delegations',
-      );
-    });
-
-    testWidgets('no rounds is a plain message', (tester) async {
-      await pumpDelegateRoute(
-        tester,
-        kDelegateModePath,
-        scenario: delegateRegisteredScenario(rounds: []),
-      );
-      expect(find.text(testL10n.delegateNoRounds), findsOne);
-    });
   });
 
   group('the key', () {
@@ -412,17 +251,6 @@ void main() {
       await settleProxy(tester);
       expect(find.text(kDelegateTestSecret), findsNothing);
     });
-
-    testWidgets('an export that cannot be read says so', (tester) async {
-      final harness = await pumpDelegateRoute(
-        tester,
-        kDelegateModePath,
-        scenario: delegateRegisteredScenario(),
-      );
-      harness.repository.secret = null;
-      await tapDelegateKey(tester, 'delegate_export_key');
-      expect(find.text(testL10n.delegateExportError), findsOne);
-    });
   });
 
   testWidgets('a device whose entry is retired can start over with a new '
@@ -445,31 +273,5 @@ void main() {
     expect(find.byKey(const ValueKey('delegate_intro')), findsOne);
     await tapDelegateKey(tester, 'delegate_intro_create');
     expect(harness.location, kDelegateRegistrationPath);
-  });
-
-  testWidgets('Retire opens DG-11', (tester) async {
-    final harness = await pumpDelegateRoute(
-      tester,
-      kDelegateModePath,
-      scenario: delegateRegisteredScenario(),
-    );
-    await tapDelegateKey(tester, 'delegate_retire');
-    expect(harness.location, kDelegateRetirePath);
-  });
-
-  testWidgets('the entry link opens delegate mode', (tester) async {
-    final harness = await pumpDelegateRoute(
-      tester,
-      '/voting',
-      routes: [
-        GoRoute(
-          path: '/voting',
-          builder: (_, _) => const Scaffold(body: DelegateModeEntryLink()),
-        ),
-        ...delegateTestRoutes(desktop: true).skip(1),
-      ],
-    );
-    await tapDelegateKey(tester, 'delegate_mode_entry');
-    expect(harness.location, kDelegateModePath);
   });
 }

@@ -58,15 +58,11 @@ class DelegateModeMockScenario {
     this.status = const DelegateModeView(),
     List<DelegateMockRound>? rounds,
     Map<String, DelegateModeView>? importable,
-    this.handle = 'alice_votes',
-    this.nextIndex = 17,
     List<Object>? verifierErrors,
     List<DelegateRegisterResult>? registerResults,
     List<ApiBallotSubmitResult>? submitResults,
     this.submitUnavailable = 0,
-    this.acceptedUnlisted = 0,
     List<DelegateRetireResult>? retireResults,
-    this.statusError,
   }) : rounds = rounds ?? [],
        importable = importable ?? {},
        verifierErrors = verifierErrors ?? [],
@@ -83,12 +79,6 @@ class DelegateModeMockScenario {
   /// The status importing each `zvdsk1…` export yields.
   Map<String, DelegateModeView> importable;
 
-  /// The handle the attester reports for any post.
-  String handle;
-
-  /// Index the chain assigns to the next new entry.
-  int nextIndex;
-
   /// Successive attester failures, each a [DelegateVerifierRefusal] or what
   /// attest throws when no attester answers; when empty, attest succeeds.
   List<Object> verifierErrors;
@@ -102,21 +92,11 @@ class DelegateModeMockScenario {
   /// How many submits fail without an answer before one goes through.
   int submitUnavailable;
 
-  /// How many accepted posts stay off the round's ballot list, as before
-  /// the block that includes them; the ballot stays stored meanwhile.
-  int acceptedUnlisted;
-
   /// Successive Retire outcomes; when empty, the entry retires.
   List<DelegateRetireResult> retireResults;
 
-  /// Makes [MockDelegateModeRepository.status] throw.
-  Object? statusError;
-
   /// Makes [MockDelegateModeRepository.createKey] throw.
   Object? createError;
-
-  /// Makes [MockDelegateModeRepository.startOver] throw.
-  Object? startOverError;
 
   /// Makes [MockDelegateModeRepository.register] throw after its re-auth.
   Object? registerError;
@@ -182,10 +162,7 @@ class MockDelegateModeRepository implements DelegateModeRepository {
   }
 
   @override
-  Future<DelegateModeView> status() async {
-    if (scenario.statusError case final error?) throw error;
-    return scenario.status;
-  }
+  Future<DelegateModeView> status() async => scenario.status;
 
   @override
   Future<DelegateKeyInfo> createKey() async {
@@ -225,7 +202,6 @@ class MockDelegateModeRepository implements DelegateModeRepository {
   @override
   Future<void> startOver() async {
     startOverCalls++;
-    if (scenario.startOverError case final error?) throw error;
     final status = scenario.status;
     if (status.registered && !status.retired) {
       throw const DelegateModeException(
@@ -256,7 +232,7 @@ class MockDelegateModeRepository implements DelegateModeRepository {
     return DelegateAttestation(
       key: key,
       provider: provider,
-      handle: scenario.handle,
+      handle: 'alice_votes',
       proofId: '1790000000000000000',
       attestations: [
         DelegateAttestationSignature(
@@ -281,7 +257,7 @@ class MockDelegateModeRepository implements DelegateModeRepository {
       final scripted = scenario.registerResults.removeAt(0);
       if (scripted is DelegateRegisterRejected) return scripted;
     }
-    final index = scenario.nextIndex;
+    const index = 17;
     scenario.status = delegateModeView(
       key: attestation.key,
       delegateIndex: index,
@@ -394,10 +370,6 @@ class MockDelegateModeRepository implements DelegateModeRepository {
     // A rejected ballot stays stored, as the only one the device submits
     // for the round.
     if (result.rejected) return result;
-    if (scenario.acceptedUnlisted > 0) {
-      scenario.acceptedUnlisted--;
-      return result;
-    }
     round.storedBallot = null;
     round.ballot = proxyBallot(ApiDelegateBallotKind.submitted, [...options]);
     return result;

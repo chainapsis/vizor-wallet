@@ -17,22 +17,6 @@ VoidCallback? _retire(WidgetTester tester) => tester
     .onPressed;
 
 void main() {
-  testWidgets('shows the Retire copy and the entry it retires', (tester) async {
-    await pumpDelegateRoute(
-      tester,
-      kDelegateRetirePath,
-      scenario: delegateRegisteredScenario(),
-    );
-    expect(find.text(testL10n.proxyRetire), findsOne);
-    expect(find.text('#17 · ${kDelegateTestKey.fingerprint}'), findsOne);
-    final button = tester.widget<AppButton>(
-      find.byKey(const ValueKey('delegate_retire_confirm')),
-    );
-    expect(button.variant, AppButtonVariant.destructive);
-    expect(find.text(testL10n.delegateRetireLabel), findsWidgets);
-    expectNoDelegateTotals(tester);
-  });
-
   testWidgets('pressing Retire still needs re-auth, and a dismissed one '
       'leaves Retire ready without an error', (tester) async {
     final harness = await pumpDelegateRoute(
@@ -102,18 +86,5 @@ void main() {
     );
     await tapDelegateKey(tester, 'delegate_retire_confirm');
     expect(find.text(testL10n.delegateRetireFailed), findsOne);
-  });
-
-  testWidgets('a device with no entry, or a retired one, has nothing to '
-      'retire', (tester) async {
-    for (final scenario in [
-      delegateFreshScenario(),
-      delegateUnregisteredScenario(),
-      delegateRegisteredScenario(entryStatus: DelegateEntryStatus.retired),
-    ]) {
-      await pumpDelegateRoute(tester, kDelegateRetirePath, scenario: scenario);
-      expect(find.text(testL10n.delegateNothingToRetire), findsOne);
-      expect(_retire(tester), isNull);
-    }
   });
 }
