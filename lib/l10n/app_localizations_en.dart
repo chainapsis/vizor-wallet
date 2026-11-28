@@ -9275,6 +9275,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your public votes stay linked to your X or GitHub account permanently, even if you delete your post or account.';
 
   @override
+  String proxyDelegateNumber(int number) {
+    return 'Delegate #$number';
+  }
+
+  @override
   String get proxyDelegateVoteBody => 'Let people you trust answer for you.';
 
   @override
@@ -9347,11 +9352,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proxyHandedOffLabel => 'Sent';
 
   @override
-  String proxyHandleOnNetwork(String handle, String network) {
-    return '@$handle on $network';
-  }
-
-  @override
   String proxyHasNotVotedYet(String name) {
     return '$name hasn\'t voted yet';
   }
@@ -9374,6 +9374,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get proxyKeptShareUnanswered =>
       'Vizor couldn\'t save your answers for the ZEC you keep, so nothing was sent. Go back to the questions and submit again.';
+
+  @override
+  String get proxyKeyFingerprintLabel => 'Key fingerprint';
 
   @override
   String proxyListCount(int count) {
@@ -9431,9 +9434,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'New this round. Registered after voting started.';
 
   @override
-  String get proxyNewThisRoundLabel => 'New this round';
-
-  @override
   String proxyNoBallot(String name) {
     return '$name didn\'t submit a ballot before voting ended, so your delegated ZEC wasn\'t counted this round.';
   }
@@ -9482,16 +9482,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Not reviewed. Vizor hasn\'t checked this delegate. Compare the fingerprint with the one in their post before you delegate.';
 
   @override
-  String get proxyNotReviewedLabel => 'Not reviewed';
+  String get proxyNotReviewedByVizor => 'Not reviewed by Vizor';
 
   @override
   String get proxyNothingLeftToVote =>
       'You delegated all of your voting power in this round, so you have nothing left to vote. Your delegates vote for it.';
-
-  @override
-  String proxyOnNetwork(String network) {
-    return 'on $network';
-  }
 
   @override
   String proxyOptionFallback(int number) {
@@ -9561,7 +9556,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proxyReviewDelegatesTitle => 'Your delegates';
 
   @override
-  String get proxyReviewedLabel => 'Reviewed';
+  String get proxyReviewedByVizor => 'Reviewed by Vizor';
 
   @override
   String get proxyScanLabel => 'Scan';

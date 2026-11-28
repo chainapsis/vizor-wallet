@@ -15146,6 +15146,12 @@ abstract class AppLocalizations {
   /// **'Your public votes stay linked to your X or GitHub account permanently, even if you delete your post or account.'**
   String get proxyDelegateIntroPublicVotes;
 
+  /// Line in a delegate's info bubble: the delegate's number on the voting chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate #{number}'**
+  String proxyDelegateNumber(int number);
+
   /// Line under the round screen's 'Delegate your vote' card title.
   ///
   /// In en, this message translates to:
@@ -15248,12 +15254,6 @@ abstract class AppLocalizations {
   /// **'Sent'**
   String get proxyHandedOffLabel;
 
-  /// Second line of a delegate's row, for example @alice on X. {network} is X or GitHub.
-  ///
-  /// In en, this message translates to:
-  /// **'@{handle} on {network}'**
-  String proxyHandleOnNetwork(String handle, String network);
-
   /// A delegate's line in a question's status before their ballot lands. {name} is the delegate's name.
   ///
   /// In en, this message translates to:
@@ -15289,6 +15289,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vizor couldn\'t save your answers for the ZEC you keep, so nothing was sent. Go back to the questions and submit again.'**
   String get proxyKeptShareUnanswered;
+
+  /// Label in a delegate's info bubble, followed by the delegate key's fingerprint such as qqqs-yqcy-q5rq-wzqf.
+  ///
+  /// In en, this message translates to:
+  /// **'Key fingerprint'**
+  String get proxyKeyFingerprintLabel;
 
   /// How many delegates Vizor's list holds, beside the list label on the choose-delegates screen.
   ///
@@ -15362,12 +15368,6 @@ abstract class AppLocalizations {
   /// **'New this round. Registered after voting started.'**
   String get proxyNewThisRound;
 
-  /// Label or button on shared delegator widgets (delegate rows and notices).
-  ///
-  /// In en, this message translates to:
-  /// **'New this round'**
-  String get proxyNewThisRoundLabel;
-
   /// Round status after voting closed, for a delegate who submitted no ballot. {name} is the delegate's name, such as @alice.
   ///
   /// In en, this message translates to:
@@ -15440,23 +15440,17 @@ abstract class AppLocalizations {
   /// **'Not reviewed. Vizor hasn\'t checked this delegate. Compare the fingerprint with the one in their post before you delegate.'**
   String get proxyNotReviewed;
 
-  /// Label or button on shared delegator widgets (delegate rows and notices).
+  /// A delegate's review state when Vizor hasn't reviewed them: first line of the info bubble beside the handle, and the screen reader label of the warning icon after the name.
   ///
   /// In en, this message translates to:
-  /// **'Not reviewed'**
-  String get proxyNotReviewedLabel;
+  /// **'Not reviewed by Vizor'**
+  String get proxyNotReviewedByVizor;
 
   /// Message on the vote review screen.
   ///
   /// In en, this message translates to:
   /// **'You delegated all of your voting power in this round, so you have nothing left to vote. Your delegates vote for it.'**
   String get proxyNothingLeftToVote;
-
-  /// Second line of a delegate's row when the first line already shows the handle. {network} is X or GitHub.
-  ///
-  /// In en, this message translates to:
-  /// **'on {network}'**
-  String proxyOnNetwork(String network);
 
   /// A delegate's chosen answer when the round lists no label for it. {number} counts options from 1.
   ///
@@ -15572,11 +15566,11 @@ abstract class AppLocalizations {
   /// **'Your delegates'**
   String get proxyReviewDelegatesTitle;
 
-  /// Label or button on shared delegator widgets (delegate rows and notices).
+  /// A delegate's review state: first line of the info bubble beside a delegate's handle, and the screen reader label of the green check after its name.
   ///
   /// In en, this message translates to:
-  /// **'Reviewed'**
-  String get proxyReviewedLabel;
+  /// **'Reviewed by Vizor'**
+  String get proxyReviewedByVizor;
 
   /// Label or button on the delegate key import screen.
   ///

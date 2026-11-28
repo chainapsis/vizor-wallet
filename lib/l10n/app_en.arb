@@ -11795,6 +11795,16 @@
   "@proxyDelegateIntroPublicVotes": {
     "description": "Message on the delegate mode dashboard."
   },
+  "proxyDelegateNumber": "Delegate #{number}",
+  "@proxyDelegateNumber": {
+    "description": "Line in a delegate's info bubble: the delegate's number on the voting chain.",
+    "placeholders": {
+      "number": {
+        "type": "int",
+        "example": "17"
+      }
+    }
+  },
   "proxyDelegateVoteBody": "Let people you trust answer for you.",
   "@proxyDelegateVoteBody": {
     "description": "Line under the round screen's 'Delegate your vote' card title."
@@ -11937,20 +11947,6 @@
   "@proxyHandedOffLabel": {
     "description": "Label or button on the delegator's status, progress and error text."
   },
-  "proxyHandleOnNetwork": "@{handle} on {network}",
-  "@proxyHandleOnNetwork": {
-    "description": "Second line of a delegate's row, for example @alice on X. {network} is X or GitHub.",
-    "placeholders": {
-      "handle": {
-        "type": "String",
-        "example": "alice"
-      },
-      "network": {
-        "type": "String",
-        "example": "X"
-      }
-    }
-  },
   "proxyHasNotVotedYet": "{name} hasn't voted yet",
   "@proxyHasNotVotedYet": {
     "description": "A delegate's line in a question's status before their ballot lands. {name} is the delegate's name.",
@@ -11980,6 +11976,10 @@
   "proxyKeptShareUnanswered": "Vizor couldn't save your answers for the ZEC you keep, so nothing was sent. Go back to the questions and submit again.",
   "@proxyKeptShareUnanswered": {
     "description": "Message on the delegator's status, progress and error text. Commit refused because the kept share's answers were not recorded. The submit records them first, so this only shows for a bug."
+  },
+  "proxyKeyFingerprintLabel": "Key fingerprint",
+  "@proxyKeyFingerprintLabel": {
+    "description": "Label in a delegate's info bubble, followed by the delegate key's fingerprint such as qqqs-yqcy-q5rq-wzqf."
   },
   "proxyListCount": "{count, plural, =1{1 delegate} other{{count} delegates}}",
   "@proxyListCount": {
@@ -12067,10 +12067,6 @@
   "@proxyNewThisRound": {
     "description": "Message on a delegate's profile screen."
   },
-  "proxyNewThisRoundLabel": "New this round",
-  "@proxyNewThisRoundLabel": {
-    "description": "Label or button on shared delegator widgets (delegate rows and notices)."
-  },
   "proxyNoBallot": "{name} didn't submit a ballot before voting ended, so your delegated ZEC wasn't counted this round.",
   "@proxyNoBallot": {
     "description": "Round status after voting closed, for a delegate who submitted no ballot. {name} is the delegate's name, such as @alice.",
@@ -12143,23 +12139,13 @@
   "@proxyNotReviewed": {
     "description": "Message on shared delegator widgets (delegate rows and notices)."
   },
-  "proxyNotReviewedLabel": "Not reviewed",
-  "@proxyNotReviewedLabel": {
-    "description": "Label or button on shared delegator widgets (delegate rows and notices)."
+  "proxyNotReviewedByVizor": "Not reviewed by Vizor",
+  "@proxyNotReviewedByVizor": {
+    "description": "A delegate's review state when Vizor hasn't reviewed them: first line of the info bubble beside the handle, and the screen reader label of the warning icon after the name."
   },
   "proxyNothingLeftToVote": "You delegated all of your voting power in this round, so you have nothing left to vote. Your delegates vote for it.",
   "@proxyNothingLeftToVote": {
     "description": "Message on the vote review screen."
-  },
-  "proxyOnNetwork": "on {network}",
-  "@proxyOnNetwork": {
-    "description": "Second line of a delegate's row when the first line already shows the handle. {network} is X or GitHub.",
-    "placeholders": {
-      "network": {
-        "type": "String",
-        "example": "GitHub"
-      }
-    }
   },
   "proxyOptionFallback": "Option {number}",
   "@proxyOptionFallback": {
@@ -12243,9 +12229,9 @@
   "@proxyReviewDelegatesTitle": {
     "description": "Title on the vote review's delegation section. The review screen's section titles."
   },
-  "proxyReviewedLabel": "Reviewed",
-  "@proxyReviewedLabel": {
-    "description": "Label or button on shared delegator widgets (delegate rows and notices)."
+  "proxyReviewedByVizor": "Reviewed by Vizor",
+  "@proxyReviewedByVizor": {
+    "description": "A delegate's review state: first line of the info bubble beside a delegate's handle, and the screen reader label of the green check after its name."
   },
   "proxyScanLabel": "Scan",
   "@proxyScanLabel": {

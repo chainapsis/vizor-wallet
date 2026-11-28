@@ -9139,6 +9139,11 @@ class AppLocalizationsKo extends AppLocalizations {
       '공‍개 투‍표‍는 게‍시‍물‍이‍나 계‍정‍을 삭‍제‍해‍도 X 또‍는 GitHub 계‍정‍에 영‍구‍적‍으‍로 연‍결‍돼‍요.';
 
   @override
+  String proxyDelegateNumber(int number) {
+    return '대‍리‍인 #$number';
+  }
+
+  @override
   String get proxyDelegateVoteBody => '신‍뢰‍하‍는 사‍람‍이 대‍신 답‍하‍게 하‍세‍요.';
 
   @override
@@ -9210,11 +9215,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get proxyHandedOffLabel => '전‍송‍됨';
 
   @override
-  String proxyHandleOnNetwork(String handle, String network) {
-    return '$network‍의 @$handle';
-  }
-
-  @override
   String proxyHasNotVotedYet(String name) {
     return '$name 대‍리‍인‍이 아‍직 투‍표‍하‍지 않‍았‍어‍요';
   }
@@ -9237,6 +9237,9 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get proxyKeptShareUnanswered =>
       'Vizor‍가 남‍겨 둔 ZEC‍에 대‍한 답‍변‍을 저‍장‍하‍지 못‍해‍서 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요. 질‍문‍으‍로 돌‍아‍가 다‍시 제‍출‍해 주‍세‍요.';
+
+  @override
+  String get proxyKeyFingerprintLabel => '키 지‍문';
 
   @override
   String proxyListCount(int count) {
@@ -9292,9 +9295,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get proxyNewThisRound => '이‍번 라‍운‍드 신‍규. 투‍표‍가 시‍작‍된 뒤 등‍록‍됐‍어‍요.';
 
   @override
-  String get proxyNewThisRoundLabel => '이‍번 라‍운‍드 신‍규';
-
-  @override
   String proxyNoBallot(String name) {
     return '$name 대‍리‍인‍이 투‍표‍가 끝‍나‍기 전‍에 투‍표‍용‍지‍를 제‍출‍하‍지 않‍아‍서, 위‍임‍한 ZEC‍가 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍았‍어‍요.';
   }
@@ -9343,16 +9343,11 @@ class AppLocalizationsKo extends AppLocalizations {
       '검‍토‍되‍지 않‍음. Vizor‍가 확‍인‍하‍지 않‍은 대‍리‍인‍이‍에‍요. 위‍임‍하‍기 전‍에 지‍문‍을 대‍리‍인 게‍시‍물‍에 있‍는 지‍문‍과 비‍교‍해 주‍세‍요.';
 
   @override
-  String get proxyNotReviewedLabel => '검‍토‍되‍지 않‍음';
+  String get proxyNotReviewedByVizor => 'Vizor‍가 검‍토‍하‍지 않‍음';
 
   @override
   String get proxyNothingLeftToVote =>
       '이‍번 라‍운‍드‍의 투‍표‍권‍을 모‍두 위‍임‍해‍서 직‍접 투‍표‍할 투‍표‍권‍이 남‍아 있‍지 않‍아‍요. 대‍리‍인‍이 그 투‍표‍권‍으‍로 투‍표‍해‍요.';
-
-  @override
-  String proxyOnNetwork(String network) {
-    return '$network 계‍정';
-  }
 
   @override
   String proxyOptionFallback(int number) {
@@ -9422,7 +9417,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get proxyReviewDelegatesTitle => '내 대‍리‍인';
 
   @override
-  String get proxyReviewedLabel => '검‍토‍됨';
+  String get proxyReviewedByVizor => 'Vizor‍가 검‍토‍함';
 
   @override
   String get proxyScanLabel => '스‍캔';
