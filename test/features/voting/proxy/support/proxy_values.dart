@@ -47,22 +47,19 @@ ApiProxyDelegationProgress proxyProgress({
   refusedByChain: refusedByChain,
 );
 
-/// An active listing that is not new this round, with the key
-/// `zvdk1<handle>` unless [dk] and [fingerprint] say otherwise.
+/// An active listing on X that is not new this round, with the key
+/// `zvdk1<handle>`.
 ProxyDelegateListing proxyListingOf({
   required int index,
-  ProxyDelegateProvider provider = ProxyDelegateProvider.x,
   required String handle,
-  String? dk,
-  String fingerprint = 'qqqs-yqcy-q5rq-wzqf',
   required bool reviewed,
   String? displayName,
   Uint8List? picture,
 }) => ProxyDelegateListing(
   index: index,
-  provider: provider,
+  provider: ProxyDelegateProvider.x,
   handle: handle,
-  key: DelegateKeyInfo(dk: dk ?? 'zvdk1$handle', fingerprint: fingerprint),
+  key: DelegateKeyInfo(dk: 'zvdk1$handle', fingerprint: 'qqqs-yqcy-q5rq-wzqf'),
   reviewed: reviewed,
   displayName: displayName,
   picture: picture,

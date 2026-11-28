@@ -116,15 +116,12 @@ DelegatePictureCache _refusingPictures() {
 
 /// Pumps [location] in a router holding every delegator view and a poll
 /// route with the round screen's delegation line, without the desktop
-/// shell. [desktop] picks the toolbar layout or the mobile body;
-/// [pictureCache] backs the delegate pictures. [backing] replaces the mock behind
-/// every screen.
+/// shell. [pictureCache] backs the delegate pictures. [backing] replaces
+/// the mock behind every screen.
 Future<ProxyTestHarness> pumpProxyRoute(
   WidgetTester tester,
   String location, {
   ProxyMockScenario? scenario,
-  DateTime? now,
-  bool desktop = true,
   Size size = const Size(1000, 2400),
   List<RouteBase> extraRoutes = const [],
   List<RouteBase>? routes,
@@ -133,7 +130,6 @@ Future<ProxyTestHarness> pumpProxyRoute(
   ProxyDelegationRepository? backing,
   VotingDraftState answers = const VotingDraftState(),
 }) async {
-  final clockNow = now ?? kProxyTestNow;
   final repository = MockProxyDelegationRepository(
     scenario ?? proxyTestScenario(),
   );
@@ -167,7 +163,7 @@ Future<ProxyTestHarness> pumpProxyRoute(
               builder: (_, state) => page(
                 ProxyDelegateDirectoryView(
                   roundId: round(state),
-                  showDesktopToolbar: desktop,
+                  showDesktopToolbar: true,
                 ),
               ),
             ),
@@ -179,7 +175,7 @@ Future<ProxyTestHarness> pumpProxyRoute(
                   delegateIndex: int.parse(
                     state.pathParameters['delegateIndex']!,
                   ),
-                  showDesktopToolbar: desktop,
+                  showDesktopToolbar: true,
                 ),
               ),
             ),
@@ -188,7 +184,7 @@ Future<ProxyTestHarness> pumpProxyRoute(
               builder: (_, state) => page(
                 VotingReviewView(
                   roundId: round(state),
-                  showDesktopToolbar: desktop,
+                  showDesktopToolbar: true,
                 ),
               ),
             ),
@@ -202,7 +198,7 @@ Future<ProxyTestHarness> pumpProxyRoute(
               builder: (_, state) => page(
                 ProxyAllocationView(
                   roundId: round(state),
-                  showDesktopToolbar: desktop,
+                  showDesktopToolbar: true,
                 ),
               ),
             ),
@@ -222,7 +218,7 @@ Future<ProxyTestHarness> pumpProxyRoute(
       proxyDelegationRepositoryProvider.overrideWith(
         (ref, key) => backing ?? repository,
       ),
-      proxyClockProvider.overrideWithValue(() => clockNow),
+      proxyClockProvider.overrideWithValue(() => kProxyTestNow),
       delegatePictureCacheProvider.overrideWithValue(
         pictureCache ?? _refusingPictures(),
       ),

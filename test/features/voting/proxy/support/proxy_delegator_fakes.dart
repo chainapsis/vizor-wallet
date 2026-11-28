@@ -32,39 +32,6 @@ rust.ApiProxyAvailability bridgedAvailability(
   bool usedElsewhere = false,
 }) => rust.ApiProxyAvailability(kind: kind, usedElsewhere: usedElsewhere);
 
-/// A bridged delegation view for delegate [index] at [stage].
-rust.ApiProxyDelegationView bridgedView(
-  int index, {
-  rust_wire.ProxyDelegationStage stage =
-      rust_wire.ProxyDelegationStage.preparing,
-  rust.ApiDelegateBallotKind ballot = rust.ApiDelegateBallotKind.noBallotYet,
-  List<int> options = const [],
-  int ballots = 100,
-}) => rust.ApiProxyDelegationView(
-  delegateIndex: index,
-  provider: rust_wire.ProxyDelegateProvider.x,
-  handle: 'delegate$index',
-  ballots: BigInt.from(ballots),
-  stage: stage,
-  ballot: rust.ApiDelegateBallotView(
-    kind: ballot,
-    options: Uint32List.fromList(options),
-  ),
-);
-
-/// A bridged progress with [views] and the given flags.
-rust.ApiProxyDelegationProgress bridgedProgress(
-  List<rust.ApiProxyDelegationView> views, {
-  bool plannedImmediate = false,
-  bool immediateRevealConfirmed = false,
-  bool refusedByChain = false,
-}) => rust.ApiProxyDelegationProgress(
-  delegations: views,
-  plannedImmediate: plannedImmediate,
-  immediateRevealConfirmed: immediateRevealConfirmed,
-  refusedByChain: refusedByChain,
-);
-
 /// A delegate ballot page whose `next_start_after` is [next].
 Uint8List ballotPage(int next, {List<int> delegates = const []}) =>
     Uint8List.fromList(
@@ -83,13 +50,8 @@ Uint8List ballotPage(int next, {List<int> delegates = const []}) =>
     );
 
 /// A fake of zcash_voting's delegator calls: it records what each call was
-/// given and answers from fields tests set. Its planner keeps one rule of
-/// zcash_voting's: a commit whose confirmed preview is not the current
-/// plan's split is refused as `PlanChanged`.
+/// given and answers from fields tests set.
 class FakeProxyDelegatorRust {
-  /// Names of the calls made, in order.
-  final calls = <String>[];
-
   /// Availability's answer for the proof it is given; throwing is allowed.
   rust.ApiProxyAvailability Function(rust.ApiGovNullifierProof proof)
   availabilityFor = (_) =>
@@ -108,10 +70,6 @@ class FakeProxyDelegatorRust {
   /// The wallet's ballots, which the plan splits.
   int walletBallots = 400;
 
-  /// The kind preview and commit refuse with when set, as zcash_voting
-  /// refuses a bundle whose proxy batch could never be proved.
-  rust_wire.ProxyDelegationErrorKind? bundleRefusal;
-
   /// Every preview's request.
   final previews = <rust_wire.ProxyAllocationRequest>[];
 
@@ -125,12 +83,6 @@ class FakeProxyDelegatorRust {
     List<int> roster,
   })?
   committed;
-
-  /// Status's answer.
-  rust.ApiProxyAllocationStatus? statusAnswer;
-
-  /// Progress's answers, played in order; the last repeats.
-  final progressAnswers = <rust.ApiProxyDelegationProgress?>[];
 
   /// The pages and phase each status or progress call read.
   final reads = <({List<Uint8List> pages, rust.ApiProxyRoundPhase phase})>[];
@@ -163,7 +115,6 @@ class FakeProxyDelegatorRust {
     required rust.ApiGovNullifierProof govNullifiers,
     required rust.ApiProxyRoundTiming timing,
   }) async {
-    calls.add('availability');
     availabilityCalls.add((chain: chain, proof: govNullifiers, timing: timing));
     return availabilityFor(govNullifiers);
   }
@@ -173,14 +124,7 @@ class FakeProxyDelegatorRust {
     required rust_wire.ProxyAllocationRequest request,
     required rust.ApiProxyRoundTiming timing,
   }) async {
-    calls.add('preview');
     previews.add(request);
-    if (bundleRefusal case final kind?) throw delegatorError(kind);
-    if (walletBallots < request.choices.length) {
-      throw delegatorError(
-        rust_wire.ProxyDelegationErrorKind.notEnoughVotingPower,
-      );
-    }
     return planFor(request);
   }
 
@@ -192,22 +136,6 @@ class FakeProxyDelegatorRust {
     required rust.ApiProxyRoundTiming timing,
     required List<int> roster,
   }) async {
-    calls.add('commit');
-    if (bundleRefusal case final kind?) throw delegatorError(kind);
-    if (committed != null) {
-      throw delegatorError(
-        rust_wire.ProxyDelegationErrorKind.other,
-        'the allocation is final',
-      );
-    }
-    final plan = planFor(request);
-    List<BigInt> quotas(rust_wire.ProxyAllocationPreview preview) => [
-      for (final delegation in preview.delegations) delegation.ballots,
-      preview.keptBallots,
-    ];
-    if ('${quotas(confirmed)}' != '${quotas(plan)}') {
-      throw delegatorError(rust_wire.ProxyDelegationErrorKind.planChanged);
-    }
     committed = (
       request: request,
       confirmed: confirmed,
@@ -233,9 +161,8 @@ class FakeProxyDelegatorRust {
     required List<Uint8List> ballotPages,
     required rust.ApiProxyRoundPhase phase,
   }) async {
-    calls.add('status');
     reads.add((pages: ballotPages, phase: phase));
-    return statusAnswer;
+    return null;
   }
 
   Future<rust.ApiProxyDelegationProgress?> progress({
@@ -244,12 +171,8 @@ class FakeProxyDelegatorRust {
     required List<Uint8List> ballotPages,
     required rust.ApiProxyRoundPhase phase,
   }) async {
-    calls.add('progress');
     reads.add((pages: ballotPages, phase: phase));
-    if (progressAnswers.isEmpty) return null;
-    return progressAnswers.length == 1
-        ? progressAnswers.single
-        : progressAnswers.removeAt(0);
+    return null;
   }
 }
 
@@ -257,9 +180,6 @@ class FakeProxyDelegatorRust {
 class FakeProxyDelegatorChain implements ProxyDelegatorChain {
   /// The reads made, in order.
   final reads = <String>[];
-
-  /// The params body; null answers as a 404.
-  Uint8List? params = Uint8List.fromList(utf8.encode('{"params":{}}'));
 
   /// Ballot pages by the `start_after` they answer.
   Map<int, Uint8List> ballotPages = {0: ballotPage(0)};
@@ -279,7 +199,7 @@ class FakeProxyDelegatorChain implements ProxyDelegatorChain {
   @override
   Future<Uint8List?> proxyDelegationParams() async {
     reads.add('proxy-delegation-params');
-    return params;
+    return Uint8List.fromList(utf8.encode('{"params":{}}'));
   }
 
   @override

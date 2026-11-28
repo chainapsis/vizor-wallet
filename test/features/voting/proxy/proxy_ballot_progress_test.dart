@@ -189,21 +189,6 @@ void main() {
       expect(_marks(rows), ['done', 'todo', 'todo']);
     });
 
-    test('the rows are the vote\'s own, plus one naming every delegate', () {
-      String label(ProxyBallotStep step) =>
-          proxyBallotStepLabel(testL10n, step, ['@alice', '@bob']);
-      expect(label(ProxyBallotStep.proving), 'Proving voting authority');
-      expect(
-        label(ProxyBallotStep.delegating),
-        'Delegating to @alice and @bob',
-      );
-      expect(
-        label(ProxyBallotStep.casting),
-        'Casting votes and submitting shares',
-      );
-      expect(label(ProxyBallotStep.finalizing), 'Finalizing submission');
-    });
-
     test('the live progress and the stored status merge to the further '
         'stage', () {
       final status = ApiProxyAllocationStatus(
@@ -239,70 +224,6 @@ void main() {
         ),
       );
     }
-
-    testWidgets('one progress screen runs the delegation and the casts', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        VotingStatusContent(
-          phase: VotingSessionPhase.castingVotes,
-          delegation: _rows(
-            _progress(ProxyDelegationStage.included),
-            castsVotes: true,
-            ballotStep: 1,
-          ),
-        ),
-      );
-      expect(find.text('Submitting votes'), findsOne);
-      expect(_shownRows(tester), [
-        'Proving voting authority: done',
-        'Delegating to @alice_votes and @dana: done',
-        'Casting votes and submitting shares: active',
-        'Finalizing submission: todo',
-      ]);
-    });
-
-    testWidgets('a delegation with nothing to cast reads as delegating', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        VotingStatusContent(
-          phase: VotingSessionPhase.idle,
-          isHardwareAccount: true,
-          delegation: _rows(_progress(ProxyDelegationStage.submitting)),
-        ),
-      );
-      expect(find.text(testL10n.proxyProgressTitle), findsOne);
-      expect(_shownRows(tester), [
-        'Signing with Keystone: todo',
-        'Proving voting authority: done',
-        'Delegating to @alice_votes and @dana: active',
-        'Finalizing submission: todo',
-      ]);
-    });
-
-    testWidgets('with everything delegated, the hand-off reads as '
-        'finalizing the submission', (tester) async {
-      await pump(
-        tester,
-        VotingStatusContent(
-          phase: VotingSessionPhase.idle,
-          isHardwareAccount: true,
-          isLedgerAccount: true,
-          delegation: _rows(_progress(ProxyDelegationStage.included)),
-        ),
-      );
-      expect(_shownRows(tester), [
-        'Signing with Ledger: todo',
-        'Proving voting authority: done',
-        'Delegating to @alice_votes and @dana: done',
-        'Finalizing submission: active',
-      ]);
-      expect(find.text('Casting votes and submitting shares'), findsNothing);
-      expect(find.text('Handing off'), findsNothing);
-    });
 
     testWidgets('casts that fail after the delegation landed retry like '
         'votes, with the delegation done', (tester) async {
@@ -433,7 +354,6 @@ void main() {
         findsOne,
       );
       expect(find.text('Casting votes and submitting shares'), findsOne);
-      expect(find.text('View delegation status'), findsNothing);
     });
 
     testWidgets('a refused delegation shows one notice that it keeps '

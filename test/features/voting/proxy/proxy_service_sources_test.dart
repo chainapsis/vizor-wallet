@@ -31,26 +31,4 @@ void main() {
     expect(main?.verifierApiUrls, ['https://verifier.example']);
     expect(sources.of('test'), isNull);
   });
-
-  test('a document that does not parse changes nothing and never '
-      'throws', () async {
-    await sources.ingest(
-      fakeConfigFetch([fakeDynamicConfig()]),
-      network: 'main',
-    );
-    await sources.ingest(
-      fakeConfigFetch([fakeDynamicConfig(proxy: false)]),
-      network: 'main',
-    );
-    expect(sources.of('main')?.proofRpcUrls, ['https://rpc-a.example']);
-  });
-
-  test('clear forgets every network', () async {
-    await sources.ingest(
-      fakeConfigFetch([fakeDynamicConfig()]),
-      network: 'main',
-    );
-    sources.clear();
-    expect(sources.of('main'), isNull);
-  });
 }

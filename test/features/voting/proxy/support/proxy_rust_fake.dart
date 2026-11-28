@@ -115,12 +115,6 @@ class ProxyRustFake implements RustLibApi {
   }) => _registry.browse(view);
 
   @override
-  Future<List<ProxyDelegateListing>> crateApiProxyRegistrySearchProxyDelegates({
-    required ApiProxyRegistryView view,
-    required String query,
-  }) => _registry.search(view, query);
-
-  @override
   Future<ApiDelegateLookup> crateApiProxyRegistryLookupProxyDelegate({
     required ApiProxyRegistryView view,
     required String text,

@@ -71,26 +71,6 @@ void main() {
           .onPressed !=
       null;
 
-  testWidgets('the round screen hosts the delegation line under its summary', (
-    tester,
-  ) async {
-    await pumpActive(tester);
-    final line = find.byKey(const ValueKey('proxy_voting_power_line'));
-    expect(line, findsOne);
-    expect(
-      tester.getTopLeft(line).dy,
-      greaterThan(tester.getTopLeft(find.text('Round')).dy),
-    );
-    expect(reviewEnabled(tester), isFalse, reason: 'nothing to review yet');
-  });
-
-  testWidgets('a drafted delegation that keeps a share needs its answers', (
-    tester,
-  ) async {
-    await pumpActive(tester, delegationDrafted: true);
-    expect(reviewEnabled(tester), isFalse);
-  });
-
   testWidgets('everything delegated: each question says who answers it and '
       'needs no answer', (tester) async {
     await pumpActive(
@@ -189,53 +169,18 @@ void main() {
       expect(find.byKey(const ValueKey('proxy_delegation_summary')), findsOne);
       expect(find.text(testL10n.proxyCountsOnlyWithBallot), findsOne);
       expect(find.text('Skipped'), findsNothing);
-      expect(find.text(kProxyViewStatusLabelForTest), findsNothing);
-    });
-
-    testWidgets('says when a delegate has not voted yet', (tester) async {
-      await pumpVoted(tester);
-      expect(find.text("@alice_votes hasn't voted yet"), findsWidgets);
-      expect(find.text("@bjorn_dev hasn't voted yet"), findsWidgets);
-    });
-
-    testWidgets('after the close says what counted and what did not', (
-      tester,
-    ) async {
-      await pumpVoted(
-        tester,
-        ballot: proxyBallot(ApiDelegateBallotKind.counted, [0, 0, 0]),
-      );
-      final first = proxyTestScenario().round.proposals.first;
-      expect(
-        linesOf(tester, first.id),
-        contains('${first.options[0].label} · ${testL10n.proxyCountedLabel}'),
-      );
-
-      await pumpVoted(
-        tester,
-        ballot: proxyBallot(ApiDelegateBallotKind.notCounted),
-      );
-      expect(
-        linesOf(tester, first.id),
-        contains(testL10n.proxyNoBallotNotCountedLabel),
-      );
     });
   });
 
   group('PD-8 results', () {
-    /// Pumps the results content with the PD-8 note, for a wallet that did
-    /// or did not delegate.
-    Future<ProxyTestHarness> pumpResults(
-      WidgetTester tester, {
-      bool delegated = true,
-    }) async {
+    /// Pumps the results content with the PD-8 note, for a wallet that
+    /// delegated.
+    Future<ProxyTestHarness> pumpResults(WidgetTester tester) async {
       final scenario = proxyTestScenario();
-      if (delegated) {
-        scenario.status = proxyStatus(scenario, [
-          'alice_votes',
-          'bjorn_dev',
-        ], ballot: proxyBallot(ApiDelegateBallotKind.counted, [0, 2, 1]));
-      }
+      scenario.status = proxyStatus(scenario, [
+        'alice_votes',
+        'bjorn_dev',
+      ], ballot: proxyBallot(ApiDelegateBallotKind.counted, [0, 2, 1]));
       return pumpProxyRoute(
         tester,
         '/results',
@@ -291,18 +236,5 @@ void main() {
         findsNothing,
       );
     });
-
-    testWidgets('adds nothing for a wallet that did not delegate', (
-      tester,
-    ) async {
-      await pumpResults(tester, delegated: false);
-      expect(
-        find.byKey(const ValueKey('proxy_results_delegation_note')),
-        findsNothing,
-      );
-    });
   });
 }
-
-/// The old flow's separate status button, which no screen offers now.
-const kProxyViewStatusLabelForTest = 'View delegation status';

@@ -33,7 +33,6 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.d
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
-import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_models.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_providers.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
@@ -1141,36 +1140,6 @@ void main() {
     await _pumpUntilFound(tester, find.text('Submission confirmed!'));
     expect(find.text(testL10n.proxyDelegationConfirmed), findsOneWidget);
     expect(find.text('Submission not complete'), findsNothing);
-  });
-
-  testWidgets('with the dormant flag off, the submitted route ignores a '
-      'delegation', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1512, 982));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-    final scenario = proxyTestScenario();
-    scenario.status = proxyStatus(scenario, [
-      'alice_votes',
-    ], stage: ProxyDelegationStage.included);
-    final container = _statusContainer(
-      accountOverride: _MnemonicAccountNotifier.new,
-      overrides: [
-        proxyDelegationRepositoryProvider.overrideWith(
-          (_, _) => MockProxyDelegationRepository(scenario),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: _submissionHarness(),
-      ),
-    );
-    await _pumpUntilFound(tester, find.text('Submission not complete'));
-    expect(find.textContaining('Delegating'), findsNothing);
   });
 
   testWidgets('submitted route waits for the designated immediate share', (

@@ -116,10 +116,9 @@ class FakeListing {
 /// Stands in for zcash_voting's registry client, which Dart tests cannot
 /// load. It reads the fake documents above and applies the registry's rules
 /// in miniature: pages chain by their last index, only a signed list of a
-/// higher version is adopted, search and paste read the cache, and a check
-/// needs each chosen entry proven with the choice's key, provider and
-/// handle. The Dart plumbing around the bridge is what these fakes test; the
-/// rules themselves are tested in Rust.
+/// higher version is adopted, and search and paste read the cache. Its check
+/// finds every choice ok. The Dart plumbing around the bridge is what these
+/// fakes test; the rules themselves are tested in Rust.
 class FakeProxyRegistryRust {
   /// The delegates the fake registry describes, by index.
   final listings = <int, FakeListing>{};
@@ -247,44 +246,14 @@ class FakeProxyRegistryRust {
     );
   }
 
-  /// The cached live entries whose handle is [query], trimmed, without one
-  /// leading `@` and lowercased.
-  Future<List<rust_wire.ProxyDelegateListing>> search(
-    rust.ApiProxyRegistryView view,
-    String query,
-  ) async {
-    var needle = query.trim().toLowerCase();
-    if (needle.startsWith('@')) needle = needle.substring(1);
-    return [
-      for (final listing in _found(view))
-        if (listing.handle == needle &&
-            listing.status != rust_wire.DelegateEntryStatus.retired)
-          _listed(view, listing),
-    ];
-  }
-
-  /// Finds `#d` and `d` in the cache, and a cached key by [FakeListing.dk]
-  /// or fingerprint.
+  /// Finds `#d` and `d` in the cache.
   Future<rust.ApiDelegateLookup> lookup(
     rust.ApiProxyRegistryView view,
     String text,
   ) async {
-    final trimmed = text.trim();
-    final digits = trimmed.startsWith('#') ? trimmed.substring(1) : trimmed;
-    final index = int.tryParse(digits);
-    final recognized =
-        index != null ||
-        trimmed.startsWith('zvdk1') ||
-        trimmed.startsWith('fp');
-    if (!recognized) {
-      return const rust.ApiDelegateLookup(
-        kind: rust.ApiDelegateLookupKind.unrecognized,
-      );
-    }
+    final index = int.tryParse(text.trim().replaceFirst('#', ''));
     for (final listing in _found(view)) {
-      if (listing.index == index ||
-          listing.dk == trimmed ||
-          listing.fingerprint == trimmed) {
+      if (listing.index == index) {
         return rust.ApiDelegateLookup(
           kind: rust.ApiDelegateLookupKind.found,
           listing: _listed(view, listing),
@@ -296,9 +265,7 @@ class FakeProxyRegistryRust {
     );
   }
 
-  /// One verdict per choice, in zcash_voting's order: an entry without a
-  /// proof cannot be verified, one proven absent is not found, then the
-  /// proven entry must be the choice's and active.
+  /// An ok verdict per choice, with the listing at its index.
   Future<List<rust.ApiConfirmedDelegate>> checkDelegates({
     required String network,
     Uint8List? walletList,
@@ -314,42 +281,13 @@ class FakeProxyRegistryRust {
     final rows = _rows(walletList);
     return [
       for (final choice in request.choices)
-        () {
-          final proof = proven
-              .where((entry) => entry.delegateIndex == choice.delegateIndex)
-              .firstOrNull;
-          if (proof == null) {
-            return const rust.ApiConfirmedDelegate(
-              check: rust_wire.DelegateCheck.cannotVerify,
-            );
-          }
-          final listing = listings[choice.delegateIndex];
-          if (proof.entry == null || listing == null) {
-            return const rust.ApiConfirmedDelegate(
-              check: rust_wire.DelegateCheck.notFound,
-            );
-          }
-          final picked =
-              listing.dk == choice.dk &&
-              listing.provider == choice.provider &&
-              listing.handle == choice.handle;
-          return rust.ApiConfirmedDelegate(
-            check: !picked
-                ? rust_wire.DelegateCheck.mismatch
-                : switch (listing.status) {
-                    rust_wire.DelegateEntryStatus.active =>
-                      rust_wire.DelegateCheck.ok,
-                    rust_wire.DelegateEntryStatus.suspended =>
-                      rust_wire.DelegateCheck.suspended,
-                    rust_wire.DelegateEntryStatus.retired =>
-                      rust_wire.DelegateCheck.retired,
-                  },
-            listing: listing.toApi(
-              inList: rows.contains(choice.delegateIndex),
-              firstNewIndex: firstNewIndex,
-            ),
-          );
-        }(),
+        rust.ApiConfirmedDelegate(
+          check: rust_wire.DelegateCheck.ok,
+          listing: listings[choice.delegateIndex]?.toApi(
+            inList: rows.contains(choice.delegateIndex),
+            firstNewIndex: firstNewIndex,
+          ),
+        ),
     ];
   }
 

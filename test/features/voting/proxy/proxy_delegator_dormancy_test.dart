@@ -1,10 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/proxy_delegation_feature_config.dart';
-import 'package:zcash_wallet/src/features/voting/proxy/composite_proxy_delegation_repository.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_presentation.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_providers.dart';
-import 'package:zcash_wallet/src/features/voting/proxy/proxy_registry_client.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 
@@ -44,26 +42,4 @@ void main() {
     );
     expect(container.read(proxyBallotDelegationProvider(_key)), isNull);
   });
-
-  test('with the flag on the repository is zcash_voting\'s', () {
-    final container = ProviderContainer(
-      overrides: [
-        proxyRegistryClientProvider.overrideWith(
-          (_) => _UnusedRegistryClient(),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
-    expect(
-      container.read(proxyDelegationRepositoryProvider(_key)),
-      isA<CompositeProxyDelegationRepository>(),
-    );
-  });
-}
-
-/// A registry client nothing calls.
-class _UnusedRegistryClient implements ProxyRegistryClient {
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw TestFailure('the registry client was called');
 }

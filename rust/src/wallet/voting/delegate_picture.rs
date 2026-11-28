@@ -233,24 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn the_extended_format_decodes_without_extras() {
-        let simple = picture();
-        let extended = riff(&[vp8x(0x10), chunk(b"VP8L", bitstream(&simple))]);
-        assert_eq!(
-            decode(&extended).unwrap().rgba,
-            decode(&simple).unwrap().rgba
-        );
-    }
-
-    #[test]
-    fn garbage_is_refused() {
-        assert_eq!(
-            decode(b"not a picture").unwrap_err(),
-            PictureError::Malformed
-        );
-    }
-
-    #[test]
     fn oversized_input_is_refused_unread() {
         let mut webp = picture();
         webp.resize(MAX_PICTURE_BYTES + 1, 0);
@@ -291,6 +273,7 @@ mod tests {
             signature,
             bitstream,
             Vec::new(),
+            b"not a picture".to_vec(),
         ] {
             assert_eq!(decode(&corrupt).unwrap_err(), PictureError::Malformed);
         }

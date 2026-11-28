@@ -13,15 +13,13 @@ class FakeDelegatePictureDecoder implements DelegatePictureDecoder {
   /// a picture.
   String? failure;
 
-  /// Edge of the pixels returned.
-  int edge = kDelegatePictureEdge;
-
   @override
   Future<DelegatePicturePixels> decode(ProxyDelegatePicture picture) async {
     calls.add(picture.key);
     final failure = this.failure;
     if (failure != null) throw StateError(failure);
-    final length = edge * edge * 4;
+    const edge = kDelegatePictureEdge;
+    const length = edge * edge * 4;
     return (
       width: edge,
       height: edge,

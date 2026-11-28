@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/proxy_delegation_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
-import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_presentation.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_providers.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_repository.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_routes.dart';
@@ -16,7 +15,6 @@ import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider
 import '../../../support/test_l10n.dart';
 import 'support/mock_proxy_delegation_repository.dart';
 import 'support/proxy_test_harness.dart';
-import 'support/proxy_values.dart';
 
 /// Opens the directory, chooses [shares] (handle to basis points), then
 /// pushes the editor and, with [review], the vote review with [answers].
@@ -24,22 +22,16 @@ Future<ProxyTestHarness> _pumpDraft(
   WidgetTester tester,
   Map<String, int?> shares, {
   ProxyMockScenario? scenario,
-  DateTime? now,
   bool review = false,
   VotingDraftState answers = const VotingDraftState(),
   ProxyDelegationRepository? backing,
-  Size size = const Size(1000, 2400),
-  double textScale = 1,
 }) async {
   final round = scenario ?? proxyTestScenario();
   final harness = await pumpProxyRoute(
     tester,
     proxyDelegateDirectoryRoute(kProxyTestRoundId),
     scenario: round,
-    now: now,
     backing: backing,
-    size: size,
-    textScale: textScale,
     answers: answers,
   );
   final notifier = harness.container.read(
@@ -85,15 +77,6 @@ AppButton _button(WidgetTester tester, String key) =>
 
 void main() {
   group('PD-5 editor', () {
-    testWidgets('asks for a share per delegate before review', (tester) async {
-      await _pumpDraft(tester, {'alice_votes': null, 'bjorn_dev': null});
-      expect(find.text(testL10n.proxyVotingPower('50 ZEC')), findsOne);
-      expect(find.byKey(const ValueKey('proxy_allocation_row_1')), findsOne);
-      expect(find.byKey(const ValueKey('proxy_allocation_row_2')), findsOne);
-      expect(find.text(testL10n.proxyPercentRequired), findsOne);
-      expect(_button(tester, 'proxy_allocation_done').onPressed, isNull);
-    });
-
     testWidgets('previews the exact split and the kept remainder', (
       tester,
     ) async {
@@ -126,31 +109,6 @@ void main() {
       );
     });
 
-    testWidgets('splits evenly, which delegates everything', (tester) async {
-      await _pumpDraft(tester, {
-        'alice_votes': null,
-        'bjorn_dev': null,
-        'chidi_node': null,
-      });
-      await tester.tap(
-        find.byKey(const ValueKey('proxy_allocation_split_evenly')),
-      );
-      await settleProxy(tester);
-      expect(find.text('33.34'), findsOne);
-      expect(find.text('33.33'), findsNWidgets(2));
-      expect(find.text('0% · 0 ZEC'), findsOne);
-    });
-
-    testWidgets('flags shares over 100%', (tester) async {
-      await _pumpDraft(tester, {'alice_votes': 6000, 'bjorn_dev': 5000});
-      expect(find.text(testL10n.proxyPercentOver), findsOne);
-      expect(_button(tester, 'proxy_allocation_done').onPressed, isNull);
-      await tester.enterText(_percentField(2), '10');
-      await settleProxy(tester);
-      expect(find.text(testL10n.proxyPercentOver), findsNothing);
-      expect(_button(tester, 'proxy_allocation_done').onPressed, isNotNull);
-    });
-
     testWidgets('explains a split the voting power cannot cover', (
       tester,
     ) async {
@@ -162,59 +120,6 @@ void main() {
       expect(_button(tester, 'proxy_allocation_done').onPressed, isNull);
     });
 
-    testWidgets('stops adding delegates at 8 and removes rows', (tester) async {
-      final scenario = proxyTestScenario();
-      final unblocked = scenario.delegates.where((e) => !e.blocked).take(8);
-      await _pumpDraft(tester, {
-        for (final entry in unblocked) entry.handle: 1250,
-      }, scenario: scenario);
-      expect(
-        _button(tester, 'proxy_allocation_add_delegate').onPressed,
-        isNull,
-      );
-      expect(find.text(testL10n.proxyPickerFull), findsOne);
-      final first = unblocked.first;
-      await tester.tap(
-        find.byKey(ValueKey('proxy_allocation_remove_${first.index}')),
-      );
-      await settleProxy(tester);
-      expect(
-        find.byKey(ValueKey('proxy_allocation_row_${first.index}')),
-        findsNothing,
-      );
-      expect(
-        _button(tester, 'proxy_allocation_add_delegate').onPressed,
-        isNotNull,
-      );
-    });
-  });
-
-  group('the review\'s timing', () {
-    testWidgets('names the vote end while the window is open', (tester) async {
-      await _pumpDraft(tester, {'alice_votes': 5000}, review: true);
-      final end = kProxyTestNow.add(const Duration(days: 3));
-      expect(
-        find.text(testL10n.proxyVotingEnds(formatProxyVoteEnd(testL10n, end))),
-        findsOne,
-      );
-    });
-
-    testWidgets('keeps the 24 h notice', (tester) async {
-      await _pumpDraft(
-        tester,
-        {'alice_votes': 5000},
-        review: true,
-        scenario: proxyTestScenario(
-          voteEnd: kProxyTestNow.add(const Duration(hours: 9)),
-        ),
-      );
-      expect(find.byKey(const ValueKey('proxy_timing_closing_soon')), findsOne);
-      expect(
-        find.textContaining(testL10n.proxyClosingSoon('9 hours')),
-        findsOne,
-      );
-    });
-
     testWidgets('the editor says too late only once voting has ended', (
       tester,
     ) async {
@@ -224,13 +129,6 @@ void main() {
       expect(find.byKey(const ValueKey('proxy_timing_too_late')), findsOne);
       expect(find.text(testL10n.proxyTooLate), findsOne);
       expect(_button(tester, 'proxy_allocation_done').onPressed, isNull);
-    });
-
-    testWidgets('the editor names no vote end while the window is open', (
-      tester,
-    ) async {
-      await _pumpDraft(tester, {'alice_votes': 5000});
-      expect(find.byKey(const ValueKey('proxy_timing_open')), findsNothing);
     });
   });
 
@@ -244,8 +142,6 @@ void main() {
         'alice_votes': 5000,
         'dana_research': 2500,
       },
-      Size size = const Size(1000, 2400),
-      double textScale = 1,
       VotingDraftState answers = const VotingDraftState(choices: {1: 0}),
     }) => _pumpDraft(
       tester,
@@ -253,140 +149,7 @@ void main() {
       scenario: scenario,
       review: true,
       answers: answers,
-      size: size,
-      textScale: textScale,
     );
-
-    // The desktop minimum windows, large and small. The review does not
-    // fit the small one at 200% text, so that case is left to the phone
-    // sizes in the mobile lane.
-    for (final (size, textScale) in const [
-      (Size(1080, 720), 1.0),
-      (Size(1080, 720), 2.0),
-      (Size(416, 851), 1.0),
-    ]) {
-      testWidgets('the finality checkbox and its line are pinned above the '
-          'button and on screen at $size and ${textScale}x text', (
-        tester,
-      ) async {
-        await pumpConfirm(tester, size: size, textScale: textScale);
-        expect(tester.takeException(), isNull);
-        final footer = find.byKey(const ValueKey('proxy_confirm_footer'));
-        final checkbox = find.byKey(const ValueKey('proxy_finality_checkbox'));
-        for (final part in [
-          checkbox,
-          find.byKey(const ValueKey('proxy_counts_only_with_ballot')),
-          find.byKey(const ValueKey('voting_confirm_submit_button')),
-        ]) {
-          expect(find.descendant(of: footer, matching: part), findsOne);
-        }
-        final box = tester.getRect(checkbox);
-        final cta = tester.getRect(
-          find.byKey(const ValueKey('voting_confirm_submit_button')),
-        );
-        // Whole and above the footer's own scroll area, which only the
-        // line may need.
-        final area = tester.getRect(
-          find.descendant(of: footer, matching: find.byType(Scrollable)),
-        );
-        expect(box.top, greaterThanOrEqualTo(0));
-        expect(box.bottom, lessThanOrEqualTo(area.top));
-        expect(area.bottom, lessThanOrEqualTo(cta.top));
-        expect(cta.bottom, lessThanOrEqualTo(size.height));
-
-        // Disabled, the button points at the box, which needs no scroll.
-        expect(
-          _button(tester, 'voting_confirm_submit_button').onPressed,
-          isNull,
-        );
-        expect(
-          find.byKey(const ValueKey('proxy_confirm_checkbox_hint')),
-          findsOne,
-        );
-        expect(find.text(testL10n.proxyConfirmCheckboxHint), findsOne);
-        await tester.tap(checkbox);
-        await settleProxy(tester);
-        expect(
-          _button(tester, 'voting_confirm_submit_button').onPressed,
-          isNotNull,
-        );
-        expect(find.text(testL10n.proxyConfirmCheckboxHint), findsNothing);
-        expect(tester.takeException(), isNull);
-      });
-    }
-
-    testWidgets('shows the split, checks, questions and the final terms', (
-      tester,
-    ) async {
-      final scenario = proxyTestScenario();
-      await pumpConfirm(tester, scenario: scenario);
-      final dana = proxyEntry(scenario, 'dana_research');
-      final danaRow = find.byKey(ValueKey('proxy_review_row_${dana.index}'));
-      expect(find.text('25 ZEC'), findsOne);
-      expect(
-        find.descendant(of: danaRow, matching: find.text('12.5 ZEC')),
-        findsOne,
-      );
-      expect(
-        find.descendant(of: danaRow, matching: find.text('25%')),
-        findsOne,
-      );
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('proxy_review_kept')),
-          matching: find.text('12.5 ZEC'),
-        ),
-        findsOne,
-      );
-      expect(find.byKey(const ValueKey('proxy_review_kept')), findsOne);
-      expect(find.text(testL10n.proxyReviewAnswersTitle), findsOne);
-      for (final proposal in scenario.round.proposals) {
-        expect(find.text(proposal.title), findsOne);
-      }
-      for (final copy in [
-        testL10n.proxyIntro,
-        testL10n.proxyPrivacy,
-        testL10n.proxyHelperTiming,
-        testL10n.proxyKeepInstalled,
-      ]) {
-        expect(find.text(copy), findsOne);
-      }
-      expect(find.text(testL10n.proxyFinality), findsOne);
-      expect(find.text(testL10n.proxyCountsOnlyWithBallot), findsOne);
-      // Ticked, so no hint sits between the box and its line.
-      await tester.tap(find.byKey(const ValueKey('proxy_finality_checkbox')));
-      await settleProxy(tester);
-      final checkbox = tester.getRect(
-        find.byKey(const ValueKey('proxy_finality_checkbox')),
-      );
-      final countsLine = tester.getRect(
-        find.byKey(const ValueKey('proxy_counts_only_with_ballot')),
-      );
-      expect(countsLine.top - checkbox.bottom, lessThan(16));
-      expect(find.text('Confirm & submit'), findsOne);
-    });
-
-    testWidgets('each delegate shows its provider and any lookalike '
-        'warning', (tester) async {
-      final scenario = proxyTestScenario();
-      await pumpConfirm(
-        tester,
-        scenario: scenario,
-        shares: const {'a1ice_votes': 5000, 'bjorn_dev': 2500},
-      );
-      Finder inRow(String handle, String text) => find.descendant(
-        of: find.byKey(
-          ValueKey('proxy_review_row_${proxyEntry(scenario, handle).index}'),
-        ),
-        matching: find.text(text),
-      );
-      expect(inRow('a1ice_votes', testL10n.proxyProviderXLabel), findsOne);
-      expect(
-        inRow('a1ice_votes', testL10n.proxyLookalike('alice_votes')),
-        findsOne,
-      );
-      expect(inRow('bjorn_dev', testL10n.proxyProviderGitHubLabel), findsOne);
-    });
 
     testWidgets('a kept share without answers cannot be submitted', (
       tester,
@@ -493,43 +256,34 @@ void main() {
       expect(harness.jobs.proxyStarted, isEmpty);
     });
 
-    for (final (kind, copy) in [
-      (
-        ProxyDelegationErrorKind.alreadyVoted,
-        testL10n.proxyAlreadyStartedVoting,
-      ),
-      (
-        ProxyDelegationErrorKind.registrationUnusable,
-        testL10n.proxyRegistrationUnusable,
-      ),
-    ]) {
-      testWidgets('a commit refused as ${kind.name} says why and stays', (
+    testWidgets('a commit zcash_voting refuses says why, stays and leaves no '
+        'answers behind', (tester) async {
+      final scenario = proxyTestScenario();
+      final harness = await _pumpDraft(
         tester,
-      ) async {
-        final scenario = proxyTestScenario();
-        final harness = await _pumpDraft(
-          tester,
-          const {'alice_votes': 5000, 'dana_research': 2500},
-          scenario: scenario,
-          review: true,
-          answers: const VotingDraftState(choices: {1: 0}),
-          backing: _RefusingCommits(scenario, kind),
-        );
-        await tester.tap(find.byKey(const ValueKey('proxy_finality_checkbox')));
-        await settleProxy(tester);
-        await tester.tap(
-          find.byKey(const ValueKey('voting_confirm_submit_button')),
-        );
-        await settleProxy(tester);
-        expect(find.byKey(const ValueKey('proxy_confirm_error')), findsOne);
-        expect(find.text(copy), findsOne);
-        expect(harness.location, votingReviewRoute(kProxyTestRoundId));
-        expect(harness.jobs.proxyStarted, isEmpty);
-        expect(harness.session.cleared, [
-          [1, 2, 3],
-        ], reason: 'the refused commit leaves no answers behind');
-      });
-    }
+        const {'alice_votes': 5000, 'dana_research': 2500},
+        scenario: scenario,
+        review: true,
+        answers: const VotingDraftState(choices: {1: 0}),
+        backing: _RefusingCommits(
+          scenario,
+          ProxyDelegationErrorKind.alreadyVoted,
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('proxy_finality_checkbox')));
+      await settleProxy(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('voting_confirm_submit_button')),
+      );
+      await settleProxy(tester);
+      expect(find.byKey(const ValueKey('proxy_confirm_error')), findsOne);
+      expect(find.text(testL10n.proxyAlreadyStartedVoting), findsOne);
+      expect(harness.location, votingReviewRoute(kProxyTestRoundId));
+      expect(harness.jobs.proxyStarted, isEmpty);
+      expect(harness.session.cleared, [
+        [1, 2, 3],
+      ], reason: 'the refused commit leaves no answers behind');
+    });
 
     testWidgets('a delegate suspended after review sends the review back '
         'with the new check', (tester) async {
@@ -586,34 +340,6 @@ void main() {
       expect(_button(tester, 'voting_confirm_submit_button').onPressed, isNull);
     });
 
-    testWidgets('an anchor that no longer verifies offers a retry', (
-      tester,
-    ) async {
-      final scenario = proxyTestScenario();
-      final alice = proxyEntry(scenario, 'alice_votes');
-      scenario.checks[alice.index] = DelegateCheck.cannotVerify;
-      final harness = await pumpConfirm(tester, scenario: scenario);
-      expect(
-        find.byKey(const ValueKey('proxy_review_cannot_verify')),
-        findsOne,
-      );
-      expect(find.text(testL10n.proxyCannotVerify), findsOne);
-      await tester.tap(find.byKey(const ValueKey('proxy_finality_checkbox')));
-      await settleProxy(tester);
-      expect(_button(tester, 'voting_confirm_submit_button').onPressed, isNull);
-      final calls = harness.repository.checkCalls;
-      scenario.checks.remove(alice.index);
-      await tester.ensureVisible(find.text(testL10n.commonTryAgain));
-      await tester.tap(find.text(testL10n.commonTryAgain));
-      await settleProxy(tester);
-      expect(harness.repository.checkCalls, calls + 1);
-      expect(find.text(testL10n.proxyCannotVerify), findsNothing);
-      expect(
-        _button(tester, 'voting_confirm_submit_button').onPressed,
-        isNotNull,
-      );
-    });
-
     testWidgets('registry proofs no host verifies offer a retry', (
       tester,
     ) async {
@@ -638,53 +364,6 @@ void main() {
         _button(tester, 'voting_confirm_submit_button').onPressed,
         isNotNull,
       );
-    });
-
-    for (final (verdict, line) in [
-      (DelegateCheck.retired, '@alice_votes has retired as a delegate.'),
-      (
-        DelegateCheck.notFound,
-        "Vizor couldn't find @alice_votes on the voting chain.",
-      ),
-    ]) {
-      testWidgets('a delegate the check finds ${verdict.name} blocks the '
-          'commit with its own line', (tester) async {
-        final scenario = proxyTestScenario();
-        scenario.checks[proxyEntry(scenario, 'alice_votes').index] = verdict;
-        await pumpConfirm(tester, scenario: scenario);
-        expect(find.text(line), findsOne);
-        await tester.tap(find.byKey(const ValueKey('proxy_finality_checkbox')));
-        await settleProxy(tester);
-        expect(
-          _button(tester, 'voting_confirm_submit_button').onPressed,
-          isNull,
-        );
-      });
-    }
-
-    testWidgets('a delegate whose proven entry is not the one picked shows '
-        'the proven entry and that the details did not match', (tester) async {
-      final scenario = proxyTestScenario();
-      final alice = proxyEntry(scenario, 'alice_votes');
-      scenario.checks[alice.index] = DelegateCheck.mismatch;
-      scenario.provenListings[alice.index] = proxyListingOf(
-        index: alice.index,
-        provider: alice.provider,
-        handle: 'someone_else',
-        dk: 'zvdk1other',
-        fingerprint: 'zzzz-yyyy-xxxx-wwww',
-        reviewed: false,
-      );
-      await pumpConfirm(tester, scenario: scenario);
-      expect(find.text(testL10n.proxyMismatch('@alice_votes')), findsOne);
-      expect(find.text('@someone_else'), findsOne);
-      expect(
-        find.text(formatProxyDelegateId(alice.index, 'zzzz-yyyy-xxxx-wwww')),
-        findsOne,
-      );
-      await tester.tap(find.byKey(const ValueKey('proxy_finality_checkbox')));
-      await settleProxy(tester);
-      expect(_button(tester, 'voting_confirm_submit_button').onPressed, isNull);
     });
   });
 

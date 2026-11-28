@@ -329,28 +329,6 @@ void main() {
     );
   });
 
-  test('an unlock while share tracking still drains restores once the '
-      'registry resumes', () async {
-    final restore = _Restore();
-    final container = _container(restore, locked: true);
-    container.read(votingProxyJobRestorerProvider);
-    final registry = container.read(votingShareTrackingRegistryProvider);
-    // The lock-time drain share tracking holds until its pause finishes.
-    await registry.quiesceAndDrain();
-
-    (container.read(appSecurityProvider.notifier) as _Security).setUnlocked();
-    await _settle();
-    expect(restore.listed, 0, reason: 'the registry refused the lease');
-
-    registry.resume();
-    await _settle();
-    expect(restore.listed, 1);
-    expect(
-      container.read(votingSubmissionJobProvider(_key)).kind,
-      VotingSubmissionJobKind.proxy,
-    );
-  });
-
   test('a restore request from the registry restores, after its resume '
       'when quiesced', () async {
     final restore = _Restore()

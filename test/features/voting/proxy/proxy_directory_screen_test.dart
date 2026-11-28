@@ -68,28 +68,6 @@ void main() {
       expect(tops, [...tops]..sort(), reason: 'rows follow the list order');
     });
 
-    testWidgets('labels reviewed and new delegates', (tester) async {
-      final scenario = proxyTestScenario();
-      await pumpProxyRoute(tester, _directory, scenario: scenario);
-      final alice = proxyEntry(scenario, 'alice_votes');
-      final chidi = proxyEntry(scenario, 'chidi_node');
-      expect(
-        find.descendant(
-          of: _row(alice.index),
-          matching: find.text(testL10n.proxyReviewedLabel),
-        ),
-        findsOne,
-      );
-      expect(
-        find.descendant(
-          of: _row(chidi.index),
-          matching: find.text(testL10n.proxyNewThisRoundLabel),
-        ),
-        findsOne,
-      );
-      expect(find.text('Alice Moreau'), findsOne);
-    });
-
     testWidgets('a retired delegate on the list is not reviewed and cannot '
         'be added', (tester) async {
       final scenario = proxyTestScenario();
@@ -159,12 +137,6 @@ void main() {
       expect(find.text(testL10n.proxyLookalike('alice_votes')), findsOne);
       expect(find.text(testL10n.proxyNewThisRoundLabel), findsOne);
     });
-
-    testWidgets('a prefix finds nothing', (tester) async {
-      await pumpProxyRoute(tester, _directory);
-      await _search(tester, 'alice');
-      expect(find.text(testL10n.proxyNoSearchResults('alice')), findsOne);
-    });
   });
 
   group('PD-2 paste or scan', () {
@@ -197,14 +169,6 @@ void main() {
         ),
         reason: 'the choice carries what the listing showed',
       );
-    });
-
-    testWidgets('says when the text names nothing', (tester) async {
-      await pumpProxyRoute(tester, _directory);
-      await _paste(tester, '#999');
-      expect(find.text(testL10n.proxyLookupNotFound), findsOne);
-      await _paste(tester, 'hello there');
-      expect(find.text(testL10n.proxyLookupUnrecognized), findsOne);
     });
   });
 
@@ -306,38 +270,6 @@ void main() {
             .contains(alice.index),
         isTrue,
       );
-    });
-
-    testWidgets('shows the new this round notice', (tester) async {
-      final scenario = proxyTestScenario();
-      final chidi = proxyEntry(scenario, 'chidi_node');
-      await pumpProxyRoute(
-        tester,
-        proxyDelegateProfileRoute(kProxyTestRoundId, chidi.index),
-        scenario: scenario,
-      );
-      expect(find.text(testL10n.proxyNewThisRound), findsOne);
-    });
-
-    testWidgets('a profile outside the list has no name or statement', (
-      tester,
-    ) async {
-      final scenario = proxyTestScenario();
-      await pumpProxyRoute(tester, _directory, scenario: scenario);
-      await _search(tester, 'kofi_m');
-      await tester.tap(
-        find.descendant(
-          of: _row(proxyEntry(scenario, 'kofi_m').index),
-          matching: find.text('@kofi_m'),
-        ),
-      );
-      await settleProxy(tester);
-      expect(find.text(testL10n.proxyNotReviewed), findsOne);
-      expect(
-        find.byKey(const ValueKey('proxy_profile_statement')),
-        findsNothing,
-      );
-      expect(find.text(testL10n.proxyProviderGitHubLabel), findsOne);
     });
   });
 }

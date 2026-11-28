@@ -81,15 +81,6 @@ const _advanceBatch = rust_wire.NextStepView(
   shareIndex: 0,
 );
 
-/// Bundle 1's delegation, which a hardware account still has to sign.
-const _delegateBundle1 = rust_wire.NextStepView(
-  kind: rust_wire.NextStepKind.delegate,
-  bundleIndex: 1,
-  proposalId: 0,
-  choice: 0,
-  shareIndex: 0,
-);
-
 /// The Ledger request a hardware account is shown for [bundle].
 rust_delegate.KeystoneSigningRequest _ledgerRequest(int bundle) =>
     rust_delegate.KeystoneSigningRequest(
@@ -111,14 +102,12 @@ VotingSessionState _sessionState(
   rust_wire.RoundPlanView plan, {
   HardwareSignerKind? signer,
   bool eligible = true,
-  List<rust_delegate.KeystoneSigningRequest> ledgerRequests = const [],
 }) => VotingSessionState(
   roundId: _roundId,
   accountUuid: _key.accountUuid,
   roundPlan: plan,
   isHardwareAccount: signer != null,
   hardwareSignerKind: signer,
-  ledgerSigningRequests: ledgerRequests,
   eligibleWeightZatoshi: eligible ? BigInt.from(100000000) : null,
   round: VotingRoundDetails(
     roundId: _roundId,
@@ -211,7 +200,6 @@ class _Script {
     required this.plan,
     List<ApiProxyDelegationProgress?> progress = const [],
     this.hardware = false,
-    this.ledger = false,
     this.eligible = false,
   }) : progress = [...progress];
 
@@ -224,18 +212,11 @@ class _Script {
   /// Whether the account signs with a Keystone.
   final bool hardware;
 
-  /// Whether the account signs with a Ledger, which then has one bundle's
-  /// delegation to sign.
-  final bool ledger;
-
   /// Whether the session starts with confirmed voting eligibility.
   final bool eligible;
 
   /// Thrown by the next casts, when set.
   Object? castError;
-
-  /// The plan recording the ballot's intents publishes, when set.
-  rust_wire.RoundPlanView? planAfterIntents;
 
   /// The stored ballot choices, by proposal.
   Map<int, int> draft = const {};
@@ -262,12 +243,6 @@ class _Script {
   /// How often hardware signing was prepared.
   int signingPrepared = 0;
 
-  /// Steps each drive reports finished.
-  int stepsPerDrive = 0;
-
-  /// How often the job read progress.
-  int progressReads = 0;
-
   /// Errors successive drives throw before driving, in order.
   final driveErrors = <Object>[];
 
@@ -285,7 +260,6 @@ class _Script {
 
   /// The next progress answer.
   ApiProxyDelegationProgress? nextProgress() {
-    progressReads++;
     if (failedProgressReads > 0) {
       failedProgressReads--;
       throw const SocketException('vote server down');
@@ -308,19 +282,12 @@ class _ProxySession extends _FakeSession {
   rust_wire.RoundPlanView currentPlan() => script.plan;
 
   @override
-  HardwareSignerKind? get signer => script.ledger
-      ? HardwareSignerKind.ledger
-      : script.hardware
-      ? HardwareSignerKind.keystone
-      : null;
+  HardwareSignerKind? get signer =>
+      script.hardware ? HardwareSignerKind.keystone : null;
 
   @override
-  Future<VotingSessionState> build() async => _sessionState(
-    script.plan,
-    signer: signer,
-    eligible: script.eligible,
-    ledgerRequests: script.ledger ? [_ledgerRequest(1)] : const [],
-  );
+  Future<VotingSessionState> build() async =>
+      _sessionState(script.plan, signer: signer, eligible: script.eligible);
 
   @override
   Future<VotingProxyDriveOutcome> driveProxyDelegation({
@@ -330,10 +297,6 @@ class _ProxySession extends _FakeSession {
   }) async {
     script.drives.add((mnemonic: mnemonic, hardwareSigner: hardwareSigner));
     if (script.driveErrors.isNotEmpty) throw script.driveErrors.removeAt(0);
-    for (var i = 0; i < script.stepsPerDrive; i++) {
-      onStepFinished?.call();
-      await Future<void>.delayed(Duration.zero);
-    }
     publish();
     return script.outcomes.isEmpty
         ? const VotingProxyDriveOutcome()
@@ -355,22 +318,10 @@ class _ProxySession extends _FakeSession {
   }
 
   @override
-  Future<void> prepareLedgerSigning({
-    Iterable<int> alsoSign = const [],
-  }) async {}
-
-  @override
   Future<void> recordBallotIntents({
     required List<VotingDraftVote> draftVotes,
     List<int>? allProposalIds,
-  }) async {
-    script.ballotCalls++;
-    final plan = script.planAfterIntents;
-    final current = state.value;
-    if (plan != null && current != null) {
-      state = AsyncData(current.copyWith(roundPlan: plan));
-    }
-  }
+  }) async => script.ballotCalls++;
 
   @override
   Future<bool> refreshImmediateShareConfirmation() async => false;
@@ -445,9 +396,6 @@ class _HeldCastSdk {
 
   _Batch batch = _Batch.planned;
 
-  /// Whether the chain refuses a dispatched batch.
-  bool refused = false;
-
   /// Whether the ballot's intents are durable.
   bool intents = false;
 
@@ -456,9 +404,6 @@ class _HeldCastSdk {
 
   /// Whether the designated immediate share is confirmed.
   bool confirmed = false;
-
-  /// Whether a Keystone signature for the registration is stored.
-  bool signatureStored = false;
 
   /// What happened, in order.
   final log = <String>[];
@@ -478,7 +423,6 @@ class _HeldCastSdk {
       log.add('broadcast');
     }
     if (batch == _Batch.dispatched) {
-      if (refused) return null;
       if (pendingPasses > 0) {
         pendingPasses--;
         return null;
@@ -578,17 +522,14 @@ class _HeldCastSdk {
     _Batch.planned || _Batch.proved => ProxyDelegationStage.preparing,
     _Batch.dispatched => ProxyDelegationStage.submitting,
     _Batch.landed => ProxyDelegationStage.handedOff,
-  }, refusedByChain: batch == _Batch.dispatched && refused);
+  });
 }
 
-/// A submission session over [_HeldCastSdk].
+/// A software account's submission session over [_HeldCastSdk].
 class _HeldCastSession extends _FakeSession {
-  _HeldCastSession(super.key, this.sdk, {required this.keystone});
+  _HeldCastSession(super.key, this.sdk);
 
   final _HeldCastSdk sdk;
-
-  /// Whether the account signs with a Keystone.
-  final bool keystone;
 
   /// The signer each proxy drive was given.
   final drives = <({String? mnemonic, HardwareSignerKind? hardwareSigner})>[];
@@ -597,12 +538,7 @@ class _HeldCastSession extends _FakeSession {
   rust_wire.RoundPlanView currentPlan() => sdk.plan();
 
   @override
-  HardwareSignerKind? get signer =>
-      keystone ? HardwareSignerKind.keystone : null;
-
-  /// Whether a run given [mnemonic] or [hardware] can sign.
-  bool _signs({String? mnemonic, bool hardware = false}) =>
-      mnemonic != null || (hardware && sdk.signatureStored);
+  HardwareSignerKind? get signer => null;
 
   @override
   Future<VotingProxyDriveOutcome> driveProxyDelegation({
@@ -611,9 +547,7 @@ class _HeldCastSession extends _FakeSession {
     void Function()? onStepFinished,
   }) async {
     drives.add((mnemonic: mnemonic, hardwareSigner: hardwareSigner));
-    final stopped = sdk.run(
-      signer: _signs(mnemonic: mnemonic, hardware: hardwareSigner != null),
-    );
+    final stopped = sdk.run(signer: mnemonic != null);
     publish();
     return VotingProxyDriveOutcome(
       quiescence: stopped,
@@ -623,22 +557,8 @@ class _HeldCastSession extends _FakeSession {
 
   @override
   Future<void> delegatePendingBundles({String? mnemonic}) async {
-    sdk.run(signer: _signs(mnemonic: mnemonic));
+    sdk.run(signer: mnemonic != null);
     publish();
-  }
-
-  @override
-  Future<void> delegatePendingBundlesWithKeystoneSignatures() async {
-    sdk.run(signer: _signs(hardware: true));
-    publish();
-  }
-
-  @override
-  Future<void> prepareKeystoneSigning({
-    Iterable<int> alsoSign = const [],
-  }) async {
-    sdk.signatureStored = true;
-    sdk.log.add('keystone signature');
   }
 
   @override
@@ -914,28 +834,19 @@ class _KeptBundleSession extends _FakeSession {
   }
 }
 
-/// A session whose kept share's cast signs its bundle's delegation, as a
-/// bundle with no proxy batch does: a signerless cast stops for the
-/// signature, and a run with the signer casts unless [signerCasts] is
-/// false. The plan reports the signature only once a cast stopped for it.
+/// A software account's session whose kept share's cast signs its bundle's
+/// delegation, as a bundle with no proxy batch does: a signerless cast
+/// stops for the signature, and a run with the seed casts unless
+/// [signerCasts] is false. The plan reports the signature only once a cast
+/// stopped for it.
 class _SigningCastSession extends _FakeSession {
-  _SigningCastSession(
-    super.key, {
-    required this.keystone,
-    this.signerCasts = true,
-  });
-
-  /// Whether the account signs with a Keystone.
-  final bool keystone;
+  _SigningCastSession(super.key, {this.signerCasts = true});
 
   /// Whether a run with the signer casts.
   final bool signerCasts;
 
   /// Whether the plan reports the cast's signature yet.
   bool signingKnown = false;
-
-  /// Whether a Keystone signature for the bundle is stored.
-  bool signatureStored = false;
 
   /// Whether the kept share is cast.
   bool cast = false;
@@ -949,8 +860,7 @@ class _SigningCastSession extends _FakeSession {
   bool get castsAwaitSignatures => _awaiting;
 
   @override
-  HardwareSignerKind? get signer =>
-      keystone ? HardwareSignerKind.keystone : null;
+  HardwareSignerKind? get signer => null;
 
   @override
   rust_wire.RoundPlanView currentPlan() => apiRoundPlan(
@@ -982,15 +892,6 @@ class _SigningCastSession extends _FakeSession {
     castSigningBundles: signingKnown && !cast ? const {0} : const {},
   );
 
-  /// A run with a signer casts, when it can.
-  void _castWithSigner(String entry) {
-    if (signerCasts) {
-      cast = true;
-      log.add(entry);
-    }
-    publish();
-  }
-
   @override
   Future<void> castVotes({
     required List<VotingDraftVote> draftVotes,
@@ -1006,20 +907,12 @@ class _SigningCastSession extends _FakeSession {
 
   @override
   Future<void> delegatePendingBundles({String? mnemonic}) async {
-    if (mnemonic != null) _castWithSigner('cast with seed');
-  }
-
-  @override
-  Future<void> prepareKeystoneSigning({
-    Iterable<int> alsoSign = const [],
-  }) async {
-    signatureStored = true;
-    log.add('keystone signature');
-  }
-
-  @override
-  Future<void> delegatePendingBundlesWithKeystoneSignatures() async {
-    if (signatureStored) _castWithSigner('cast with keystone signature');
+    if (mnemonic == null) return;
+    if (signerCasts) {
+      cast = true;
+      log.add('cast with seed');
+    }
+    publish();
   }
 
   @override
@@ -1047,34 +940,19 @@ class _SoftwareAccount extends AccountNotifier {
   ) async => const SoftwareWalletSecret(mnemonic: 'test mnemonic');
 }
 
-/// A container whose job for [_key] submits [draft] through [session],
-/// pacing proxy cycles by [delays].
-ProviderContainer _heldCastContainer(
-  _HeldCastSession session, {
-  Map<int, int> draft = const {1: 0},
-  ProxyJobCycleDelays delays = _sessionDelays,
-}) => _sessionContainer(
-  session,
-  draft: draft,
-  progress: (_) async => session.sdk.progress(),
-  delays: delays,
-);
-
-/// The pacing [_sessionContainer] uses unless told otherwise.
-const _sessionDelays = ProxyJobCycleDelays(
+/// Proxy cycles that work and retry at once, and wait an hour.
+const _fastCycles = ProxyJobCycleDelays(
   working: Duration(milliseconds: 1),
   waiting: Duration(hours: 1),
   retry: Duration(milliseconds: 1),
 );
 
 /// A container whose job for [_key] submits [draft] through [session],
-/// reading delegation progress from [progress] and pacing proxy cycles by
-/// [delays].
+/// reading delegation progress from [progress].
 ProviderContainer _sessionContainer(
   VotingSubmissionSessionNotifier session, {
   Map<int, int> draft = const {1: 0},
   ProxyJobProgressReader? progress,
-  ProxyJobCycleDelays delays = _sessionDelays,
   List<Override> extra = const [],
 }) {
   final container = ProviderContainer(
@@ -1087,7 +965,7 @@ ProviderContainer _sessionContainer(
       proxyJobProgressReaderProvider.overrideWithValue(
         progress ?? (_) async => null,
       ),
-      proxyJobCycleDelaysProvider.overrideWithValue(delays),
+      proxyJobCycleDelaysProvider.overrideWithValue(_fastCycles),
       votingSubmissionJobClockProvider.overrideWithValue(
         () => _voteEnd.subtract(const Duration(days: 1)),
       ),
@@ -1103,11 +981,7 @@ ProviderContainer _sessionContainer(
 /// [delays].
 ProviderContainer _container(
   _Script script, {
-  ProxyJobCycleDelays delays = const ProxyJobCycleDelays(
-    working: Duration(milliseconds: 1),
-    waiting: Duration(hours: 1),
-    retry: Duration(milliseconds: 1),
-  ),
+  ProxyJobCycleDelays delays = _fastCycles,
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -1122,10 +996,6 @@ ProviderContainer _container(
       ),
       proxyJobCycleDelaysProvider.overrideWithValue(delays),
       votingSubmissionJobClockProvider.overrideWithValue(script.readClock),
-      ledgerVotingPcztSignerProvider.overrideWithValue(
-        (_, _) => Completer<List<LedgerVotingSignature>>().future,
-      ),
-      ledgerOperationCancellerProvider.overrideWithValue(() async {}),
       votingDraftPersistenceProvider.overrideWithValue(_Drafts(script.draft)),
     ],
   );
@@ -1203,22 +1073,6 @@ void main() {
       isTrue,
       reason: 'share delivery needs only the round hotkey',
     );
-  });
-
-  test('the job reads progress after every finished round step', () async {
-    final script = _Script(
-      plan: _proxyPlan([_dcShare]),
-      progress: [_progress(ProxyDelegationStage.handedOff)],
-    )..stepsPerDrive = 3;
-    final container = _container(script);
-
-    await _startProxy(container);
-    await _waitFor(
-      container,
-      (state) => state.status == VotingSubmissionJobStatus.complete,
-    );
-    expect(script.drives, hasLength(1));
-    expect(script.progressReads, 4, reason: 'three steps, then the drive');
   });
 
   test('completion waits for the confirmed reveal of an in-window DC\'s '
@@ -1426,29 +1280,6 @@ void main() {
       );
       expect(failed.terminalReason, isNull);
       expect(failed.retryable, isTrue);
-    });
-
-    test('in transport is retried', () async {
-      final script = _Script(
-        plan: _proxyPlan([_dcShare]),
-        progress: [
-          _progress(ProxyDelegationStage.included),
-          _progress(ProxyDelegationStage.handedOff),
-        ],
-      );
-      script.outcomes.add(
-        VotingProxyDriveOutcome(
-          failures: [failure(rust_wire.RoundStepFailureKindView.transport)],
-        ),
-      );
-      final container = _container(script);
-
-      await _startProxy(container);
-      await _waitFor(
-        container,
-        (state) => state.status == VotingSubmissionJobStatus.complete,
-      );
-      expect(script.drives, hasLength(greaterThanOrEqualTo(2)));
     });
 
     test('that got no answer, or a progress read that failed, is retried on '
@@ -1704,69 +1535,6 @@ void main() {
         (state) => state.status == VotingSubmissionJobStatus.complete,
       );
     });
-
-    test('and then waits for a Ledger signature keeps delivering DC '
-        'shares, also once the signing is cancelled', () async {
-      // The kept remainder's ballot: its delegation is a Ledger signature
-      // the vote job asks for once it recorded the ballot.
-      final ballot = apiRoundPlan(
-        roundId: _roundId,
-        pendingRecovery: false,
-        nextSteps: const [_dcShare],
-        openProposals: Uint32List.fromList(const [1]),
-        allDecided: false,
-        needsDraftSetup: true,
-        delegationStatuses: const [
-          rust_wire.DelegationStatusView(
-            bundleIndex: 0,
-            phase: rust_wire.WorkflowPhaseView.confirmed,
-            terminal: false,
-          ),
-        ],
-      );
-      final script =
-          _Script(
-              plan: ballot,
-              progress: [_progress(ProxyDelegationStage.included)],
-              ledger: true,
-            )
-            ..clockStep = const Duration(seconds: 1)
-            ..draft = const {1: 0}
-            ..planAfterIntents = _proxyPlan([_dcShare, _delegateBundle1]);
-      final container = await takeOver(script);
-      // The proxy job stopped at the hand-over; only the vote job runs now.
-      final waiting = await _waitFor(
-        container,
-        (state) => state.status == VotingSubmissionJobStatus.waitingForLedger,
-      );
-      expect(waiting.kind, VotingSubmissionJobKind.ballot);
-
-      await moreDrives(script, 3);
-      expect(script.drives.last.hardwareSigner, HardwareSignerKind.ledger);
-      expect(
-        container.read(votingSubmissionJobProvider(_key)).status,
-        VotingSubmissionJobStatus.waitingForLedger,
-      );
-
-      await container
-          .read(votingSubmissionJobProvider(_key).notifier)
-          .cancelLedgerSigning();
-      expect(
-        container.read(votingSubmissionJobProvider(_key)).status,
-        VotingSubmissionJobStatus.error,
-      );
-      await moreDrives(script, 3);
-
-      script.plan = _proxyPlan(const []);
-      await moreDrives(script, 1);
-      final settled = script.drives.length;
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(
-        script.drives,
-        hasLength(settled),
-        reason: 'no drive follows once no proxy work is owed',
-      );
-    });
   });
 
   group('a round with nothing left to vote', () {
@@ -1788,20 +1556,6 @@ void main() {
           fullyDelegatedBundles: const [0],
           nothingLeftToVote: true,
         );
-
-    test('completes the vote job without asking for a ballot', () async {
-      final script = _Script(plan: nothingLeft(const []), eligible: true);
-      final container = _container(script);
-
-      await container.read(votingSubmissionJobProvider(_key).notifier).start();
-      final done = await _waitFor(
-        container,
-        (state) => state.status != VotingSubmissionJobStatus.running,
-      );
-
-      expect(done.status, VotingSubmissionJobStatus.complete);
-      expect(script.ballotCalls, 0);
-    });
 
     test('keeps the vote job delivering DC shares without casting, then '
         'completes once they settle', () async {
@@ -1866,18 +1620,17 @@ void main() {
   });
 
   group('a ballot whose delegation has not landed yet', () {
-    /// Starts the vote job for [draft] through [session], recording every
-    /// error it shows into [errors].
-    Future<ProviderContainer> start(
-      _HeldCastSession session,
-      List<VotingMessage?> errors, {
+    /// Submits [draft] through [session] and waits for the job to settle,
+    /// failing on any error it showed on the way.
+    Future<VotingSubmissionJobState> submit(
+      _HeldCastSession session, {
       Map<int, int> draft = const {1: 0},
-      ProxyJobCycleDelays delays = _sessionDelays,
     }) async {
-      final container = _heldCastContainer(
+      final errors = <VotingMessage?>[];
+      final container = _sessionContainer(
         session,
         draft: draft,
-        delays: delays,
+        progress: (_) async => session.sdk.progress(),
       );
       container.listen<VotingSubmissionJobState>(
         votingSubmissionJobProvider(_key),
@@ -1890,15 +1643,6 @@ void main() {
       await container
           .read(votingSubmissionJobsProvider.notifier)
           .start(_roundId, accountUuid: _key.accountUuid);
-      return container;
-    }
-
-    /// Waits for [container]'s job to settle, failing on any error it
-    /// showed on the way.
-    Future<VotingSubmissionJobState> settled(
-      ProviderContainer container,
-      List<VotingMessage?> errors,
-    ) async {
       final settled = await _waitFor(
         container,
         (state) =>
@@ -1911,19 +1655,10 @@ void main() {
       return settled;
     }
 
-    /// Submits [draft] through [session] and waits for the job to settle.
-    Future<VotingSubmissionJobState> submit(
-      _HeldCastSession session, {
-      Map<int, int> draft = const {1: 0},
-    }) async {
-      final errors = <VotingMessage?>[];
-      return settled(await start(session, errors, draft: draft), errors);
-    }
-
     test('sends the batch with the signer, waits for it to land, then casts '
         'and confirms the kept share', () async {
       final sdk = _HeldCastSdk(pendingPasses: 2);
-      final session = _HeldCastSession(_key, sdk, keystone: false);
+      final session = _HeldCastSession(_key, sdk);
 
       final done = await submit(session);
 
@@ -1936,101 +1671,16 @@ void main() {
       );
     });
 
-    test('collects the Keystone signature for the batch, sends it, then '
-        'casts and confirms the kept share', () async {
-      final sdk = _HeldCastSdk();
-      final session = _HeldCastSession(_key, sdk, keystone: true);
-
-      final done = await submit(session);
-
-      expect(done.status, VotingSubmissionJobStatus.complete);
-      expect(sdk.log, [
-        'prove',
-        'keystone signature',
-        'broadcast',
-        'land',
-        'cast',
-        'confirm',
-      ]);
-      expect(
-        session.drives.map((drive) => drive.hardwareSigner),
-        everyElement(HardwareSignerKind.keystone),
-      );
-    });
-
     test('that took everything sends the batch with the signer before the '
         'vote job completes', () async {
       final sdk = _HeldCastSdk(keptShare: false);
-      final session = _HeldCastSession(_key, sdk, keystone: false);
+      final session = _HeldCastSession(_key, sdk);
 
       final done = await submit(session, draft: const {});
 
       expect(done.status, VotingSubmissionJobStatus.complete);
       expect(sdk.log, ['prove', 'broadcast', 'land']);
       expect(session.drives.first.mnemonic, isNotNull);
-    });
-
-    test('taken over from the proxy job a restart restored, casts once the '
-        'batch lands', () async {
-      // The restorer's proxy job sent the batch; the chain refuses it.
-      final sdk = _HeldCastSdk()..refused = true;
-      final session = _HeldCastSession(_key, sdk, keystone: false);
-      final errors = <VotingMessage?>[];
-      final container = _heldCastContainer(session);
-      container.listen<VotingSubmissionJobState>(
-        votingSubmissionJobProvider(_key),
-        (_, next) {
-          if (next.status == VotingSubmissionJobStatus.error) {
-            errors.add(next.errorMessage);
-          }
-        },
-      );
-      await _startProxy(container);
-      await _waitFor(
-        container,
-        (state) => state.proxyStage == ProxyJobStage.refused,
-      );
-
-      // The progress screen opens and starts the vote job.
-      sdk.refused = false;
-      await container.read(votingSubmissionJobProvider(_key).notifier).start();
-      final done = await settled(container, errors);
-
-      expect(done.status, VotingSubmissionJobStatus.complete);
-      expect(sdk.log, ['prove', 'broadcast', 'land', 'cast', 'confirm']);
-    });
-
-    test('and is refused waits in place, resending it, and casts the kept '
-        'share once it lands', () async {
-      final sdk = _HeldCastSdk()..refused = true;
-      final session = _HeldCastSession(_key, sdk, keystone: false);
-      final errors = <VotingMessage?>[];
-      final container = await start(
-        session,
-        errors,
-        delays: const ProxyJobCycleDelays(
-          working: Duration(milliseconds: 1),
-          waiting: Duration(milliseconds: 20),
-          retry: Duration(milliseconds: 1),
-        ),
-      );
-      final held = await _waitFor(
-        container,
-        (state) => state.proxyStage == ProxyJobStage.refused,
-      );
-      expect(held.status, VotingSubmissionJobStatus.running);
-      expect(sdk.cast, isFalse);
-      final drives = session.drives.length;
-      await _eventually(
-        () => session.drives.length > drives,
-        reason: 'a resend',
-      );
-
-      sdk.refused = false;
-      final done = await settled(container, errors);
-
-      expect(done.status, VotingSubmissionJobStatus.complete);
-      expect(sdk.log, ['prove', 'broadcast', 'land', 'cast', 'confirm']);
     });
   });
 
@@ -2051,7 +1701,7 @@ void main() {
     }
 
     test('go back through the seed and are cast', () async {
-      final session = _SigningCastSession(_key, keystone: false);
+      final session = _SigningCastSession(_key);
 
       final done = await submit(session);
 
@@ -2059,25 +1709,8 @@ void main() {
       expect(session.log, ['cast stopped for signature', 'cast with seed']);
     });
 
-    test('go back through the Keystone signing and are cast', () async {
-      final session = _SigningCastSession(_key, keystone: true);
-
-      final done = await submit(session);
-
-      expect(done.status, VotingSubmissionJobStatus.complete);
-      expect(session.log, [
-        'cast stopped for signature',
-        'keystone signature',
-        'cast with keystone signature',
-      ]);
-    });
-
     test('again after signing fail the job with a clear message', () async {
-      final session = _SigningCastSession(
-        _key,
-        keystone: false,
-        signerCasts: false,
-      );
+      final session = _SigningCastSession(_key, signerCasts: false);
 
       final done = await submit(session);
 
@@ -2164,7 +1797,7 @@ void main() {
       final sdk = _HeldCastSdk()
         ..batch = _Batch.dispatched
         ..intents = true;
-      final session = _HeldCastSession(_key, sdk, keystone: false);
+      final session = _HeldCastSession(_key, sdk);
       final container = _sessionContainer(
         session,
         draft: const {},

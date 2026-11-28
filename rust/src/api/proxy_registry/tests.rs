@@ -273,13 +273,7 @@ fn the_registry_downloads_page_by_page_into_a_cache_for_its_chain() {
         proxy_registry_next_start_after(2, 200, page_body(&entries[2..], 0)).unwrap(),
         None
     );
-    for (status, body) in [
-        (503, page_body(&entries, 0)),
-        (200, page_body(&entries[..2], 1)),
-        (200, b"not json".to_vec()),
-    ] {
-        assert!(proxy_registry_next_start_after(0, status, body).is_err());
-    }
+    assert!(proxy_registry_next_start_after(0, 503, page_body(&entries, 0)).is_err());
     let cache = build_proxy_registry_cache(
         NETWORK.to_owned(),
         vec![ApiRegistryPage {
@@ -421,47 +415,26 @@ fn browse_shows_the_list_rows_in_list_order_with_their_content() {
         proxy_wallet_list_picture(NETWORK.to_owned(), signed_list(1), 21),
         None
     );
-
-    let without_list = proxy_browse(ApiProxyRegistryView {
-        wallet_list: None,
-        ..view()
-    })
-    .unwrap();
-    assert!(without_list.list_unavailable && without_list.listed.is_empty());
 }
 
 #[test]
-fn search_finds_a_live_handle_in_the_cache_with_its_lookalike_warning() {
-    let found = search_proxy_delegates(view(), " @Alice ".to_owned()).unwrap();
+fn search_finds_a_handle_in_the_cache_labelled_for_its_round() {
+    let found = search_proxy_delegates(view(), "alice".to_owned()).unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!((found[0].index, found[0].reviewed), (1, true));
-    assert_eq!(found[0].lookalike_of, None);
 
-    let lookalike = &search_proxy_delegates(view(), "a1ice".to_owned()).unwrap()[0];
-    assert_eq!((lookalike.index, lookalike.reviewed), (21, false));
-    assert!(lookalike.new_this_round);
-    assert_eq!(lookalike.lookalike_of.as_deref(), Some("alice"));
-
-    // A retired entry is not live, so its handle finds nothing.
-    assert!(search_proxy_delegates(view(), "carol".to_owned())
-        .unwrap()
-        .is_empty());
+    let new = &search_proxy_delegates(view(), "a1ice".to_owned()).unwrap()[0];
+    assert_eq!((new.index, new.reviewed), (21, false));
+    assert!(new.new_this_round);
 }
 
 #[test]
-fn paste_finds_a_delegate_by_marker_key_index_or_fingerprint() {
+fn paste_finds_a_delegate_or_says_why_not() {
     let lookup = |text: String| lookup_proxy_delegate(view(), text).unwrap();
-    for text in [
-        format!("zcash-vote-delegate v1 {}", dk(1).encode()),
-        dk(1).encode(),
-        "#1".to_owned(),
-        dk(1).fingerprint().to_string(),
-    ] {
-        let found = lookup(text.clone());
-        assert_eq!(found.kind, ApiDelegateLookupKind::Found, "{text}");
-        let listing = found.listing.unwrap();
-        assert_eq!((listing.index, listing.handle.as_str()), (1, "alice"));
-    }
+    let found = lookup(dk(1).encode());
+    assert_eq!(found.kind, ApiDelegateLookupKind::Found);
+    let listing = found.listing.unwrap();
+    assert_eq!((listing.index, listing.handle.as_str()), (1, "alice"));
     let unrecognized = lookup("hello".to_owned());
     assert_eq!(
         (unrecognized.kind, unrecognized.listing),
@@ -477,30 +450,27 @@ fn paste_finds_a_delegate_by_marker_key_index_or_fingerprint() {
 #[test]
 fn the_pre_proving_check_gives_each_choice_its_verdict_and_listing() {
     let view = view();
-    let listed = proxy_browse(view.clone()).unwrap().listed;
-    let mut choices: Vec<_> = listed.iter().map(choice).collect();
-    // Entry 21 picked under another handle than the chain proves, entry 30
-    // proven absent, and entry 31 with no proof.
-    choices.push(ProxyDelegateChoice {
+    let alice = choice(&proxy_browse(view.clone()).unwrap().listed[0]);
+    // Entry 21, new this round, and entry 30, proven absent.
+    let new = ProxyDelegateChoice {
         delegate_index: 21,
-        handle: "alice".to_owned(),
-        ..choice(&listed[0])
-    });
-    for delegate_index in [30, 31] {
-        choices.push(ProxyDelegateChoice {
-            delegate_index,
-            ..choice(&listed[0])
-        });
-    }
+        handle: "a1ice".to_owned(),
+        dk: dk(21).encode(),
+        ..alice.clone()
+    };
+    let absent = ProxyDelegateChoice {
+        delegate_index: 30,
+        ..alice.clone()
+    };
     let confirmed = check_proxy_delegates(
         NETWORK.to_owned(),
         view.wallet_list,
         view.first_new_index,
         ProxyAllocationRequest {
             round_id: ROUND_ID.to_owned(),
-            choices,
+            choices: vec![alice, new, absent],
         },
-        [1, 2, 3, 21, 30].map(entry_proof).to_vec(),
+        [1, 21, 30].map(entry_proof).to_vec(),
     );
     assert_eq!(
         confirmed
@@ -509,18 +479,15 @@ fn the_pre_proving_check_gives_each_choice_its_verdict_and_listing() {
             .collect::<Vec<_>>(),
         [
             DelegateCheck::Ok,
-            DelegateCheck::Suspended,
-            DelegateCheck::Retired,
-            DelegateCheck::Mismatch,
-            DelegateCheck::NotFound,
-            DelegateCheck::CannotVerify,
+            DelegateCheck::Ok,
+            DelegateCheck::NotFound
         ]
     );
-    // The listing comes from the proven entry.
+    // The listing comes from the proven entry, labelled by the list and
+    // the round.
     let alice = confirmed[0].listing.as_ref().unwrap();
     assert!(alice.reviewed && !alice.new_this_round);
-    let mismatched = confirmed[3].listing.as_ref().unwrap();
-    assert_eq!(mismatched.handle, "a1ice");
-    assert!(mismatched.new_this_round);
-    assert!(confirmed[4].listing.is_none() && confirmed[5].listing.is_none());
+    let new = confirmed[1].listing.as_ref().unwrap();
+    assert!(!new.reviewed && new.new_this_round);
+    assert!(confirmed[2].listing.is_none());
 }

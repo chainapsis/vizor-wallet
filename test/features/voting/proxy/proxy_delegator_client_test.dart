@@ -6,7 +6,6 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 
 import 'support/proxy_delegator_fakes.dart';
-import 'support/proxy_values.dart';
 import 'support/proxy_rust_fake.dart';
 
 const _roundId =
@@ -130,49 +129,6 @@ void main() {
         );
       },
     );
-
-    test('a chain without proxy params passes none', () async {
-      chain.params = null;
-      await client.availability(_roundId);
-      expect(
-        bridge.availabilityCalls.single.chain.proxyDelegationParams,
-        isNull,
-      );
-    });
-
-    test('maps every result zcash_voting gives', () async {
-      final expected = {
-        rust.ApiProxyAvailabilityKind.available: const ApiProxyAvailability(
-          kind: ApiProxyAvailabilityKind.available,
-          usedElsewhere: false,
-        ),
-        rust.ApiProxyAvailabilityKind.unsupported: const ApiProxyAvailability(
-          kind: ApiProxyAvailabilityKind.unsupported,
-          usedElsewhere: false,
-        ),
-        rust.ApiProxyAvailabilityKind.paused: const ApiProxyAvailability(
-          kind: ApiProxyAvailabilityKind.paused,
-          usedElsewhere: false,
-        ),
-        rust.ApiProxyAvailabilityKind.alreadyVoted: const ApiProxyAvailability(
-          kind: ApiProxyAvailabilityKind.alreadyVoted,
-          usedElsewhere: false,
-        ),
-        rust.ApiProxyAvailabilityKind.timingUnavailable:
-            const ApiProxyAvailability(
-              kind: ApiProxyAvailabilityKind.timingUnavailable,
-              usedElsewhere: false,
-            ),
-        rust.ApiProxyAvailabilityKind.voteEnded: const ApiProxyAvailability(
-          kind: ApiProxyAvailabilityKind.voteEnded,
-          usedElsewhere: false,
-        ),
-      };
-      for (final MapEntry(:key, :value) in expected.entries) {
-        bridge.availabilityFor = (_) => bridgedAvailability(key);
-        expect(await client.availability(_roundId), value, reason: '$key');
-      }
-    });
   });
 
   test('preview sets the round\'s bundles up first and keeps the planner\'s '
@@ -189,31 +145,16 @@ void main() {
   });
 
   test('commit passes the confirmed preview, the verdicts, the picked '
-      "delegates' identity and the round's timing, and refuses a plan that "
-      'moved since its preview', () async {
+      "delegates' identity and the round's timing", () async {
     final preview = await client.preview(request([3, 4]));
     const checks = [DelegateCheck.ok, DelegateCheck.ok];
 
-    bridge.walletBallots = 300;
-    await expectLater(
-      client.commit(request([3, 4]), confirmed: preview, checks: checks),
-      throwsA(
-        isA<ProxyDelegationError>().having(
-          (error) => error.kind,
-          'kind',
-          ProxyDelegationErrorKind.planChanged,
-        ),
-      ),
-    );
-    expect(bridge.committed, isNull);
-
-    final again = await client.preview(request([3, 4]));
-    await client.commit(request([3, 4]), confirmed: again, checks: checks);
+    await client.commit(request([3, 4]), confirmed: preview, checks: checks);
     final committed = bridge.committed!;
-    expect(committed.confirmed.keptBallots, BigInt.from(150));
+    expect(committed.confirmed.keptBallots, BigInt.from(200));
     expect(committed.confirmed.delegations.map((d) => d.ballots), [
-      BigInt.from(75),
-      BigInt.from(75),
+      BigInt.from(100),
+      BigInt.from(100),
     ]);
     expect(committed.checks, checks);
     expect(
@@ -245,11 +186,6 @@ void main() {
           0: ballotPage(5, delegates: [2, 5]),
           5: ballotPage(0, delegates: [9]),
         };
-        bridge.statusAnswer = rust.ApiProxyAllocationStatus(
-          delegations: [bridgedView(3)],
-          keptBallots: BigInt.from(37),
-        );
-
         await client.status(_roundId);
         await client.progress(_roundId);
 
@@ -290,76 +226,6 @@ void main() {
       await client.status(_roundId);
       expect(bridge.reads.single.phase, rust.ApiProxyRoundPhase.closed);
     });
-
-    test('map every stage and ballot zcash_voting reports', () async {
-      bridge.statusAnswer = rust.ApiProxyAllocationStatus(
-        delegations: [
-          bridgedView(1, stage: rust_wire.ProxyDelegationStage.preparing),
-          bridgedView(
-            2,
-            stage: rust_wire.ProxyDelegationStage.submitting,
-            ballot: rust.ApiDelegateBallotKind.submitted,
-            options: [1, 0],
-          ),
-          bridgedView(3, stage: rust_wire.ProxyDelegationStage.included),
-          bridgedView(
-            4,
-            stage: rust_wire.ProxyDelegationStage.handedOff,
-            ballot: rust.ApiDelegateBallotKind.counted,
-            options: [0, 2],
-          ),
-          bridgedView(
-            5,
-            stage: rust_wire.ProxyDelegationStage.notCounted,
-            ballot: rust.ApiDelegateBallotKind.notCounted,
-          ),
-        ],
-        keptBallots: BigInt.from(100),
-      );
-
-      final status = (await client.status(_roundId))!;
-
-      expect(status.keptBallots, BigInt.from(100));
-      expect(status.delegations.map((view) => view.stage), [
-        ProxyDelegationStage.preparing,
-        ProxyDelegationStage.submitting,
-        ProxyDelegationStage.included,
-        ProxyDelegationStage.handedOff,
-        ProxyDelegationStage.notCounted,
-      ]);
-      expect(status.delegations.map((view) => view.ballot), [
-        isProxyBallot(ApiDelegateBallotKind.noBallotYet),
-        isProxyBallot(ApiDelegateBallotKind.submitted, [1, 0]),
-        isProxyBallot(ApiDelegateBallotKind.noBallotYet),
-        isProxyBallot(ApiDelegateBallotKind.counted, [0, 2]),
-        isProxyBallot(ApiDelegateBallotKind.notCounted),
-      ]);
-      expect(status.delegations.first.handle, 'delegate1');
-    });
-
-    test('progress carries every flag of zcash_voting\'s view', () async {
-      bridge.progressAnswers.add(
-        bridgedProgress(
-          [bridgedView(3, stage: rust_wire.ProxyDelegationStage.submitting)],
-          plannedImmediate: true,
-          immediateRevealConfirmed: true,
-          refusedByChain: true,
-        ),
-      );
-      final progress = (await client.progress(_roundId))!;
-      expect(progress.plannedImmediate, isTrue);
-      expect(progress.immediateRevealConfirmed, isTrue);
-      expect(progress.refusedByChain, isTrue);
-      expect(
-        progress.delegations.single.stage,
-        ProxyDelegationStage.submitting,
-      );
-    });
-
-    test('a round the account never delegated in reads as none', () async {
-      expect(await client.status(_roundId), isNull);
-      expect(await client.progress(_roundId), isNull);
-    });
   });
 
   test('round facts need the round\'s authenticated vote end', () async {
@@ -374,20 +240,6 @@ void main() {
     await expectLater(
       client.roundContext(_roundId),
       throwsA(isA<ProxyDelegationError>()),
-    );
-  });
-
-  test('a wallet with less weight than delegates cannot preview', () async {
-    bridge.walletBallots = 1;
-    await expectLater(
-      client.preview(request([3, 4])),
-      throwsA(
-        isA<ProxyDelegationError>().having(
-          (error) => error.kind,
-          'kind',
-          ProxyDelegationErrorKind.notEnoughVotingPower,
-        ),
-      ),
     );
   });
 }

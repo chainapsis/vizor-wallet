@@ -44,7 +44,6 @@ class FakeProofHosts implements VotingHttpClient {
     this.failing = const {},
     this.statuses = const {},
     this.oversized = const {},
-    this.heights = const {},
     this.storeValues = const {},
     this.onRequest,
   });
@@ -57,9 +56,6 @@ class FakeProofHosts implements VotingHttpClient {
 
   /// Hosts whose answers exceed the client's size limit.
   final Set<String> oversized;
-
-  /// Tip height per host; 101 otherwise.
-  final Map<String, int> heights;
 
   /// Raw store values by queried `data`, `0x` and the key's hex; an
   /// unproven query for any other key finds it absent.
@@ -103,7 +99,7 @@ class FakeProofHosts implements VotingHttpClient {
         },
       });
     }
-    return proofHostAnswer(uri, heights[uri.host] ?? 101);
+    return proofHostAnswer(uri, 101);
   }
 
   @override
@@ -136,17 +132,11 @@ class VerifiedEvidence {
 }
 
 /// Stands in for Rust's reader: derives entry keys as the shared crate does
-/// and accepts evidence from any host but [rejectedHosts].
+/// and accepts evidence from any host but [rejectedHosts]. Odd entries hold
+/// `[8, d]` and even ones are proven absent.
 class FakeRegistryProofRust {
   /// Hosts whose evidence fails verification.
   final rejectedHosts = <String>{};
-
-  /// Proven bytes per entry index. When null, odd indices hold `[8, d]` and
-  /// even ones are proven absent.
-  Map<int, Uint8List>? entries;
-
-  /// Refuses every index list, as Rust does for 0 or a duplicate.
-  bool refuseIndices = false;
 
   /// Every verification, in order.
   final verified = <VerifiedEvidence>[];
@@ -157,7 +147,6 @@ class FakeRegistryProofRust {
   ];
 
   Future<List<String>> entryKeys(List<int> delegateIndices) async {
-    if (refuseIndices) throw StateError('Refused registry indices');
     return [
       for (final d in delegateIndices)
         '1a01${d.toRadixString(16).padLeft(8, '0')}',
@@ -180,16 +169,11 @@ class FakeRegistryProofRust {
     if (rejectedHosts.contains(_host(json))) {
       throw StateError('Voting participation evidence could not be verified');
     }
-    final entries = this.entries;
     return [
       for (final d in delegateIndices)
         rust.ApiProvenRegistryEntry(
           delegateIndex: d,
-          entry: entries != null
-              ? entries[d]
-              : d.isOdd
-              ? Uint8List.fromList([8, d])
-              : null,
+          entry: d.isOdd ? Uint8List.fromList([8, d]) : null,
         ),
     ];
   }

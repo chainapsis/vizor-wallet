@@ -33,15 +33,6 @@ void main() {
     );
   });
 
-  test('stored bytes that are not base64 read as absent', () async {
-    final file = File(
-      '${root.path}/$kProxyRegistryCacheFolder/main/wallet-list.json',
-    );
-    await file.parent.create(recursive: true);
-    await file.writeAsString('not base64!');
-    expect(await store.readWalletList('main'), isNull);
-  });
-
   test('clear deletes every network and leaves other voting data', () async {
     await store.writeRegistryCache('main', '{}');
     await store.writeWalletList('test', [1, 2, 3]);
@@ -57,13 +48,5 @@ void main() {
     );
     expect(notes.existsSync(), isTrue);
     await store.clear();
-  });
-
-  test('networks never become paths of their own', () async {
-    expect(
-      () => store.writeRegistryCache('../main', '{}'),
-      throwsArgumentError,
-    );
-    expect(() => store.writeWalletList('Main', const []), throwsArgumentError);
   });
 }

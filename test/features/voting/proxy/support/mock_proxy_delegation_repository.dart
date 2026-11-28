@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_repository.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'proxy_values.dart';
@@ -22,11 +21,9 @@ class ProxyMockScenario {
     this.listUnavailable = false,
     Set<int>? listed,
     Map<int, DelegateCheck>? checks,
-    Map<int, ProxyDelegateListing>? provenListings,
     this.status,
   }) : listed = listed ?? {for (final entry in delegates) entry.index},
-       checks = checks ?? {},
-       provenListings = provenListings ?? {};
+       checks = checks ?? {};
 
   /// The shared test round: the delegates and questions below.
   factory ProxyMockScenario.development({required DateTime now}) {
@@ -71,10 +68,6 @@ class ProxyMockScenario {
 
   /// Pre-proving check per delegate index; missing means ok.
   Map<int, DelegateCheck> checks;
-
-  /// The listing the check proves per delegate index; missing means the
-  /// matching one of [delegates].
-  Map<int, ProxyDelegateListing> provenListings;
 
   /// The committed allocation, or null before delegating.
   ApiProxyAllocationStatus? status;
@@ -155,34 +148,20 @@ class MockProxyDelegationRepository implements ProxyDelegationRepository {
     ];
   }
 
-  /// Paste or scan of a `zvdk1…` key, an index or a fingerprint, matched
-  /// against the mock keys.
+  /// Paste or scan of a mock `zvdk1…` key.
   @override
-  Future<ApiDelegateLookup> lookup(String roundId, String text) async {
-    final trimmed = text.trim();
-    ApiDelegateLookup found(bool Function(ProxyDelegateListing) matches) =>
-        switch (scenario.delegates.where(matches).firstOrNull) {
-          final entry? => ApiDelegateLookup(
-            kind: ApiDelegateLookupKind.found,
-            listing: entry,
-          ),
-          null => const ApiDelegateLookup(kind: ApiDelegateLookupKind.notFound),
-        };
-    if (trimmed.startsWith('zvdk1')) {
-      return found((entry) => entry.key.dk == trimmed);
-    }
-    final digits = trimmed.startsWith('#') ? trimmed.substring(1) : trimmed;
-    if (RegExp(r'^[1-9][0-9]*$').hasMatch(digits)) {
-      return found((entry) => entry.index == int.parse(digits));
-    }
-    final compact = trimmed.replaceAll('-', '').toLowerCase();
-    if (compact.length == 16) {
-      return found(
-        (entry) => entry.key.fingerprint.replaceAll('-', '') == compact,
-      );
-    }
-    return const ApiDelegateLookup(kind: ApiDelegateLookupKind.unrecognized);
-  }
+  Future<ApiDelegateLookup> lookup(String roundId, String text) async =>
+      switch (scenario.delegates
+          .where((entry) => entry.key.dk == text.trim())
+          .firstOrNull) {
+        final entry? => ApiDelegateLookup(
+          kind: ApiDelegateLookupKind.found,
+          listing: entry,
+        ),
+        null => const ApiDelegateLookup(
+          kind: ApiDelegateLookupKind.unrecognized,
+        ),
+      };
 
   @override
   Future<ProxyAllocationPreview> preview(
@@ -207,40 +186,25 @@ class MockProxyDelegationRepository implements ProxyDelegationRepository {
       for (final choice in choices)
         ApiConfirmedDelegate(
           check: scenario.checks[choice.delegateIndex] ?? DelegateCheck.ok,
-          listing:
-              scenario.provenListings[choice.delegateIndex] ??
-              scenario.delegates
-                  .where((entry) => entry.index == choice.delegateIndex)
-                  .firstOrNull,
+          listing: scenario.delegates
+              .where((entry) => entry.index == choice.delegateIndex)
+              .firstOrNull,
         ),
     ];
   }
 
   /// Checks the delegates again, as the real repository does, and commits
-  /// only when every verdict is ok and the plan still splits as
-  /// [confirmed].
+  /// only when every verdict is ok.
   @override
   Future<void> commit(
     ProxyAllocationRequest request, {
     required ProxyAllocationPreview confirmed,
   }) async {
-    if (scenario.status != null) {
-      throw const ProxyDelegationError(
-        kind: ProxyDelegationErrorKind.other,
-        detail: 'one delegation per round',
-      );
-    }
     final checked = await checkDelegates(request.roundId, request.choices);
     if (checked.any((delegate) => delegate.check != DelegateCheck.ok)) {
       throw const ProxyReviewChangedException();
     }
     final preview = await this.preview(request);
-    if (preview.keptBallots != confirmed.keptBallots ||
-        !listEquals(preview.delegations, confirmed.delegations)) {
-      throw const ProxyDelegationError(
-        kind: ProxyDelegationErrorKind.planChanged,
-      );
-    }
     commits.add(request);
     final status = ApiProxyAllocationStatus(
       delegations: [

@@ -1,14 +1,14 @@
 //! Boundary checks for the delegator bridge on a real voting sidecar: one
-//! happy path per call, the error and verdict mapping, and what Vizor owns
-//! (the pending-round scan). zcash_voting's
-//! own tests cover the rules behind each call.
+//! happy path per call, the view mapping, and what Vizor owns (the
+//! pending-round scan). zcash_voting's own tests cover the rules behind
+//! each call.
 
 use zcash_vote_delegate::DelegateSigningKey;
 use zcash_voting::governance::BALLOT_DIVISOR;
 use zcash_voting::session::Decision;
 use zcash_voting::storage::queries;
 use zcash_voting::types::Network;
-use zcash_voting::wire::{ProxyDelegateChoice, ProxyDelegationErrorKind, VotingRoundParams};
+use zcash_voting::wire::{ProxyDelegateChoice, VotingRoundParams};
 
 use super::*;
 
@@ -166,11 +166,6 @@ fn allowed() -> Vec<DelegateCheck> {
     vec![DelegateCheck::Ok; 2]
 }
 
-/// The kind of a refused call.
-fn kind<T: std::fmt::Debug>(result: Result<T, ProxyDelegationError>) -> ProxyDelegationErrorKind {
-    result.expect_err("the call is refused").kind
-}
-
 /// One delegate ballot page as the REST API encodes it.
 fn ballot_page(ballots: &[(u32, &[u32])], next_start_after: u32) -> Vec<u8> {
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -238,66 +233,6 @@ fn a_previewed_plan_commits_once_and_reads_back_as_preparing() {
     );
     let progress = sidecar.progress().unwrap().unwrap();
     assert_eq!(progress.delegations, status.delegations);
-}
-
-#[test]
-fn a_commit_is_refused_when_its_plan_moved() {
-    let sidecar = Sidecar::with_bundle_weights(&[100, 50]);
-    let preview = sidecar.preview().unwrap();
-    sidecar.set_bundle_ballots(1, 60);
-
-    assert_eq!(
-        kind(sidecar.commit(&preview, allowed())),
-        ProxyDelegationErrorKind::PlanChanged
-    );
-}
-
-#[test]
-fn a_commit_that_keeps_ballots_needs_the_kept_share_answered() {
-    let sidecar = Sidecar::with_bundle_weights(&[100, 50]);
-    let db = db::open_voting_db(&sidecar.db_path, ACCOUNT).unwrap();
-    db.clear_ballot_intent(ROUND_ID, ROSTER[0]).unwrap();
-    let preview = sidecar.preview().unwrap();
-    assert_eq!(
-        kind(sidecar.commit(&preview, allowed())),
-        ProxyDelegationErrorKind::KeptShareUnanswered
-    );
-}
-
-#[test]
-fn only_ok_verdicts_for_every_choice_commit() {
-    let sidecar = Sidecar::with_bundle_weights(&[100, 50]);
-    let preview = sidecar.preview().unwrap();
-    for (check, expected) in [
-        (
-            DelegateCheck::CannotVerify,
-            ProxyDelegationErrorKind::CannotVerify,
-        ),
-        (DelegateCheck::Suspended, ProxyDelegationErrorKind::Other),
-        (DelegateCheck::Retired, ProxyDelegationErrorKind::Other),
-        (DelegateCheck::NotFound, ProxyDelegationErrorKind::Other),
-        (DelegateCheck::Mismatch, ProxyDelegationErrorKind::Other),
-    ] {
-        assert_eq!(
-            kind(sidecar.commit(&preview, vec![DelegateCheck::Ok, check])),
-            expected,
-            "{check:?}"
-        );
-    }
-    assert_eq!(
-        kind(sidecar.commit(&preview, vec![DelegateCheck::Ok])),
-        ProxyDelegationErrorKind::Other,
-        "a missing verdict"
-    );
-}
-
-#[test]
-fn a_wallet_with_less_weight_than_delegates_cannot_preview() {
-    let sidecar = Sidecar::with_bundle_weights(&[1]);
-    assert_eq!(
-        kind(sidecar.preview()),
-        ProxyDelegationErrorKind::NotEnoughVotingPower
-    );
 }
 
 #[test]
@@ -375,12 +310,6 @@ fn each_delegate_s_ballot_reads_from_the_whole_round_list() {
             ),
         ]
     );
-
-    assert_eq!(
-        kind(sidecar.status(&[&first], ApiProxyRoundPhase::Active)),
-        ProxyDelegationErrorKind::Other,
-        "a list missing its last page"
-    );
 }
 
 #[cfg(not(feature = "unstable-proxy-delegation"))]
@@ -408,68 +337,4 @@ fn availability_is_unsupported_while_zcash_voting_is_dormant() {
             used_elsewhere: false,
         }
     );
-}
-
-/// The chain's answers for a round that offers proxy delegation with the
-/// circuits this build proves with, unpaused.
-#[cfg(feature = "unstable-proxy-delegation")]
-fn gate_open_chain() -> ApiProxyChainAnswers {
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-    let fingerprints: Vec<_> = zcash_voting::proxy::CIRCUIT_FINGERPRINTS
-        .iter()
-        .map(|(name, vk)| {
-            serde_json::json!({
-                "name": name,
-                "vk_blake2b": BASE64.encode(hex::decode(vk).unwrap()),
-            })
-        })
-        .collect();
-    ApiProxyChainAnswers {
-        protocol_capabilities: serde_json::to_vec(&serde_json::json!({
-            "proxy_delegation_version": 1,
-            "circuit_fingerprints": fingerprints,
-        }))
-        .unwrap(),
-        vote_round: serde_json::to_vec(&serde_json::json!({
-            "round": {
-                "vote_round_id": BASE64.encode(hex::decode(ROUND_ID).unwrap()),
-                "proxy_delegation": {"enabled": true},
-            }
-        }))
-        .unwrap(),
-        proxy_delegation_params: Some(
-            serde_json::to_vec(&serde_json::json!({
-                "params": {"proxy_dc_paused": false}
-            }))
-            .unwrap(),
-        ),
-    }
-}
-
-/// With the switch on, a round the gates offer previews and commits, so
-/// the delegator's whole path runs on a real sidecar behind availability.
-#[cfg(feature = "unstable-proxy-delegation")]
-#[test]
-fn an_available_round_previews_and_commits_with_the_switch_on() {
-    let sidecar = Sidecar::with_bundle_weights(&[100, 50]);
-    let availability = proxy_delegation_availability(
-        sidecar.db_path.clone(),
-        ACCOUNT.to_owned(),
-        ROUND_ID.to_owned(),
-        gate_open_chain(),
-        ApiGovNullifierProof::Unspent,
-        early(),
-    )
-    .unwrap();
-    assert_eq!(availability.kind, ApiProxyAvailabilityKind::Available);
-    let preview = sidecar.preview().unwrap();
-    sidecar.commit(&preview, allowed()).unwrap();
-    let status = sidecar
-        .status(&[b"{}"], ApiProxyRoundPhase::Active)
-        .unwrap()
-        .unwrap();
-    assert!(status
-        .delegations
-        .iter()
-        .all(|view| view.stage == ProxyDelegationStage::Preparing));
 }

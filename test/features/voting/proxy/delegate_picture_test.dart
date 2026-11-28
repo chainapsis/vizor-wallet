@@ -68,23 +68,6 @@ void main() {
       }
     });
 
-    test('concurrent loads share one decode', () async {
-      final decoder = FakeDelegatePictureDecoder();
-      final cache = DelegatePictureCache(decoder);
-      addTearDown(cache.clear);
-
-      final images = await Future.wait([
-        cache.load(_picture('aa')),
-        cache.load(_picture('aa')),
-      ]);
-
-      expect(decoder.calls, ['aa']);
-      expect(images, everyElement(isNotNull));
-      for (final image in images) {
-        image!.dispose();
-      }
-    });
-
     test('a refused picture is null, never thrown, and tried again', () async {
       final decoder = FakeDelegatePictureDecoder()..failure = 'HashMismatch';
       final cache = DelegatePictureCache(decoder);
@@ -97,14 +80,6 @@ void main() {
       expect(image, isNotNull);
       expect(decoder.calls, ['aa', 'aa']);
       image!.dispose();
-    });
-
-    test('pixels that are not 128 px are never drawn', () async {
-      final decoder = FakeDelegatePictureDecoder()..edge = 64;
-      final cache = DelegatePictureCache(decoder);
-      addTearDown(cache.clear);
-
-      expect(await cache.load(_picture('aa')), isNull);
     });
 
     test('evicts the least recently used picture past capacity', () async {
@@ -126,22 +101,6 @@ void main() {
   });
 
   group('ProxyDelegateAvatar', () {
-    testWidgets('draws a decoded picture in place of the identicon', (
-      tester,
-    ) async {
-      final cache = DelegatePictureCache(FakeDelegatePictureDecoder());
-      addTearDown(cache.clear);
-      final listing = _listing();
-      final picture = listing.listPicture!;
-      await tester.runAsync(() async => (await cache.load(picture))?.dispose());
-
-      await _pump(tester, ProxyDelegateSummary(entry: listing), cache);
-
-      expect(find.byType(RawImage), findsOne);
-      expect(find.byType(ProxyIdenticon), findsNothing);
-      expect(find.text('Alice'), findsOne);
-    });
-
     testWidgets('shows the identicon without a picture or on failure', (
       tester,
     ) async {

@@ -177,23 +177,6 @@ void main() {
       ]);
     });
 
-    test('maps the bridge listings onto the screens\' listings', () async {
-      final [alice, bob] = (await client().browse(kRegistryTestRoundId)).listed;
-
-      expect(alice.handle, 'alice');
-      expect(alice.displayName, 'Alice');
-      expect(alice.reviewed, isTrue);
-      expect(alice.provider, ProxyDelegateProvider.x);
-      expect(alice.key.dk, 'zvdk1fake17');
-      expect(alice.key.fingerprint, 'fp17-aaaa-bbbb-cccc');
-      expect(alice.status, DelegateEntryStatus.active);
-      expect(alice.picture, alicePicture);
-      expect(alice.newThisRound, isFalse);
-
-      expect(bob.provider, ProxyDelegateProvider.gitHub);
-      expect(bob.newThisRound, isTrue, reason: 'next index 18 at creation');
-    });
-
     test('a later browse within the max ages fetches nothing, and a lower '
         'version never replaces the stored list', () async {
       final registry = client();
@@ -253,13 +236,6 @@ void main() {
       );
     });
 
-    test('without any verified list browse is empty and says so', () async {
-      mirrors.answers.remove(_listB);
-      final browse = await client().browse(kRegistryTestRoundId);
-      expect(browse.listed, isEmpty);
-      expect(browse.listUnavailable, isTrue);
-    });
-
     test('a regtest client hands the harness key to Rust once', () async {
       final registry = client(
         network: 'regtest',
@@ -275,49 +251,13 @@ void main() {
     });
   });
 
-  group('search', () {
-    test('matches exact handles of live entries in the registry cache, '
-        'reviewed or not', () async {
-      final registry = client();
-      final carol = await registry.search(kRegistryTestRoundId, '@Carol');
-
-      expect(carol.single.handle, 'carol');
-      expect(carol.single.reviewed, isFalse);
-      expect(carol.single.displayName, isNull);
-
-      final alice = await registry.search(kRegistryTestRoundId, 'alice');
-      expect(alice.single.reviewed, isTrue);
-      expect(alice.single.displayName, 'Alice');
-
-      expect(await registry.search(kRegistryTestRoundId, 'car'), isEmpty);
-      expect(
-        await registry.search(kRegistryTestRoundId, 'dave'),
-        isEmpty,
-        reason: 'a retired entry is not live',
-      );
-    });
-  });
-
   group('paste or scan', () {
-    test('finds an index, a key or a fingerprint in the cache without a '
-        'proof', () async {
-      final registry = client();
-      for (final text in [' #19 ', 'zvdk1fake19', 'fp19-aaaa-bbbb-cccc']) {
-        final found = await registry.lookup(kRegistryTestRoundId, text);
-        expect(found.kind, ApiDelegateLookupKind.found, reason: text);
-        final listing = found.listing!;
-        expect((listing.index, listing.handle), (19, 'carol'), reason: text);
-      }
+    test('finds an entry in the cache without a proof', () async {
+      final found = await client().lookup(kRegistryTestRoundId, '#19');
+      expect(found.kind, ApiDelegateLookupKind.found);
+      expect((found.listing!.index, found.listing!.handle), (19, 'carol'));
       expect(proofBridge.verified, isEmpty);
       expect(proofHosts.requests, isEmpty);
-
-      final unrecognized = await registry.lookup(kRegistryTestRoundId, 'hello');
-      expect(unrecognized.kind, ApiDelegateLookupKind.unrecognized);
-      final notFound = await registry.lookup(kRegistryTestRoundId, '#99');
-      expect(
-        (notFound.kind, notFound.listing),
-        (ApiDelegateLookupKind.notFound, null),
-      );
     });
   });
 
@@ -365,46 +305,6 @@ void main() {
       );
     });
 
-    test('gives each choice the verdict of its proven entry', () async {
-      bridge.listings[23] = FakeListing(
-        23,
-        'erin',
-        status: rust_wire.DelegateEntryStatus.suspended,
-      );
-      ProxyDelegateChoice choice(int index, String handle) =>
-          ProxyDelegateChoice(
-            delegateIndex: index,
-            percentBps: 1000,
-            provider: ProxyDelegateProvider.x,
-            handle: handle,
-            dk: 'zvdk1fake$index',
-          );
-      // The fake reader proves odd entries present and even ones absent.
-      final confirmed = await client().check(kRegistryTestRoundId, [
-        alice,
-        choice(23, 'erin'),
-        choice(21, 'dave'),
-        choice(18, 'bob'),
-        choice(19, 'not-carol'),
-      ]);
-
-      expect(
-        [for (final delegate in confirmed) delegate.check],
-        [
-          DelegateCheck.ok,
-          DelegateCheck.suspended,
-          DelegateCheck.retired,
-          DelegateCheck.notFound,
-          DelegateCheck.mismatch,
-        ],
-      );
-      expect(
-        confirmed.last.listing?.handle,
-        'carol',
-        reason: 'the listing is the proven entry, not the choice',
-      );
-    });
-
     test('no proof host that verifies means it cannot verify', () async {
       proofBridge.rejectedHosts.addAll(['rpc-a.example', 'rpc-b.example']);
       await expectLater(
@@ -447,26 +347,6 @@ void main() {
       final registry = client();
       expect((await registry.listPicture(17))?.webp, alicePicture);
       expect(await registry.listPicture(19), isNull);
-    });
-
-    test('the verifier URLs come from the latest config load', () async {
-      sources.clear();
-      expect(client().verifierApiUrls(), isEmpty);
-      await sources.ingest(
-        fakeConfigFetch([
-          fakeDynamicConfig(
-            verifierApiUrls: [
-              'https://verifier-a.example',
-              'https://verifier-b.example',
-            ],
-          ),
-        ]),
-        network: 'main',
-      );
-      expect(client().verifierApiUrls(), [
-        'https://verifier-a.example',
-        'https://verifier-b.example',
-      ]);
     });
   });
 

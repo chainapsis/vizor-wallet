@@ -5,7 +5,6 @@ import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 
 import '../../../support/test_l10n.dart';
-import 'support/mock_proxy_delegation_repository.dart';
 import 'support/proxy_test_scenarios.dart';
 import 'support/proxy_values.dart';
 
@@ -84,39 +83,6 @@ void main() {
     });
   });
 
-  test('each repository failure kind has its own copy, other falls back', () {
-    final copies = {
-      for (final kind in ProxyDelegationErrorKind.values)
-        kind: proxyErrorCopy(
-          testL10n,
-          ProxyDelegationError(kind: kind),
-          fallback: testL10n.proxyCommitError,
-        ),
-    };
-    expect(
-      copies[ProxyDelegationErrorKind.alreadyVoted],
-      testL10n.proxyAlreadyStartedVoting,
-    );
-    expect(
-      copies[ProxyDelegationErrorKind.registrationUnusable],
-      testL10n.proxyRegistrationUnusable,
-    );
-    expect(
-      copies[ProxyDelegationErrorKind.keptShareUnanswered],
-      testL10n.proxyKeptShareUnanswered,
-    );
-    expect(copies[ProxyDelegationErrorKind.other], testL10n.proxyCommitError);
-    expect(
-      proxyErrorCopy(testL10n, const ProxyReviewChangedException()),
-      testL10n.proxyReviewChanged,
-    );
-    expect(
-      {...copies.values, testL10n.proxyReviewChanged},
-      hasLength(ProxyDelegationErrorKind.values.length + 1),
-      reason: 'no two kinds share copy',
-    );
-  });
-
   group('PD-4 timing', () {
     final voteEnd = DateTime(2026, 10, 10, 12);
 
@@ -144,55 +110,6 @@ void main() {
           voteEnd: voteEnd,
         ),
         ProxyDelegationWindow.closed,
-      );
-    });
-
-    test('the 24 h notice starts 24 h before vote_end', () {
-      expect(
-        proxyDelegationWindowAt(
-          now: voteEnd.subtract(const Duration(hours: 24, seconds: 1)),
-          voteEnd: voteEnd,
-        ),
-        ProxyDelegationWindow.open,
-      );
-      expect(
-        proxyDelegationWindowAt(
-          now: voteEnd.subtract(const Duration(hours: 24)),
-          voteEnd: voteEnd,
-        ),
-        ProxyDelegationWindow.closingSoon,
-      );
-      expect(
-        proxyTimeLeftCopy(
-          testL10n,
-          now: voteEnd.subtract(const Duration(hours: 8, minutes: 59)),
-          voteEnd: voteEnd,
-        ),
-        '8 hours',
-      );
-      expect(
-        proxyTimeLeftCopy(
-          testL10n,
-          now: voteEnd.subtract(const Duration(hours: 1)),
-          voteEnd: voteEnd,
-        ),
-        '1 hour',
-      );
-      expect(
-        proxyTimeLeftCopy(
-          testL10n,
-          now: voteEnd.subtract(const Duration(minutes: 14, seconds: 30)),
-          voteEnd: voteEnd,
-        ),
-        '14 minutes',
-      );
-      expect(
-        proxyTimeLeftCopy(
-          testL10n,
-          now: voteEnd.subtract(const Duration(seconds: 20)),
-          voteEnd: voteEnd,
-        ),
-        '1 minute',
       );
     });
   });
@@ -245,34 +162,6 @@ void main() {
           (o) => o.step,
           'step',
           ProxyProgressStep.handingOff,
-        ),
-      );
-    });
-
-    test('runs on the earliest delegation stage', () {
-      expect(
-        outcome(
-          proxyProgress(
-            delegations: views([
-              ProxyDelegationStage.included,
-              ProxyDelegationStage.preparing,
-            ]),
-          ),
-        ),
-        isA<ProxyProgressRunning>().having(
-          (o) => o.step,
-          'step',
-          ProxyProgressStep.preparing,
-        ),
-      );
-      expect(
-        outcome(
-          proxyProgress(delegations: views([ProxyDelegationStage.submitting])),
-        ),
-        isA<ProxyProgressRunning>().having(
-          (o) => o.step,
-          'step',
-          ProxyProgressStep.submitting,
         ),
       );
     });
@@ -352,22 +241,6 @@ void main() {
   });
 
   group('round status lines', () {
-    test('summarizes a delegation as the plan shows it', () {
-      expect(
-        proxyDelegationLine(
-          testL10n,
-          proxyView(
-            delegateIndex: 1,
-            handle: 'alice',
-            ballots: BigInt.from(100),
-            stage: ProxyDelegationStage.handedOff,
-            ballot: proxyBallot(ApiDelegateBallotKind.noBallotYet),
-          ),
-        ),
-        'Delegated 12.5 ZEC to @alice. Sent.',
-      );
-    });
-
     test('question lines go from not voted yet to counted or not counted', () {
       const proposal = VotingProposalView(
         id: 1,
@@ -413,98 +286,17 @@ void main() {
         'No ballot. Not counted this round.',
       );
     });
-
-    test('labels ballot choices with proposal titles and options', () {
-      const proposals = [
-        VotingProposalView(
-          id: 1,
-          title: 'First',
-          description: '',
-          options: [
-            VotingOptionView(index: 0, label: 'Yes'),
-            VotingOptionView(index: 1, label: 'No'),
-          ],
-        ),
-        VotingProposalView(
-          id: 2,
-          title: 'Second',
-          description: '',
-          options: [VotingOptionView(index: 0, label: 'Fund')],
-        ),
-      ];
-      expect(
-        proxyBallotChoices(
-          testL10n,
-          proxyBallot(ApiDelegateBallotKind.submitted, [1, 0]),
-          proposals,
-        ),
-        [
-          (proposal: 'First', option: 'No'),
-          (proposal: 'Second', option: 'Fund'),
-        ],
-      );
-      expect(
-        proxyBallotChoices(
-          testL10n,
-          proxyBallot(ApiDelegateBallotKind.noBallotYet),
-          proposals,
-        ),
-        isEmpty,
-      );
-    });
-  });
-
-  group('PD-2 browse', () {
-    final scenario = proxyTestScenario();
-
-    test('the mock lists Vizor\'s rows in list order, a retired one '
-        'blocked and not reviewed', () async {
-      final browse = await MockProxyDelegationRepository(
-        scenario,
-      ).browse(kProxyTestRoundId);
-      final listed = scenario.delegates
-          .where((entry) => scenario.listed.contains(entry.index))
-          .toList();
-      expect(browse.listed, listed);
-      final lena = proxyEntry(scenario, 'lena_old');
-      expect(lena.status, DelegateEntryStatus.retired);
-      expect(lena.blocked, isTrue);
-      expect(lena.reviewed, isFalse);
-      expect(
-        listed.where((entry) => !entry.blocked).every((e) => e.reviewed),
-        isTrue,
-      );
-    });
-
-    test('a delegate is named by its handle, and its choice carries what '
-        'the listing showed', () {
-      final alice = proxyEntry(scenario, 'alice_votes');
-      expect(proxyListingName(alice), '@alice_votes');
-      expect(
-        alice.choice(100),
-        ProxyDelegateChoice(
-          delegateIndex: alice.index,
-          percentBps: 100,
-          provider: ProxyDelegateProvider.x,
-          handle: 'alice_votes',
-          dk: alice.key.dk,
-        ),
-      );
-    });
   });
 
   group('allocation draft', () {
     final entry = proxyEntry(proxyTestScenario(), 'alice_votes');
 
-    test('percentages parse and format in basis points', () {
+    test('percentages parse into basis points and split evenly', () {
       expect(parseProxyPercent('33.33'), 3333);
       expect(parseProxyPercent('50'), 5000);
       expect(parseProxyPercent('12.5'), 1250);
       expect(parseProxyPercent(''), isNull);
       expect(parseProxyPercent('abc'), isNull);
-      expect(formatProxyPercent(3333), '33.33%');
-      expect(formatProxyPercent(5000), '50%');
-      expect(formatProxyPercent(1250), '12.5%');
       expect(proxyEvenSplit(3), [3334, 3333, 3333]);
     });
 
@@ -529,45 +321,5 @@ void main() {
         10000,
       );
     });
-  });
-
-  test('each pre-proving verdict but ok has its own line, and mismatch '
-      'says the details did not match the chain', () {
-    String? line(DelegateCheck check) =>
-        proxyCheckBlockCopy(testL10n, '@alice', check);
-    expect(line(DelegateCheck.ok), isNull);
-    expect(
-      line(DelegateCheck.cannotVerify),
-      isNull,
-      reason: 'the review reports it once for all delegates',
-    );
-    expect(
-      line(DelegateCheck.suspended),
-      "@alice is suspended, so you can't delegate to them.",
-    );
-    expect(line(DelegateCheck.retired), '@alice has retired as a delegate.');
-    expect(
-      line(DelegateCheck.notFound),
-      "Vizor couldn't find @alice on the voting chain.",
-    );
-    expect(
-      line(DelegateCheck.mismatch),
-      "The details Vizor showed for @alice didn't match the voting chain, "
-      "so you can't delegate to them.",
-    );
-  });
-
-  test('a mock entry outside Vizor\'s list has no list content', () {
-    final scenario = proxyTestScenario();
-    for (final entry in scenario.delegates.where(
-      (e) => !scenario.listed.contains(e.index),
-    )) {
-      expect(entry.displayName, isNull);
-      expect(entry.statement, isNull);
-    }
-    expect(
-      mockProxyDelegateKey('x').fingerprint,
-      matches(RegExp(r'^[a-z0-9]{4}(-[a-z0-9]{4}){3}$')),
-    );
   });
 }

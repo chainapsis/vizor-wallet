@@ -1070,55 +1070,53 @@ void main() {
     );
   });
 
-  for (final enabled in [true, false]) {
-    test('account deletion ${enabled ? 'deletes' : 'leaves'} proxy registry '
-        'state with the dormant flag ${enabled ? 'on' : 'off'}', () async {
-      FlutterSecureStorage.setMockInitialValues({});
-      final supportDirectory = Directory.systemTemp.createTempSync(
-        'vizor-account-removal-proxy',
-      );
-      addTearDown(() {
-        if (supportDirectory.existsSync()) {
-          supportDirectory.deleteSync(recursive: true);
-        }
-      });
-      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(pathProvider, (call) async {
-            if (call.method == 'getApplicationSupportDirectory') {
-              return supportDirectory.path;
-            }
-            throw MissingPluginException('Unexpected path provider call.');
-          });
-      addTearDown(() {
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(pathProvider, null);
-      });
-
-      final container = ProviderContainer(
-        overrides: [
-          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
-          proxyDelegationFeatureEnabledProvider.overrideWithValue(enabled),
-          votingShareTrackingRegistryProvider.overrideWithValue(
-            VotingShareTrackingRegistry(),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      await container.read(accountProvider.future);
-
-      final registry = File(
-        '${await getWalletDbPath()}.voting-cache/'
-        '$kProxyRegistryCacheFolder/main/registry-cache.json',
-      );
-      await registry.parent.create(recursive: true);
-      await registry.writeAsString('');
-      await container.read(accountProvider.notifier).removeAccount('account-2');
-
-      expect(await registry.exists(), !enabled);
-      expect(_rustApi.deletedAccountUuids, contains('account-2'));
+  // The flag gate is the deletion provider's (proxy_registry_dormancy_test).
+  test('account deletion deletes proxy registry state', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-account-removal-proxy',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
     });
-  }
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, (call) async {
+          if (call.method == 'getApplicationSupportDirectory') {
+            return supportDirectory.path;
+          }
+          throw MissingPluginException('Unexpected path provider call.');
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+    });
+
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        proxyDelegationFeatureEnabledProvider.overrideWithValue(true),
+        votingShareTrackingRegistryProvider.overrideWithValue(
+          VotingShareTrackingRegistry(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    final registry = File(
+      '${await getWalletDbPath()}.voting-cache/'
+      '$kProxyRegistryCacheFolder/main/registry-cache.json',
+    );
+    await registry.parent.create(recursive: true);
+    await registry.writeAsString('');
+    await container.read(accountProvider.notifier).removeAccount('account-2');
+
+    expect(await registry.exists(), isFalse);
+    expect(_rustApi.deletedAccountUuids, contains('account-2'));
+  });
 
   test(
     'a redeemed Gift Card allows account deletion with recovery still retained',

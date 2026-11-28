@@ -304,38 +304,6 @@ void main() {
         }
       });
 
-      test(
-        'a broken Tor route fails over across hosts, never to direct',
-        () async {
-          final (server, requests) = await _localHost(role.answer);
-          final tor = _BrokenTor();
-          final accepted = await role.call(
-            _routed(tor, torSelected: true),
-            'regtest',
-            [
-              _local(role, server.port),
-              _local(role, server.port, host: 'localhost'),
-            ],
-          );
-          expect(accepted, isNull);
-          expect(tor.attempts, 2, reason: 'each host is tried once, over Tor');
-          expect(requests, isEmpty, reason: 'nothing reached a host directly');
-        },
-      );
-
-      test('with Tor off a host is reached directly', () async {
-        final (server, requests) = await _localHost(role.answer);
-        final tor = _BrokenTor();
-        final accepted = await role.call(
-          _routed(tor, torSelected: false),
-          'regtest',
-          [_local(role, server.port)],
-        );
-        expect(accepted, role.accepted('127.0.0.1'));
-        expect([for (final (_, path, _) in requests) path], role.paths);
-        expect(tor.attempts, 0);
-      });
-
       test('an unsigned URL list cannot point it at plain HTTP or '
           'credentials', () async {
         final public = Uri.parse(role.publicUrl);
@@ -348,27 +316,6 @@ void main() {
             ]);
         expect(accepted, isNull);
         expect(tor.requests, isEmpty);
-      });
-
-      test('an oversized answer is cut off while it streams, and failover '
-          'continues', () async {
-        final (huge, sent) = await _endlessHost();
-        final (healthy, requests) = await _localHost(role.answer);
-        final accepted = await role.call(
-          _routed(_BrokenTor(), torSelected: false),
-          'regtest',
-          [
-            _local(role, huge.port),
-            _local(role, healthy.port, host: 'localhost'),
-          ],
-        );
-        expect(accepted, role.accepted('localhost'));
-        expect([for (final (_, path, _) in requests) path], role.paths);
-        expect(
-          await sent,
-          inExclusiveRange(0, 64 << 20),
-          reason: 'the client hung up mid-stream',
-        );
       });
     });
   }
@@ -441,5 +388,51 @@ void main() {
     expect(builders, [
       'lib/src/features/voting/proxy/proxy_delegation_providers.dart',
     ]);
+  });
+
+  // Every role rides the one route-aware client, so one role proves its
+  // route and size cap end to end.
+  group('${_roles.first.name} on a broken or endless route', () {
+    final role = _roles.first;
+
+    test(
+      'a broken Tor route fails over across hosts, never to direct',
+      () async {
+        final (server, requests) = await _localHost(role.answer);
+        final tor = _BrokenTor();
+        final accepted = await role.call(
+          _routed(tor, torSelected: true),
+          'regtest',
+          [
+            _local(role, server.port),
+            _local(role, server.port, host: 'localhost'),
+          ],
+        );
+        expect(accepted, isNull);
+        expect(tor.attempts, 2, reason: 'each host is tried once, over Tor');
+        expect(requests, isEmpty, reason: 'nothing reached a host directly');
+      },
+    );
+
+    test('an oversized answer is cut off while it streams, and failover '
+        'continues', () async {
+      final (huge, sent) = await _endlessHost();
+      final (healthy, requests) = await _localHost(role.answer);
+      final accepted = await role.call(
+        _routed(_BrokenTor(), torSelected: false),
+        'regtest',
+        [
+          _local(role, huge.port),
+          _local(role, healthy.port, host: 'localhost'),
+        ],
+      );
+      expect(accepted, role.accepted('localhost'));
+      expect([for (final (_, path, _) in requests) path], role.paths);
+      expect(
+        await sent,
+        inExclusiveRange(0, 64 << 20),
+        reason: 'the client hung up mid-stream',
+      );
+    });
   });
 }

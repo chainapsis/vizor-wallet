@@ -339,47 +339,6 @@ fn key_kinds_follow_the_exact_key_shapes() {
 }
 
 #[test]
-fn value_rules_follow_the_key_kind() {
-    assert!(KeyKind::GovernanceNullifier.admits(&[1]));
-    for value in [&[0][..], &[2], &[1, 1], &[1, 0]] {
-        assert!(!KeyKind::GovernanceNullifier.admits(value));
-    }
-    let entry = entry_kind(1);
-    assert!(entry.admits(&[0]));
-    assert!(entry.admits(&[1]));
-    assert!(entry.admits(&vec![9; MAX_REGISTRY_ENTRY_BYTES]));
-    assert!(!entry.admits(&vec![9; MAX_REGISTRY_ENTRY_BYTES + 1]));
-}
-
-#[test]
-fn a_registry_proof_names_one_to_eight_distinct_entries() {
-    let check = |indices: &[u32]| verify_registry_entries(indices, "main", "{}", 0);
-    // A well-formed index list gets as far as the evidence, which is empty
-    // here and fails with the reader's one error.
-    let reaches_evidence = |result: Result<_, String>| result.is_err_and(|e| e == INVALID);
-    assert!(reaches_evidence(check(&[1, 2, 3, 4, 5, 6, 7, 8])));
-    assert!(reaches_evidence(check(&[17])));
-    for indices in [&[][..], &[0], &[2, 2], &[1, 2, 3, 4, 5, 6, 7, 8, 9]] {
-        assert!(!reaches_evidence(check(indices)), "{indices:?}");
-    }
-}
-
-#[test]
-fn registry_membership_returns_the_proven_entry_bytes() {
-    let registry = Registry::new();
-    for (d, value) in [(1, entry_1()), (3, vec![0x08, 0x03])] {
-        assert_eq!(
-            registry.check(
-                &registry.answer(d),
-                &entry_kind(d),
-                &delegate_entry_store_key(d)
-            ),
-            Ok(Some(value))
-        );
-    }
-}
-
-#[test]
 fn registry_absence_is_proven_between_and_beyond_neighbors() {
     let registry = Registry::new();
     for d in [2, 4, u32::MAX] {

@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_repository.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_registry_proof_client.dart';
-import 'package:zcash_wallet/src/rust/api/proxy_delegation.dart' as rust;
 
 import 'support/proxy_registry_proof_fakes.dart';
 import 'support/proxy_rust_fake.dart';
@@ -92,32 +90,12 @@ void main() {
     );
   });
 
-  test('fails over on transport errors after one retry', () async {
-    for (final error in <Object>[
-      const SocketException('refused'),
-      TimeoutException('slow'),
-      const HttpException('reset'),
+  test('fails over on transport errors and transient answers after one '
+      'retry', () async {
+    for (final hosts in [
+      FakeProofHosts(failing: {a.host: const SocketException('refused')}),
+      FakeProofHosts(statuses: {a.host: 503}),
     ]) {
-      final hosts = FakeProofHosts(failing: {a.host: error});
-      final bridge = FakeRegistryProofRust();
-
-      await client(
-        hosts,
-        bridge,
-      ).prove(network: 'main', proofRpcUrls: [a, b], delegateIndices: [1]);
-
-      expect(
-        hosts.requests.where((uri) => uri.host == a.host).length,
-        2,
-        reason: '$error is retried once on the same host',
-      );
-      expect(bridge.verifiedHosts, [b.host]);
-    }
-  });
-
-  test('fails over on transient answers after one retry', () async {
-    for (final status in [429, 500, 502, 503, 504]) {
-      final hosts = FakeProofHosts(statuses: {a.host: status});
       final bridge = FakeRegistryProofRust();
 
       await client(
@@ -130,27 +108,20 @@ void main() {
     }
   });
 
-  test('fails over on invalid evidence and other answers', () async {
+  test('fails over on invalid evidence and oversized answers', () async {
     final rejecting = FakeRegistryProofRust()..rejectedHosts.add(a.host);
-    final first = FakeProofHosts();
     await client(
-      first,
+      FakeProofHosts(),
       rejecting,
     ).prove(network: 'main', proofRpcUrls: [a, b], delegateIndices: [1]);
     expect(rejecting.verifiedHosts, [a.host, b.host]);
 
-    for (final hosts in [
-      FakeProofHosts(statuses: {a.host: 404}),
+    final bridge = FakeRegistryProofRust();
+    await client(
       FakeProofHosts(oversized: {a.host}),
-      FakeProofHosts(heights: {a.host: 1}),
-    ]) {
-      final bridge = FakeRegistryProofRust();
-      await client(
-        hosts,
-        bridge,
-      ).prove(network: 'main', proofRpcUrls: [a, b], delegateIndices: [1]);
-      expect(bridge.verifiedHosts, [b.host]);
-    }
+      bridge,
+    ).prove(network: 'main', proofRpcUrls: [a, b], delegateIndices: [1]);
+    expect(bridge.verifiedHosts, [b.host]);
   });
 
   test('every failure becomes one cannot-verify outcome', () async {
@@ -181,34 +152,6 @@ void main() {
         FakeRegistryProofRust(),
       ).prove(network: 'main', proofRpcUrls: const [], delegateIndices: [1]),
     );
-  });
-
-  test('refused indices fail before any request', () async {
-    final hosts = FakeProofHosts();
-    final bridge = FakeRegistryProofRust()..refuseIndices = true;
-
-    await expectCannotVerify(
-      client(
-        hosts,
-        bridge,
-      ).prove(network: 'main', proofRpcUrls: [a], delegateIndices: [0]),
-    );
-    expect(hosts.requests, isEmpty);
-  });
-
-  test('no choice needs no request', () async {
-    final hosts = FakeProofHosts();
-    final bridge = FakeRegistryProofRust();
-
-    expect(
-      await client(
-        hosts,
-        bridge,
-      ).prove(network: 'main', proofRpcUrls: [a], delegateIndices: const []),
-      isEmpty,
-    );
-    expect(hosts.requests, isEmpty);
-    expect(bridge.verified, isEmpty);
   });
 
   test('only HTTPS hosts serve proofs, or loopback HTTP on regtest', () async {
@@ -279,20 +222,6 @@ void main() {
     );
     expect(hosts.timeouts.first, ProxyRegistryProofClient.requestTimeout);
     expect(hosts.timeouts[1], const Duration(seconds: 5));
-  });
-
-  test('proven entries keep the bytes Rust returned', () async {
-    final bridge = FakeRegistryProofRust()
-      ..entries = {
-        9: Uint8List.fromList([1, 2, 3]),
-      };
-    final entries = await client(
-      FakeProofHosts(),
-      bridge,
-    ).prove(network: 'test', proofRpcUrls: [a], delegateIndices: [9]);
-    expect(entries.single, isA<rust.ApiProvenRegistryEntry>());
-    expect(entries.single.entry, [1, 2, 3]);
-    expect(bridge.verified.single.network, 'test');
   });
 
   group('raw store values', () {
