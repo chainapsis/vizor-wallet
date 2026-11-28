@@ -323,8 +323,8 @@ opt-level = 3
 # The direct voting-crypto-deps and test vote-commitment-tree pins follow
 # these revs too.
 [patch.crates-io]
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "da9aa2f35dc14e59ecf0074433b2f8c545784751" }
-zcash_vote_delegate = { git = "https://github.com/valargroup/zcash_voting", rev = "da9aa2f35dc14e59ecf0074433b2f8c545784751" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "da9aa2f35dc14e59ecf0074433b2f8c545784751" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "5a7e35e4962d66d700620af2406e27f991e45b8c" }
+zcash_vote_delegate = { git = "https://github.com/valargroup/zcash_voting", rev = "5a7e35e4962d66d700620af2406e27f991e45b8c" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "5a7e35e4962d66d700620af2406e27f991e45b8c" }
 voting-circuits = { git = "https://github.com/valargroup/voting-circuits", rev = "aa3ba600ddcd58db23d1c4e9de8c3ed2e28cdb56" }
 voting-crypto-deps = { git = "https://github.com/valargroup/voting-circuits", rev = "aa3ba600ddcd58db23d1c4e9de8c3ed2e28cdb56" }
