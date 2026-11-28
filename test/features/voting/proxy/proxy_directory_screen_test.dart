@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_models.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_presentation.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_providers.dart';
@@ -86,6 +87,25 @@ void main() {
       ];
       expect(tops, [...tops]..sort(), reason: 'rows follow the list order');
       expect(find.text(testL10n.proxyListCount(shown.length)), findsOne);
+    });
+
+    testWidgets('rows keep the number and fingerprint in the info bubble', (
+      tester,
+    ) async {
+      final scenario = proxyTestScenario();
+      await pumpProxyRoute(tester, _directory, scenario: scenario);
+      final alice = proxyEntry(scenario, 'alice_votes');
+      expect(
+        find.text(formatProxyDelegateId(alice.index, alice.key.fingerprint)),
+        findsNothing,
+      );
+      final tip = tester.widget<AppTooltip>(
+        find.byKey(ValueKey('proxy_delegate_details_${alice.index}')),
+      );
+      final bubble = tip.richMessage!.toPlainText();
+      expect(bubble, contains(testL10n.proxyReviewedByVizor));
+      expect(bubble, contains(testL10n.proxyDelegateNumber(alice.index)));
+      expect(bubble, contains(alice.key.fingerprint));
     });
 
     testWidgets('search filters by name or handle as you type', (tester) async {

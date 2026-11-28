@@ -8086,6 +8086,11 @@ class AppLocalizationsZh extends AppLocalizations {
       '只有你的代理人在投票结束前提交完整选票，你委托的 ZEC 才会计入。否则，本轮不计入。';
 
   @override
+  String proxyDelegateNumber(int number) {
+    return '代理人 #$number';
+  }
+
+  @override
   String get proxyDelegateVoteBody => '让你信任的人代你作答。';
 
   @override
@@ -8155,11 +8160,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyHandedOffLabel => '已发送';
 
   @override
-  String proxyHandleOnNetwork(String handle, String network) {
-    return '$network 上的 @$handle';
-  }
-
-  @override
   String proxyHasNotVotedYet(String name) {
     return '$name 尚未投票';
   }
@@ -8181,6 +8181,9 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get proxyKeptShareUnanswered =>
       'Vizor 无法保存你为保留的 ZEC 所作的回答，因此未发送任何内容。请返回问题页面并重新提交。';
+
+  @override
+  String get proxyKeyFingerprintLabel => '密钥指纹';
 
   @override
   String proxyListCount(int count) {
@@ -8235,9 +8238,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyNewThisRound => '本轮新增。于投票开始后注册。';
 
   @override
-  String get proxyNewThisRoundLabel => '本轮新增';
-
-  @override
   String proxyNoBallot(String name) {
     return '$name 未在投票结束前提交选票，因此你委托的 ZEC 未计入本轮。';
   }
@@ -8282,15 +8282,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyNotReviewed => '未审核。Vizor 尚未检查此代理人。委托前，请将指纹与对方帖子中的指纹进行核对。';
 
   @override
-  String get proxyNotReviewedLabel => '未审核';
+  String get proxyNotReviewedByVizor => '未经 Vizor 审核';
 
   @override
   String get proxyNothingLeftToVote => '你已在本轮委托了全部投票权，因此没有剩余可投的部分。由你的代理人代为投票。';
-
-  @override
-  String proxyOnNetwork(String network) {
-    return '$network 账号';
-  }
 
   @override
   String proxyOptionFallback(int number) {
@@ -8351,7 +8346,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get proxyReviewDelegatesTitle => '你的代理人';
 
   @override
-  String get proxyReviewedLabel => '已审核';
+  String get proxyReviewedByVizor => '已通过 Vizor 审核';
 
   @override
   String get proxyScanTitle => '扫描代理人二维码';

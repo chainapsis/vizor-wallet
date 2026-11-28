@@ -8,13 +8,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/app_desktop_shell.dart';
+import '../../../../core/layout/app_form_factor.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_tooltip.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
-import '../../widgets/voting_metadata_widgets.dart';
 import '../../widgets/voting_pane_scroll_area.dart';
 import '../delegate_picture.dart';
 import '../proxy_delegation_copy.dart';
@@ -503,8 +504,8 @@ class ProxyCheckCircle extends StatelessWidget {
   }
 }
 
-/// One delegate in a list: picture, name, handle on its network and the
-/// check. Tapping the row adds or removes the delegate.
+/// One delegate in a list: its [ProxyDelegateSummary] and the check.
+/// Tapping the row adds or removes the delegate.
 class ProxyDelegateListRow extends StatelessWidget {
   /// Creates the row.
   const ProxyDelegateListRow({
@@ -525,21 +526,11 @@ class ProxyDelegateListRow extends StatelessWidget {
   /// the picker is full or the delegate is suspended or retired.
   final VoidCallback? onToggle;
 
-  /// Shows the number and fingerprint, to compare with a delegate's post.
+  /// See [ProxyDelegateSummary.showKey].
   final bool showKey;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final l10n = context.l10n;
-    final name = entry.displayName;
-    final network = switch (entry.provider) {
-      ProxyDelegateProvider.x => l10n.proxyProviderXLabel,
-      ProxyDelegateProvider.gitHub => l10n.proxyProviderGitHubLabel,
-    };
-    final secondary = AppTypography.bodySmall.copyWith(
-      color: colors.text.secondary,
-    );
     final onToggle = this.onToggle;
     return MergeSemantics(
       child: Semantics(
@@ -559,56 +550,13 @@ class ProxyDelegateListRow extends StatelessWidget {
                 horizontal: AppSpacing.sm,
                 vertical: AppSpacing.s,
               ),
-              child: Row(
-                children: [
-                  ProxyDelegateAvatar(
-                    fingerprint: entry.key.fingerprint,
-                    picture: entry.listPicture,
-                    size: 36,
-                  ),
-                  const SizedBox(width: AppSpacing.s),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name ?? proxyListingName(entry),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.bodyMediumStrong.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                        Text(
-                          name == null
-                              ? l10n.proxyOnNetwork(network)
-                              : l10n.proxyHandleOnNetwork(
-                                  entry.handle,
-                                  network,
-                                ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: secondary,
-                        ),
-                        if (showKey)
-                          Text(
-                            formatProxyDelegateId(
-                              entry.index,
-                              entry.key.fingerprint,
-                            ),
-                            style: AppTypography.codeSmall.copyWith(
-                              color: colors.text.secondary,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.s),
-                  ProxyCheckCircle(
-                    selected: selected,
-                    enabled: onToggle != null,
-                  ),
-                ],
+              child: ProxyDelegateSummary(
+                entry: entry,
+                showKey: showKey,
+                trailing: ProxyCheckCircle(
+                  selected: selected,
+                  enabled: onToggle != null,
+                ),
               ),
             ),
           ),
@@ -649,15 +597,18 @@ class ProxyDelegateGroup extends StatelessWidget {
   }
 }
 
-/// Identity block for a delegate: picture or identicon, Vizor's list name,
-/// handle and key, plus its labels, the provider first. A delegate
-/// Vizor's list does not name shows no name or picture.
+/// Identity block for a delegate: picture or identicon, Vizor's list name
+/// with a reviewed check or a not-reviewed warning, and the handle after its
+/// network's logo. The number and key fingerprint wait behind an info icon
+/// ([ProxyDelegateDetailsTip]) unless [showKey] puts them inline. A delegate
+/// Vizor's list does not name shows its handle as the name.
 class ProxyDelegateSummary extends StatelessWidget {
   /// Creates the block.
   const ProxyDelegateSummary({
     required this.entry,
-    this.identiconSize = 40,
+    this.identiconSize = 36,
     this.trailing,
+    this.showKey = false,
     super.key,
   });
 
@@ -670,25 +621,20 @@ class ProxyDelegateSummary extends StatelessWidget {
   /// Widget after the text, for example a selection control.
   final Widget? trailing;
 
+  /// Shows the number and fingerprint inline, where the user compares them
+  /// with a delegate's post.
+  final bool showKey;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final l10n = context.l10n;
     final name = entry.displayName;
-    final labels = [
-      switch (entry.provider) {
-        ProxyDelegateProvider.x => context.l10n.proxyProviderXLabel,
-        ProxyDelegateProvider.gitHub => context.l10n.proxyProviderGitHubLabel,
-      },
-      entry.reviewed
-          ? context.l10n.proxyReviewedLabel
-          : context.l10n.proxyNotReviewedLabel,
-      if (entry.newThisRound) context.l10n.proxyNewThisRoundLabel,
-    ];
-    final handleStyle = name == null
-        ? AppTypography.bodyMediumStrong
-        : AppTypography.bodyMedium;
+    final secondary = AppTypography.bodySmall.copyWith(
+      color: colors.text.secondary,
+    );
+    final trailing = this.trailing;
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ProxyDelegateAvatar(
           fingerprint: entry.key.fingerprint,
@@ -700,44 +646,123 @@ class ProxyDelegateSummary extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (name != null)
-                Text(
-                  name,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              Text(
-                '@${entry.handle}',
-                style: handleStyle.copyWith(
-                  color: name == null
-                      ? colors.text.accent
-                      : colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                formatProxyDelegateId(entry.index, entry.key.fingerprint),
-                style: AppTypography.codeSmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Wrap(
-                spacing: AppSpacing.xxs,
-                runSpacing: AppSpacing.xxs,
+              Row(
                 children: [
-                  for (final label in labels) VotingMetadataBadge(label),
+                  Flexible(
+                    child: Text(
+                      name ?? proxyListingName(entry),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  entry.reviewed
+                      ? AppIcon(
+                          AppIcons.checkCircle,
+                          color: colors.icon.success,
+                          semanticLabel: l10n.proxyReviewedByVizor,
+                        )
+                      : AppIcon(
+                          AppIcons.warning,
+                          color: colors.icon.warning,
+                          semanticLabel: l10n.proxyNotReviewedByVizor,
+                        ),
                 ],
               ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  AppIcon(
+                    switch (entry.provider) {
+                      ProxyDelegateProvider.x => AppIcons.xLogo,
+                      ProxyDelegateProvider.gitHub => AppIcons.github,
+                    },
+                    size: 14,
+                    color: colors.icon.regular,
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  Flexible(
+                    child: Text(
+                      name != null
+                          ? proxyListingName(entry)
+                          : switch (entry.provider) {
+                              ProxyDelegateProvider.x =>
+                                l10n.proxyProviderXLabel,
+                              ProxyDelegateProvider.gitHub =>
+                                l10n.proxyProviderGitHubLabel,
+                            },
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: secondary,
+                    ),
+                  ),
+                  if (!showKey) ProxyDelegateDetailsTip(entry: entry),
+                ],
+              ),
+              if (showKey)
+                Text(
+                  formatProxyDelegateId(entry.index, entry.key.fingerprint),
+                  style: AppTypography.codeSmall.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
             ],
           ),
         ),
         if (trailing != null) ...[
           const SizedBox(width: AppSpacing.xs),
-          trailing!,
+          trailing,
         ],
       ],
+    );
+  }
+}
+
+/// An info icon that shows a delegate's review state, number and key
+/// fingerprint: on hover on desktop, on tap on mobile.
+class ProxyDelegateDetailsTip extends StatelessWidget {
+  /// Creates the tip for [entry].
+  const ProxyDelegateDetailsTip({required this.entry, super.key});
+
+  /// Delegate to describe.
+  final ProxyDelegateListing entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final text = AppTooltip.textStyleOf(context);
+    final code = AppTypography.codeSmall.copyWith(color: text.color);
+    return AppTooltip(
+      key: ValueKey('proxy_delegate_details_${entry.index}'),
+      tapToShow: kAppFormFactor == AppFormFactor.mobile,
+      richMessage: TextSpan(
+        children: [
+          TextSpan(
+            text: entry.reviewed
+                ? l10n.proxyReviewedByVizor
+                : l10n.proxyNotReviewedByVizor,
+            style: text.copyWith(fontWeight: FontWeight.w600),
+          ),
+          if (entry.newThisRound) TextSpan(text: '\n${l10n.proxyNewThisRound}'),
+          TextSpan(text: '\n${l10n.proxyDelegateNumber(entry.index)}'),
+          TextSpan(text: '\n${l10n.proxyKeyFingerprintLabel} '),
+          TextSpan(text: entry.key.fingerprint, style: code),
+        ],
+      ),
+      child: SizedBox(
+        width: 24,
+        height: 24,
+        child: Center(
+          child: AppIcon(
+            AppIcons.help,
+            size: 14,
+            color: context.colors.icon.muted,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -125,6 +125,7 @@ abstract final class AppIcons {
   static const warning = 'warning';
   static const warningCircle = 'warning_circle';
   static const wrench = 'wrench';
+  static const xLogo = 'x_logo';
   static const zcash = 'zcash';
   static const zcashCurrency = 'zcash_currency';
 }
