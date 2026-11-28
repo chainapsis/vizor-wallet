@@ -373,7 +373,7 @@ pub fn delegate_attest_request(
         delegate::attest_request(identity_provider(provider), &proof_url, &decode_key(&dk)?);
     Ok(ApiVerifierRequest {
         path: delegate::VERIFIER_ATTEST_PATH.to_owned(),
-        body: request.body,
+        body: request,
     })
 }
 
