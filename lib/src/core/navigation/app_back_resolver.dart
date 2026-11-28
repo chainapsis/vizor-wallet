@@ -69,6 +69,11 @@ abstract final class AppBackResolver {
     '/voting/poll/:roundId/delegates': (l) => l.appBackDelegates,
     '/voting/poll/:roundId/delegates/:delegateIndex': (l) => l.appBackDelegate,
     '/voting/poll/:roundId/delegate': (l) => l.appBackSplit,
+    '/voting/delegate-mode': (l) => l.appBackDelegateMode,
+    '/voting/delegate-mode/import': (l) => l.appBackImportKey,
+    '/voting/delegate-mode/register': (l) => l.appBackRegister,
+    '/voting/delegate-mode/rounds/:roundId': (l) => l.appBackBallot,
+    '/voting/delegate-mode/retire': (l) => l.appBackRetire,
     '/voting/keystone/scan': (_) => 'Keystone', // l10n-ignore: device name
   };
 

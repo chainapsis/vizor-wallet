@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/voting/proxy/delegate_mode_models.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_repository.dart';
 
 /// A delegate's ballot view of [kind] with [options], one per proposal.
@@ -65,4 +66,63 @@ ProxyDelegateListing proxyListingOf({
   picture: picture,
   newThisRound: false,
   status: DelegateEntryStatus.active,
+);
+
+/// The view of a device holding [key], with an entry once [delegateIndex]
+/// is given: [entryStatus] defaults to active.
+DelegateModeView delegateModeView({
+  DelegateKeyInfo? key,
+  int? delegateIndex,
+  ProxyDelegateProvider provider = ProxyDelegateProvider.x,
+  String handle = 'alice_votes',
+  DelegateEntryStatus entryStatus = DelegateEntryStatus.active,
+  bool registrationPending = false,
+  ProxyDelegatePicture? picture,
+}) => DelegateModeView(
+  status: key == null
+      ? null
+      : DelegateModeStatus(
+          key: key,
+          entry: delegateIndex == null
+              ? null
+              : DelegateEntryView(
+                  delegateIndex: delegateIndex,
+                  provider: provider,
+                  handle: handle,
+                  proofId: '1790000000000000000',
+                  status: entryStatus,
+                  statusReason: 0,
+                ),
+          registrationPending: registrationPending,
+        ),
+  picture: picture,
+);
+
+/// [view] with its entry's status changed to [entryStatus].
+DelegateModeView delegateModeViewWith(
+  DelegateModeView view,
+  DelegateEntryStatus entryStatus,
+) => delegateModeView(
+  key: view.key,
+  delegateIndex: view.entry?.delegateIndex,
+  provider: view.entry?.provider ?? ProxyDelegateProvider.x,
+  handle: view.entry?.handle ?? '',
+  entryStatus: entryStatus,
+  picture: view.picture,
+);
+
+/// A ballot's submit outcome of [kind].
+ApiBallotSubmitResult ballotSubmit(ApiBallotSubmitKind kind) =>
+    ApiBallotSubmitResult(kind: kind);
+
+/// The chain's rejection of a ballot with ([codespace], [code]).
+ApiBallotSubmitResult ballotRejected(
+  int code, {
+  String codespace = 'vote',
+  String reason = '',
+}) => ApiBallotSubmitResult(
+  kind: ApiBallotSubmitKind.rejected,
+  codespace: codespace,
+  code: code,
+  reason: reason,
 );

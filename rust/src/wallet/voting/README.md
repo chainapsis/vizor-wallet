@@ -349,6 +349,9 @@ changes; an unavailable selected Tor route must never fall back to direct.
 | Proxy registry cache (`GET /delegates` pages) | Dart `NetworkHttpClient`, through `VotingApiClient` on the configured vote servers |
 | Proxy delegator reads (protocol capabilities, round, proxy params, delegate ballot pages) | Dart `NetworkHttpClient`, through `VotingApiClient` on the configured vote servers |
 | Proxy batches and DC shares | The round executor and helper client above, as for votes |
+| Proxy attester API (`verifier_api_urls`) | Dart `NetworkHttpClient`, through `DelegateVerifierClient` |
+| Delegate mode chain reads and ops (lookup by key, delegate ballot pages, proxy params, `delegate-op` posts) | Dart `NetworkHttpClient`, through `VotingApiClient` on the configured vote servers |
+| Delegate pool share count (raw `/store/vote/key` query) and the delegate's own entry proof | Dart `NetworkHttpClient`, through `ProxyRegistryProofClient` on the proof hosts |
 
 The proxy hosts come from the dynamic config's unsigned
 `extensions.proxy_delegation_v1` URL lists (contracts-v1 §12.1), and
@@ -356,9 +359,9 @@ Vizor's wallet list URLs from the build. Proofs and the signed list count only
 after verification; the registry cache is display data that the
 pre-proving check proves again at confirm. A client may fail over to the next
 host in its list, never to another route.
-`proxy_network_roles_test.dart` covers the proof client and the registry
-fetcher on both routes, and checks that every Dart proxy role shares the
-one client `proxyHttpClientProvider` builds.
+`proxy_network_roles_test.dart` covers the proof client, the registry
+fetcher and the verifier client on both routes, and checks that every Dart
+proxy role shares the one client `proxyHttpClientProvider` builds.
 
 `cargo test --lib` includes real socket-blocking tests for the service wiring,
 a route-switch/cache test, and `sdk_network_construction_stays_in_the_factory`.

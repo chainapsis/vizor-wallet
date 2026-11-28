@@ -3,8 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${IRONWOOD_COMPOSE_FILE:-$ROOT_DIR/docker-compose.zcash-ironwood-regtest.yml}"
-STATE_DIR="$ROOT_DIR/.ironwood-regtest"
+# IRONWOOD_REGTEST_STATE_DIR moves the chain state out of the checkout, and
+# IRONWOOD_COMPOSE_PROJECT names a Compose project of its own, so a harness
+# can run this stack beside another one without sharing either.
+STATE_DIR="${IRONWOOD_REGTEST_STATE_DIR:-$ROOT_DIR/.ironwood-regtest}"
 SNAPSHOT_DIR="$ROOT_DIR/.ironwood-regtest-snapshots"
+COMPOSE_PROJECT="${IRONWOOD_COMPOSE_PROJECT:-vizor-ironwood-regtest}"
 ACTIVATION_FILE="$STATE_DIR/activation-height"
 if [[ -z "${IRONWOOD_ACTIVATION_HEIGHT:-}" && -f "$ACTIVATION_FILE" ]]; then
   IRONWOOD_ACTIVATION_HEIGHT="$(<"$ACTIVATION_FILE")"
@@ -15,6 +19,8 @@ LIGHTWALLETD_HOST="${LIGHTWALLETD_HOST:-127.0.0.1}"
 LIGHTWALLETD_PORT="${IRONWOOD_LIGHTWALLETD_PORT:-19067}"
 
 export IRONWOOD_ACTIVATION_HEIGHT
+# The Compose file mounts the state directory through this variable.
+export IRONWOOD_REGTEST_STATE_DIR="$STATE_DIR"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -46,7 +52,7 @@ pin_activation_height() {
 }
 
 compose() {
-  docker compose -f "$COMPOSE_FILE" "$@"
+  docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"
 }
 
 ensure_ironwood_mount_dirs() {

@@ -222,6 +222,45 @@ class VotingApiClient {
     return VotingChainAnswer(response.statusCode, response.bodyBytes);
   }
 
+  /// Posts [body], a JSON body zcash_voting built, to [path] under each vote
+  /// server in turn, and returns the first verdict: HTTP 200, 400 or 422.
+  /// It asks for the codespace ([kVotingCodespaceHeaders]).
+  ///
+  /// The body goes out byte for byte: one that would not survive a JSON
+  /// round trip unchanged is refused before anything is sent. Every body
+  /// posted this way is safe to resend, so an answer without a verdict, or
+  /// a transport failure, moves on to the next server; the last answer
+  /// comes back when none gives a verdict, and the last failure is thrown
+  /// when none answered.
+  Future<VotingChainAnswer> postChainBody(String path, Uint8List body) async {
+    final decoded = jsonDecode(utf8.decode(body));
+    if (decoded is! Map<String, dynamic> ||
+        !_sameBytes(utf8.encode(jsonEncode(decoded)), body)) {
+      throw ArgumentError('the body would not be posted byte for byte');
+    }
+    final target = Uri.parse(path);
+    VotingChainAnswer? last;
+    Object? lastError;
+    StackTrace? lastStack;
+    for (final baseUrl in [_baseUrl, ..._fallbackBaseUrls]) {
+      try {
+        final response = await _httpClient.postJson(
+          _endpointForPath(target, baseUrl),
+          decoded,
+          headers: kVotingCodespaceHeaders,
+          timeout: _timeout,
+        );
+        last = VotingChainAnswer(response.statusCode, response.bodyBytes);
+        if (const {200, 400, 422}.contains(response.statusCode)) return last;
+      } catch (error, stack) {
+        lastError = error;
+        lastStack = stack;
+      }
+    }
+    if (last != null) return last;
+    Error.throwWithStackTrace(lastError!, lastStack!);
+  }
+
   /// [target]'s path and query under [baseUrl], whose own path is kept.
   Uri _endpointForPath(Uri target, Uri baseUrl) {
     final baseSegments = baseUrl.pathSegments
@@ -457,6 +496,15 @@ void _requireMatchingRoundId({
   if (actual != expected) {
     throw FormatException('$context response round id mismatch');
   }
+}
+
+/// Whether [a] and [b] hold the same bytes.
+bool _sameBytes(List<int> a, List<int> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 /// Opts a vote-chain submission or lookup into the answer's `codespace`

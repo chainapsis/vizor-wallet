@@ -570,10 +570,14 @@ List<RouteBase> _walletRoutes() {
         ),
       ),
     ),
-    if (kVizorProxyDelegationEnabled)
+    if (kVizorProxyDelegationEnabled) ...[
       ...proxyDelegationMobileRoutes(
         guard: (child) => MobileVotingAccountGuard(child: child),
       ),
+      ...delegateModeMobileRoutes(
+        guard: (child) => MobileVotingAccountGuard(child: child),
+      ),
+    ],
     GoRoute(
       path: '/home/ledger-shield',
       pageBuilder: (context, state) => MobileShieldPage(

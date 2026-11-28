@@ -163,8 +163,8 @@ classified as a new user; retry recovery supplies the successful snapshot.
 
 ## Proxy delegation (VIZOR_PROXY_DELEGATION_ENABLED)
 
-Proxy delegation is dormant. Its entry points, routes and job restorer
-exist only in a build that passes
+Proxy delegation is dormant. Its entry points, routes, job restorer and
+secure-storage writes exist only in a build that passes
 `--dart-define=VIZOR_PROXY_DELEGATION_ENABLED=true`; every shipped build
 leaves it off.
 
@@ -185,6 +185,20 @@ bundles whose first cast signs their delegation
 once the batch lands. After a restart the job restorer reads the round's
 plan: recorded answers not yet confirmed (`roundPlanOwesBallotCasts`) get
 the vote job, so the casts go out in the background once the batch lands.
+
+Delegate mode follows the app's normal Tor setting (plan PRV-7): its requests
+go over Tor when the user turned Tor on and direct otherwise, like the rest of
+the app. It never switches Tor on and shows no extra Tor prompts.
+
+A device holds one delegate key and one registry entry (contracts-v1
+§11.2). The key is 32 random bytes that zcash_voting creates; Vizor keeps
+its `zvdsk1…` export in app-level secure storage, the way vote hotkeys are
+kept (`delegate_key_store.dart`), so a wallet reset deletes it. The same
+string exports and imports the key, as text or as a QR code. A registration,
+a ballot or Retire reads the export after the app's own re-auth
+(`delegate_reauth_gate.dart`) and passes it to Rust for that one call; a
+resend of a stored ballot asks for nothing. To change keys the delegate
+retires the entry, then starts over with a new key.
 
 zcash_voting keeps its own switch off as well, so a flag-on build still reads
 every round as unsupported. To develop against a gate-open chain, a debug

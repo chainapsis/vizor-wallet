@@ -862,7 +862,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get addressScanZcashPrompt => '계‍속‍하‍려‍면 Zcash QR 코‍드‍를 스‍캔‍하‍세‍요';
 
   @override
+  String get appBackBallot => '투‍표‍용‍지';
+
+  @override
   String get appBackDelegate => '대‍리‍인';
+
+  @override
+  String get appBackDelegateMode => '대‍리‍인 모‍드';
 
   @override
   String get appBackDelegates => '대‍리‍인 목‍록';
@@ -874,10 +880,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appBackHardwareWallets => '하‍드‍웨‍어 지‍갑';
 
   @override
+  String get appBackImportKey => '키 가‍져‍오‍기';
+
+  @override
   String get appBackImportMethods => '가‍져‍오‍기 방‍법';
 
   @override
   String get appBackReceive => '받‍기';
+
+  @override
+  String get appBackRegister => '등‍록';
+
+  @override
+  String get appBackRetire => '활‍동 종‍료';
 
   @override
   String get appBackReview => '검‍토';
@@ -1952,6 +1967,494 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonZcashAddress => 'Zcash 주‍소';
+
+  @override
+  String get delegateAlreadySubmitted => '이‍번 라‍운‍드‍의 투‍표‍용‍지‍를 이‍미 제‍출‍했‍어‍요.';
+
+  @override
+  String delegateAnswered(int answered, int total) {
+    return '$total‍개 중 $answered‍개 답‍변';
+  }
+
+  @override
+  String get delegateAttestationRejected =>
+      '투‍표 체‍인‍이 검‍증 서‍버‍의 확‍인 결‍과‍를 받‍아‍들‍이‍지 않‍았‍어‍요. 게‍시‍물‍을 다‍시 인‍증‍해 주‍세‍요.';
+
+  @override
+  String get delegateBackToDelegateModeLabel => '대‍리‍인 모‍드‍로 돌‍아‍가‍기';
+
+  @override
+  String get delegateBallotConfirmTitle => '투‍표‍용‍지 확‍인';
+
+  @override
+  String get delegateBallotCounted => '집‍계‍됐‍어‍요. 투‍표‍용‍지‍가 체‍인‍에 기‍록‍돼 있‍어‍요.';
+
+  @override
+  String get delegateBallotFailed =>
+      '투‍표‍용‍지‍를 제‍출‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateBallotInvalidOption =>
+      '올‍바‍른 선‍택‍지‍가 아‍닌 답‍변‍이 있‍어‍서 투‍표 체‍인‍이 이 투‍표‍용‍지‍를 거‍부‍했‍어‍요.';
+
+  @override
+  String get delegateBallotOnChain =>
+      '투‍표‍용‍지‍를 제‍출‍했‍고 체‍인‍에‍서 확‍인‍됐‍어‍요. 투‍표‍가 끝‍나‍면 집‍계‍돼‍요.';
+
+  @override
+  String get delegateBallotPendingLabel => '투‍표‍용‍지 제‍출‍됨, 체‍인‍에‍서 확‍인 중';
+
+  @override
+  String get delegateBallotProgress =>
+      'Vizor‍를 열‍어 두‍세‍요. 투‍표‍용‍지‍는 보‍통 일 분 안‍에 확‍인‍돼‍요.';
+
+  @override
+  String get delegateBallotProgressTitle => '투‍표‍용‍지 제‍출 중';
+
+  @override
+  String get delegateBallotRejected => '투‍표 체‍인‍이 투‍표‍용‍지‍를 거‍부‍했‍어‍요.';
+
+  @override
+  String delegateBallotReminder(String time) {
+    return '투‍표‍가 끝‍나‍는 $time 전‍에 투‍표‍용‍지‍를 제‍출‍해 주‍세‍요. 제‍출‍하‍지 않‍으‍면 위‍임‍받‍은 ZEC‍가 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍아‍요.';
+  }
+
+  @override
+  String get delegateBallotRoundNoBallots =>
+      '이‍번 라‍운‍드‍는 대‍리‍인 투‍표‍용‍지‍를 받‍지 않‍아‍요.';
+
+  @override
+  String get delegateBallotStillConfirming =>
+      '아‍직 확‍인 중‍이‍에‍요. Vizor‍가 백‍그‍라‍운‍드‍에‍서 계‍속 시‍도‍해‍요.';
+
+  @override
+  String get delegateBallotSubmittedLabel => '투‍표‍용‍지 제‍출‍됨';
+
+  @override
+  String get delegateBallotSubmittedTitle => '투‍표‍용‍지 제‍출 완‍료';
+
+  @override
+  String get delegateBallotTitle => '내 투‍표‍용‍지';
+
+  @override
+  String get delegateBallotTooLate =>
+      '투‍표‍용‍지‍가 체‍인‍에 도‍달‍하‍기 전‍에 투‍표‍가 끝‍나‍서 접‍수‍되‍지 않‍았‍어‍요. 위‍임‍받‍은 ZEC‍는 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍아‍요.';
+
+  @override
+  String get delegateBallotUnknownRound => '투‍표 체‍인‍에‍서 이 라‍운‍드‍를 찾‍을 수 없‍어‍요.';
+
+  @override
+  String get delegateContinueRegistrationLabel => '등‍록 계‍속‍하‍기';
+
+  @override
+  String get delegateCopyKeyLabel => '키 복‍사';
+
+  @override
+  String get delegateCopyMarkerLabel => '마‍커 복‍사';
+
+  @override
+  String delegateCountAtLeast(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '위‍임 $count‍건 이‍상',
+      one: '위‍임 $count‍건 이‍상',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get delegateCountNone => '아‍직 공‍개‍된 위‍임 없‍음';
+
+  @override
+  String get delegateCreateKeyError =>
+      '대‍리‍인 키‍를 만‍들‍지 못‍했‍어‍요. 아‍무‍것‍도 저‍장‍되‍지 않‍았‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateCreateKeyLabel => '대‍리‍인 키 만‍들‍기';
+
+  @override
+  String get delegateDifferentBallotOnChain =>
+      '이‍번 라‍운‍드‍에‍는 이‍미 다‍른 투‍표‍용‍지‍가 체‍인‍에 있‍어‍요. Vizor‍는 투‍표‍용‍지‍를 추‍가‍로 제‍출‍하‍지 않‍아‍요.';
+
+  @override
+  String get delegateExportError => '대‍리‍인 키‍를 읽‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateExportKeyLabel => '키 내‍보‍내‍기';
+
+  @override
+  String get delegateExportedKey =>
+      '이 텍‍스‍트‍나 QR 코‍드‍가 있‍으‍면 누‍구‍나 내 이‍름‍으‍로 투‍표‍할 수 있‍어‍요. 오‍프‍라‍인‍에 보‍관‍해 주‍세‍요.';
+
+  @override
+  String get delegateFinalMinute =>
+      '투‍표‍가 끝‍난 뒤‍에 도‍달‍한 투‍표‍용‍지‍는 거‍부‍되‍고, 위‍임‍받‍은 ZEC‍는 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍아‍요.';
+
+  @override
+  String get delegateFinalMinuteTitle => '곧 투‍표‍가 끝‍나‍요';
+
+  @override
+  String delegateFinalMinutes(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: '$minutes‍분 후‍에 투‍표‍가 끝‍나‍요. 지‍금 투‍표‍용‍지‍를 제‍출‍해 주‍세‍요.',
+      one: '$minutes‍분 후‍에 투‍표‍가 끝‍나‍요. 지‍금 투‍표‍용‍지‍를 제‍출‍해 주‍세‍요.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get delegateFinishRegistering =>
+      '이 키‍는 아‍직 등‍록‍되‍지 않‍았‍어‍요. 위‍임‍을 받‍으‍려‍면 이 키‍의 마‍커‍를 게‍시‍하‍고 인‍증‍해 주‍세‍요.';
+
+  @override
+  String get delegateFinishRegisteringTitle => '등‍록 마‍치‍기';
+
+  @override
+  String get delegateHandleTaken =>
+      '이 핸‍들‍에‍는 이‍미 대‍리‍인 등‍록 정‍보‍가 있‍어‍서, 그 등‍록 정‍보‍의 활‍동‍이 종‍료‍되‍기 전‍에‍는 다‍시 등‍록‍할 수 없‍어‍요. 그 키‍가 있‍다‍면 여‍기‍서 키‍를 가‍져‍와 활‍동 종‍료‍를 누‍른 뒤 다‍시 등‍록‍해 주‍세‍요. 키‍를 잃‍어‍버‍렸‍다‍면 투‍표 운‍영‍자‍에‍게 등‍록 정‍보‍의 활‍동 종‍료‍를 요‍청‍해 주‍세‍요.';
+
+  @override
+  String get delegateHideKeyLabel => '키 숨‍기‍기';
+
+  @override
+  String get delegateHowPeopleFindYou =>
+      '다‍른 사‍람‍들‍은 정‍확‍한 핸‍들‍로 검‍색‍하‍거‍나 키, 번‍호 또‍는 지‍문‍을 붙‍여 넣‍어 나‍를 찾‍을 수 있‍어‍요. 지‍갑 앱‍이 자‍체 검‍토‍를 거‍쳐 나‍를 목‍록‍에 올‍릴 수‍도 있‍어‍요.';
+
+  @override
+  String get delegateImport =>
+      '대‍리‍인 모‍드‍에‍서 내‍보‍낸 키‍를 붙‍여 넣‍거‍나 스‍캔‍해 주‍세‍요. 키‍는 zvdsk1‍로 시‍작‍해‍요. 여‍기‍에 지‍갑 복‍구 문‍구‍를 절‍대 입‍력‍하‍지 마‍세‍요.';
+
+  @override
+  String get delegateImportFieldLabel => '대‍리‍인 키';
+
+  @override
+  String get delegateImportHint => 'zvdsk1...';
+
+  @override
+  String get delegateImportInvalid =>
+      '대‍리‍인 키‍가 아‍니‍에‍요. 내‍보‍낸 키‍는 zvdsk1‍로 시‍작‍해‍요.';
+
+  @override
+  String get delegateImportKeyLabel => '대‍리‍인 키 가‍져‍오‍기';
+
+  @override
+  String get delegateImportLabel => '가‍져‍오‍기';
+
+  @override
+  String get delegateImportScanTitle => '대‍리‍인 키 QR 코‍드 스‍캔';
+
+  @override
+  String get delegateImportTitle => '대‍리‍인 키 가‍져‍오‍기';
+
+  @override
+  String get delegateImportedTitle => '키‍를 가‍져‍왔‍어‍요';
+
+  @override
+  String get delegateImportedUnregistered =>
+      '이 키‍는 아‍직 등‍록‍되‍지 않‍았‍어‍요. 위‍임‍을 받‍으‍려‍면 키‍를 등‍록‍해 주‍세‍요.';
+
+  @override
+  String get delegateIntroLostKey =>
+      '대‍리‍인 키‍를 잃‍어‍버‍렸‍고 사‍본‍도 없‍나‍요? 투‍표 운‍영‍자‍에‍게 대‍리‍인 등‍록 정‍보‍의 활‍동 종‍료‍를 요‍청‍해 주‍세‍요. 그‍다‍음 새 키‍로 다‍시 등‍록‍할 수 있‍어‍요.';
+
+  @override
+  String get delegateIntroTitle => '대‍리‍인 되‍기';
+
+  @override
+  String get delegateKeepPost =>
+      '게‍시‍물‍을 삭‍제‍하‍지 말‍고 그‍대‍로 두‍세‍요. 이 키‍가 내 키‍라‍는 공‍개 증‍거‍예‍요.';
+
+  @override
+  String get delegateKeyBackup =>
+      '대‍리‍인 키‍는 이 기‍기‍에 저‍장‍돼 있‍어‍요. 백‍업‍하‍거‍나 다‍른 기‍기‍로 옮‍기‍려‍면 키‍를 내‍보‍내‍세‍요. 이 키‍는 지‍갑 복‍구 문‍구‍가 아‍니‍며 ZEC‍를 보‍관‍하‍지 않‍아‍요.';
+
+  @override
+  String get delegateKeyLabel => '대‍리‍인 키';
+
+  @override
+  String get delegateKeyRegisteredBefore =>
+      '이 키‍는 전‍에 등‍록‍된 적‍이 있‍어‍서 다‍시 등‍록‍할 수 없‍어‍요. 새 키‍로 다‍시 시‍작‍해 주‍세‍요.';
+
+  @override
+  String get delegateKeyTitle => '내 대‍리‍인 키';
+
+  @override
+  String get delegateKeyUnregistrable =>
+      '이 키‍는 등‍록‍할 수 없‍어‍요. 새 키‍로 다‍시 시‍작‍해 주‍세‍요.';
+
+  @override
+  String get delegateLoadError =>
+      '대‍리‍인 모‍드‍를 불‍러‍오‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateMarkerGitHub =>
+      'GitHub 계‍정‍에‍서 이 텍‍스‍트‍를 그‍대‍로 넣‍어 공‍개 Gist‍를 만‍들‍어 주‍세‍요.';
+
+  @override
+  String get delegateMarkerTitle => '내 마‍커';
+
+  @override
+  String get delegateMarkerX =>
+      'X 계‍정‍에‍서 이 텍‍스‍트‍를 그‍대‍로 새 게‍시‍물‍로 올‍려 주‍세‍요. 답‍글‍이‍나 인‍용 게‍시‍물‍은 안 돼‍요.';
+
+  @override
+  String get delegateModeEntry => '나‍에‍게 위‍임‍한 사‍람‍들‍을 대‍신‍해 투‍표‍하‍세‍요.';
+
+  @override
+  String get delegateModeTitle => '대‍리‍인 모‍드';
+
+  @override
+  String get delegateNoEntryForKey => '투‍표 체‍인‍에 이 키‍의 대‍리‍인 등‍록 정‍보‍가 없‍어‍요.';
+
+  @override
+  String get delegateNoRounds => '지‍금‍은 위‍임‍을 받‍는 투‍표 라‍운‍드‍가 없‍어‍요.';
+
+  @override
+  String get delegateNotRegistered =>
+      '투‍표‍용‍지‍를 제‍출‍하‍기 전‍에 대‍리‍인‍으‍로 등‍록‍해 주‍세‍요.';
+
+  @override
+  String get delegateNothingToRegister => '이 기‍기‍에‍는 등‍록‍할 키‍가 없‍어‍요.';
+
+  @override
+  String get delegateNothingToRetire =>
+      '이 기‍기‍에‍는 활‍동‍을 종‍료‍할 대‍리‍인 등‍록 정‍보‍가 없‍어‍요.';
+
+  @override
+  String get delegateOpenBallotLabel => '투‍표‍용‍지 열‍기';
+
+  @override
+  String get delegateOpenDashboardLabel => '대‍리‍인 모‍드 열‍기';
+
+  @override
+  String get delegateProofLinkGitHubHint =>
+      'https://gist.github.com/yourhandle/...';
+
+  @override
+  String get delegateProofLinkGitHubInvalid =>
+      'gist.github.com‍에 있‍는 Gist 링‍크‍를 붙‍여 넣‍어 주‍세‍요.';
+
+  @override
+  String get delegateProofLinkGitHubLabel => 'Gist 링‍크';
+
+  @override
+  String get delegateProofLinkXHint => 'https://x.com/yourhandle/status/...';
+
+  @override
+  String get delegateProofLinkXInvalid =>
+      'x.com‍에 있‍는 게‍시‍물 링‍크‍를 붙‍여 넣‍어 주‍세‍요.';
+
+  @override
+  String get delegateProofLinkXLabel => '게‍시‍물 링‍크';
+
+  @override
+  String get delegateProviderTitle => '계‍정 인‍증';
+
+  @override
+  String get delegateReauthBallotBiometricReason => '투‍표‍용‍지 서‍명‍을 위‍한 본‍인 확‍인';
+
+  @override
+  String get delegateReauthBallotSubtitle => '투‍표‍용‍지‍에 서‍명‍하‍려‍면 필‍요‍해‍요.';
+
+  @override
+  String get delegateReauthExportBiometricReason => '대‍리‍인 키 접‍근 확‍인';
+
+  @override
+  String get delegateReauthExportSubtitle => '대‍리‍인 키‍를 내‍보‍내‍려‍면 필‍요‍해‍요.';
+
+  @override
+  String get delegateReauthFailed => '본‍인 확‍인‍을 하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateReauthRegisterBiometricReason =>
+      '대‍리‍인 키 등‍록‍을 위‍한 본‍인 확‍인';
+
+  @override
+  String get delegateReauthRegisterSubtitle => '대‍리‍인 키‍를 등‍록‍하‍려‍면 필‍요‍해‍요.';
+
+  @override
+  String get delegateReauthRetireBiometricReason =>
+      '대‍리‍인 활‍동 종‍료‍를 위‍한 본‍인 확‍인';
+
+  @override
+  String get delegateReauthRetireSubtitle => '대‍리‍인 활‍동‍을 종‍료‍하‍려‍면 필‍요‍해‍요.';
+
+  @override
+  String get delegateRegisterClosed =>
+      '지‍금‍은 대‍리‍인 등‍록‍이 닫‍혀 있‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateRegisterFailed =>
+      '이 키‍를 등‍록‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateRegisterRejected =>
+      '투‍표 체‍인‍이 이 등‍록‍을 거‍부‍했‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateRegisterTitle => '대‍리‍인‍으‍로 등‍록';
+
+  @override
+  String delegateRegistered(String handle) {
+    return 'Vizor‍가 @$handle 계‍정‍을 인‍증‍했‍어‍요. 이‍미 진‍행 중‍인 라‍운‍드‍를 포‍함‍해 지‍금‍부‍터 투‍표‍용‍지‍를 제‍출‍할 수 있‍어‍요.';
+  }
+
+  @override
+  String get delegateRegisteredTitle => '등‍록‍됐‍어‍요';
+
+  @override
+  String get delegateRegistrationPending =>
+      '등‍록 요‍청‍을 보‍냈‍지‍만 아‍직 체‍인‍에 반‍영‍되‍지 않‍았‍어‍요. Vizor‍가 계‍속 확‍인‍하‍고 있‍어‍요. 게‍시‍물‍을 다‍시 인‍증‍할 수‍도 있‍어‍요.';
+
+  @override
+  String get delegateRegistryFull =>
+      '대‍리‍인 레‍지‍스‍트‍리‍가 가‍득 찼‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateRetireEntryTitle => '활‍동‍을 종‍료‍할 등‍록 정‍보';
+
+  @override
+  String get delegateRetireFailed =>
+      '활‍동‍을 종‍료‍하‍지 못‍했‍어‍요. 대‍리‍인 등‍록 정‍보‍로 아‍직 투‍표‍할 수 있‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateRetireLabel => '활‍동 종‍료';
+
+  @override
+  String get delegateRetireSuspended =>
+      '투‍표 운‍영‍자‍가 대‍리‍인 등‍록 정‍보‍를 정‍지‍해‍서 직‍접 활‍동‍을 종‍료‍할 수 없‍어‍요.';
+
+  @override
+  String get delegateRetired =>
+      '대‍리‍인 등‍록 정‍보‍의 활‍동‍이 종‍료‍되‍어 이 키‍로‍는 더 이‍상 투‍표‍할 수 없‍어‍요. 다‍시 활‍동‍하‍려‍면 새 키‍로 다‍시 시‍작‍해 등‍록‍해 주‍세‍요.';
+
+  @override
+  String get delegateRetiredBallot =>
+      '대‍리‍인 등‍록 정‍보‍의 활‍동‍이 종‍료‍되‍어 투‍표‍용‍지‍를 제‍출‍할 수 없‍어‍요.';
+
+  @override
+  String get delegateRetiredDone => '대‍리‍인 등‍록 정‍보‍로 더 이‍상 투‍표‍할 수 없‍어‍요.';
+
+  @override
+  String get delegateRetiredTitle => '활‍동‍을 종‍료‍했‍어‍요';
+
+  @override
+  String get delegateRoundsTitle => '투‍표 라‍운‍드';
+
+  @override
+  String get delegateStartOver =>
+      '이 기‍기‍에‍서 키‍가 삭‍제‍돼‍요. 키‍를 내‍보‍내‍지 않‍았‍다‍면 되‍돌‍릴 수 없‍어‍요.';
+
+  @override
+  String get delegateStartOverConfirmLabel => '키 삭‍제';
+
+  @override
+  String get delegateStartOverError =>
+      '이 키‍를 삭‍제‍하‍지 못‍했‍어‍요. 등‍록‍된 키‍는 등‍록 정‍보‍의 활‍동‍이 종‍료‍될 때‍까‍지 남‍아 있‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateStartOverLabel => '새 키‍로 다‍시 시‍작';
+
+  @override
+  String get delegateStartOverSaveKey =>
+      '다‍시 시‍작‍하‍기 전‍에 이 키‍를 저‍장‍해 두‍세‍요. 이 등‍록‍이 나‍중‍에‍라‍도 반‍영‍되‍면 투‍표‍하‍거‍나 활‍동‍을 종‍료‍할 때 이 키‍가 필‍요‍해‍요.';
+
+  @override
+  String get delegateStartOverSavedLabel => '이 키‍를 저‍장‍했‍어‍요';
+
+  @override
+  String get delegateStartOverTitle => '이 키‍를 삭‍제‍할‍까‍요?';
+
+  @override
+  String get delegateStepCheckingPost => '게‍시‍물 확‍인 중';
+
+  @override
+  String get delegateStepConfirming => '체‍인‍에‍서 확‍인 중';
+
+  @override
+  String get delegateStepRegistering => '투‍표 체‍인‍에 등‍록 중';
+
+  @override
+  String get delegateStepSigning => '투‍표‍용‍지 서‍명 중';
+
+  @override
+  String get delegateStepSubmitting => '투‍표‍용‍지 제‍출 중';
+
+  @override
+  String get delegateSubmitAnywayLabel => '그‍래‍도 제‍출';
+
+  @override
+  String get delegateSubmitBallotLabel => '투‍표‍용‍지 제‍출';
+
+  @override
+  String get delegateSuspended =>
+      '투‍표 운‍영‍자‍가 대‍리‍인 등‍록 정‍보‍를 정‍지‍해‍서 투‍표‍용‍지‍를 제‍출‍할 수 없‍어‍요.';
+
+  @override
+  String get delegateUnavailable =>
+      '투‍표 체‍인‍에 연‍결‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateUseDifferentKeyLabel => '다‍른 키 사‍용';
+
+  @override
+  String get delegateVerifierBadRequest =>
+      '검‍증 서‍버‍가 이 요‍청‍을 읽‍지 못‍했‍어‍요. 링‍크‍를 확‍인‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateVerifierMarkerMismatch =>
+      '게‍시‍물‍이 마‍커‍와 일‍치‍하‍지 않‍아‍요. 표‍시‍된 마‍커‍를 그‍대‍로 게‍시‍하‍고, 게‍시‍물‍에 다‍른 내‍용‍은 넣‍지 마‍세‍요.';
+
+  @override
+  String get delegateVerifierPostNotFound =>
+      '검‍증 서‍버‍가 그 링‍크‍에‍서 게‍시‍물‍을 찾‍지 못‍했‍어‍요. 링‍크‍를 확‍인‍하‍고 게‍시‍물‍이 공‍개 상‍태‍인‍지 확‍인‍해 주‍세‍요.';
+
+  @override
+  String get delegateVerifierProviderUnavailable =>
+      '검‍증 서‍버‍가 지‍금‍은 게‍시‍물‍을 확‍인‍할 수 없‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String delegateVerifierProviderUnavailableUntil(String time) {
+    return '검‍증 서‍버‍가 지‍금‍은 게‍시‍물‍을 확‍인‍할 수 없‍어‍요. $time 이‍후‍에 다‍시 시‍도‍해 주‍세‍요.';
+  }
+
+  @override
+  String get delegateVerifierRateLimited =>
+      '검‍증 서‍버‍가 지‍금 너‍무 많‍은 게‍시‍물‍을 확‍인‍하‍고 있‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String delegateVerifierRateLimitedUntil(String time) {
+    return '검‍증 서‍버‍가 지‍금 너‍무 많‍은 게‍시‍물‍을 확‍인‍하‍고 있‍어‍요. $time 이‍후‍에 다‍시 시‍도‍해 주‍세‍요.';
+  }
+
+  @override
+  String get delegateVerifierUnknown =>
+      '검‍증 서‍버‍가 이 게‍시‍물‍을 확‍인‍하‍지 못‍했‍어‍요. 나‍중‍에 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateVerifierUnreachable =>
+      '검‍증 서‍버‍에 연‍결‍하‍지 못‍했‍어‍요. 연‍결‍을 확‍인‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get delegateVerifyAgainLabel => '다‍시 인‍증';
+
+  @override
+  String get delegateVerifyAndRegisterLabel => '인‍증 후 등‍록';
+
+  @override
+  String get delegateViewBallotLabel => '투‍표‍용‍지 보‍기';
+
+  @override
+  String get delegateVotingEnded =>
+      '이‍번 라‍운‍드‍의 투‍표‍가 끝‍나‍서 투‍표‍용‍지‍를 제‍출‍할 수 없‍어‍요.';
+
+  @override
+  String delegateVotingEnds(String time) {
+    return '$time 투‍표 종‍료';
+  }
 
   @override
   String get donationDonatingTo => '후‍원 대‍상';
@@ -8563,6 +9066,15 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String proxyBallotConfirm(int questionCount) {
+    return '투‍표‍용‍지‍를 제‍출‍할‍까‍요? 나‍에‍게 위‍임‍한 모‍든 사‍람‍을 위‍해 질‍문 $questionCount‍개 전‍체‍에 적‍용‍돼‍요. 투‍표‍용‍지‍는 공‍개‍되‍며 변‍경‍할 수 없‍어‍요.';
+  }
+
+  @override
+  String get proxyBallotRules =>
+      '라‍운‍드‍마‍다 한 번, 모‍든 질‍문‍에 대‍해, 나‍에‍게 위‍임‍한 모‍든 사‍람‍을 대‍신‍해 투‍표‍해‍요. 제‍출‍한 투‍표‍용‍지‍는 변‍경‍할 수 없‍어‍요. 투‍표‍가 끝‍나‍기 전‍에 제‍출‍하‍지 않‍으‍면 위‍임‍받‍은 ZEC‍가 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍아‍요.';
+
+  @override
   String get proxyBeforeYouDelegateTitle => '위‍임‍하‍기 전‍에';
 
   @override
@@ -8613,6 +9125,18 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get proxyCountsOnlyWithBallot =>
       '위‍임‍한 ZEC‍는 대‍리‍인‍이 투‍표‍가 끝‍나‍기 전‍에 완‍성‍된 투‍표‍용‍지‍를 제‍출‍해‍야‍만 집‍계‍돼‍요. 제‍출‍하‍지 않‍으‍면 이‍번 라‍운‍드‍에‍서 집‍계‍되‍지 않‍아‍요.';
+
+  @override
+  String get proxyDelegateIntroCount =>
+      '나‍에‍게 위‍임‍된 건‍수‍의 대‍략‍적‍인 수‍치‍는 투‍표 체‍인‍에 공‍개‍돼‍요. Vizor‍는 이 수‍치‍를 내 대‍시‍보‍드‍에‍서‍만 보‍여 줘‍요.';
+
+  @override
+  String get proxyDelegateIntroPrivateVotes =>
+      '비‍공‍개 투‍표‍는 일‍반‍에 공‍개‍되‍지 않‍아‍요. Tor‍를 켜‍지 않‍으‍면 투‍표 서‍버‍가 비‍공‍개 투‍표‍를 나‍와 연‍결‍할 수 있‍어‍요.';
+
+  @override
+  String get proxyDelegateIntroPublicVotes =>
+      '공‍개 투‍표‍는 게‍시‍물‍이‍나 계‍정‍을 삭‍제‍해‍도 X 또‍는 GitHub 계‍정‍에 영‍구‍적‍으‍로 연‍결‍돼‍요.';
 
   @override
   String proxyDelegateNumber(int number) {
@@ -8879,6 +9403,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 합‍계‍에‍는 내‍가 위‍임‍한 ZEC‍가 포‍함‍돼 있‍어‍요. 대‍리‍인‍이 어‍떻‍게 투‍표‍했‍는‍지‍는 라‍운‍드 화‍면‍에‍서 볼 수 있‍어‍요.';
 
   @override
+  String get proxyRetire =>
+      '대‍리‍인 활‍동‍을 종‍료‍할‍까‍요? 대‍리‍인 등‍록 정‍보‍의 활‍동‍이 영‍구‍적‍으‍로 종‍료‍돼‍요. 이‍번 라‍운‍드‍의 투‍표‍용‍지‍를 제‍출‍하‍지 않‍았‍다‍면 이‍번 라‍운‍드‍에 위‍임‍받‍은 ZEC‍는 집‍계‍되‍지 않‍아‍요. 다‍시 활‍동‍하‍려‍면 새 키‍로 다‍시 등‍록‍해‍야 하‍고, 새 대‍리‍인 번‍호‍를 받‍게 돼‍요.';
+
+  @override
   String get proxyReviewAnswersTitle => '내 답‍변';
 
   @override
@@ -8890,6 +9418,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get proxyReviewedByVizor => 'Vizor‍가 검‍토‍함';
+
+  @override
+  String get proxyScanLabel => '스‍캔';
 
   @override
   String get proxyScanTitle => '대‍리‍인 QR 코‍드 스‍캔';

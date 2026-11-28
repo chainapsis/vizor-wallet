@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../../support/test_l10n.dart';
+
 /// Every proxy and delegate-mode English message: the `proxy*` and
 /// `delegate*` keys of the template ARB file.
 List<String> _proxyMessages() {
@@ -28,5 +30,6 @@ void main() {
     ]) {
       expect(copy, isNot(contains(claim)));
     }
+    expect(testL10n.proxyBallotConfirm(3), contains("It's public"));
   });
 }

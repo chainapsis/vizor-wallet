@@ -53,6 +53,7 @@ rust/build/
 .regtest/
 .regtest-logs/
 .regtest-voting/
+.regtest-proxy-delegation/
 .ironwood-regtest/
 /migration_sim_test/artifacts/
 .ironwood-regtest-snapshots/

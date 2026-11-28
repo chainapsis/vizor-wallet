@@ -880,7 +880,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressScanZcashPrompt => 'Scan a Zcash QR code to continue';
 
   @override
+  String get appBackBallot => 'Ballot';
+
+  @override
   String get appBackDelegate => 'Delegate';
+
+  @override
+  String get appBackDelegateMode => 'Delegate mode';
 
   @override
   String get appBackDelegates => 'Delegates';
@@ -892,10 +898,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appBackHardwareWallets => 'Hardware wallets';
 
   @override
+  String get appBackImportKey => 'Import key';
+
+  @override
   String get appBackImportMethods => 'Import methods';
 
   @override
   String get appBackReceive => 'Receive';
+
+  @override
+  String get appBackRegister => 'Register';
+
+  @override
+  String get appBackRetire => 'Retire';
 
   @override
   String get appBackReview => 'Review';
@@ -1974,6 +1989,501 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonZcashAddress => 'Zcash address';
+
+  @override
+  String get delegateAlreadySubmitted =>
+      'You\'ve already submitted your ballot for this round.';
+
+  @override
+  String delegateAnswered(int answered, int total) {
+    return '$answered of $total answered';
+  }
+
+  @override
+  String get delegateAttestationRejected =>
+      'The voting chain didn\'t accept the verifier\'s check. Verify your post again.';
+
+  @override
+  String get delegateBackToDelegateModeLabel => 'Back to delegate mode';
+
+  @override
+  String get delegateBallotConfirmTitle => 'Confirm ballot';
+
+  @override
+  String get delegateBallotCounted => 'Counted. Your ballot is on chain.';
+
+  @override
+  String get delegateBallotFailed => 'Couldn\'t submit your ballot. Try again.';
+
+  @override
+  String get delegateBallotInvalidOption =>
+      'The voting chain rejected this ballot because an answer isn\'t a valid option.';
+
+  @override
+  String get delegateBallotOnChain =>
+      'Ballot submitted and confirmed on chain. It\'s counted when voting ends.';
+
+  @override
+  String get delegateBallotPendingLabel =>
+      'Ballot submitted, confirming on chain';
+
+  @override
+  String get delegateBallotProgress =>
+      'Keep Vizor open. Your ballot is usually confirmed within a minute.';
+
+  @override
+  String get delegateBallotProgressTitle => 'Submitting your ballot';
+
+  @override
+  String get delegateBallotRejected => 'The voting chain rejected your ballot.';
+
+  @override
+  String delegateBallotReminder(String time) {
+    return 'Submit your ballot before voting ends $time, or ZEC delegated to you isn\'t counted this round.';
+  }
+
+  @override
+  String get delegateBallotRoundNoBallots =>
+      'This round doesn\'t take delegate ballots.';
+
+  @override
+  String get delegateBallotStillConfirming =>
+      'Still confirming. Vizor will keep trying in the background.';
+
+  @override
+  String get delegateBallotSubmittedLabel => 'Ballot submitted';
+
+  @override
+  String get delegateBallotSubmittedTitle => 'Ballot submitted';
+
+  @override
+  String get delegateBallotTitle => 'Your ballot';
+
+  @override
+  String get delegateBallotTooLate =>
+      'Voting ended before your ballot landed, so it wasn\'t accepted. ZEC delegated to you isn\'t counted this round.';
+
+  @override
+  String get delegateBallotUnknownRound =>
+      'The voting chain doesn\'t know this round.';
+
+  @override
+  String get delegateContinueRegistrationLabel => 'Continue registration';
+
+  @override
+  String get delegateCopyKeyLabel => 'Copy key';
+
+  @override
+  String get delegateCopyMarkerLabel => 'Copy marker';
+
+  @override
+  String delegateCountAtLeast(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'At least $count delegations',
+      one: 'At least $count delegation',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get delegateCountNone => 'No delegations revealed yet';
+
+  @override
+  String get delegateCreateKeyError =>
+      'Couldn\'t create your delegate key. Nothing was stored. Try again.';
+
+  @override
+  String get delegateCreateKeyLabel => 'Create a delegate key';
+
+  @override
+  String get delegateDifferentBallotOnChain =>
+      'A different ballot is already on chain for this round. Vizor won\'t submit another.';
+
+  @override
+  String get delegateExportError =>
+      'Couldn\'t read your delegate key. Try again.';
+
+  @override
+  String get delegateExportKeyLabel => 'Export key';
+
+  @override
+  String get delegateExportedKey =>
+      'Anyone with this text or QR code can vote as you. Keep it offline.';
+
+  @override
+  String get delegateFinalMinute =>
+      'A ballot that lands after voting ends is rejected, and ZEC delegated to you isn\'t counted this round.';
+
+  @override
+  String get delegateFinalMinuteTitle => 'Voting is about to end';
+
+  @override
+  String delegateFinalMinutes(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'Voting ends in $minutes minutes. Submit your ballot now.',
+      one: 'Voting ends in $minutes minute. Submit your ballot now.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get delegateFinishRegistering =>
+      'This key isn\'t registered yet. Post its marker and verify it to start receiving delegations.';
+
+  @override
+  String get delegateFinishRegisteringTitle => 'Finish registering';
+
+  @override
+  String get delegateHandleTaken =>
+      'This handle already has a delegate entry, so it can\'t register again until that entry is retired. If you have its key, import that key here and press Retire, then register again. If the key is lost, ask the vote coordinators to retire the entry.';
+
+  @override
+  String get delegateHideKeyLabel => 'Hide key';
+
+  @override
+  String get delegateHowPeopleFindYou =>
+      'People can find you by your exact handle, or by pasting your key, number or fingerprint. Wallets may also list you after their own review.';
+
+  @override
+  String get delegateImport =>
+      'Paste or scan the key you exported from delegate mode. It starts with zvdsk1. Never enter a wallet recovery phrase here.';
+
+  @override
+  String get delegateImportFieldLabel => 'Delegate key';
+
+  @override
+  String get delegateImportHint => 'zvdsk1...';
+
+  @override
+  String get delegateImportInvalid =>
+      'This isn\'t a delegate key. An exported key starts with zvdsk1.';
+
+  @override
+  String get delegateImportKeyLabel => 'Import a delegate key';
+
+  @override
+  String get delegateImportLabel => 'Import';
+
+  @override
+  String get delegateImportScanTitle => 'Scan your delegate key\'s QR code';
+
+  @override
+  String get delegateImportTitle => 'Import delegate key';
+
+  @override
+  String get delegateImportedTitle => 'Key imported';
+
+  @override
+  String get delegateImportedUnregistered =>
+      'This key isn\'t registered yet. Register it to start receiving delegations.';
+
+  @override
+  String get delegateIntroLostKey =>
+      'Lost your delegate key and have no copy? Ask the vote coordinators to retire your delegate entry. You can then register again with a new key.';
+
+  @override
+  String get delegateIntroTitle => 'Become a delegate';
+
+  @override
+  String get delegateKeepPost =>
+      'Keep the post up. It is the public proof that this key is yours.';
+
+  @override
+  String get delegateKeyBackup =>
+      'Your delegate key is stored on this device. Export it to back it up or to move it to another device. It is not a wallet recovery phrase and holds no ZEC.';
+
+  @override
+  String get delegateKeyLabel => 'Delegate key';
+
+  @override
+  String get delegateKeyRegisteredBefore =>
+      'This key was registered before, so it can\'t register again. Start over with a new key.';
+
+  @override
+  String get delegateKeyTitle => 'Your delegate key';
+
+  @override
+  String get delegateKeyUnregistrable =>
+      'This key can\'t be registered. Start over with a new key.';
+
+  @override
+  String get delegateLoadError => 'Couldn\'t load delegate mode. Try again.';
+
+  @override
+  String get delegateMarkerGitHub =>
+      'Create a public gist from your GitHub account with this exact text.';
+
+  @override
+  String get delegateMarkerTitle => 'Your marker';
+
+  @override
+  String get delegateMarkerX =>
+      'Post this exact text from your X account as a new post, not a reply or quote.';
+
+  @override
+  String get delegateModeEntry =>
+      'Vote on behalf of the people who delegate to you.';
+
+  @override
+  String get delegateModeTitle => 'Delegate mode';
+
+  @override
+  String get delegateNoEntryForKey =>
+      'The voting chain has no delegate entry for your key.';
+
+  @override
+  String get delegateNoRounds => 'No voting rounds take delegations right now.';
+
+  @override
+  String get delegateNotRegistered =>
+      'Register as a delegate before you submit a ballot.';
+
+  @override
+  String get delegateNothingToRegister =>
+      'There is no key to register on this device.';
+
+  @override
+  String get delegateNothingToRetire =>
+      'There is no delegate entry on this device to retire.';
+
+  @override
+  String get delegateOpenBallotLabel => 'Open ballot';
+
+  @override
+  String get delegateOpenDashboardLabel => 'Open delegate mode';
+
+  @override
+  String get delegateProofLinkGitHubHint =>
+      'https://gist.github.com/yourhandle/...';
+
+  @override
+  String get delegateProofLinkGitHubInvalid =>
+      'Paste the link to your gist on gist.github.com.';
+
+  @override
+  String get delegateProofLinkGitHubLabel => 'Link to your gist';
+
+  @override
+  String get delegateProofLinkXHint => 'https://x.com/yourhandle/status/...';
+
+  @override
+  String get delegateProofLinkXInvalid =>
+      'Paste the link to your post on x.com.';
+
+  @override
+  String get delegateProofLinkXLabel => 'Link to your post';
+
+  @override
+  String get delegateProviderTitle => 'Prove your account';
+
+  @override
+  String get delegateReauthBallotBiometricReason =>
+      'Confirm access to sign your ballot';
+
+  @override
+  String get delegateReauthBallotSubtitle => 'To sign your ballot.';
+
+  @override
+  String get delegateReauthExportBiometricReason =>
+      'Confirm access to your delegate key';
+
+  @override
+  String get delegateReauthExportSubtitle => 'To export your delegate key.';
+
+  @override
+  String get delegateReauthFailed => 'Couldn\'t confirm access. Try again.';
+
+  @override
+  String get delegateReauthRegisterBiometricReason =>
+      'Confirm access to register your delegate key';
+
+  @override
+  String get delegateReauthRegisterSubtitle => 'To register your delegate key.';
+
+  @override
+  String get delegateReauthRetireBiometricReason =>
+      'Confirm access to retire as a delegate';
+
+  @override
+  String get delegateReauthRetireSubtitle => 'To retire as a delegate.';
+
+  @override
+  String get delegateRegisterClosed =>
+      'Delegate registration is closed right now. Try again later.';
+
+  @override
+  String get delegateRegisterFailed =>
+      'Couldn\'t register this key. Try again.';
+
+  @override
+  String get delegateRegisterRejected =>
+      'The voting chain rejected this registration. Try again later.';
+
+  @override
+  String get delegateRegisterTitle => 'Register as a delegate';
+
+  @override
+  String delegateRegistered(String handle) {
+    return 'Vizor verified @$handle. You can submit ballots now, including in rounds already running.';
+  }
+
+  @override
+  String get delegateRegisteredTitle => 'You\'re registered';
+
+  @override
+  String get delegateRegistrationPending =>
+      'Your registration was sent and has not landed yet. Vizor keeps checking. You can also verify your post again.';
+
+  @override
+  String get delegateRegistryFull =>
+      'The delegate registry is full. Try again later.';
+
+  @override
+  String get delegateRetireEntryTitle => 'Entry this retires';
+
+  @override
+  String get delegateRetireFailed =>
+      'Couldn\'t retire. Your delegate entry can still vote. Try again.';
+
+  @override
+  String get delegateRetireLabel => 'Retire';
+
+  @override
+  String get delegateRetireSuspended =>
+      'Coordinators suspended your delegate entry, so it can\'t retire itself.';
+
+  @override
+  String get delegateRetired =>
+      'Your delegate entry is retired, so this key can\'t vote anymore. To come back, start over with a new key and register again.';
+
+  @override
+  String get delegateRetiredBallot =>
+      'Your delegate entry is retired, so it can\'t submit a ballot.';
+
+  @override
+  String get delegateRetiredDone => 'Your delegate entry can\'t vote anymore.';
+
+  @override
+  String get delegateRetiredTitle => 'You\'ve retired';
+
+  @override
+  String get delegateRoundsTitle => 'Voting rounds';
+
+  @override
+  String get delegateStartOver =>
+      'This deletes the key from this device. It can\'t be undone unless you exported the key.';
+
+  @override
+  String get delegateStartOverConfirmLabel => 'Remove key';
+
+  @override
+  String get delegateStartOverError =>
+      'Couldn\'t remove this key. A registered key stays until its entry is retired. Try again.';
+
+  @override
+  String get delegateStartOverLabel => 'Start over with a new key';
+
+  @override
+  String get delegateStartOverSaveKey =>
+      'Save this key before starting over. If this registration still lands, you\'ll need it to vote or retire.';
+
+  @override
+  String get delegateStartOverSavedLabel => 'I\'ve saved this key';
+
+  @override
+  String get delegateStartOverTitle => 'Remove this key?';
+
+  @override
+  String get delegateStepCheckingPost => 'Checking your post';
+
+  @override
+  String get delegateStepConfirming => 'Confirming on chain';
+
+  @override
+  String get delegateStepRegistering => 'Registering on the voting chain';
+
+  @override
+  String get delegateStepSigning => 'Signing ballot';
+
+  @override
+  String get delegateStepSubmitting => 'Submitting ballot';
+
+  @override
+  String get delegateSubmitAnywayLabel => 'Submit anyway';
+
+  @override
+  String get delegateSubmitBallotLabel => 'Submit ballot';
+
+  @override
+  String get delegateSuspended =>
+      'Coordinators suspended your delegate entry, so you can\'t submit ballots.';
+
+  @override
+  String get delegateUnavailable =>
+      'Couldn\'t reach the voting chain. Try again.';
+
+  @override
+  String get delegateUseDifferentKeyLabel => 'Use a different key';
+
+  @override
+  String get delegateVerifierBadRequest =>
+      'The verifier couldn\'t read this request. Check the link and try again.';
+
+  @override
+  String get delegateVerifierMarkerMismatch =>
+      'The post doesn\'t match your marker. Post the marker exactly as shown, with nothing else in the post.';
+
+  @override
+  String get delegateVerifierPostNotFound =>
+      'The verifier couldn\'t find a post at that link. Check the link and make sure the post is public.';
+
+  @override
+  String get delegateVerifierProviderUnavailable =>
+      'The verifier can\'t check posts right now. Try again later.';
+
+  @override
+  String delegateVerifierProviderUnavailableUntil(String time) {
+    return 'The verifier can\'t check posts right now. Try again after $time.';
+  }
+
+  @override
+  String get delegateVerifierRateLimited =>
+      'The verifier is checking too many posts right now. Try again later.';
+
+  @override
+  String delegateVerifierRateLimitedUntil(String time) {
+    return 'The verifier is checking too many posts right now. Try again after $time.';
+  }
+
+  @override
+  String get delegateVerifierUnknown =>
+      'The verifier couldn\'t check this post. Try again later.';
+
+  @override
+  String get delegateVerifierUnreachable =>
+      'Couldn\'t reach the verifier. Check your connection and try again.';
+
+  @override
+  String get delegateVerifyAgainLabel => 'Verify again';
+
+  @override
+  String get delegateVerifyAndRegisterLabel => 'Verify and register';
+
+  @override
+  String get delegateViewBallotLabel => 'View ballot';
+
+  @override
+  String get delegateVotingEnded =>
+      'Voting has ended for this round, so you can\'t submit a ballot.';
+
+  @override
+  String delegateVotingEnds(String time) {
+    return 'Voting ends $time';
+  }
 
   @override
   String get donationDonatingTo => 'Donating to';
@@ -8691,6 +9201,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String proxyBallotConfirm(int questionCount) {
+    return 'Submit your ballot? It covers all $questionCount questions for everyone who delegated to you. It\'s public, and you can\'t change it.';
+  }
+
+  @override
+  String get proxyBallotRules =>
+      'You vote once per round, on every question, for everyone who delegated to you. You can\'t change your ballot after you submit it. If you don\'t submit it before voting ends, ZEC delegated to you isn\'t counted this round.';
+
+  @override
   String get proxyBeforeYouDelegateTitle => 'Before you delegate';
 
   @override
@@ -8742,6 +9261,18 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get proxyCountsOnlyWithBallot =>
       'Your delegated ZEC counts only if your delegate submits a complete ballot before voting ends. If they don\'t, it isn\'t counted this round.';
+
+  @override
+  String get proxyDelegateIntroCount =>
+      'An approximate count of delegations to you is public on the voting chain. Vizor shows it only on your dashboard.';
+
+  @override
+  String get proxyDelegateIntroPrivateVotes =>
+      'Your private votes are hidden from the public. Vote servers can link them to you unless Tor is on.';
+
+  @override
+  String get proxyDelegateIntroPublicVotes =>
+      'Your public votes stay linked to your X or GitHub account permanently, even if you delete your post or account.';
 
   @override
   String proxyDelegateNumber(int number) {
@@ -9011,6 +9542,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'These totals include the ZEC you delegated. The round shows how your delegates voted.';
 
   @override
+  String get proxyRetire =>
+      'Retire as a delegate? This retires your delegate entry for good. If you haven\'t submitted this round\'s ballot, ZEC delegated to you this round won\'t be counted. To come back, register again with a new key; you get a new delegate number.';
+
+  @override
   String get proxyReviewAnswersTitle => 'Your answers';
 
   @override
@@ -9022,6 +9557,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get proxyReviewedByVizor => 'Reviewed by Vizor';
+
+  @override
+  String get proxyScanLabel => 'Scan';
 
   @override
   String get proxyScanTitle => 'Scan a delegate\'s QR code';

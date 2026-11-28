@@ -22,6 +22,7 @@ import '../../../providers/voting/voting_poll_eligibility_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
+import '../proxy/screens/delegate_mode_home_screen.dart';
 import '../voting_error_messages.dart';
 import '../voting_poll_ordering.dart';
 import '../voting_flow_models.dart';
@@ -108,6 +109,8 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
               const AppPaneToolbar(backLinkMinWidth: 60),
               _VotingHeader(onSettings: _openSettings),
             ],
+            // Renders nothing unless the dormant proxy delegation flag is on.
+            const DelegateModeEntryLink(),
             Expanded(
               child: _entryRefreshInFlight && !rounds.hasValue
                   ? const VotingPaneLoading()

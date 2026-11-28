@@ -5,11 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/voting/proxy/delegate_mode_models.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/delegate_picture.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_repository.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_routes.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/widgets/proxy_delegate_widgets.dart';
 
+import 'support/delegate_mode_test_harness.dart';
 import 'support/delegate_picture_fakes.dart';
 import 'support/proxy_test_harness.dart';
 import 'support/proxy_values.dart';
@@ -176,6 +178,34 @@ void main() {
       expect(inRow(alice, RawImage), findsOne);
       expect(inRow(bjorn, RawImage), findsNothing);
       expect(inRow(bjorn, ProxyIdenticon), findsOne);
+    });
+
+    testWidgets("DG-8 shows the delegate's own picture from Vizor's list", (
+      tester,
+    ) async {
+      final picture = _picture('aa');
+      final cache = await warmed(tester, [picture]);
+      for (final listed in [false, true]) {
+        final scenario = delegateRegisteredScenario();
+        scenario.status = DelegateModeView(
+          status: scenario.status.status,
+          picture: listed ? picture : null,
+        );
+
+        await pumpDelegateRoute(
+          tester,
+          kDelegateModePath,
+          scenario: scenario,
+          overrides: [delegatePictureCacheProvider.overrideWithValue(cache)],
+        );
+
+        final identity = find.byKey(const ValueKey('delegate_identity'));
+        expect(
+          find.descendant(of: identity, matching: find.byType(RawImage)),
+          listed ? findsOne : findsNothing,
+          reason: 'listed: $listed',
+        );
+      }
     });
   });
 }
