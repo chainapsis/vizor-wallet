@@ -15,12 +15,6 @@ void main() {
     tester,
   ) async {
     final scenario = proxyTestScenario();
-    await pumpProxyRoute(
-      tester,
-      proxyDelegateProfileRoute(round, 1),
-      scenario: scenario,
-    );
-    expectNoProxyCountsOrTotals(tester);
     final harness = await pumpProxyRoute(
       tester,
       proxyDelegateDirectoryRoute(round),
@@ -71,7 +65,6 @@ void main() {
     expect(routes.map((r) => r.path), mobile.map((r) => r.path));
     final built = {
       kProxyDelegateDirectoryPath: proxyDelegateDirectoryRoute('r 1'),
-      kProxyDelegateProfilePath: proxyDelegateProfileRoute('r 1', 17),
       kProxyAllocationPath: proxyAllocationRoute('r 1'),
     };
     expect(routes.map((r) => r.path).toSet(), built.keys.toSet());
@@ -81,9 +74,5 @@ void main() {
       );
       expect(regex.hasMatch(location), isTrue, reason: location);
     }
-    expect(
-      proxyDelegateProfileRoute('r 1', 17),
-      '/voting/poll/r%201/delegates/17',
-    );
   });
 }

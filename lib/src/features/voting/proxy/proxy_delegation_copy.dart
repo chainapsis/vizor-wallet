@@ -8,14 +8,6 @@ import 'delegate_mode_models.dart';
 /// How a delegate is named in a sentence: `@handle`.
 String proxyDelegateName(String handle) => '@$handle';
 
-/// One delegate's part of the round screen's split, for example
-/// `4 ZEC to @alice`; just the [name] until the amount is planned.
-String proxySplitToCopy(
-  AppLocalizations l10n, {
-  required String? amount,
-  required String name,
-}) => amount == null ? name : l10n.proxySplitTo(amount, name);
-
 /// Why a suspended or retired delegate [name] can't be chosen.
 String proxyBlockedCopy(
   AppLocalizations l10n,

@@ -158,9 +158,7 @@ void main() {
       return cache;
     }
 
-    testWidgets('PD-2 and PD-3 show a listed delegate\'s picture', (
-      tester,
-    ) async {
+    testWidgets('PD-2 shows a listed delegate\'s picture', (tester) async {
       final scenario = proxyTestScenario();
       final alice = proxyEntry(scenario, 'alice_votes');
       final bjorn = proxyEntry(scenario, 'bjorn_dev');
@@ -180,15 +178,6 @@ void main() {
       expect(inRow(alice, RawImage), findsOne);
       expect(inRow(bjorn, RawImage), findsNothing);
       expect(inRow(bjorn, ProxyIdenticon), findsOne);
-
-      await pumpProxyRoute(
-        tester,
-        proxyDelegateProfileRoute(kProxyTestRoundId, alice.index),
-        scenario: scenario,
-        pictureCache: cache,
-      );
-      expect(find.byType(RawImage), findsOne);
-      expect(find.byType(ProxyIdenticon), findsNothing);
     });
 
     testWidgets("DG-8 shows the delegate's own picture from Vizor's list", (

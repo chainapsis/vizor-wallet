@@ -261,20 +261,6 @@ class ProxyDirectoryState {
   /// Returns a copy with a new [lookup].
   ProxyDirectoryState withLookup(ProxyLookupState lookup) =>
       ProxyDirectoryState(browse: browse, search: search, lookup: lookup);
-
-  /// Every delegate the screen shows, for a profile to find by index.
-  List<ProxyDelegateListing> get shown {
-    final search = this.search;
-    final lookup = this.lookup;
-    return [
-      ...browse.listed,
-      if (search is ProxySearchResults) ...search.entries,
-      if (lookup case ProxyLookupDone(
-        answer: ApiDelegateLookup(:final listing?),
-      ))
-        listing,
-    ];
-  }
 }
 
 /// Loads Vizor's browse list and runs handle searches and lookups.
@@ -309,7 +295,7 @@ class ProxyDirectoryNotifier extends AsyncNotifier<ProxyDirectoryState> {
     state = AsyncData(latest.withSearch(ProxySearchResults(query, entries)));
   }
 
-  /// Returns to the browse list.
+  /// Clears the handle search.
   void clearSearch() {
     final current = state.value;
     if (current == null) return;
@@ -340,11 +326,30 @@ class ProxyDirectoryNotifier extends AsyncNotifier<ProxyDirectoryState> {
     state = AsyncData((state.value ?? current).withLookup(result));
   }
 
-  /// Clears the paste or scan answer.
-  void clearLookup() {
+  /// Finds [text] for the add-a-delegate dialog: a pasted key, number,
+  /// fingerprint or marker post first, and otherwise an exact handle, with
+  /// or without its `@`.
+  Future<void> find(String text) async {
+    await lookup(text);
+    final found = state.value?.lookup;
+    if (found is ProxyLookupDone &&
+        found.text == text &&
+        found.answer.kind == ApiDelegateLookupKind.unrecognized) {
+      await search(proxyHandleQuery(text));
+    } else {
+      clearSearch();
+    }
+  }
+
+  /// Clears the add-a-delegate dialog's lookup and search.
+  void clearFind() {
     final current = state.value;
     if (current == null) return;
-    state = AsyncData(current.withLookup(const ProxyLookupIdle()));
+    state = AsyncData(
+      current
+          .withSearch(const ProxySearchIdle())
+          .withLookup(const ProxyLookupIdle()),
+    );
   }
 }
 

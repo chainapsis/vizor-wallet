@@ -168,6 +168,10 @@ class _ProxyAllocationViewState extends ConsumerState<ProxyAllocationView> {
                   }
                 },
           onSplitEvenly: () => _splitEvenly(key),
+          onRemoveDelegation: () {
+            notifier.clear();
+            context.go(votingPollRoute(roundId));
+          },
         ),
       ),
     );
@@ -193,6 +197,7 @@ class ProxyAllocationContent extends StatelessWidget {
     required this.onRemove,
     required this.onAddDelegate,
     required this.onSplitEvenly,
+    required this.onRemoveDelegation,
     super.key,
   });
 
@@ -222,6 +227,9 @@ class ProxyAllocationContent extends StatelessWidget {
 
   /// Splits 100% evenly.
   final VoidCallback onSplitEvenly;
+
+  /// Drops the whole drafted delegation.
+  final VoidCallback onRemoveDelegation;
 
   @override
   Widget build(BuildContext context) {
@@ -272,6 +280,13 @@ class ProxyAllocationContent extends StatelessWidget {
               variant: AppButtonVariant.ghost,
               size: AppButtonSize.medium,
               child: Text(context.l10n.proxySplitEvenlyLabel),
+            ),
+            AppButton(
+              key: const ValueKey('proxy_allocation_remove_delegation'),
+              onPressed: onRemoveDelegation,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.medium,
+              child: Text(context.l10n.proxyRemoveDelegationLabel),
             ),
           ],
         ),

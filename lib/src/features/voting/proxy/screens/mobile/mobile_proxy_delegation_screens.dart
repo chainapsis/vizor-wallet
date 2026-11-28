@@ -5,7 +5,6 @@ import '../../../screens/mobile/mobile_voting_screens.dart';
 import '../../../voting_routes.dart';
 import '../proxy_allocation_screen.dart';
 import '../proxy_delegate_directory_screen.dart';
-import '../proxy_delegate_profile_screen.dart';
 
 /// PD-2 on mobile.
 class MobileProxyDelegateDirectoryScreen extends StatelessWidget {
@@ -22,35 +21,6 @@ class MobileProxyDelegateDirectoryScreen extends StatelessWidget {
       fallbackPath: votingPollRoute(roundId),
       child: ProxyDelegateDirectoryView(
         roundId: roundId,
-        showDesktopToolbar: false,
-      ),
-    );
-  }
-}
-
-/// PD-3 on mobile.
-class MobileProxyDelegateProfileScreen extends StatelessWidget {
-  /// Creates the screen.
-  const MobileProxyDelegateProfileScreen({
-    required this.roundId,
-    required this.delegateIndex,
-    super.key,
-  });
-
-  /// Round being delegated.
-  final String roundId;
-
-  /// Registry index of the delegate.
-  final int delegateIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    return MobileVotingScaffold(
-      title: context.l10n.proxyProfileTitle,
-      fallbackPath: votingPollRoute(roundId),
-      child: ProxyDelegateProfileView(
-        roundId: roundId,
-        delegateIndex: delegateIndex,
         showDesktopToolbar: false,
       ),
     );

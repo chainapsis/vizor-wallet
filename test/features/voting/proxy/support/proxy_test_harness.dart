@@ -14,7 +14,6 @@ import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_reposito
 import 'package:zcash_wallet/src/features/voting/proxy/proxy_delegation_routes.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/screens/proxy_allocation_screen.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/screens/proxy_delegate_directory_screen.dart';
-import 'package:zcash_wallet/src/features/voting/proxy/screens/proxy_delegate_profile_screen.dart';
 import 'package:zcash_wallet/src/features/voting/proxy/screens/proxy_round_delegation.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
@@ -163,18 +162,6 @@ Future<ProxyTestHarness> pumpProxyRoute(
               builder: (_, state) => page(
                 ProxyDelegateDirectoryView(
                   roundId: round(state),
-                  showDesktopToolbar: true,
-                ),
-              ),
-            ),
-            GoRoute(
-              path: kProxyDelegateProfilePath,
-              builder: (_, state) => page(
-                ProxyDelegateProfileView(
-                  roundId: round(state),
-                  delegateIndex: int.parse(
-                    state.pathParameters['delegateIndex']!,
-                  ),
                   showDesktopToolbar: true,
                 ),
               ),

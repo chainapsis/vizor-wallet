@@ -14990,23 +14990,23 @@ abstract class AppLocalizations {
   /// **'Add delegate'**
   String get proxyAddDelegateLabel;
 
-  /// Label or button on the choose-delegates directory screen.
+  /// Explanation at the top of the dialog that adds a delegate who isn't on Vizor's list.
   ///
   /// In en, this message translates to:
-  /// **'Add'**
-  String get proxyAddLabel;
+  /// **'For someone who isn\'t on Vizor\'s list. Enter their X or GitHub handle, or paste their delegate key.'**
+  String get proxyAddDialogBody;
 
-  /// Label or button on a delegate's profile screen.
+  /// Title of the dialog that adds a delegate who isn't on Vizor's list.
   ///
   /// In en, this message translates to:
-  /// **'Add to delegation'**
-  String get proxyAddToDelegationLabel;
+  /// **'Add a delegate'**
+  String get proxyAddDialogTitle;
 
-  /// Label or button on the choose-delegates directory screen.
+  /// Quiet button under Vizor's list on the choose-delegates screen. Opens a dialog to add a delegate Vizor hasn't reviewed.
   ///
   /// In en, this message translates to:
-  /// **'Added'**
-  String get proxyAddedLabel;
+  /// **'Add someone not on the list'**
+  String get proxyAddUnlistedLabel;
 
   /// Title on the mobile delegator screens and the split screen, where the user divides voting power between delegates.
   ///
@@ -15080,17 +15080,23 @@ abstract class AppLocalizations {
   /// **'Can\'t verify delegates right now. Try again later.'**
   String get proxyCannotVerify;
 
-  /// Label or button on the round screen's delegation section.
-  ///
-  /// In en, this message translates to:
-  /// **'Change'**
-  String get proxyChangeDelegationLabel;
-
   /// Message on the vote review's delegation section.
   ///
   /// In en, this message translates to:
   /// **'Checking your delegates on the voting chain.'**
   String get proxyCheckingDelegates;
+
+  /// Footer of the choose-delegates screen, beside the chosen delegates' pictures: how many are chosen.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} chosen'**
+  String proxyChosenCount(int count);
+
+  /// Footer of the choose-delegates screen once the most delegates allowed (8) are chosen.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} chosen, the most you can'**
+  String proxyChosenFull(int count);
 
   /// Warning on the round screen's delegation section when voting ends within a day. {timeLeft} is a duration such as 3 hours.
   ///
@@ -15140,6 +15146,24 @@ abstract class AppLocalizations {
   /// **'Your public votes stay linked to your X or GitHub account permanently, even if you delete your post or account.'**
   String get proxyDelegateIntroPublicVotes;
 
+  /// Line under the round screen's 'Delegate your vote' card title.
+  ///
+  /// In en, this message translates to:
+  /// **'Let people you trust answer for you.'**
+  String get proxyDelegateVoteBody;
+
+  /// Title of the round screen's delegation card before any delegate is chosen. The whole card opens the choose-delegates screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate your vote'**
+  String get proxyDelegateVoteTitle;
+
+  /// Title of the round screen's delegation card after a delegation of all the voting power was submitted. {total} is a ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegated all {total}'**
+  String proxyDelegatedAll(String total);
+
   /// Label or button on the voting round list. The poll list's status for such a round.
   ///
   /// In en, this message translates to:
@@ -15152,11 +15176,35 @@ abstract class AppLocalizations {
   /// **'Delegated {amount} to {name}. {stage}.'**
   String proxyDelegatedLine(String amount, String name, String stage);
 
+  /// Title of the round screen's delegation card after the delegation was submitted. {delegated} is a number of ZEC and {total} a ZEC amount, as in 35 of 50 ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegated {delegated} of {total}'**
+  String proxyDelegatedPart(String delegated, String total);
+
+  /// Title of the round screen's delegation card when the chosen delegates take all of the voting power, before it is submitted. {total} is a ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegating all {total}'**
+  String proxyDelegatingAll(String total);
+
+  /// Title of the round screen's delegation card once delegates are chosen but not yet submitted. {delegated} is a number of ZEC and {total} a ZEC amount, as in 35 of 50 ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegating {delegated} of {total}'**
+  String proxyDelegatingPart(String delegated, String total);
+
   /// Progress step while a delegation is sent. {handles} names the delegates, such as @a and @b.
   ///
   /// In en, this message translates to:
   /// **'Delegating to {handles}'**
   String proxyDelegatingStep(String handles);
+
+  /// Title of the round screen's delegation card while the chosen delegates' shares are not set yet. {names} is a list of delegate names such as @alice and @bob.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegating to {names}'**
+  String proxyDelegatingTo(String names);
 
   /// Message on the vote confirmation screen. The vote confirmation for a ballot the delegates answer entirely.
   ///
@@ -15164,10 +15212,22 @@ abstract class AppLocalizations {
   /// **'Your delegation was sent and can\'t be changed.'**
   String get proxyDelegationConfirmed;
 
+  /// Line under the round screen's delegation card title when the delegates take everything. {parts} lists each delegate's amount, for example 25 ZEC to @alice and 25 ZEC to @bob.
+  ///
+  /// In en, this message translates to:
+  /// **'{parts}.'**
+  String proxyDelegationSplit(String parts);
+
+  /// Line under the round screen's delegation card title when the user keeps a share. {parts} lists each delegate's amount, {kept} is the ZEC amount the user answers for.
+  ///
+  /// In en, this message translates to:
+  /// **'{parts}. You answer for the other {kept}.'**
+  String proxyDelegationSplitWithRest(String parts, String kept);
+
   /// Message on the choose-delegates directory screen.
   ///
   /// In en, this message translates to:
-  /// **'Pick up to 8 delegates. Search for others by their exact handle, or paste their post, key, number or fingerprint.'**
+  /// **'Pick up to 8 delegates. Everyone here was reviewed by Vizor.'**
   String get proxyDirectorySubtitle;
 
   /// Title on the choose-delegates directory screen and the mobile delegator screens.
@@ -15182,17 +15242,17 @@ abstract class AppLocalizations {
   /// **'You can delegate once per round. After you confirm, you can\'t change it.'**
   String get proxyFinality;
 
-  /// Label or button on the choose-delegates directory screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Find'**
-  String get proxyFindLabel;
-
   /// Label or button on the delegator's status, progress and error text.
   ///
   /// In en, this message translates to:
   /// **'Sent'**
   String get proxyHandedOffLabel;
+
+  /// Second line of a delegate's row, for example @alice on X. {network} is X or GitHub.
+  ///
+  /// In en, this message translates to:
+  /// **'@{handle} on {network}'**
+  String proxyHandleOnNetwork(String handle, String network);
 
   /// A delegate's line in a question's status before their ballot lands. {name} is the delegate's name.
   ///
@@ -15230,22 +15290,28 @@ abstract class AppLocalizations {
   /// **'Vizor couldn\'t save your answers for the ZEC you keep, so nothing was sent. Go back to the questions and submit again.'**
   String get proxyKeptShareUnanswered;
 
-  /// The kept part of the round screen's split: the ZEC the user still votes on directly.
+  /// How many delegates Vizor's list holds, beside the list label on the choose-delegates screen.
   ///
   /// In en, this message translates to:
-  /// **'{amount} for you to answer'**
-  String proxyKeptToAnswer(String amount);
+  /// **'{count, plural, =1{1 delegate} other{{count} delegates}}'**
+  String proxyListCount(int count);
 
-  /// Label or button on the round screen's delegation section. The round screen's way into choosing delegates.
+  /// Small label above the list of delegates Vizor reviewed, on the choose-delegates screen.
   ///
   /// In en, this message translates to:
-  /// **'Let a delegate vote some or all'**
-  String get proxyLetDelegateVoteLabel;
+  /// **'Vizor\'s list'**
+  String get proxyListLabel;
+
+  /// Beside the list label while a search filters Vizor's list: how many delegates match, of how many.
+  ///
+  /// In en, this message translates to:
+  /// **'{matches} of {total}'**
+  String proxyListMatches(int matches, int total);
 
   /// Message on the choose-delegates directory screen.
   ///
   /// In en, this message translates to:
-  /// **'Vizor\'s delegate list isn\'t available right now. You can still search by handle or paste a delegate\'s key.'**
+  /// **'Vizor\'s delegate list isn\'t available right now. You can still add a delegate by their handle or key.'**
   String get proxyListUnavailable;
 
   /// Message on the delegator's status, progress and error text.
@@ -15266,11 +15332,17 @@ abstract class AppLocalizations {
   /// **'No delegate is registered with that key, number or fingerprint.'**
   String get proxyLookupNotFound;
 
-  /// Message on the choose-delegates directory screen.
+  /// Placeholder in the add-a-delegate dialog's field. zvdk1 is the start of a delegate key and stays as is.
   ///
   /// In en, this message translates to:
-  /// **'That isn\'t a marker post, a delegate key, a number or a fingerprint.'**
-  String get proxyLookupUnrecognized;
+  /// **'X or GitHub handle, or zvdk1...'**
+  String get proxyManualFieldHint;
+
+  /// Label of the field in the add-a-delegate dialog. It takes an X or GitHub handle or a pasted delegate key.
+  ///
+  /// In en, this message translates to:
+  /// **'Handle or delegate key'**
+  String get proxyManualFieldLabel;
 
   /// Review check that found a different key, provider or handle on the voting chain. {name} is the delegate's name.
   ///
@@ -15326,6 +15398,12 @@ abstract class AppLocalizations {
   /// **'This round has no delegation to submit.'**
   String get proxyNoDelegation;
 
+  /// Shown in place of the list when a search on the choose-delegates screen matches nobody. {query} is what the user typed.
+  ///
+  /// In en, this message translates to:
+  /// **'No one on Vizor\'s list matches \"{query}\".'**
+  String proxyNoListMatches(String query);
+
   /// Choose-delegates directory screen, when a handle search finds nothing. {query} is what the user typed.
   ///
   /// In en, this message translates to:
@@ -15374,23 +15452,17 @@ abstract class AppLocalizations {
   /// **'You delegated all of your voting power in this round, so you have nothing left to vote. Your delegates vote for it.'**
   String get proxyNothingLeftToVote;
 
+  /// Second line of a delegate's row when the first line already shows the handle. {network} is X or GitHub.
+  ///
+  /// In en, this message translates to:
+  /// **'on {network}'**
+  String proxyOnNetwork(String network);
+
   /// A delegate's chosen answer when the round lists no label for it. {number} counts options from 1.
   ///
   /// In en, this message translates to:
   /// **'Option {number}'**
   String proxyOptionFallback(int number);
-
-  /// Input placeholder on the choose-delegates directory screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Post text, zvdk1 key, #number or fingerprint'**
-  String get proxyPasteHint;
-
-  /// Label or button on the choose-delegates directory screen. The paste or scan entry point.
-  ///
-  /// In en, this message translates to:
-  /// **'Paste or scan'**
-  String get proxyPasteLabel;
 
   /// Message on the delegator's status, progress and error text and the round screen's delegation section.
   ///
@@ -15416,18 +15488,6 @@ abstract class AppLocalizations {
   /// **'Enter a share for each delegate.'**
   String get proxyPercentRequired;
 
-  /// Footer of the choose-delegates directory screen: how many of at most 8 delegates are chosen.
-  ///
-  /// In en, this message translates to:
-  /// **'{count} of 8 chosen'**
-  String proxyPickerCount(int count);
-
-  /// Footer of the choose-delegates directory screen once 8 delegates, the most allowed, are chosen.
-  ///
-  /// In en, this message translates to:
-  /// **'{count} of 8 chosen. You can choose up to 8 delegates.'**
-  String proxyPickerCountFull(int count);
-
   /// Message on the choose-delegates directory screen and the split screen, where the user divides voting power between delegates.
   ///
   /// In en, this message translates to:
@@ -15445,18 +15505,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your delegate can\'t see who you are, and your amount isn\'t published. Results show only totals per option, never your delegate\'s total, and your ZEC follows your delegate\'s public ballot. If nobody voted directly for an option your delegate picked, results can sometimes reveal your delegate\'s total, and with it your amount if you\'re their only delegator. Results never reveal who you are.'**
   String get proxyPrivacy;
-
-  /// Title on a delegate's profile screen and the mobile delegator screens.
-  ///
-  /// In en, this message translates to:
-  /// **'Delegate'**
-  String get proxyProfileTitle;
-
-  /// Message on a delegate's profile screen.
-  ///
-  /// In en, this message translates to:
-  /// **'This delegate isn\'t loaded any more. Go back and find them again.'**
-  String get proxyProfileUnavailable;
 
   /// Title on the vote status screen.
   ///
@@ -15488,11 +15536,11 @@ abstract class AppLocalizations {
   /// **'This wallet\'s voting authorization can\'t carry a delegation right now. Nothing was sent.'**
   String get proxyRegistrationUnusable;
 
-  /// Label or button on a delegate's profile screen.
+  /// Button on the split screen that drops the drafted delegation and returns to the round's questions. Nothing was sent yet.
   ///
   /// In en, this message translates to:
-  /// **'Remove from delegation'**
-  String get proxyRemoveFromDelegationLabel;
+  /// **'Remove delegation'**
+  String get proxyRemoveDelegationLabel;
 
   /// Message on the round screen's delegation section.
   ///
@@ -15530,7 +15578,7 @@ abstract class AppLocalizations {
   /// **'Reviewed'**
   String get proxyReviewedLabel;
 
-  /// Label or button on the choose-delegates directory screen and the delegate key import screen.
+  /// Label or button on the delegate key import screen.
   ///
   /// In en, this message translates to:
   /// **'Scan'**
@@ -15545,13 +15593,13 @@ abstract class AppLocalizations {
   /// Input placeholder on the choose-delegates directory screen.
   ///
   /// In en, this message translates to:
-  /// **'X or GitHub handle'**
+  /// **'Search by name or handle'**
   String get proxySearchHint;
 
   /// Label or button on the choose-delegates directory screen.
   ///
   /// In en, this message translates to:
-  /// **'Search by handle'**
+  /// **'Search Vizor\'s list'**
   String get proxySearchLabel;
 
   /// Label or button on the split screen, where the user divides voting power between delegates.

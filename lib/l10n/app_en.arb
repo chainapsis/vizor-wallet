@@ -11645,17 +11645,17 @@
   "@proxyAddDelegateLabel": {
     "description": "Label or button on the split screen, where the user divides voting power between delegates."
   },
-  "proxyAddLabel": "Add",
-  "@proxyAddLabel": {
-    "description": "Label or button on the choose-delegates directory screen."
+  "proxyAddDialogBody": "For someone who isn't on Vizor's list. Enter their X or GitHub handle, or paste their delegate key.",
+  "@proxyAddDialogBody": {
+    "description": "Explanation at the top of the dialog that adds a delegate who isn't on Vizor's list."
   },
-  "proxyAddToDelegationLabel": "Add to delegation",
-  "@proxyAddToDelegationLabel": {
-    "description": "Label or button on a delegate's profile screen."
+  "proxyAddDialogTitle": "Add a delegate",
+  "@proxyAddDialogTitle": {
+    "description": "Title of the dialog that adds a delegate who isn't on Vizor's list."
   },
-  "proxyAddedLabel": "Added",
-  "@proxyAddedLabel": {
-    "description": "Label or button on the choose-delegates directory screen."
+  "proxyAddUnlistedLabel": "Add someone not on the list",
+  "@proxyAddUnlistedLabel": {
+    "description": "Quiet button under Vizor's list on the choose-delegates screen. Opens a dialog to add a delegate Vizor hasn't reviewed."
   },
   "proxyAllocationTitle": "Split your voting power",
   "@proxyAllocationTitle": {
@@ -11733,13 +11733,29 @@
   "@proxyCannotVerify": {
     "description": "Message on delegate mode status text and the delegator's status, progress and error text and the round screen's delegation section and the vote review's delegation section."
   },
-  "proxyChangeDelegationLabel": "Change",
-  "@proxyChangeDelegationLabel": {
-    "description": "Label or button on the round screen's delegation section."
-  },
   "proxyCheckingDelegates": "Checking your delegates on the voting chain.",
   "@proxyCheckingDelegates": {
     "description": "Message on the vote review's delegation section."
+  },
+  "proxyChosenCount": "{count} chosen",
+  "@proxyChosenCount": {
+    "description": "Footer of the choose-delegates screen, beside the chosen delegates' pictures: how many are chosen.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "proxyChosenFull": "{count} chosen, the most you can",
+  "@proxyChosenFull": {
+    "description": "Footer of the choose-delegates screen once the most delegates allowed (8) are chosen.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "8"
+      }
+    }
   },
   "proxyClosingSoon": "Voting ends in {timeLeft}. Your delegates may not have time to vote.",
   "@proxyClosingSoon": {
@@ -11779,6 +11795,24 @@
   "@proxyDelegateIntroPublicVotes": {
     "description": "Message on the delegate mode dashboard."
   },
+  "proxyDelegateVoteBody": "Let people you trust answer for you.",
+  "@proxyDelegateVoteBody": {
+    "description": "Line under the round screen's 'Delegate your vote' card title."
+  },
+  "proxyDelegateVoteTitle": "Delegate your vote",
+  "@proxyDelegateVoteTitle": {
+    "description": "Title of the round screen's delegation card before any delegate is chosen. The whole card opens the choose-delegates screen."
+  },
+  "proxyDelegatedAll": "Delegated all {total}",
+  "@proxyDelegatedAll": {
+    "description": "Title of the round screen's delegation card after a delegation of all the voting power was submitted. {total} is a ZEC amount.",
+    "placeholders": {
+      "total": {
+        "type": "String",
+        "example": "50 ZEC"
+      }
+    }
+  },
   "proxyDelegatedLabel": "Delegated",
   "@proxyDelegatedLabel": {
     "description": "Label or button on the voting round list. The poll list's status for such a round."
@@ -11801,6 +11835,44 @@
       }
     }
   },
+  "proxyDelegatedPart": "Delegated {delegated} of {total}",
+  "@proxyDelegatedPart": {
+    "description": "Title of the round screen's delegation card after the delegation was submitted. {delegated} is a number of ZEC and {total} a ZEC amount, as in 35 of 50 ZEC.",
+    "placeholders": {
+      "delegated": {
+        "type": "String",
+        "example": "35"
+      },
+      "total": {
+        "type": "String",
+        "example": "50 ZEC"
+      }
+    }
+  },
+  "proxyDelegatingAll": "Delegating all {total}",
+  "@proxyDelegatingAll": {
+    "description": "Title of the round screen's delegation card when the chosen delegates take all of the voting power, before it is submitted. {total} is a ZEC amount.",
+    "placeholders": {
+      "total": {
+        "type": "String",
+        "example": "50 ZEC"
+      }
+    }
+  },
+  "proxyDelegatingPart": "Delegating {delegated} of {total}",
+  "@proxyDelegatingPart": {
+    "description": "Title of the round screen's delegation card once delegates are chosen but not yet submitted. {delegated} is a number of ZEC and {total} a ZEC amount, as in 35 of 50 ZEC.",
+    "placeholders": {
+      "delegated": {
+        "type": "String",
+        "example": "35"
+      },
+      "total": {
+        "type": "String",
+        "example": "50 ZEC"
+      }
+    }
+  },
   "proxyDelegatingStep": "Delegating to {handles}",
   "@proxyDelegatingStep": {
     "description": "Progress step while a delegation is sent. {handles} names the delegates, such as @a and @b.",
@@ -11811,11 +11883,45 @@
       }
     }
   },
+  "proxyDelegatingTo": "Delegating to {names}",
+  "@proxyDelegatingTo": {
+    "description": "Title of the round screen's delegation card while the chosen delegates' shares are not set yet. {names} is a list of delegate names such as @alice and @bob.",
+    "placeholders": {
+      "names": {
+        "type": "String",
+        "example": "@alice and @bob"
+      }
+    }
+  },
   "proxyDelegationConfirmed": "Your delegation was sent and can't be changed.",
   "@proxyDelegationConfirmed": {
     "description": "Message on the vote confirmation screen. The vote confirmation for a ballot the delegates answer entirely."
   },
-  "proxyDirectorySubtitle": "Pick up to 8 delegates. Search for others by their exact handle, or paste their post, key, number or fingerprint.",
+  "proxyDelegationSplit": "{parts}.",
+  "@proxyDelegationSplit": {
+    "description": "Line under the round screen's delegation card title when the delegates take everything. {parts} lists each delegate's amount, for example 25 ZEC to @alice and 25 ZEC to @bob.",
+    "placeholders": {
+      "parts": {
+        "type": "String",
+        "example": "25 ZEC to @alice and 25 ZEC to @bob"
+      }
+    }
+  },
+  "proxyDelegationSplitWithRest": "{parts}. You answer for the other {kept}.",
+  "@proxyDelegationSplitWithRest": {
+    "description": "Line under the round screen's delegation card title when the user keeps a share. {parts} lists each delegate's amount, {kept} is the ZEC amount the user answers for.",
+    "placeholders": {
+      "parts": {
+        "type": "String",
+        "example": "20 ZEC to @alice and 15 ZEC to @bob"
+      },
+      "kept": {
+        "type": "String",
+        "example": "15 ZEC"
+      }
+    }
+  },
+  "proxyDirectorySubtitle": "Pick up to 8 delegates. Everyone here was reviewed by Vizor.",
   "@proxyDirectorySubtitle": {
     "description": "Message on the choose-delegates directory screen."
   },
@@ -11827,13 +11933,23 @@
   "@proxyFinality": {
     "description": "Message on the vote review's delegation section."
   },
-  "proxyFindLabel": "Find",
-  "@proxyFindLabel": {
-    "description": "Label or button on the choose-delegates directory screen."
-  },
   "proxyHandedOffLabel": "Sent",
   "@proxyHandedOffLabel": {
     "description": "Label or button on the delegator's status, progress and error text."
+  },
+  "proxyHandleOnNetwork": "@{handle} on {network}",
+  "@proxyHandleOnNetwork": {
+    "description": "Second line of a delegate's row, for example @alice on X. {network} is X or GitHub.",
+    "placeholders": {
+      "handle": {
+        "type": "String",
+        "example": "alice"
+      },
+      "network": {
+        "type": "String",
+        "example": "X"
+      }
+    }
   },
   "proxyHasNotVotedYet": "{name} hasn't voted yet",
   "@proxyHasNotVotedYet": {
@@ -11865,21 +11981,35 @@
   "@proxyKeptShareUnanswered": {
     "description": "Message on the delegator's status, progress and error text. Commit refused because the kept share's answers were not recorded. The submit records them first, so this only shows for a bug."
   },
-  "proxyKeptToAnswer": "{amount} for you to answer",
-  "@proxyKeptToAnswer": {
-    "description": "The kept part of the round screen's split: the ZEC the user still votes on directly.",
+  "proxyListCount": "{count, plural, =1{1 delegate} other{{count} delegates}}",
+  "@proxyListCount": {
+    "description": "How many delegates Vizor's list holds, beside the list label on the choose-delegates screen.",
     "placeholders": {
-      "amount": {
-        "type": "String",
-        "example": "4 ZEC"
+      "count": {
+        "type": "int",
+        "example": "18"
       }
     }
   },
-  "proxyLetDelegateVoteLabel": "Let a delegate vote some or all",
-  "@proxyLetDelegateVoteLabel": {
-    "description": "Label or button on the round screen's delegation section. The round screen's way into choosing delegates."
+  "proxyListLabel": "Vizor's list",
+  "@proxyListLabel": {
+    "description": "Small label above the list of delegates Vizor reviewed, on the choose-delegates screen."
   },
-  "proxyListUnavailable": "Vizor's delegate list isn't available right now. You can still search by handle or paste a delegate's key.",
+  "proxyListMatches": "{matches} of {total}",
+  "@proxyListMatches": {
+    "description": "Beside the list label while a search filters Vizor's list: how many delegates match, of how many.",
+    "placeholders": {
+      "matches": {
+        "type": "int",
+        "example": "2"
+      },
+      "total": {
+        "type": "int",
+        "example": "18"
+      }
+    }
+  },
+  "proxyListUnavailable": "Vizor's delegate list isn't available right now. You can still add a delegate by their handle or key.",
   "@proxyListUnavailable": {
     "description": "Message on the choose-delegates directory screen."
   },
@@ -11901,9 +12031,13 @@
   "@proxyLookupNotFound": {
     "description": "Message on the choose-delegates directory screen."
   },
-  "proxyLookupUnrecognized": "That isn't a marker post, a delegate key, a number or a fingerprint.",
-  "@proxyLookupUnrecognized": {
-    "description": "Message on the choose-delegates directory screen."
+  "proxyManualFieldHint": "X or GitHub handle, or zvdk1...",
+  "@proxyManualFieldHint": {
+    "description": "Placeholder in the add-a-delegate dialog's field. zvdk1 is the start of a delegate key and stays as is."
+  },
+  "proxyManualFieldLabel": "Handle or delegate key",
+  "@proxyManualFieldLabel": {
+    "description": "Label of the field in the add-a-delegate dialog. It takes an X or GitHub handle or a pasted delegate key."
   },
   "proxyMismatch": "The details Vizor showed for {name} didn't match the voting chain, so you can't delegate to them.",
   "@proxyMismatch": {
@@ -11963,6 +12097,16 @@
   "@proxyNoDelegation": {
     "description": "Vote status message from the voting job. A Submit retried on a round with no delegation to send."
   },
+  "proxyNoListMatches": "No one on Vizor's list matches \"{query}\".",
+  "@proxyNoListMatches": {
+    "description": "Shown in place of the list when a search on the choose-delegates screen matches nobody. {query} is what the user typed.",
+    "placeholders": {
+      "query": {
+        "type": "String",
+        "example": "carol"
+      }
+    }
+  },
   "proxyNoSearchResults": "No delegate has the handle \"{query}\". Search needs the exact handle.",
   "@proxyNoSearchResults": {
     "description": "Choose-delegates directory screen, when a handle search finds nothing. {query} is what the user typed.",
@@ -12007,6 +12151,16 @@
   "@proxyNothingLeftToVote": {
     "description": "Message on the vote review screen."
   },
+  "proxyOnNetwork": "on {network}",
+  "@proxyOnNetwork": {
+    "description": "Second line of a delegate's row when the first line already shows the handle. {network} is X or GitHub.",
+    "placeholders": {
+      "network": {
+        "type": "String",
+        "example": "GitHub"
+      }
+    }
+  },
   "proxyOptionFallback": "Option {number}",
   "@proxyOptionFallback": {
     "description": "A delegate's chosen answer when the round lists no label for it. {number} counts options from 1.",
@@ -12016,14 +12170,6 @@
         "example": "2"
       }
     }
-  },
-  "proxyPasteHint": "Post text, zvdk1 key, #number or fingerprint",
-  "@proxyPasteHint": {
-    "description": "Input placeholder on the choose-delegates directory screen."
-  },
-  "proxyPasteLabel": "Paste or scan",
-  "@proxyPasteLabel": {
-    "description": "Label or button on the choose-delegates directory screen. The paste or scan entry point."
   },
   "proxyPaused": "Delegating is paused for this round. Delegations already made aren't affected, and you can still vote.",
   "@proxyPaused": {
@@ -12041,26 +12187,6 @@
   "@proxyPercentRequired": {
     "description": "Message on the delegator's status, progress and error text."
   },
-  "proxyPickerCount": "{count} of 8 chosen",
-  "@proxyPickerCount": {
-    "description": "Footer of the choose-delegates directory screen: how many of at most 8 delegates are chosen.",
-    "placeholders": {
-      "count": {
-        "type": "int",
-        "example": "3"
-      }
-    }
-  },
-  "proxyPickerCountFull": "{count} of 8 chosen. You can choose up to 8 delegates.",
-  "@proxyPickerCountFull": {
-    "description": "Footer of the choose-delegates directory screen once 8 delegates, the most allowed, are chosen.",
-    "placeholders": {
-      "count": {
-        "type": "int",
-        "example": "8"
-      }
-    }
-  },
   "proxyPickerFull": "You can choose up to 8 delegates.",
   "@proxyPickerFull": {
     "description": "Message on the choose-delegates directory screen and the split screen, where the user divides voting power between delegates."
@@ -12072,14 +12198,6 @@
   "proxyPrivacy": "Your delegate can't see who you are, and your amount isn't published. Results show only totals per option, never your delegate's total, and your ZEC follows your delegate's public ballot. If nobody voted directly for an option your delegate picked, results can sometimes reveal your delegate's total, and with it your amount if you're their only delegator. Results never reveal who you are.",
   "@proxyPrivacy": {
     "description": "Message on the vote review's delegation section."
-  },
-  "proxyProfileTitle": "Delegate",
-  "@proxyProfileTitle": {
-    "description": "Title on a delegate's profile screen and the mobile delegator screens."
-  },
-  "proxyProfileUnavailable": "This delegate isn't loaded any more. Go back and find them again.",
-  "@proxyProfileUnavailable": {
-    "description": "Message on a delegate's profile screen."
   },
   "proxyProgressTitle": "Delegating",
   "@proxyProgressTitle": {
@@ -12101,9 +12219,9 @@
   "@proxyRegistrationUnusable": {
     "description": "Message on the delegator's status, progress and error text. Preview or commit refused: a bundle's registration can't carry a proxy batch, so nothing was committed."
   },
-  "proxyRemoveFromDelegationLabel": "Remove from delegation",
-  "@proxyRemoveFromDelegationLabel": {
-    "description": "Label or button on a delegate's profile screen."
+  "proxyRemoveDelegationLabel": "Remove delegation",
+  "@proxyRemoveDelegationLabel": {
+    "description": "Button on the split screen that drops the drafted delegation and returns to the round's questions. Nothing was sent yet."
   },
   "proxyResultsNote": "These totals include the ZEC you delegated. The round shows how your delegates voted.",
   "@proxyResultsNote": {
@@ -12131,17 +12249,17 @@
   },
   "proxyScanLabel": "Scan",
   "@proxyScanLabel": {
-    "description": "Label or button on the choose-delegates directory screen and the delegate key import screen."
+    "description": "Label or button on the delegate key import screen."
   },
   "proxyScanTitle": "Scan a delegate's QR code",
   "@proxyScanTitle": {
     "description": "Title on the choose-delegates directory screen."
   },
-  "proxySearchHint": "X or GitHub handle",
+  "proxySearchHint": "Search by name or handle",
   "@proxySearchHint": {
     "description": "Input placeholder on the choose-delegates directory screen."
   },
-  "proxySearchLabel": "Search by handle",
+  "proxySearchLabel": "Search Vizor's list",
   "@proxySearchLabel": {
     "description": "Label or button on the choose-delegates directory screen."
   },

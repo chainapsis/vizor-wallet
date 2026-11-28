@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../../../core/formatting/date_format.dart';
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart' show AppLocalizations;
 import '../voting_message.dart';
 import '../voting_flow_models.dart';
@@ -292,6 +293,11 @@ String _optionLabel(
 String formatProxyBallots(BigInt ballots) =>
     formatVotingPower(proxyBallotsToZatoshi(ballots));
 
+/// Formats ballots as a bare number, for example `12.5`, for a phrase that
+/// names ZEC once.
+String formatProxyBallotsNumber(BigInt ballots) =>
+    ZecAmount.fromZatoshi(proxyBallotsToZatoshi(ballots)).pretty().amountText;
+
 /// Formats basis points as a percentage, for example `33.33%`.
 String formatProxyPercent(int bps) {
   final whole = bps ~/ 100;
@@ -409,6 +415,32 @@ List<int> proxyEvenSplit(int count) {
   return [for (var i = 0; i < count; i++) base + (i < extra ? 1 : 0)];
 }
 
+/// What a person typed as a handle: trimmed, without a leading `@`.
+String proxyHandleQuery(String text) {
+  final trimmed = text.trim();
+  return trimmed.startsWith('@') ? trimmed.substring(1) : trimmed;
+}
+
+/// The reviewed delegates on Vizor's [listed] that [query] matches by name
+/// or handle, ignoring case, in list order. A listed delegate whose entry
+/// no longer matches its row, or that is suspended or retired, is left out:
+/// the add dialog still finds it, with its warning.
+List<ProxyDelegateListing> proxyListMatches(
+  List<ProxyDelegateListing> listed,
+  String query,
+) {
+  final q = proxyHandleQuery(query).toLowerCase();
+  return [
+    for (final entry in listed)
+      if (entry.reviewed &&
+          !entry.blocked &&
+          (q.isEmpty ||
+              entry.handle.contains(q) ||
+              (entry.displayName?.toLowerCase().contains(q) ?? false)))
+        entry,
+  ];
+}
+
 // The delegation as one way of answering the ballot (ERRATA item 10): the
 // round's questions, its review, its progress and its status show it.
 
@@ -506,28 +538,70 @@ ProxyBallotDelegation? proxyBallotDelegationFor({
   );
 }
 
-/// The round screen's split line, for example
-/// `4 ZEC to @alice · 4 ZEC for you to answer`. Amounts show once the
-/// planner has previewed them.
-String proxyBallotSplitText(
+/// The round card's title for [delegation], for example `Delegating 35 of
+/// 50 ZEC`, or `Delegated` once committed. Before the planner has
+/// previewed the amounts it names the delegates instead.
+String proxyDelegationTitle(
   AppLocalizations l10n,
   ProxyBallotDelegation delegation,
 ) {
-  final parts = [
-    for (final delegate in delegation.delegates)
-      proxySplitToCopy(
-        l10n,
-        amount: delegate.ballots == null
-            ? null
-            : formatProxyBallots(delegate.ballots!),
-        name: delegate.name,
-      ),
-  ];
-  final kept = delegation.keptBallots;
-  if (!delegation.everythingDelegated && kept != null && kept > BigInt.zero) {
-    parts.add(l10n.proxyKeptToAnswer(formatProxyBallots(kept)));
+  final amounts = _plannedAmounts(delegation);
+  if (amounts == null) {
+    return l10n.proxyDelegatingTo(proxyNamesPhrase(l10n, delegation.names));
   }
-  return parts.join(' · ');
+  final (:delegated, :kept) = amounts;
+  final total = formatProxyBallots(delegated + kept);
+  final all = kept == BigInt.zero;
+  return switch ((delegation.committed, all)) {
+    (false, true) => l10n.proxyDelegatingAll(total),
+    (false, false) => l10n.proxyDelegatingPart(
+      formatProxyBallotsNumber(delegated),
+      total,
+    ),
+    (true, true) => l10n.proxyDelegatedAll(total),
+    (true, false) => l10n.proxyDelegatedPart(
+      formatProxyBallotsNumber(delegated),
+      total,
+    ),
+  };
+}
+
+/// The round card's line under the title, for example `20 ZEC to @alice and
+/// 15 ZEC to @bob. You answer for the other 15 ZEC.` Null until the planner
+/// has previewed the amounts.
+String? proxyDelegationSplitText(
+  AppLocalizations l10n,
+  ProxyBallotDelegation delegation,
+) {
+  final amounts = _plannedAmounts(delegation);
+  if (amounts == null) return null;
+  final parts = proxyNamesPhrase(l10n, [
+    for (final delegate in delegation.delegates)
+      l10n.proxySplitTo(formatProxyBallots(delegate.ballots!), delegate.name),
+  ]);
+  return amounts.kept == BigInt.zero
+      ? l10n.proxyDelegationSplit(parts)
+      : l10n.proxyDelegationSplitWithRest(
+          parts,
+          formatProxyBallots(amounts.kept),
+        );
+}
+
+/// The delegated and kept ballots once every amount is known.
+({BigInt delegated, BigInt kept})? _plannedAmounts(
+  ProxyBallotDelegation delegation,
+) {
+  final kept = delegation.keptBallots;
+  if (kept == null || delegation.delegates.any((d) => d.ballots == null)) {
+    return null;
+  }
+  return (
+    delegated: delegation.delegates.fold(
+      BigInt.zero,
+      (sum, delegate) => sum + delegate.ballots!,
+    ),
+    kept: kept,
+  );
 }
 
 /// Where a delegation stands for the progress screen: zcash_voting's live
