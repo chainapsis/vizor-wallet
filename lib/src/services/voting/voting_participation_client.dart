@@ -69,6 +69,95 @@ class VotingParticipationResult {
       );
 }
 
+/// Largest answer the participation reader takes from a vote chain RPC
+/// host: its own 8 MiB evidence cap (contracts-v1 section 15.1), which a
+/// header and validators from a chain with many validators can approach.
+const kVotingParticipationMaxResponseBytes = 8 * 1024 * 1024;
+
+/// The vote chain RPC host Vizor ships for [network]: the participation
+/// check reads it, and proxy registry proofs fall back to it. Null on
+/// regtest, whose harness supplies its own.
+Uri? builtInVotingRpcEndpoint(String network) => switch (network) {
+  'main' => Uri.parse('https://vote-rpc-primary.valargroup.org'),
+  'test' => Uri.parse('https://stage.vote-rpc-primary.valargroup.org'),
+  _ => null,
+};
+
+/// GETs one vote chain RPC [path] with an optional [query], as one caller
+/// routes and retries it.
+typedef VoteRpcGet =
+    Future<Map<String, dynamic>> Function(
+      String path, [
+      Map<String, String>? query,
+    ]);
+
+/// What the participation reader verifies for vote store keys: a signed
+/// header at the host's tip, its validators, and a proven `abci_query` per
+/// key at the height that header commits, in key order, read four at a time.
+///
+/// With [skipFailedQueries], a key whose read fails is left out of [keys]
+/// and its query dropped; otherwise the first failure throws.
+/// [continueGroups], if given, runs before each group of four and stops the
+/// reads once it returns false.
+Future<
+  ({
+    Map<String, dynamic> commit,
+    Map<String, dynamic> validators,
+    List<String> keys,
+    List<Map<String, dynamic>> queries,
+  })
+>
+fetchVoteStoreEvidence(
+  List<String> keys, {
+  required VoteRpcGet get,
+  bool skipFailedQueries = false,
+  bool Function()? continueGroups,
+}) async {
+  final commit = await get('/commit');
+  final header =
+      ((commit['result'] as Map)['signed_header'] as Map)['header'] as Map;
+  final height = int.parse(header['height'] as String);
+  if (height <= 1) throw StateError('Voting chain is not ready');
+  final validators = await get('/validators', {
+    'height': '$height',
+    'per_page': '100',
+  });
+  Future<Map<String, dynamic>> read(String key) => get('/abci_query', {
+    'path': '"/store/vote/key"',
+    'data': '0x$key',
+    'height': '${height - 1}',
+    'prove': 'true',
+  });
+  final queries = <Map<String, dynamic>>[];
+  final queryKeys = <String>[];
+  for (var start = 0; start < keys.length; start += 4) {
+    if (continueGroups?.call() == false) break;
+    final group = keys.skip(start).take(4).toList();
+    final results = await Future.wait(
+      group.map((key) async {
+        if (!skipFailedQueries) return read(key);
+        try {
+          return await read(key);
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
+    for (var i = 0; i < group.length; i++) {
+      if (results[i] case final result?) {
+        queryKeys.add(group[i]);
+        queries.add(result);
+      }
+    }
+  }
+  return (
+    commit: commit,
+    validators: validators,
+    keys: queryKeys,
+    queries: queries,
+  );
+}
+
 class VotingParticipationClient {
   VotingParticipationClient(
     this.http,
@@ -138,8 +227,7 @@ class VotingParticipationClient {
     bool Function() isCurrent,
   ) async {
     final endpoint = switch (context.network) {
-      'main' => Uri.parse('https://vote-rpc-primary.valargroup.org'),
-      'test' => Uri.parse('https://stage.vote-rpc-primary.valargroup.org'),
+      'main' || 'test' => builtInVotingRpcEndpoint(context.network)!,
       'regtest'
           when regtestEndpoint != null &&
               regtestEndpoint!.scheme == 'http' &&
@@ -186,7 +274,7 @@ class VotingParticipationClient {
           throw const _TransientParticipationResponse();
         }
         if (response.statusCode != 200 ||
-            response.bodyBytes.length > 128 * 1024) {
+            response.bodyBytes.length > kVotingParticipationMaxResponseBytes) {
           throw StateError('Voting participation response unavailable');
         }
         return response.decodeJsonObject();
@@ -273,50 +361,23 @@ class VotingParticipationClient {
       // observations. No chain requests are needed for already-known notes.
       return finish({'queryKeys': <String>[]});
     }
-    final commit = await get('/commit');
-    final header =
-        ((commit['result'] as Map)['signed_header'] as Map)['header'] as Map;
-    final height = int.parse(header['height'] as String);
-    if (height <= 1) throw StateError('Voting chain is not ready');
-    final validators = await get('/validators', {
-      'height': '$height',
-      'per_page': '100',
-    });
-    final queries = <Map<String, dynamic>>[];
-    final queryKeys = <String>[];
     // Preserve successful reads even when a sibling request fails. Rust
     // validates the common header once and each proof independently.
-    for (var start = 0; start < keys.length; start += 4) {
-      guard();
-      if (!clock().isBefore(deadline)) break;
-      final group = keys.skip(start).take(4).toList();
-      final results = await Future.wait(
-        group.map((key) async {
-          try {
-            return await get('/abci_query', {
-              'path': '"/store/vote/key"',
-              'data': '0x$key',
-              'height': '${height - 1}',
-              'prove': 'true',
-            });
-          } catch (_) {
-            return null;
-          }
-        }),
-      );
-      for (var i = 0; i < group.length; i++) {
-        if (results[i] != null) {
-          queryKeys.add(group[i]);
-          queries.add(results[i]!);
-        }
-      }
-    }
+    final evidence = await fetchVoteStoreEvidence(
+      keys,
+      get: get,
+      skipFailedQueries: true,
+      continueGroups: () {
+        guard();
+        return clock().isBefore(deadline);
+      },
+    );
     guard();
     return finish({
-      'commit': commit,
-      'validators': validators,
-      'queries': queries,
-      'queryKeys': queryKeys,
+      'commit': evidence.commit,
+      'validators': evidence.validators,
+      'queries': evidence.queries,
+      'queryKeys': evidence.keys,
     });
   }
 }

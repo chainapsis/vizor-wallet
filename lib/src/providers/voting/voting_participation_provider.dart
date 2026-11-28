@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/voting/voting_poll_ordering.dart';
+import '../../features/voting/voting_resume_plan.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../rust/api/voting.dart' as rust;
 import '../../services/voting/resolved_voting_config_extensions.dart';
@@ -337,15 +338,20 @@ class VotingParticipationCoordinator {
                 !identical(ref.read(votingConfigProvider).value, config)) {
               return;
             }
+            // Delegates took every bundle's weight: nothing is left to vote.
+            final nothingLeftToVote = localPlan.nothingLeftToVote;
             final actionable =
-                localPlan.blockingRecovery ||
-                (localPlan.pendingRecovery && !localPlan.completedForDisplay) ||
-                (!localPlan.needsDraftSetup &&
-                    localPlan.openProposals.isNotEmpty);
+                !nothingLeftToVote &&
+                (localPlan.blockingRecovery ||
+                    (roundPlanHasPendingRecovery(localPlan) &&
+                        !localPlan.completedForDisplay) ||
+                    (!localPlan.needsDraftSetup &&
+                        localPlan.openProposals.isNotEmpty));
             final completed =
-                localPlan.completedForDisplay &&
-                localPlan.openProposals.isEmpty &&
-                !localPlan.blockingRecovery;
+                nothingLeftToVote ||
+                (localPlan.completedForDisplay &&
+                    localPlan.openProposals.isEmpty &&
+                    !localPlan.blockingRecovery);
             if (actionable || completed) {
               await cache.recordPlan(factKey, localPlan);
               if (!current()) return;

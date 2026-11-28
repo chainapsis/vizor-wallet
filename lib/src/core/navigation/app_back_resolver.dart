@@ -66,6 +66,9 @@ abstract final class AppBackResolver {
     '/voting/poll/:roundId/status': (l) => l.appBackStatus,
     '/voting/poll/:roundId/submitted': (l) => l.appBackSubmitted,
     '/voting/poll/:roundId/results': (l) => l.commonResults,
+    '/voting/poll/:roundId/delegates': (l) => l.appBackDelegates,
+    '/voting/poll/:roundId/delegates/:delegateIndex': (l) => l.appBackDelegate,
+    '/voting/poll/:roundId/delegate': (l) => l.appBackSplit,
     '/voting/keystone/scan': (_) => 'Keystone', // l10n-ignore: device name
   };
 

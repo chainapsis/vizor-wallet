@@ -10,6 +10,8 @@ import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dar
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
+    as rust_wire;
 import '../../features/voting/round_plan_test_utils.dart';
 
 const roundId =
@@ -324,6 +326,85 @@ void main() {
       expect(visible(), true);
     },
   );
+
+  test('a round with nothing left to vote hides even while its delegations '
+      'still deliver shares', () async {
+    await seed([round()]);
+    await cache.recordParticipation(factKey, 500, unused);
+    expect(visible(), true);
+    await cache.recordPlan(
+      factKey,
+      apiRoundPlan(
+        roundId: roundId,
+        pendingRecovery: true,
+        blockingRecovery: true,
+        nextSteps: const [
+          rust_wire.NextStepView(
+            kind: rust_wire.NextStepKind.submitShares,
+            bundleIndex: 0,
+            proposalId: 0,
+            choice: 0,
+            shareIndex: 3,
+            dcSlot: 0,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: false,
+        fullyDelegatedBundles: const [0],
+        nothingLeftToVote: true,
+      ),
+    );
+    expect(cache.fact(factKey).progress, VotingHomeProgress.completed);
+    expect(visible(), false);
+  });
+
+  test('background tracking of a DC share leaves the label as tracking of a '
+      'vote share does, with the same question still open', () async {
+    await seed([round()]);
+    Future<VotingHomeProgress> labelWhileTracking(
+      rust_wire.NextStepView tracked, {
+      required bool voted,
+    }) async {
+      await cache.recordPlan(
+        factKey,
+        apiRoundPlan(
+          roundId: roundId,
+          pendingRecovery: true,
+          nextSteps: [tracked],
+          openProposals: Uint32List.fromList([2]),
+          allDecided: false,
+          hasUnconfirmedShares: true,
+          completedVoteArtifact: voted,
+          needsDraftSetup: false,
+        ),
+      );
+      return cache.fact(factKey).progress;
+    }
+
+    final voteShare = await labelWhileTracking(
+      const rust_wire.NextStepView(
+        kind: rust_wire.NextStepKind.confirmShare,
+        bundleIndex: 0,
+        proposalId: 1,
+        choice: 0,
+        shareIndex: 0,
+      ),
+      voted: true,
+    );
+    final dcShare = await labelWhileTracking(
+      const rust_wire.NextStepView(
+        kind: rust_wire.NextStepKind.confirmShare,
+        bundleIndex: 0,
+        proposalId: 0,
+        choice: 0,
+        shareIndex: 0,
+        dcSlot: 0,
+      ),
+      voted: false,
+    );
+    expect(voteShare, VotingHomeProgress.available);
+    expect(dcShare, voteShare);
+  });
 
   test('six-hour successful snapshot and facts survive restart', () async {
     await seed([round()]);

@@ -589,7 +589,8 @@ class _MobilePollStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final voted = state == _PollCardState.voted;
+    final voted =
+        state == _PollCardState.voted || state == _PollCardState.delegated;
     final displayedDate = dateLabel;
     final statusColor = voted
         ? context.colors.text.positiveStrong
@@ -874,7 +875,8 @@ _PollDateLabel? _roundDateLabel(
     return switch (state) {
       _PollCardState.inProgress ||
       _PollCardState.active ||
-      _PollCardState.voted => _PollDateLabel(l10n.votingPollCloses(date)),
+      _PollCardState.voted ||
+      _PollCardState.delegated => _PollDateLabel(l10n.votingPollCloses(date)),
       _PollCardState.tallying || _PollCardState.closed => _PollDateLabel(
         l10n.votingPollClosed(date),
         mobileText: date,
@@ -894,6 +896,7 @@ String _statusLabel(AppLocalizations l10n, _PollCardState state) {
     _PollCardState.inProgress => l10n.commonInProgress,
     _PollCardState.active => l10n.votingStatusActive,
     _PollCardState.voted => l10n.votingStatusVoted,
+    _PollCardState.delegated => l10n.proxyDelegatedLabel,
     _PollCardState.tallying => l10n.votingStatusTallying,
     _PollCardState.closed => l10n.votingStatusClosed,
   };
@@ -901,7 +904,7 @@ String _statusLabel(AppLocalizations l10n, _PollCardState state) {
 
 String _statusIcon(_PollCardState state) {
   return switch (state) {
-    _PollCardState.voted => AppIcons.check,
+    _PollCardState.voted || _PollCardState.delegated => AppIcons.check,
     _ => AppIcons.time,
   };
 }
@@ -910,7 +913,8 @@ Color _statusBackground(_PollCardState state) {
   return switch (state) {
     _PollCardState.inProgress ||
     _PollCardState.active ||
-    _PollCardState.voted => const Color(0xFFECFDF3),
+    _PollCardState.voted ||
+    _PollCardState.delegated => const Color(0xFFECFDF3),
     _PollCardState.tallying => const Color(0xFFFFFAEB),
     _PollCardState.closed => const Color(0xFFF4F4F0),
   };
@@ -920,7 +924,8 @@ Color _statusBorder(_PollCardState state) {
   return switch (state) {
     _PollCardState.inProgress ||
     _PollCardState.active ||
-    _PollCardState.voted => const Color(0xFFABEFC6),
+    _PollCardState.voted ||
+    _PollCardState.delegated => const Color(0xFFABEFC6),
     _PollCardState.tallying => const Color(0xFFFEDF89),
     _PollCardState.closed => const Color(0xFFEBEBE6),
   };
@@ -930,7 +935,8 @@ Color _statusText(_PollCardState state) {
   return switch (state) {
     _PollCardState.inProgress ||
     _PollCardState.active ||
-    _PollCardState.voted => const Color(0xFF067647),
+    _PollCardState.voted ||
+    _PollCardState.delegated => const Color(0xFF067647),
     _PollCardState.tallying => const Color(0xFFB54708),
     _PollCardState.closed => const Color(0xFF716C5D),
   };
@@ -940,7 +946,7 @@ String _actionLabel(AppLocalizations l10n, _PollCardState state) {
   return switch (state) {
     _PollCardState.inProgress => l10n.commonResume,
     _PollCardState.active => l10n.navVote,
-    _PollCardState.voted => l10n.votingActionReview,
+    _PollCardState.voted || _PollCardState.delegated => l10n.votingActionReview,
     _PollCardState.tallying ||
     _PollCardState.closed => l10n.votingActionViewResults,
   };
@@ -951,12 +957,15 @@ AppButtonVariant _actionButtonVariant(_PollCardState state) {
     _PollCardState.inProgress ||
     _PollCardState.active => AppButtonVariant.primary,
     _PollCardState.voted ||
+    _PollCardState.delegated ||
     _PollCardState.tallying ||
     _PollCardState.closed => AppButtonVariant.secondary,
   };
 }
 
-enum _PollCardState { inProgress, active, voted, tallying, closed }
+/// A poll card's state; `delegated` is a round whose weight went entirely
+/// to proxy delegates.
+enum _PollCardState { inProgress, active, voted, delegated, tallying, closed }
 
 _PollCardState _pollCardState(VotingRoundView round) {
   return switch (votingPollListStatus(round.status)) {
@@ -965,6 +974,8 @@ _PollCardState _pollCardState(VotingRoundView round) {
           ? _PollCardState.inProgress
           : round.voted
           ? _PollCardState.voted
+          : round.delegated
+          ? _PollCardState.delegated
           : _PollCardState.active,
     VotingPollListStatus.tallying => _PollCardState.tallying,
     VotingPollListStatus.closed => _PollCardState.closed,

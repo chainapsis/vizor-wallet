@@ -3960,6 +3960,54 @@ void main() {
     expect(rust.keystoneDelegationRequestCalls, [0, 0]);
   });
 
+  test('hardware signing also signs the bundles its caller adds', () async {
+    // Bundle 1's first cast will sign its delegation once the ballot's
+    // intents are recorded, which the plan cannot list yet.
+    final rust = FakeVotingRustApi(bundleCount: 2);
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(bundleCount: 2),
+      roundPlan: apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List.fromList(const [7]),
+        allDecided: false,
+        delegationStatuses: const [
+          rust_wire.DelegationStatusView(
+            bundleIndex: 0,
+            phase: rust_wire.WorkflowPhaseView.prepared,
+            terminal: false,
+          ),
+          rust_wire.DelegationStatusView(
+            bundleIndex: 1,
+            phase: rust_wire.WorkflowPhaseView.confirmed,
+            terminal: false,
+          ),
+        ],
+      ),
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: recoveryApi,
+      accountIsHardware: true,
+      hotkeyStore: FakeVotingHotkeyStore(null),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareKeystoneSigning(alsoSign: const [1]);
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.keystoneSigning);
+    expect(
+      state.keystoneSigningRequests.map((request) => request.bundleIndex),
+      [0, 1],
+    );
+    expect(rust.keystoneDelegationRequestCalls, [0, 1]);
+  });
+
   test(
     'hardware voting surfaces setup errors without resetting durable state',
     () async {
@@ -5799,6 +5847,130 @@ void main() {
     },
   );
 
+  group('a run sleeping on a delayed share', () {
+    // The gated pass stands in for the driver's sleep until the earliest
+    // check time it saw, which can be days away. Shares added behind it can
+    // be due sooner.
+    late FakeVotingRustApi rust;
+    late FakeVotingRecoveryApi recoveryApi;
+    late VotingSubmissionSessionNotifier notifier;
+
+    setUp(() async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final delayedShare = FakeShareDelegationRecord(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 1,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 5)),
+        phase: rust_wire.WorkflowPhaseView.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 20 * 3600),
+        createdAt: BigInt.from(nowSeconds - 100),
+      );
+      rust = FakeVotingRustApi()..trackPendingSharesGate = Completer<void>();
+      recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          shareDelegations: [delayedShare],
+          unconfirmedShareDelegations: [delayedShare],
+        ),
+      );
+      final container = _sessionContainer(rust: rust, recoveryApi: recoveryApi);
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId);
+      await container.read(votingSubmissionSessionProvider(key).future);
+      notifier = container.read(votingSubmissionSessionProvider(key).notifier);
+      unawaited(notifier.startShareTracking());
+      await rust.trackPendingSharesStarted.future.timeout(
+        const Duration(seconds: 1),
+        onTimeout: () => throw StateError('share tracking did not start'),
+      );
+    });
+
+    test('is restarted when a cast adds shares', () async {
+      rust.scriptedRoundRuns.add([
+        roundRunReport(
+          plan: apiRoundPlan(
+            roundId: kRoundId,
+            pendingRecovery: false,
+            nextSteps: const [],
+            openProposals: Uint32List(0),
+            allDecided: true,
+          ),
+        ),
+      ]);
+
+      await notifier.castVotes(draftVotes: _singleProposalDrafts());
+      await _waitForShareTrackingSessionCount(rust, 2);
+
+      expect(rust.shareTrackingSessions.first.isCancelled, isTrue);
+    });
+
+    test('is restarted by a proxy drive only once it hands off a DC', () async {
+      const deliver = rust_wire.NextStepView(
+        kind: rust_wire.NextStepKind.submitShares,
+        bundleIndex: 0,
+        proposalId: 0,
+        choice: 0,
+        shareIndex: 0,
+        dcSlot: 0,
+      );
+      const confirm = rust_wire.NextStepView(
+        kind: rust_wire.NextStepKind.confirmShare,
+        bundleIndex: 0,
+        proposalId: 0,
+        choice: 0,
+        shareIndex: 0,
+        dcSlot: 0,
+      );
+      rust_wire.RoundPlanView planWith(rust_wire.NextStepView step) =>
+          apiRoundPlan(
+            roundId: kRoundId,
+            pendingRecovery: false,
+            nextSteps: [step],
+            openProposals: Uint32List(0),
+            allDecided: true,
+            delegationStatuses: const [
+              rust_wire.DelegationStatusView(
+                bundleIndex: 0,
+                phase: rust_wire.WorkflowPhaseView.confirmed,
+                terminal: false,
+              ),
+            ],
+          );
+      recoveryApi.roundPlan = planWith(deliver);
+      rust.scriptedRoundRuns.addAll([
+        [roundRunReport(plan: planWith(deliver))],
+        [
+          roundRunProgress(
+            kind: rust_wire.RoundDriveEventKind.stepFinished,
+            step: deliver,
+            disposition: rust_wire.RoundStepDispositionView.advanced,
+          ),
+          roundRunReport(plan: planWith(confirm)),
+        ],
+      ]);
+
+      // A cycle that hands off nothing, as most of the every-few-seconds
+      // cycles do. Restarting on it would poll helpers on every cycle.
+      await notifier.driveProxyDelegation();
+      await pumpEventQueue();
+      expect(rust.shareTrackingSessions, hasLength(1));
+      expect(rust.shareTrackingSessions.single.isCancelled, isFalse);
+
+      await notifier.driveProxyDelegation(
+        // The DC's shares are durably handed off once its step finishes.
+        onStepFinished: () => recoveryApi.roundPlan = planWith(confirm),
+      );
+      await _waitForShareTrackingSessionCount(rust, 2);
+
+      expect(rust.shareTrackingSessions.first.isCancelled, isTrue);
+    });
+  });
+
   test('provider disposal closes an in-flight share tracking handle', () async {
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final pendingShare = FakeShareDelegationRecord(
@@ -6051,6 +6223,40 @@ void main() {
       expect(rust.shareTrackingSessions, isEmpty);
     },
   );
+
+  test('focused confirmation asks nothing before the designated share '
+      'exists', () async {
+    // The SDK designates the immediate share from the choices before any
+    // cast, as when a proxy batch still holds the kept share's casts, and
+    // refuses to confirm a share it has no row for.
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 1),
+        roundPlan: apiRoundPlan(
+          roundId: kRoundId,
+          pendingRecovery: false,
+          nextSteps: const [],
+          openProposals: Uint32List.fromList(const [7]),
+          allDecided: false,
+          needsDraftSetup: false,
+          immediateShareKey: const rust_share_policy.ImmediateShareKey(
+            bundleIndex: 0,
+            proposalId: 7,
+            shareIndex: 0,
+          ),
+        ),
+      ),
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+
+    expect(await notifier.refreshImmediateShareConfirmation(), isFalse);
+    expect(rust.focusedShareConfirmationCalls, isEmpty);
+  });
 
   test(
     'a destructive drain waits for both tracking and a focused confirmation',
@@ -6899,6 +7105,56 @@ void main() {
       expect(rust.storedVoteTxHashes, ['0:7:vote-tx']);
     },
   );
+
+  test('a signerless cast that stops for a signature says so and keeps the '
+      'answers', () async {
+    // A cast that signs its bundle's delegation needs the voter's key, which
+    // the vote run does not carry. The run stops for it rather than casting.
+    final rust = FakeVotingRustApi();
+    final plan = apiRoundPlan(
+      roundId: kRoundId,
+      pendingRecovery: true,
+      nextSteps: const [
+        rust_wire.NextStepView(
+          kind: rust_wire.NextStepKind.castVote,
+          bundleIndex: 0,
+          proposalId: 7,
+          choice: 1,
+          shareIndex: 0,
+        ),
+      ],
+      openProposals: Uint32List(0),
+      allDecided: true,
+      castSigningBundles: const {0},
+    );
+    rust.scriptedRoundRuns.add([
+      roundRunReport(
+        plan: plan,
+        quiescence: rust_wire.RoundQuiescenceKind.needsDelegationSignatures,
+      ),
+    ]);
+    final persistence = FakeVotingDraftPersistence();
+    const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
+    await persistence.save(key, const VotingDraftState(choices: {7: 1}));
+    final container = _sessionContainer(
+      rust: rust,
+      draftPersistence: persistence,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.castVotes(
+      draftVotes: [VotingDraftVote(proposalId: 7, choice: 1, numOptions: 2)],
+    );
+
+    expect(notifier.castsAwaitSignatures, isTrue);
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.phase,
+      isNot(VotingSessionPhase.error),
+    );
+    expect((await persistence.load(key)).choices, {7: 1});
+  });
 
   test(
     'vote submission progress displays questions while bundle work advances',
@@ -10622,6 +10878,123 @@ void main() {
     expect(registry.registeredKeys, isEmpty);
   });
 
+  test(
+    'restored tracking holds the round hotkey to resend handed-off DC shares',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        http: FakeVotingHttpClient(
+          responses: votingHttpResponses(
+            roundStatus: roundStatusJson(
+              roundId: kRoundId,
+              voteEnd: nowSeconds + 1000,
+            ),
+          ),
+        ),
+        rust: rust,
+        hotkeyStore: FakeVotingHotkeyStore([7, 7, 7]),
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(),
+          // Only a handed-off DC share awaits its reveal.
+          roundPlan: apiRoundPlan(
+            roundId: kRoundId,
+            pendingRecovery: true,
+            nextSteps: const [
+              rust_wire.NextStepView(
+                kind: rust_wire.NextStepKind.confirmShare,
+                bundleIndex: 0,
+                proposalId: 0,
+                choice: 0,
+                shareIndex: 0,
+                dcSlot: 0,
+              ),
+            ],
+            openProposals: Uint32List(0),
+            allDecided: false,
+            hasUnconfirmedShares: true,
+          ),
+        ),
+        pendingShareRoundLoader:
+            ({required dbPath, required accountUuids}) async {
+              return [
+                rust_api.ApiPendingShareRound(
+                  accountUuid: 'account-1',
+                  roundId: kRoundId,
+                  sessionJson: jsonEncode({'vote_end_time': nowSeconds + 1000}),
+                ),
+              ];
+            },
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingShareTrackingRestorerProvider).restore();
+      await container
+          .read(
+            votingSubmissionSessionProvider(
+              const VotingSessionKey(
+                accountUuid: 'account-1',
+                roundId: kRoundId,
+              ),
+            ).notifier,
+          )
+          .shareTrackingRun;
+
+      expect(rust.shareTrackingSessions, isNotEmpty);
+      expect(
+        rust.shareTrackingSessions.map((session) => session.storedHotkeySecret),
+        everyElement([7, 7, 7]),
+      );
+      await container
+          .read(votingShareTrackingRegistryProvider)
+          .quiesceAndDrain();
+    },
+  );
+
+  test(
+    'tracking starts without the round hotkey when reading it fails',
+    () async {
+      // A stored hotkey that cannot be read, a corrupt one say, costs only the
+      // DC share resends derived from it. The round's shares are still tracked.
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final pendingShare = FakeShareDelegationRecord(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        ambiguousUrls: const [],
+        targetCount: 1,
+        nullifier: Uint8List.fromList(List.filled(32, 6)),
+        phase: rust_wire.WorkflowPhaseView.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.from(nowSeconds - 100),
+      );
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        rust: rust,
+        hotkeyStore: const FailingVotingHotkeyStore(),
+        recoveryApi: FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(
+        votingSubmissionSessionProvider(
+          const VotingSessionKey(accountUuid: 'account-1', roundId: kRoundId),
+        ).future,
+      );
+      await _waitForShareTrackingSessionCount(rust, 1);
+
+      expect(rust.shareTrackingSessions.first.storedHotkeySecret, isNull);
+    },
+  );
+
   test('accepted shares confirm after two helpers corroborate', () async {
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final shareNullifier = Uint8List.fromList(List.filled(32, 1));
@@ -12496,6 +12869,7 @@ class _YieldingFakeVotingHttpClient extends FakeVotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     await Future<void>.delayed(Duration.zero);
     return super.get(
@@ -12526,7 +12900,9 @@ class _GatedSharePostVotingHttpClient extends FakeVotingHttpClient {
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   }) async {
     if (uri.path == '/shielded-vote/v1/shares') {
       final shareIndex = body['share_index'] as int;
@@ -13227,6 +13603,7 @@ class _GatedVotingHttpClient extends FakeVotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     _recordGet(uri.path);
     final gates = _getGates[uri.path];
@@ -13830,6 +14207,9 @@ rust_wire.RoundPlanView _withImmediateShareConfirmed(
   rust_wire.RoundPlanView plan,
 ) {
   return rust_wire.RoundPlanView(
+    proxyBatches: plan.proxyBatches,
+    fullyDelegatedBundles: plan.fullyDelegatedBundles,
+    nothingLeftToVote: plan.nothingLeftToVote,
     roundId: plan.roundId,
     pendingRecovery: plan.pendingRecovery,
     blockingRecovery: plan.blockingRecovery,
@@ -14293,7 +14673,9 @@ class _DelegationConcurrencyHttpClient extends FakeVotingHttpClient {
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   }) async {
     final isDelegation = uri.path.endsWith('/delegate-vote');
     final isVote = uri.path.endsWith('/cast-vote');
@@ -14329,6 +14711,7 @@ class _DelegationConcurrencyHttpClient extends FakeVotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     if (!uri.path.contains('/tx/')) {
       return super.get(
@@ -14368,7 +14751,9 @@ class _UniqueVoteTxHttpClient extends FakeVotingHttpClient {
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   }) async {
     if (!uri.path.endsWith('/cast-vote')) {
       return super.postJson(uri, body, timeout: timeout);

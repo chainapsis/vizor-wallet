@@ -33,6 +33,7 @@ import '../features/payment_links/providers/payment_link_claim_lifecycle_registr
 import '../features/payment_links/services/payment_link_received_store.dart';
 import '../features/payment_links/models/vizor_payment_link.dart';
 import '../features/payment_links/services/payment_link_recovery_store.dart';
+import '../features/voting/proxy/proxy_registry_providers.dart';
 import '../features/voting/voting_flow_models.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/voting.dart' as rust_voting;
@@ -1989,6 +1990,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         'removeAccount: failed to delete voting note cache for $uuid: $e\n$st',
       );
     }
+    try {
+      await ref.read(proxyRegistryDeletionProvider)();
+    } catch (e, st) {
+      log('removeAccount: failed to delete proxy registry state: $e\n$st');
+    }
 
     final updated = [
       for (var i = 0; i < remaining.length; i++)
@@ -2285,6 +2291,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       try {
         ref.read(votingHomeCacheProvider.notifier).clearForReset();
         await clearVotingCachesForReset();
+        await ref.read(proxyRegistryDeletionProvider)();
       } catch (e, st) {
         recordError(
           'voting cache wipe', // l10n-ignore: log label

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/proxy_delegation_feature_config.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/navigation/route_owned_redirect.dart';
 import '../../../providers/account_provider.dart';
@@ -27,8 +28,12 @@ import '../../../providers/voting/voting_pir_warmup_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
+import '../proxy/proxy_delegation_providers.dart';
+import '../proxy/proxy_delegation_repository.dart';
+import '../proxy/screens/proxy_round_delegation.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -243,11 +248,25 @@ class _VotingProposalDetailViewState
           state.roundPlan,
         );
         _maybePrepareVotingPower(state);
-        // Foreground recovery takes precedence over the read-only voted view.
-        // Accepted helper shares may still be tracked after submission, but
-        // that background work should not keep this screen resumable.
-        if (hasBlockingRecovery && hasConfirmedVotingEligibility) {
-          return _PendingVoteContent(
+        // The round's committed delegation, which its status shows per
+        // question. Null with the dormant flag off.
+        final delegationStatus = watchProxyRoundStatus(ref, roundId);
+        // Delegates took every bundle's weight, so there is no ballot to
+        // offer: while the delegation is on its way the round resumes its
+        // progress, as an unfinished vote does, and then shows its status.
+        if (roundPlanNothingLeftToVote(state.roundPlan)) {
+          if (roundPlanHasProxyWork(state.roundPlan) &&
+              votingPollListStatus(round.status) ==
+                  VotingPollListStatus.active) {
+            return _unfinishedVoteNotice(
+              round: round,
+              forumUri: forumUri,
+              accountUuid: accountUuid,
+              key: const ValueKey('voting_delegation_in_progress'),
+            );
+          }
+          return VotingVotedPollContent(
+            key: const ValueKey('voting_nothing_left_to_vote'),
             showDesktopToolbar: widget.showDesktopToolbar,
             roundTitle: round.title.isEmpty
                 ? context.l10n.votingTokenHolderTitle
@@ -255,7 +274,25 @@ class _VotingProposalDetailViewState
             snapshotHeight: round.snapshotHeight,
             description: _roundDescription(round.rawJson),
             forumUri: forumUri,
-            roundId: roundId,
+            votingPowerZatoshi: state.eligibleWeightZatoshi,
+            votingPowerPreparing: _votingPowerPreparationInFlight,
+            votedAt: null,
+            proposals: proposals,
+            choicesByProposalId: const {},
+            delegationEntry: _delegationSummary(delegationStatus, round),
+            proposalFooterBuilder: _questionStatusBuilder(
+              delegationStatus,
+              const {},
+            ),
+          );
+        }
+        // Foreground recovery takes precedence over the read-only voted view.
+        // Accepted helper shares may still be tracked after submission, but
+        // that background work should not keep this screen resumable.
+        if (hasBlockingRecovery && hasConfirmedVotingEligibility) {
+          return _unfinishedVoteNotice(
+            round: round,
+            forumUri: forumUri,
             accountUuid: accountUuid,
           );
         }
@@ -275,18 +312,34 @@ class _VotingProposalDetailViewState
             votedAt: completedVote.votedAt,
             proposals: proposals,
             choicesByProposalId: completedVote.choicesByProposalId,
+            delegationEntry:
+                _delegationSummary(delegationStatus, round) ??
+                (ref.watch(proxyDelegationFeatureEnabledProvider)
+                    ? ProxyVotingPowerLine(roundId: roundId)
+                    : null),
+            proposalFooterBuilder: _questionStatusBuilder(
+              delegationStatus,
+              completedVote.choicesByProposalId,
+            ),
           );
         }
         if (pendingVote != null && hasConfirmedVotingEligibility) {
-          return _PendingVoteContent(
-            showDesktopToolbar: widget.showDesktopToolbar,
-            roundTitle: round.title.isEmpty
-                ? context.l10n.votingTokenHolderTitle
-                : round.title,
-            snapshotHeight: round.snapshotHeight,
-            description: _roundDescription(round.rawJson),
+          return _unfinishedVoteNotice(
+            round: round,
             forumUri: forumUri,
-            roundId: roundId,
+            accountUuid: accountUuid,
+          );
+        }
+        // Submitted answers waiting for their delegation to land are a vote
+        // in progress.
+        if (delegationStatus != null &&
+            accountUuid != null &&
+            _castsAfterDelegation(
+              VotingSessionKey(roundId: roundId, accountUuid: accountUuid),
+            )) {
+          return _unfinishedVoteNotice(
+            round: round,
+            forumUri: forumUri,
             accountUuid: accountUuid,
           );
         }
@@ -315,10 +368,21 @@ class _VotingProposalDetailViewState
             votingError?.isEligibilityFailure ?? false;
         _maybePrecomputeSnapshotBundles(state);
         ownsHeader = proposals.isNotEmpty;
+        final delegation = draftKey == null
+            ? null
+            : ref.watch(proxyBallotDelegationProvider(draftKey));
         return VotingActivePollContent(
           key: ValueKey((roundId, accountUuid)),
           mobileHeaderBuilder: widget.mobileHeaderBuilder,
           showDesktopToolbar: widget.showDesktopToolbar,
+          delegationEntry: ref.watch(proxyDelegationFeatureEnabledProvider)
+              ? ProxyVotingPowerLine(roundId: roundId)
+              : null,
+          delegatesAnswering:
+              delegation != null && delegation.everythingDelegated
+              ? delegation.names
+              : null,
+          delegationDrafted: delegation != null && !delegation.committed,
           roundId: roundId,
           title: round.title.isEmpty
               ? context.l10n.votingTokenHolderTitle
@@ -386,6 +450,69 @@ class _VotingProposalDetailViewState
       );
     }
     return content;
+  }
+
+  /// The "Vote in progress" notice that resumes an unfinished submission on
+  /// the progress screen.
+  Widget _unfinishedVoteNotice({
+    required VotingRoundDetails round,
+    required Uri? forumUri,
+    required String? accountUuid,
+    Key? key,
+  }) {
+    return _RoundNoticeContent(
+      key: key,
+      showDesktopToolbar: widget.showDesktopToolbar,
+      roundTitle: round.title.isEmpty
+          ? context.l10n.votingTokenHolderTitle
+          : round.title,
+      snapshotHeight: round.snapshotHeight,
+      description: _roundDescription(round.rawJson),
+      forumUri: forumUri,
+      noticeTitle: context.l10n.votingPendingTitle,
+      noticeMessage: context.l10n.votingPendingBody,
+      action: AppButton(
+        key: const ValueKey('voting_continue_voting'),
+        onPressed: () => context.go(
+          votingStatusRoute(widget.roundId, accountUuid: accountUuid),
+        ),
+        variant: AppButtonVariant.primary,
+        child: Text(context.l10n.votingContinueVoting),
+      ),
+    );
+  }
+
+  /// Whether [key]'s vote job is sending a delegation before its casts.
+  bool _castsAfterDelegation(VotingSessionKey key) {
+    final job = ref.watch(votingSubmissionJobProvider(key));
+    return job.isInFlight && job.kind == VotingSubmissionJobKind.ballot;
+  }
+
+  /// The status's delegation summary for a committed [status], or null.
+  Widget? _delegationSummary(
+    ApiProxyAllocationStatus? status,
+    VotingRoundDetails round,
+  ) {
+    if (status == null) return null;
+    final voteEnd = round.voteEndTime;
+    return ProxyDelegationSummary(
+      status: status,
+      roundActive:
+          voteEnd == null || ref.watch(proxyClockProvider)().isBefore(voteEnd),
+    );
+  }
+
+  /// Each question's delegate lines for a committed [status], or null.
+  Widget Function(VotingProposalView)? _questionStatusBuilder(
+    ApiProxyAllocationStatus? status,
+    Map<int, int?> ownChoices,
+  ) {
+    if (status == null) return null;
+    return (proposal) => ProxyQuestionStatus(
+      proposal: proposal,
+      ownChoice: ownChoices[proposal.id],
+      status: status,
+    );
   }
 
   void _clearShareStatusDeadline() {
@@ -619,10 +746,26 @@ class VotingActivePollContent extends StatefulWidget {
     this.onParticipationRetry,
     this.onReviewRequested,
     this.mobileHeaderBuilder,
+    this.delegationEntry,
+    this.delegatesAnswering,
+    this.delegationDrafted = false,
   });
 
   final bool showDesktopToolbar;
   final VotingHeaderBuilder? mobileHeaderBuilder;
+
+  /// The proxy delegation line shown under the poll summary; null unless
+  /// the dormant proxy delegation flag is on.
+  final Widget? delegationEntry;
+
+  /// Delegates who answer every question for the wallet, which then answers
+  /// nothing itself; null unless a delegation takes everything.
+  final List<String>? delegatesAnswering;
+
+  /// Whether the ballot carries a drafted delegation. One that delegates
+  /// everything is enough to review without answers of the wallet's own.
+  final bool delegationDrafted;
+
   final String roundId;
   final String title;
   final int snapshotHeight;
@@ -662,6 +805,13 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
   bool get _hasAnswers => widget.proposals.any(
     (proposal) => widget.draft.choices[proposal.id] != null,
   );
+
+  /// Whether the ballot has something to review: answers of the wallet's
+  /// own, or a drafted delegation of everything. A delegation that keeps a
+  /// share is reviewed with that share's answers.
+  bool get _canReview =>
+      _hasAnswers ||
+      (widget.delegationDrafted && widget.delegatesAnswering != null);
 
   Future<void> _showIneligibleDialog() async {
     final message = widget.votingEligibilityErrorMessage;
@@ -708,9 +858,11 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       await _showIneligibleDialog();
       return;
     }
-    final skippedCount = widget.proposals
-        .where((proposal) => widget.draft.choices[proposal.id] == null)
-        .length;
+    final skippedCount = widget.delegatesAnswering != null
+        ? 0
+        : widget.proposals
+              .where((proposal) => widget.draft.choices[proposal.id] == null)
+              .length;
     if (skippedCount > 0) {
       final continueToReview = await showDialog<bool>(
         context: context,
@@ -725,7 +877,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     if (mounted &&
         widget.votingEligibilityConfirmed &&
         !widget.participationUnavailable &&
-        _hasAnswers) {
+        _canReview) {
       if (widget.onReviewRequested case final onReview?) {
         onReview();
       } else {
@@ -794,7 +946,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
           !widget.participationUnavailable &&
           (canRetryEligibility ||
               isIneligible ||
-              widget.votingEligibilityConfirmed && _hasAnswers),
+              widget.votingEligibilityConfirmed && _canReview),
       label: widget.participationUnavailable
           ? context.l10n.votingActionUnavailable
           : canRetryEligibility
@@ -810,6 +962,14 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     final isIneligible =
         !widget.votingEligibilityConfirmed &&
         widget.votingEligibilityErrorMessage != null;
+    final delegates = widget.delegatesAnswering;
+    if (delegates != null) {
+      return VotingProposalCard(
+        proposal: proposal,
+        enabled: false,
+        footer: ProxyAnswersForYou(names: delegates),
+      );
+    }
     return VotingProposalCard(
       proposal: proposal,
       advancing: advancing,
@@ -873,6 +1033,10 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
                         const SizedBox(height: AppSpacing.sm),
                       ],
                       _buildPollSummary(),
+                      if (widget.delegationEntry case final entry?) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        entry,
+                      ],
                     ],
                   ),
                   cardBuilder: _buildProposalCard,
@@ -880,7 +1044,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
                   onReview:
                       widget.votingEligibilityConfirmed &&
                           !widget.participationUnavailable &&
-                          _hasAnswers
+                          _canReview
                       ? _handleBottomActionPressed
                       : null,
                   answerRevision: _answerRevision,
@@ -1590,6 +1754,8 @@ class VotingVotedPollContent extends StatelessWidget {
     required this.proposals,
     required this.choicesByProposalId,
     this.shareStatusNow,
+    this.delegationEntry,
+    this.proposalFooterBuilder,
   });
 
   final bool showDesktopToolbar;
@@ -1609,6 +1775,30 @@ class VotingVotedPollContent extends StatelessWidget {
   /// Fixed current time for deterministic vote-share previews.
   final DateTime? shareStatusNow;
 
+  /// The round's proxy delegation summary, or why the wallet can no longer
+  /// delegate, shown under the header; null unless the dormant proxy
+  /// delegation flag is on.
+  final Widget? delegationEntry;
+
+  /// Each question's delegate lines, for a round with a committed proxy
+  /// delegation.
+  final Widget Function(VotingProposalView proposal)? proposalFooterBuilder;
+
+  /// The read-only card of [proposal] with the wallet's [choice].
+  Widget _card(BuildContext context, VotingProposalView proposal, int? choice) {
+    final footer = proposalFooterBuilder?.call(proposal);
+    return VotingProposalCard(
+      proposal: proposal,
+      fallbackForumUri: forumUri,
+      selectedChoice: choice,
+      readOnly: true,
+      statusLabel: choice == null && footer == null
+          ? context.l10n.votingReviewSkipped
+          : null,
+      footer: footer,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final itemCount = proposals.length;
@@ -1626,15 +1816,25 @@ class VotingVotedPollContent extends StatelessWidget {
                       ? AppSpacing.md
                       : AppSpacing.sm,
                 ),
-                child: _DesktopVotedPollHeader(
-                  title: roundTitle,
-                  snapshotHeight: snapshotHeight,
-                  description: description,
-                  forumUri: forumUri,
-                  votingPowerZatoshi: votingPowerZatoshi,
-                  votingPowerPreparing: votingPowerPreparing,
-                  privacyModeEnabled: privacyModeEnabled,
-                  votedAt: votedAt,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _DesktopVotedPollHeader(
+                      title: roundTitle,
+                      snapshotHeight: snapshotHeight,
+                      description: description,
+                      forumUri: forumUri,
+                      votingPowerZatoshi: votingPowerZatoshi,
+                      votingPowerPreparing: votingPowerPreparing,
+                      privacyModeEnabled: privacyModeEnabled,
+                      votedAt: votedAt,
+                    ),
+                    if (delegationEntry case final entry?) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      entry,
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -1659,15 +1859,10 @@ class VotingVotedPollContent extends StatelessWidget {
                         const SizedBox(height: AppSpacing.s),
                     itemBuilder: (context, index) {
                       final proposal = proposals[index];
-                      final choice = choicesByProposalId[proposal.id];
-                      return VotingProposalCard(
-                        proposal: proposal,
-                        fallbackForumUri: forumUri,
-                        selectedChoice: choice,
-                        readOnly: true,
-                        statusLabel: choice == null
-                            ? context.l10n.votingReviewSkipped
-                            : null,
+                      return _card(
+                        context,
+                        proposal,
+                        choicesByProposalId[proposal.id],
                       );
                     },
                   ),
@@ -1701,6 +1896,10 @@ class VotingVotedPollContent extends StatelessWidget {
                   privacyModeEnabled: privacyModeEnabled,
                   votedAt: votedAt,
                 ),
+                if (delegationEntry case final entry?) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  entry,
+                ],
                 const SizedBox(height: AppSpacing.md),
                 if (proposals.isEmpty)
                   _Message(
@@ -1709,15 +1908,10 @@ class VotingVotedPollContent extends StatelessWidget {
                   )
                 else
                   for (var index = 0; index < proposals.length; index++) ...[
-                    VotingProposalCard(
-                      proposal: proposals[index],
-                      fallbackForumUri: forumUri,
-                      selectedChoice: choicesByProposalId[proposals[index].id],
-                      readOnly: true,
-                      statusLabel:
-                          choicesByProposalId[proposals[index].id] == null
-                          ? context.l10n.votingReviewSkipped
-                          : null,
+                    _card(
+                      context,
+                      proposals[index],
+                      choicesByProposalId[proposals[index].id],
                     ),
                     if (index < proposals.length - 1)
                       const SizedBox(height: AppSpacing.md),
@@ -1731,15 +1925,19 @@ class VotingVotedPollContent extends StatelessWidget {
   }
 }
 
-class _PendingVoteContent extends StatelessWidget {
-  const _PendingVoteContent({
+/// A round's header above one notice and its action, in place of the
+/// ballot: a vote to resume, or nothing left to vote.
+class _RoundNoticeContent extends StatelessWidget {
+  const _RoundNoticeContent({
     required this.showDesktopToolbar,
     required this.roundTitle,
     required this.snapshotHeight,
     required this.description,
     required this.forumUri,
-    required this.roundId,
-    required this.accountUuid,
+    required this.noticeTitle,
+    required this.noticeMessage,
+    required this.action,
+    super.key,
   });
 
   final bool showDesktopToolbar;
@@ -1747,8 +1945,15 @@ class _PendingVoteContent extends StatelessWidget {
   final int snapshotHeight;
   final String description;
   final Uri? forumUri;
-  final String roundId;
-  final String? accountUuid;
+
+  /// The notice's heading.
+  final String noticeTitle;
+
+  /// The notice's text.
+  final String noticeMessage;
+
+  /// The notice's button.
+  final Widget action;
 
   @override
   Widget build(BuildContext context) {
@@ -1820,29 +2025,20 @@ class _PendingVoteContent extends StatelessWidget {
                           ],
                           const SizedBox(height: AppSpacing.md),
                           Text(
-                            context.l10n.votingPendingTitle,
+                            noticeTitle,
                             style: AppTypography.headlineSmall.copyWith(
                               color: colors.text.accent,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
-                            context.l10n.votingPendingBody,
+                            noticeMessage,
                             style: AppTypography.bodyMedium.copyWith(
                               color: colors.text.secondary,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.md),
-                          AppButton(
-                            onPressed: () => context.go(
-                              votingStatusRoute(
-                                roundId,
-                                accountUuid: accountUuid,
-                              ),
-                            ),
-                            variant: AppButtonVariant.primary,
-                            child: Text(context.l10n.votingContinueVoting),
-                          ),
+                          action,
                         ],
                       ),
                     ),

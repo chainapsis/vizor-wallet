@@ -12,7 +12,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'voting.dart';
 
 // These functions are ignored because they are not marked as `pub`: `database_handle`, `delegation_inputs`, `drive`, `internal`, `invalid_input`, `pipeline`, `round_drive_policy`, `share_tracking_drive_policy`, `track`, `unix_now_seconds`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 /// Opens a session bound to `ctx`'s account and round.
 ///
@@ -58,18 +58,21 @@ abstract class VotingRoundSession implements RustOpaqueInterface {
   /// always clearable.
   Future<RoundPlanView> clearBallotIntents({required List<int> proposalIds});
 
-  /// Re-reads whether this round's designated immediate share is confirmed.
+  /// Re-reads whether this round's designated immediate share is confirmed,
+  /// or with `dc_slot`, share `share_index` of the DC in that slot of
+  /// `bundle_index` (`proposal_id` is then unused).
   ///
   /// The one confirmation-only exception to the vote-end boundary: a helper
   /// may have confirmed the share before the deadline while the last
   /// tracking pass missed the transition. This never resubmits a share or
   /// selects a new helper, so it is safe after the round has ended, and it
-  /// answers now rather than on the tracking cadence — the submission flow
-  /// gates completion on it.
+  /// answers now rather than on the tracking cadence — the submission flow,
+  /// and the proxy job for an at-once DC's share 0, gate completion on it.
   Future<bool> confirmImmediateShare({
     required int bundleIndex,
     required int proposalId,
     required int shareIndex,
+    int? dcSlot,
   });
 
   /// Whether this session has been cancelled.

@@ -64,7 +64,9 @@ import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../../features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
+import '../../features/voting/proxy/proxy_delegation_route_table.dart';
 import '../../features/voting/screens/mobile/mobile_voting_screens.dart';
+import '../config/proxy_delegation_feature_config.dart';
 import '../config/swap_feature_config.dart';
 import '../l10n/l10n.dart';
 import '../layout/mobile/app_mobile_shell.dart';
@@ -568,6 +570,10 @@ List<RouteBase> _walletRoutes() {
         ),
       ),
     ),
+    if (kVizorProxyDelegationEnabled)
+      ...proxyDelegationMobileRoutes(
+        guard: (child) => MobileVotingAccountGuard(child: child),
+      ),
     GoRoute(
       path: '/home/ledger-shield',
       pageBuilder: (context, state) => MobileShieldPage(

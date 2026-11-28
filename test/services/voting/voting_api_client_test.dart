@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/rust/api/network_privacy.dart'
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/voting/voting_api_client.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
+import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
 
 import 'fake_voting_http.dart';
@@ -463,6 +464,176 @@ void main() {
       'vote-primary.example',
       'vote-secondary.example',
     ]);
+  });
+
+  test('reads the proxy delegation routes as unread bodies, with a 404 for '
+      'missing proxy params', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        '/shielded-vote/v1/protocol-capabilities': {
+          'proxy_delegation_version': 1,
+        },
+        '/shielded-vote/v1/round/$hexRoundId': {
+          'round': {'vote_round_id': encodedRoundId},
+        },
+        '/shielded-vote/v1/proxy-delegation-params': jsonResponse({
+          'code': 5,
+        }, statusCode: 404),
+        '/shielded-vote/v1/delegate-ballots/$hexRoundId': {
+          'ballots': <Object>[],
+          'next_start_after': 0,
+        },
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+    );
+
+    expect(
+      utf8.decode(await client.getProtocolCapabilitiesBody()),
+      '{"proxy_delegation_version":1}',
+    );
+    expect(
+      utf8.decode(await client.getRoundBody(encodedRoundId)),
+      contains(encodedRoundId),
+    );
+    expect(await client.getProxyDelegationParamsBody(), isNull);
+    expect(
+      utf8.decode(
+        await client.getDelegateBallotsPageBody(hexRoundId, startAfter: 7),
+      ),
+      contains('next_start_after'),
+    );
+    expect(http.requests.last.uri.queryParameters, {
+      'start_after': '7',
+      'limit': '1000',
+    });
+  });
+
+  test('any other failure of a proxy route is an error', () async {
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: FakeVotingHttpClient(
+        responses: {
+          '/shielded-vote/v1/protocol-capabilities': jsonResponse({
+            'code': 5,
+          }, statusCode: 404),
+          '/shielded-vote/v1/proxy-delegation-params': jsonResponse({
+            'error': 'bad',
+          }, statusCode: 400),
+        },
+      ),
+    );
+    await expectLater(
+      client.getProtocolCapabilitiesBody(),
+      throwsA(isA<VotingHttpException>()),
+    );
+    await expectLater(
+      client.getProxyDelegationParamsBody(),
+      throwsA(isA<VotingHttpException>()),
+    );
+  });
+
+  group('delegate mode chain answers', () {
+    final primary = Uri.parse('https://vote-primary.example/api');
+    final secondary = Uri.parse('https://vote-secondary.example');
+
+    /// A client over [http] with both vote servers and no retry waits.
+    VotingApiClient client(FakeVotingHttpClient http) => VotingApiClient(
+      baseUrl: primary,
+      fallbackBaseUrls: [secondary],
+      httpClient: http,
+      readRetryPolicy: VotingRetryPolicy.transientHttp(
+        name: 'test-delegate-read',
+        delays: const [],
+      ),
+      delay: (_) async {},
+    );
+
+    test('a read hands any answer below 500 back unread, under the base '
+        'path and with its query', () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          '/api/shielded-vote/v1/delegates/by-key/ab': jsonResponse({
+            'error': 'delegate key ab was never registered',
+          }, statusCode: 404),
+          '/api/shielded-vote/v1/delegate-ballots/$hexRoundId': {
+            'ballots': <Object>[],
+          },
+        },
+      );
+      final notFound = await client(
+        http,
+      ).getChainAnswer('/shielded-vote/v1/delegates/by-key/ab');
+      expect(notFound.statusCode, 404);
+      expect(utf8.decode(notFound.body), contains('never registered'));
+      final page = await client(http).getChainAnswer(
+        '/shielded-vote/v1/delegate-ballots/$hexRoundId'
+        '?start_after=7&limit=1000',
+      );
+      expect(page.statusCode, 200);
+      expect(http.requests.last.uri.queryParameters, {
+        'start_after': '7',
+        'limit': '1000',
+      });
+      expect(http.requests.map((request) => request.uri.host).toSet(), {
+        'vote-primary.example',
+      });
+    });
+
+    test('a read fails over on an outage and throws when every server '
+        'fails', () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/api/shielded-vote/v1/height':
+              jsonResponse({'error': 'down'}, statusCode: 503),
+          'https://vote-secondary.example/shielded-vote/v1/height': {
+            'height': '9',
+          },
+        },
+      );
+      final answer = await client(
+        http,
+      ).getChainAnswer('/shielded-vote/v1/height');
+      expect(answer.statusCode, 200);
+      expect(http.requests.map((request) => request.uri.host), [
+        'vote-primary.example',
+        'vote-secondary.example',
+      ]);
+      final down = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/api/shielded-vote/v1/height':
+              timeoutResponse(),
+          'https://vote-secondary.example/shielded-vote/v1/height':
+              jsonResponse({'error': 'down'}, statusCode: 502),
+        },
+      );
+      await expectLater(
+        client(down).getChainAnswer('/shielded-vote/v1/height'),
+        throwsA(isA<VotingHttpException>()),
+      );
+    });
+
+    test('every read asks for the codespace, on every server tried', () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/api/shielded-vote/v1/delegates/by-key/ab':
+              jsonResponse({'error': 'down'}, statusCode: 503),
+          'https://vote-secondary.example/shielded-vote/v1/delegates/by-key/ab':
+              jsonResponse({
+                'delegate': {'index': 17},
+              }),
+        },
+      );
+      await client(
+        http,
+      ).getChainAnswer('/shielded-vote/v1/delegates/by-key/ab');
+      expect(http.requests.map((request) => request.method), ['GET', 'GET']);
+      for (final request in http.requests) {
+        expect(request.headers, {'x-svote-codespace': '1'});
+      }
+    });
   });
 
   group('over Tor', () {

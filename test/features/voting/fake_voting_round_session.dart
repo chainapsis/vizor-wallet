@@ -666,6 +666,9 @@ class FakeVotingRoundSession implements VotingRoundSession {
         work = _advanceVote(step);
       case rust_wire.NextStepKind.advanceImportedDelegation:
       case rust_wire.NextStepKind.confirmShare:
+      // No scripted round commits a proxy allocation, so no proxy step runs.
+      case rust_wire.NextStepKind.proxyDelegate:
+      case rust_wire.NextStepKind.advanceProxyBatch:
         work = Stream.fromFuture(
           _result(step, rust_wire.RoundStepDispositionView.noWork),
         );
@@ -1862,6 +1865,7 @@ class FakeVotingRoundSession implements VotingRoundSession {
     required int bundleIndex,
     required int proposalId,
     required int shareIndex,
+    int? dcSlot,
   }) {
     driver.focusedConfirmationSessions.add(this);
     return _steps.confirmOneShareWithHelpers(

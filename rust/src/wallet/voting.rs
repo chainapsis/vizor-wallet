@@ -1,4 +1,5 @@
 pub mod db;
+pub(crate) mod delegate_picture;
 pub mod delegation;
 pub mod hotkey;
 pub mod network;

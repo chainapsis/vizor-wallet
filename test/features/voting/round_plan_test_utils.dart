@@ -34,6 +34,8 @@ _PlanWork _planWork(
   List<rust_wire.NextStepView> nextSteps,
   bool blockingShareWork, {
   List<rust_wire.DelegationStatusView> delegationStatuses = const [],
+  Set<int> proxySigningBundles = const {},
+  Set<int> castSigningBundles = const {},
 }) {
   var needsDelegationSigning = false;
   var hasInFlightDelegation = false;
@@ -57,6 +59,15 @@ _PlanWork _planWork(
         hasInFlightDelegation = true;
         needingWork.add(step.bundleIndex);
       case rust_wire.NextStepKind.castVote:
+        // A cast that signs its bundle's delegation owes the voter's key.
+        if (castSigningBundles.contains(step.bundleIndex)) {
+          needsDelegationSigning = true;
+          needingWork.add(step.bundleIndex);
+          needingSigning.add(step.bundleIndex);
+        }
+        needsVotePolling = true;
+        hasRemaining = true;
+        hasRecoverable = true;
       case rust_wire.NextStepKind.advanceVote:
       case rust_wire.NextStepKind.advanceVoteBatch:
       case rust_wire.NextStepKind.submitShares:
@@ -65,7 +76,18 @@ _PlanWork _planWork(
         hasRecoverable = true;
       case rust_wire.NextStepKind.confirmShare:
         hasRecoverable = true;
-        if (blockingShareWork) hasRemaining = true;
+        // A DC's reveal is confirmed in the foreground, so it always blocks.
+        if (blockingShareWork || step.dcSlot != null) hasRemaining = true;
+      // A proxy batch owes work; its submission signs only when its first
+      // attempt carries the bundle's registration.
+      case rust_wire.NextStepKind.proxyDelegate:
+        needingWork.add(step.bundleIndex);
+      case rust_wire.NextStepKind.advanceProxyBatch:
+        needingWork.add(step.bundleIndex);
+        if (proxySigningBundles.contains(step.bundleIndex)) {
+          needsDelegationSigning = true;
+          needingSigning.add(step.bundleIndex);
+        }
     }
   }
   // The planner works from durable rows, so it lists a delegation step for a
@@ -136,6 +158,11 @@ rust_wire.RoundPlanView apiRoundPlan({
   List<rust_wire.VoteRecoveryWorkView>? recoveredVoteWork,
   rust_share_policy.ImmediateShareKey? immediateShareKey,
   bool immediateShareConfirmed = false,
+  Set<int> proxySigningBundles = const {},
+  Set<int> castSigningBundles = const {},
+  List<int> fullyDelegatedBundles = const [],
+  List<rust_wire.ProxyBatchStatusView> proxyBatches = const [],
+  bool nothingLeftToVote = false,
 }) {
   final resolvedDelegationWork =
       recoveredDelegationWork ?? _delegationRecoveryWork(nextSteps);
@@ -163,9 +190,14 @@ rust_wire.RoundPlanView apiRoundPlan({
     nextSteps,
     blockingShareWork,
     delegationStatuses: resolvedDelegationStatuses,
+    proxySigningBundles: proxySigningBundles,
+    castSigningBundles: castSigningBundles,
   );
 
   return rust_wire.RoundPlanView(
+    proxyBatches: proxyBatches,
+    fullyDelegatedBundles: Uint32List.fromList(fullyDelegatedBundles),
+    nothingLeftToVote: nothingLeftToVote,
     roundId: roundId,
     pendingRecovery: pendingRecovery,
     blockingRecovery: resolvedBlockingRecovery,
@@ -719,6 +751,9 @@ rust_wire.RoundPlanView withDelegationStatusesFrom(
     immediateShareKey: plan.immediateShareKey,
     immediateShareConfirmed: plan.immediateShareConfirmed,
     allDecided: plan.allDecided,
+    fullyDelegatedBundles: plan.fullyDelegatedBundles,
+    proxyBatches: plan.proxyBatches,
+    nothingLeftToVote: plan.nothingLeftToVote,
   );
 }
 

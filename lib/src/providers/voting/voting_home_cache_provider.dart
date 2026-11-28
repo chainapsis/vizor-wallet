@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/voting/voting_file_cache.dart';
 import '../../features/voting/voting_poll_ordering.dart';
+import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/third_party/zcash_voting/wire.dart' as wire;
 import '../../services/voting/voting_models.dart';
 import '../../services/voting/voting_participation_client.dart';
@@ -335,14 +336,18 @@ class VotingHomeCacheNotifier extends Notifier<int> {
   Future<void> recordPlan(String key, wire.RoundPlanView? plan) => _update(() {
     final old = fact(key);
     // completedForDisplay may cover only some proposals. Open proposals and
-    // blocking recovery must remain discoverable from Home.
+    // blocking recovery must remain discoverable from Home. A round whose
+    // weight went entirely to delegates has nothing to vote: its pending DC
+    // shares are the proxy job's, not a vote to resume.
     final progress = plan == null
         ? VotingHomeProgress.unknown
+        : plan.nothingLeftToVote
+        ? VotingHomeProgress.completed
         : plan.blockingRecovery
         ? VotingHomeProgress.inProgress
         : plan.completedForDisplay && plan.openProposals.isEmpty
         ? VotingHomeProgress.completed
-        : plan.pendingRecovery && !plan.completedForDisplay
+        : roundPlanHasPendingRecovery(plan) && !plan.completedForDisplay
         ? VotingHomeProgress.inProgress
         : VotingHomeProgress.available;
     final actionable =

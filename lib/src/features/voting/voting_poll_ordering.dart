@@ -32,7 +32,7 @@ VotingPollOrderingState votingPollOrderingState(VotingRoundView round) {
     VotingPollListStatus.active =>
       round.inProgress
           ? VotingPollOrderingState.inProgress
-          : round.voted
+          : round.voted || round.delegated
           ? VotingPollOrderingState.voted
           : VotingPollOrderingState.active,
     VotingPollListStatus.tallying ||

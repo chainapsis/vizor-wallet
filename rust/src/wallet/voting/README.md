@@ -26,13 +26,28 @@ This document focuses on what Vizor's integration is responsible for.
 | `network.rs` | Converts between wallet-layer network enums and `zcash_voting::Network` so wallet modules do not depend on API-layer helpers. |
 | `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
 | `signer.rs` | The wallet seed boundary. Implements the crate's `SpendAuthSigner` over the account mnemonic: verifies the seed fingerprint, derives and randomizes the SpendAuth key, and returns only the detached signature. |
+| `delegate_picture.rs` | Wallet list pictures (contracts-v1 §12.3): decodes the signed list's WebP with the pure-Rust `image-webp` under fixed caps (the list's 12,288-byte limit, exactly 128 px, no animation or metadata) to premultiplied RGBA that Dart draws with `decodeImageFromPixels`. |
 | `delegation.rs` | Opens the crate's `DelegationPipeline` for an account and round (wallet DB opener, lightwalletd inputs, hotkey, bundle policy) and wraps the stage calls the FRB boundary still exposes: bundle setup, eligibility, snapshot PIR precompute, background proof, Keystone requests, and PIR cache warm-up. |
 | `network_clients.rs` | The only construction boundary for voting SDK network clients. Injects one shared routed transport into chain, helper, PIR, pre-sync tree, and the round executor's separate tree slot. |
 | `route.rs` | `VizorRoute`, the request executor behind every routed SDK transport. Tor requests go through the wallet's Tor client and fail closed while Tor is selected but unusable; direct requests use the crate's `DirectRoute`. Chain, helper, PIR, and vote-tree traffic use it through `network_clients.rs`. |
+| `participation.rs` | The light-client participation reader: verifies a signed header against the bundled validator set, then IAVL proofs of `vote` store keys. Governance-nullifier keys prove `[1]` or absence; the registry entry keys of contracts-v1 §11.6 (`0x1A 0x01 u32be(d)`) prove their value bytes or absence. |
 | `transport.rs` | Fetches the voting snapshot anchor over the process route policy (`open_lwd_channel` + `anchor_tree_state_with_retry_on`) so delegation inputs never dial lightwalletd directly. This module owns the route decision and *dial* retry; the crate owns the *RPC* retry. |
 | `../../api/voting_session.rs` | `VotingRoundSession`, the opaque FRB handle over `zcash_voting::RoundExecutor`. One session binds the sidecar, account, round, proposal roster, routed transports, and hotkey; Dart records ballot intents, reads the plan, and advances steps. |
 | `../../api/voting.rs` | The remaining stage-level FRB boundary: hotkey generation, delegation preparation, Keystone signature storage, vote-tree warm-up, share tracking passes, recovery reads, resets, and config resolution. |
+| `../../api/proxy_delegation.rs` | Proxy delegation FRB calls, reached only behind `VIZOR_PROXY_DELEGATION_ENABLED`: the registry entry keys to prove, the verification of their proofs, and wallet list picture decoding. |
+| `../../api/proxy_delegate.rs` | zcash_voting's delegate-mode calls for Dart, behind the same flag: the device's one delegate key and its record, the lookup by key, the marker, attester requests and answers, register and retire ops, ballots and the status and round views. Delegate mode is app-level, so every call opens the sidecar's one `vizor-delegate-mode` scope. Dart posts the signed bodies byte for byte, runs the participation reader's proofs and keeps the key's `zvdsk1…` export in secure storage, passing it only to the call that signs. |
+| `../../api/proxy_delegator.rs` | zcash_voting's delegator calls for Dart, behind the same flag: availability, preview, commit, status and progress over the account's voting sidecar. Dart fetches the chain's answers and the round's delegate ballot pages as bytes zcash_voting reads; the enums with data cross as flat views. |
+| `../../api/proxy_registry.rs` | zcash_voting's proxy registry client for Dart, behind the same flag (contracts-v1 §11.10 to §12): the config's service URLs, the registry cache built from `GET /delegates` pages, Vizor's signed wallet list under the signer it pins per network, browse, exact handle search, paste or scan, and the pre-proving check over the entries the participation reader proved. Dart fetches the documents and stores them; every call reads stored copies again. |
 | `../../api/voting_helpers.rs` | API-only helper glue for delegation input resolution and bundle-parameter construction used by the FRB boundary. |
+
+`zcash_voting::proxy::PROXY_DELEGATION_ENABLED` stays off in every shipped
+build, so availability reports every round unsupported. The dev-only cargo
+feature `unstable-proxy-delegation` forwards zcash_voting's unstable switch for
+flag-on debug builds and for `cargo test --lib --features
+unstable-proxy-delegation`, which runs the availability gates through real
+code; `src/lib.rs` refuses it outside debug builds and
+`unstable_proxy_delegation_guard` keeps it out of default features and release
+tooling.
 
 ## Account Invariants And Secret Boundaries
 
@@ -329,6 +344,21 @@ changes; an unavailable selected Tor route must never fall back to direct.
 | Helper preflight, delivery, confirmation | `network_clients::helper_client` |
 | Tree pre-sync | `network_clients::sync_vote_tree` |
 | Tree sync during cast | Executor built with `with_tree_transport` in the factory |
+| Proxy registry proofs (`proof_rpc_urls`, then Vizor's own vote RPC host) | Dart `NetworkHttpClient`, through `ProxyRegistryProofClient` |
+| Vizor's wallet list (`<env>/wallets/vizor/list.json`, URLs from the build) | Dart `NetworkHttpClient`, through `ProxyRegistryFetcher` |
+| Proxy registry cache (`GET /delegates` pages) | Dart `NetworkHttpClient`, through `VotingApiClient` on the configured vote servers |
+| Proxy delegator reads (protocol capabilities, round, proxy params, delegate ballot pages) | Dart `NetworkHttpClient`, through `VotingApiClient` on the configured vote servers |
+| Proxy batches and DC shares | The round executor and helper client above, as for votes |
+
+The proxy hosts come from the dynamic config's unsigned
+`extensions.proxy_delegation_v1` URL lists (contracts-v1 §12.1), and
+Vizor's wallet list URLs from the build. Proofs and the signed list count only
+after verification; the registry cache is display data that the
+pre-proving check proves again at confirm. A client may fail over to the next
+host in its list, never to another route.
+`proxy_network_roles_test.dart` covers the proof client and the registry
+fetcher on both routes, and checks that every Dart proxy role shares the
+one client `proxyHttpClientProvider` builds.
 
 `cargo test --lib` includes real socket-blocking tests for the service wiring,
 a route-switch/cache test, and `sdk_network_construction_stays_in_the_factory`.

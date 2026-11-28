@@ -8,18 +8,25 @@ import '../../core/network/network_http_client.dart';
 ///
 /// The voting clients are mostly protocol mappers; keeping transport injectable
 /// lets tests assert URLs and JSON bodies without opening sockets.
+///
+/// `maxBodyBytes`, when given, makes the transport stop reading a body that
+/// passes it and throw, so a hostile host cannot fill memory before the
+/// caller's own size check.
 abstract interface class VotingHttpClient {
   Future<VotingHttpResponse> get(
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   });
 
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   });
 }
 
@@ -65,6 +72,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) {
     return _send(
       'GET', // l10n-ignore: HTTP method
@@ -72,6 +80,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
       headers: headers,
       timeout: timeout,
       cancelSignal: cancelSignal,
+      maxBodyBytes: maxBodyBytes,
     );
   }
 
@@ -79,14 +88,18 @@ class DartIoVotingHttpClient implements VotingHttpClient {
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   }) {
     return _send(
       'POST', // l10n-ignore: HTTP method
       uri,
       bodyBytes: utf8.encode(jsonEncode(body)),
       contentType: ContentType.json,
+      headers: headers,
       timeout: timeout,
+      maxBodyBytes: maxBodyBytes,
     );
   }
 
@@ -102,6 +115,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     final requestHeaders = <String, String>{
       if (contentType != null)
@@ -115,6 +129,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
       bodyBytes: bodyBytes ?? const [],
       timeout: timeout,
       cancelSignal: cancelSignal,
+      maxBodyBytes: maxBodyBytes,
     );
     return VotingHttpResponse(
       statusCode: response.statusCode,

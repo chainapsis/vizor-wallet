@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'voting_retry.dart';
 import 'voting_http.dart';
@@ -160,6 +161,114 @@ class VotingApiClient {
     return tally;
   }
 
+  /// The body of `GET /protocol-capabilities`, unread: zcash_voting's proxy
+  /// availability reads it.
+  Future<Uint8List> getProtocolCapabilitiesBody() async =>
+      (await _getBody(['protocol-capabilities']))!;
+
+  /// The body of `GET /round/{roundId}`, unread: zcash_voting's proxy
+  /// availability reads it.
+  Future<Uint8List> getRoundBody(String roundId) async =>
+      (await _getBody(['round', normalizeVotingRoundId(roundId)]))!;
+
+  /// The body of `GET /proxy-delegation-params`, or null when the chain
+  /// answers 404 because it has no proxy delegation.
+  Future<Uint8List?> getProxyDelegationParamsBody() =>
+      _getBody(['proxy-delegation-params'], allowNotFound: true);
+
+  /// One page of the round's whole delegate ballot list,
+  /// `GET /delegate-ballots/{roundId}?start_after=&limit=`, unread:
+  /// zcash_voting checks and chains the pages.
+  Future<Uint8List> getDelegateBallotsPageBody(
+    String roundId, {
+    required int startAfter,
+    int limit = 1000,
+  }) async => (await _getBody(
+    ['delegate-ballots', normalizeVotingRoundId(roundId)],
+    queryParameters: {'start_after': '$startAfter', 'limit': '$limit'},
+  ))!;
+
+  /// The vote chain's answer to `GET` [path], a path under a vote server's
+  /// base URL that zcash_voting names, such as
+  /// `/shielded-vote/v1/delegates/by-key/{hex}`, with its query. It asks
+  /// for the codespace ([kVotingCodespaceHeaders]).
+  ///
+  /// Every answer below HTTP 500 other than 429 is returned unread, so a
+  /// 404 reaches zcash_voting, which tells an enabled node's not-found from
+  /// a dormant one. A transport failure or a transient status is retried,
+  /// then the next vote server is tried; the last failure is thrown.
+  Future<VotingChainAnswer> getChainAnswer(String path) async {
+    final target = Uri.parse(path);
+    final response = await _withVoteServerFailover(
+      policy: _readRetryPolicy,
+      operation: (baseUrl) {
+        final uri = _endpointForPath(target, baseUrl);
+        return _runRequestWithRetry(
+          retryPolicy: _readRetryPolicy,
+          operation: () async {
+            final response = await _get(
+              uri,
+              headers: kVotingCodespaceHeaders,
+              timeout: _timeout,
+            );
+            if (response.statusCode == 429 || response.statusCode >= 500) {
+              _throwIfNotSuccess(uri, response);
+            }
+            return response;
+          },
+        );
+      },
+    );
+    return VotingChainAnswer(response.statusCode, response.bodyBytes);
+  }
+
+  /// [target]'s path and query under [baseUrl], whose own path is kept.
+  Uri _endpointForPath(Uri target, Uri baseUrl) {
+    final baseSegments = baseUrl.pathSegments
+        .where((segment) => segment.isNotEmpty)
+        .toList();
+    return baseUrl.replace(
+      pathSegments: [
+        ...baseSegments,
+        ...target.pathSegments.where((segment) => segment.isNotEmpty),
+      ],
+      queryParameters: target.queryParameters.isEmpty
+          ? null
+          : target.queryParameters,
+    );
+  }
+
+  /// The body of a `GET` on [pathSegments] with vote-server failover and the
+  /// read retry policy; null for a 404 when [allowNotFound].
+  Future<Uint8List?> _getBody(
+    List<String> pathSegments, {
+    Map<String, String>? queryParameters,
+    bool allowNotFound = false,
+  }) async {
+    final response = await _withVoteServerFailover(
+      policy: _readRetryPolicy,
+      operation: (baseUrl) {
+        final uri = _endpoint(
+          pathSegments,
+          queryParameters: queryParameters,
+          baseUrl: baseUrl,
+        );
+        return _runRequestWithRetry(
+          retryPolicy: _readRetryPolicy,
+          operation: () async {
+            final response = await _get(uri, timeout: _timeout);
+            if (!(allowNotFound && response.statusCode == 404)) {
+              _throwIfNotSuccess(uri, response);
+            }
+            return response;
+          },
+        );
+      },
+    );
+    if (response.statusCode == 404) return null;
+    return response.bodyBytes;
+  }
+
   Uri _endpoint(
     List<String> pathSegments, {
     Map<String, String>? queryParameters,
@@ -195,10 +304,16 @@ class VotingApiClient {
 
   Future<VotingHttpResponse> _get(
     Uri uri, {
+    Map<String, String>? headers,
     required Duration timeout,
     Future<void>? cancelSignal,
   }) {
-    return _httpClient.get(uri, timeout: timeout, cancelSignal: cancelSignal);
+    return _httpClient.get(
+      uri,
+      headers: headers,
+      timeout: timeout,
+      cancelSignal: cancelSignal,
+    );
   }
 
   Future<T> _runRequestWithRetry<T>({
@@ -342,4 +457,22 @@ void _requireMatchingRoundId({
   if (actual != expected) {
     throw FormatException('$context response round id mismatch');
   }
+}
+
+/// Opts a vote-chain submission or lookup into the answer's `codespace`
+/// (contracts-v1 §0), which zcash_voting classifies every rejection
+/// by, paired with its code. A node that ignores it answers as before.
+const kVotingCodespaceHeaders = {'x-svote-codespace': '1'};
+
+/// A vote chain answer passed on unread: its HTTP status and body, which
+/// zcash_voting parses.
+class VotingChainAnswer {
+  /// Creates the answer.
+  const VotingChainAnswer(this.statusCode, this.body);
+
+  /// The HTTP status.
+  final int statusCode;
+
+  /// The body.
+  final Uint8List body;
 }

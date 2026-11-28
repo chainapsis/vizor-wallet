@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/proxy_delegation_feature_config.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
@@ -16,10 +17,15 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../proxy/proxy_delegation_providers.dart';
+import '../proxy/screens/proxy_ballot_review.dart';
+import '../proxy/screens/proxy_round_delegation.dart';
+import '../proxy/widgets/proxy_delegate_widgets.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_message.dart';
 import '../voting_poll_ordering.dart';
+import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
@@ -67,6 +73,11 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
   String? _snapshotBundlePrecomputeKey;
+
+  /// The finality checkbox of a ballot that carries a delegation.
+  bool _delegationAcknowledged = false;
+  bool _submittingDelegation = false;
+  String? _delegationError;
 
   @override
   void initState() {
@@ -201,6 +212,45 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
     );
   }
 
+  /// Commits the drafted delegation with the kept share's [answers], starts
+  /// the job carrying the ballot and opens its progress at [route].
+  Future<void> _submitDelegation({
+    required VotingSessionKey key,
+    required List<VotingDraftVote> answers,
+    required List<int> proposalIds,
+    required String route,
+  }) async {
+    setState(() {
+      _submittingDelegation = true;
+      _delegationError = null;
+    });
+    final error = await submitProxyBallot(
+      context.l10n,
+      ProviderScope.containerOf(context, listen: false),
+      key: key,
+      answers: answers,
+      proposalIds: proposalIds,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      setState(() {
+        _submittingDelegation = false;
+        _delegationError = error;
+      });
+      return;
+    }
+    _openProgress(route);
+  }
+
+  /// Opens the submission's progress at [route].
+  void _openProgress(String route) {
+    if (widget.showDesktopToolbar) {
+      context.go(route);
+    } else {
+      context.pushReplacement(route);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(votingSessionProvider(widget.roundId));
@@ -250,19 +300,62 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
           state,
           preparing: votingPowerPreparing,
         );
-        final onSubmit = draft.isEmpty || !state.hasConfirmedVotingEligibility
+        // Delegates took every bundle's weight: no ballot is offered.
+        final nothingLeftToVote = roundPlanNothingLeftToVote(state.roundPlan);
+        final route = votingStatusRoute(
+          widget.roundId,
+          accountUuid: accountUuid,
+        );
+        // A delegation drafted on the round screen is reviewed and submitted
+        // with the answers. Null with the dormant flag off.
+        final delegationKey =
+            accountUuid != null &&
+                ref.watch(proxyDelegationFeatureEnabledProvider)
+            ? VotingSessionKey(
+                roundId: widget.roundId,
+                accountUuid: accountUuid,
+              )
+            : null;
+        final delegation = delegationKey == null
             ? null
-            : () {
-                final route = votingStatusRoute(
-                  widget.roundId,
-                  accountUuid: accountUuid,
+            : ref.watch(proxyBallotDelegationProvider(delegationKey));
+        final drafted = delegation != null && !delegation.committed;
+        final readiness = drafted
+            ? watchProxyDelegationReadiness(ref, delegationKey!)
+            : null;
+        final everythingDelegated = drafted && delegation.everythingDelegated;
+        // A delegation that keeps a share is submitted with its answers.
+        final keptShareUnanswered =
+            readiness != null && !everythingDelegated && draft.isEmpty;
+        final VoidCallback? onSubmit;
+        if (readiness != null) {
+          onSubmit =
+              delegationKey == null ||
+                  !readiness.ready ||
+                  !_delegationAcknowledged ||
+                  _submittingDelegation ||
+                  keptShareUnanswered ||
+                  !state.hasConfirmedVotingEligibility ||
+                  nothingLeftToVote
+              ? null
+              : () => unawaited(
+                  _submitDelegation(
+                    key: delegationKey,
+                    answers: everythingDelegated
+                        ? const []
+                        : draft.toDraftVotes(proposals),
+                    proposalIds: [for (final p in proposals) p.id],
+                    route: route,
+                  ),
                 );
-                if (widget.showDesktopToolbar) {
-                  context.go(route);
-                } else {
-                  context.pushReplacement(route);
-                }
-              };
+        } else {
+          onSubmit =
+              draft.isEmpty ||
+                  !state.hasConfirmedVotingEligibility ||
+                  nothingLeftToVote
+              ? null
+              : () => _openProgress(route);
+        }
         final reviewContent = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -277,7 +370,29 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
               ),
               const SizedBox(height: AppSpacing.md),
             ],
-            if (state.hasConfirmedVotingEligibility)
+            if (readiness != null) ...[
+              ProxyReviewDelegation(
+                readiness: readiness,
+                onRetryChecks: () =>
+                    ref.invalidate(proxyDelegateChecksProvider(delegationKey!)),
+                onRetryRound: () =>
+                    ref.invalidate(proxyRoundContextProvider(delegationKey!)),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (everythingDelegated)
+                ProxyAnswersForYou(names: delegation.names)
+              else
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: Text(
+                    context.l10n.proxyReviewAnswersTitle,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: context.colors.text.accent,
+                    ),
+                  ),
+                ),
+            ],
+            if (state.hasConfirmedVotingEligibility && !everythingDelegated)
               for (final entry in proposals.asMap().entries) ...[
                 VotingProposalCard(
                   proposal: entry.value,
@@ -292,13 +407,26 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
                 if (entry.key != proposals.length - 1)
                   const SizedBox(height: AppSpacing.s),
               ],
-            if (state.hasConfirmedVotingEligibility && draft.isEmpty) ...[
+            if (nothingLeftToVote) ...[
               const SizedBox(height: AppSpacing.xs),
-              _Message(context.l10n.votingReviewChooseOne),
+              _Message(context.l10n.proxyNothingLeftToVote),
+            ] else if (state.hasConfirmedVotingEligibility &&
+                draft.isEmpty &&
+                (readiness == null || keptShareUnanswered)) ...[
+              const SizedBox(height: AppSpacing.xs),
+              _Message(
+                keptShareUnanswered
+                    ? context.l10n.proxyAnswerKeptShare
+                    : context.l10n.votingReviewChooseOne,
+              ),
             ],
             if (eligibilityMessage != null) ...[
               const SizedBox(height: AppSpacing.xs),
               _Message(eligibilityMessage),
+            ],
+            if (readiness != null) ...[
+              const SizedBox(height: AppSpacing.md),
+              const ProxyBeforeYouDelegate(),
             ],
           ],
         );
@@ -310,6 +438,28 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
           expand: !widget.showDesktopToolbar,
           child: Text(context.l10n.votingReviewConfirmSubmit),
         );
+        if (readiness != null) {
+          return ProxyPaneLayout(
+            showDesktopToolbar: widget.showDesktopToolbar,
+            title: null,
+            action: ProxyConfirmFooter(
+              acknowledged: _delegationAcknowledged,
+              error: _delegationError,
+              onAcknowledgedChanged: (value) =>
+                  setState(() => _delegationAcknowledged = value),
+              button: AppButton(
+                key: const ValueKey('voting_confirm_submit_button'),
+                onPressed: onSubmit,
+                variant: AppButtonVariant.primary,
+                expand: true,
+                growWithContent: true,
+                constrainContent: true,
+                child: Text(context.l10n.votingReviewConfirmSubmit),
+              ),
+            ),
+            child: reviewContent,
+          );
+        }
         if (!widget.showDesktopToolbar) {
           return Stack(
             fit: StackFit.expand,

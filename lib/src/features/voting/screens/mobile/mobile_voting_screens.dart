@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/config/proxy_delegation_feature_config.dart';
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -16,6 +17,7 @@ import '../../../../providers/voting/voting_session_provider.dart';
 import 'mobile_keystone_voting_signing_screen.dart';
 import 'mobile_voting_submitted_screen.dart';
 import 'mobile_voting_submission_progress_screen.dart';
+import '../../proxy/proxy_delegation_providers.dart';
 import '../voting_polls_screen.dart';
 import '../voting_proposal_detail_screen.dart';
 import '../voting_results_screen.dart';
@@ -132,6 +134,10 @@ class _MobileVotingProposalDetailScreenState
     if (draftKey == null) return;
     _draftExitCleanupStarted = true;
     _draftKey = draftKey;
+    // A delegation drafted on the round is part of the same ballot.
+    if (ref.read(proxyDelegationFeatureEnabledProvider)) {
+      ref.read(proxyAllocationDraftProvider(draftKey).notifier).clear();
+    }
     final notifier = ref.read(votingDraftProvider(draftKey).notifier);
     try {
       await notifier.clearAll();

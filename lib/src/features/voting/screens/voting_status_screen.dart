@@ -38,13 +38,21 @@ import '../voting_formatters.dart';
 import '../voting_message.dart';
 import '../voting_progress_presentation.dart';
 import '../voting_resume_plan.dart';
+import '../../../core/config/proxy_delegation_feature_config.dart';
+import '../proxy/proxy_delegation_models.dart';
+import '../proxy/proxy_delegation_presentation.dart';
+import '../proxy/proxy_delegation_providers.dart';
+import '../proxy/proxy_delegation_repository.dart';
+import '../proxy/widgets/proxy_delegate_widgets.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../widgets/voting_step_row.dart';
 
 // The step enum moved next to the projections the ratchet compares it against.
-// It is re-exported so the platform progress screens keep importing it from the
-// screen that hands them the presentation.
-export '../voting_progress_presentation.dart' show VotingSubmissionProgressStep;
+// It and its labels are re-exported so the platform progress screens keep
+// importing them from the screen that hands them the presentation.
+export '../voting_progress_presentation.dart'
+    show VotingSubmissionProgressStep, votingSubmissionProgressStepLabel;
 
 part 'desktop_keystone_voting_signing.dart';
 
@@ -198,10 +206,96 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   /// flicker this screen exists to avoid.
   VotingMessage? _heldTerminalNotice;
 
+  /// Reads the round's delegation again while its submission runs, so the
+  /// rows follow the delegation between the job's own reads.
+  Timer? _delegationPoll;
+
+  /// The last frame drawn with a delegation's rows, repeated while the
+  /// session reloads so the rows do not blink out.
+  Widget? _heldDelegationContent;
+
   @override
   void initState() {
     super.initState();
     _scheduleStart();
+  }
+
+  @override
+  void dispose() {
+    _delegationPoll?.cancel();
+    super.dispose();
+  }
+
+  /// Polls the round's committed delegation every few seconds while
+  /// [polling]; stops otherwise.
+  void _syncDelegationPoll({required bool polling}) {
+    if (!polling) {
+      _delegationPoll?.cancel();
+      _delegationPoll = null;
+      return;
+    }
+    _delegationPoll ??= Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted) return;
+      final key = _selectedJobKey();
+      if (key == null) return;
+      ref.invalidate(proxyAllocationStatusProvider(key));
+    });
+  }
+
+  /// The rows of a submission whose ballot carries the round's committed
+  /// delegation [allocation]; null without one.
+  ProxyBallotProgress? _delegationProgress({
+    required ApiProxyAllocationStatus? allocation,
+    required VotingSubmissionJobState? job,
+    required VotingSessionState session,
+    required VotingSubmissionProgressStep ballotStep,
+    required bool ballotComplete,
+  }) {
+    final voteEnd = session.round?.voteEndTime;
+    if (allocation == null ||
+        allocation.delegations.isEmpty ||
+        voteEnd == null) {
+      return null;
+    }
+    final castsVotes = job?.kind != VotingSubmissionJobKind.proxy;
+    return proxyBallotProgress(
+      delegation: mergedProxyProgress(
+        status: allocation,
+        progress: job?.proxyProgress,
+      ),
+      castsVotes: castsVotes,
+      ballotStep: castsVotes
+          ? switch (ballotStep) {
+              VotingSubmissionProgressStep.provingAuthority => 0,
+              VotingSubmissionProgressStep.castingVotes => 1,
+              VotingSubmissionProgressStep.finalizing => 2,
+            }
+          : null,
+      ballotComplete: castsVotes && ballotComplete,
+      jobComplete: job?.status == VotingSubmissionJobStatus.complete,
+      now: ref.read(proxyClockProvider)(),
+      voteEnd: voteEnd,
+    );
+  }
+
+  /// The notice under [delegation]'s rows while the chain refuses its batch
+  /// or after it was not counted; null otherwise.
+  Widget? _delegationNotice(ProxyBallotProgress delegation) {
+    return switch (delegation.outcome) {
+      ProxyProgressRefused() => ProxyNotice(
+        key: const ValueKey('proxy_progress_refused'),
+        message: context.l10n.proxyRefused,
+        tone: ProxyNoticeTone.warning,
+      ),
+      ProxyProgressNotCounted() => ProxyNotice(
+        key: const ValueKey('proxy_progress_not_counted'),
+        message: context.l10n.proxyNotCounted,
+        tone: ProxyNoticeTone.error,
+      ),
+      ProxyProgressRunning() ||
+      ProxyProgressComplete() ||
+      ProxyProgressExpired() => null,
+    };
   }
 
   @override
@@ -407,6 +501,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     final session = selectedKey == null
         ? const AsyncValue<VotingSessionState>.loading()
         : ref.watch(votingSubmissionJobSessionProvider(selectedKey));
+    // The shown account's committed delegation, which this ballot carries.
+    // Null with the dormant flag off, so the rows stay the vote's own.
+    final allocation =
+        selectedKey != null && ref.watch(proxyDelegationFeatureEnabledProvider)
+        ? ref.watch(proxyAllocationStatusProvider(selectedKey)).value
+        : null;
+    _syncDelegationPoll(
+      polling: allocation != null && (job?.isInFlight ?? false),
+    );
     if (selectedKey != null &&
         job?.status == VotingSubmissionJobStatus.complete) {
       _scheduleConfirmationNavigation(selectedKey);
@@ -435,8 +538,11 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             onClear: _clearError,
           );
         }
+        if (allocation != null && _heldDelegationContent != null) {
+          return _heldDelegationContent!;
+        }
         final progressBuilder = widget.submissionProgressBuilder;
-        if (progressBuilder != null) {
+        if (progressBuilder != null && allocation == null) {
           usesPlatformScreen = true;
           // The session provider refreshes without skipping its loading state,
           // so this frame happens mid-submission with nothing new to show.
@@ -563,8 +669,16 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             ),
           );
         }
+        final delegation = _delegationProgress(
+          allocation: allocation,
+          job: job,
+          session: state,
+          ballotStep: progress.step,
+          ballotComplete: voteStepComplete,
+        );
         final progressBuilder = widget.submissionProgressBuilder;
         if (progressBuilder != null &&
+            delegation == null &&
             phase != VotingSessionPhase.error &&
             phase != VotingSessionPhase.keystoneSigning &&
             phase != VotingSessionPhase.ledgerSigning &&
@@ -578,7 +692,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             ),
           );
         }
-        return VotingStatusContent(
+        final statusContent = VotingStatusContent(
           phase: _phaseForStep(phase, progress.step),
           horizontalPadding: widget.contentHorizontalPadding,
           voteSubmissionDetail:
@@ -627,7 +741,13 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           onScanKeystone: _scanKeystoneSignature,
           onSkipKeystoneBundles: _skipRemainingKeystoneBundles,
           onCancelLedger: _cancelLedgerSigning,
+          delegation: delegation,
+          delegationNotice: delegation == null
+              ? null
+              : _delegationNotice(delegation),
         );
+        if (delegation != null) _heldDelegationContent = statusContent;
+        return statusContent;
       },
     );
     final result = usesPlatformScreen
@@ -777,10 +897,18 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         !_canNavigateToConfirmation(key)) {
       return;
     }
-    final route = votingSubmissionConfirmedRoute(
-      key.roundId,
-      accountUuid: key.accountUuid,
-    );
+    final job = ref.read(votingSubmissionJobProvider(key));
+    // A proxy job whose round still has ZEC to vote goes back to the
+    // questions; one that took everything is confirmed like a vote.
+    final plan = ref.read(votingSubmissionJobSessionProvider(key)).value;
+    final route =
+        job.kind == VotingSubmissionJobKind.proxy &&
+            !roundPlanNothingLeftToVote(plan?.roundPlan)
+        ? votingPollRoute(key.roundId)
+        : votingSubmissionConfirmedRoute(
+            key.roundId,
+            accountUuid: key.accountUuid,
+          );
     if (widget.requireCurrentRouteForConfirmation) {
       context.pushReplacement(route);
     } else {
@@ -913,6 +1041,8 @@ class VotingStatusContent extends StatelessWidget {
     this.onScanKeystone,
     this.onSkipKeystoneBundles,
     this.onCancelLedger,
+    this.delegation,
+    this.delegationNotice,
     super.key,
   });
 
@@ -965,6 +1095,14 @@ class VotingStatusContent extends StatelessWidget {
   final VoidCallback? onScanKeystone;
   final VoidCallback? onSkipKeystoneBundles;
   final VoidCallback? onCancelLedger;
+
+  /// The rows of a submission whose ballot carries a proxy delegation, in
+  /// place of the vote's own; null without one.
+  final ProxyBallotProgress? delegation;
+
+  /// The notice under a delegation's rows while the chain refuses its batch
+  /// or once it was not counted.
+  final Widget? delegationNotice;
 
   @override
   Widget build(BuildContext context) {
@@ -1025,6 +1163,9 @@ class VotingStatusContent extends StatelessWidget {
               Text(
                 awaitingLedgerApproval
                     ? context.l10n.votingStatusTitleLedger
+                    : delegation != null &&
+                          !delegation!.steps.contains(ProxyBallotStep.casting)
+                    ? context.l10n.proxyProgressTitle
                     : context.l10n.votingStatusTitleSubmitting,
                 textAlign: TextAlign.center,
                 style: AppTypography.displaySmall.copyWith(
@@ -1089,7 +1230,7 @@ class VotingStatusContent extends StatelessWidget {
                 const SizedBox(height: AppSpacing.md),
               ],
               if (isHardwareAccount)
-                _StepRow(
+                VotingStepRow(
                   label: isLedgerAccount
                       ? context.l10n.votingStepSigningLedger
                       : context.l10n.votingStepSigningKeystone,
@@ -1104,29 +1245,39 @@ class VotingStatusContent extends StatelessWidget {
                         : VotingSessionPhase.keystoneSigning,
                   ),
                 ),
-              _StepRow(
-                label: context.l10n.votingStepProving,
-                active: phase == VotingSessionPhase.delegating,
-                complete: _after(VotingSessionPhase.delegating),
-                detail: delegationDetail,
-                progressValue: delegationProgress,
-              ),
-              _StepRow(
-                label: context.l10n.votingStepCasting,
-                active:
-                    !voteStepComplete &&
-                    (phase == VotingSessionPhase.syncingVoteTree ||
-                        phase == VotingSessionPhase.castingVotes ||
-                        phase == VotingSessionPhase.submittingShares),
-                complete: voteStepComplete,
-                detail: voteStepComplete ? null : voteSubmissionDetail,
-                progressValue: voteStepComplete ? null : voteSubmissionProgress,
-              ),
-              _StepRow(
-                label: context.l10n.votingStepFinalizing,
-                active: finalizingSubmission,
-                complete: submissionJobComplete,
-              ),
+              if (delegation case final delegation?)
+                ..._delegationRows(context, delegation)
+              else ...[
+                VotingStepRow(
+                  label: context.l10n.votingStepProving,
+                  active: phase == VotingSessionPhase.delegating,
+                  complete: _after(VotingSessionPhase.delegating),
+                  detail: delegationDetail,
+                  progressValue: delegationProgress,
+                ),
+                VotingStepRow(
+                  label: context.l10n.votingStepCasting,
+                  active:
+                      !voteStepComplete &&
+                      (phase == VotingSessionPhase.syncingVoteTree ||
+                          phase == VotingSessionPhase.castingVotes ||
+                          phase == VotingSessionPhase.submittingShares),
+                  complete: voteStepComplete,
+                  detail: voteStepComplete ? null : voteSubmissionDetail,
+                  progressValue: voteStepComplete
+                      ? null
+                      : voteSubmissionProgress,
+                ),
+                VotingStepRow(
+                  label: context.l10n.votingStepFinalizing,
+                  active: finalizingSubmission,
+                  complete: submissionJobComplete,
+                ),
+              ],
+              if (delegationNotice case final notice?) ...[
+                const SizedBox(height: AppSpacing.sm),
+                notice,
+              ],
               if (terminalNotice != null) ...[
                 const SizedBox(height: AppSpacing.sm),
                 Text(
@@ -1181,6 +1332,39 @@ class VotingStatusContent extends StatelessWidget {
 
   bool _after(VotingSessionPhase target) {
     return phase.index > target.index && phase != VotingSessionPhase.error;
+  }
+
+  /// [delegation]'s rows, after any signing row. The proving row carries
+  /// the proof's ring and the casting row the ballot's, as the vote's own
+  /// rows do.
+  List<Widget> _delegationRows(
+    BuildContext context,
+    ProxyBallotProgress delegation,
+  ) {
+    final moving = delegation.running && phase != VotingSessionPhase.error;
+    return [
+      for (final (i, step) in delegation.steps.indexed)
+        VotingStepRow(
+          key: ValueKey('voting_delegation_step_${step.name}'),
+          label: proxyBallotStepLabel(context.l10n, step, delegation.names),
+          active: moving && i == delegation.current,
+          complete: i < delegation.current,
+          detail: moving && i == delegation.current
+              ? switch (step) {
+                  ProxyBallotStep.proving => delegationDetail,
+                  ProxyBallotStep.casting => voteSubmissionDetail,
+                  _ => null,
+                }
+              : null,
+          progressValue: moving && i == delegation.current
+              ? switch (step) {
+                  ProxyBallotStep.proving => delegationProgress,
+                  ProxyBallotStep.casting => voteSubmissionProgress,
+                  _ => null,
+                }
+              : null,
+        ),
+    ];
   }
 }
 
@@ -1907,126 +2091,6 @@ class _SoftwareAccountRequiredContent extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _StepRow extends StatelessWidget {
-  const _StepRow({
-    required this.label,
-    this.active = false,
-    this.complete = false,
-    this.detail,
-    this.progressValue,
-  });
-
-  final String label;
-  final bool active;
-  final bool complete;
-  final String? detail;
-  final double? progressValue;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final progress = progressValue?.clamp(0.0, 1.0).toDouble();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: active
-                ? _ProgressBubble(progress: progress)
-                : Icon(
-                    complete
-                        ? Icons.check_circle
-                        : Icons.radio_button_unchecked,
-                    size: 20,
-                    color: complete
-                        ? colors.text.success
-                        : colors.text.secondary,
-                  ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: active || complete
-                        ? colors.text.accent
-                        : colors.text.secondary,
-                  ),
-                ),
-                if (detail != null && detail!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  // The line changes several times over a submission, and each
-                  // change is a change of subject rather than a number moving,
-                  // so it fades rather than swapping in place.
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeOutCubic,
-                    child: Text(
-                      detail!,
-                      key: ValueKey<String>(detail!),
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProgressBubble extends StatelessWidget {
-  const _ProgressBubble({required this.progress});
-
-  final double? progress;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final value = progress;
-    final backgroundColor = colors.text.secondary.withValues(alpha: 0.35);
-    const size = 20.0;
-    if (value == null) {
-      return Center(
-        child: SizedBox.square(
-          dimension: size,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            backgroundColor: backgroundColor,
-          ),
-        ),
-      );
-    }
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: value),
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      builder: (context, animatedValue, child) {
-        return Center(
-          child: SizedBox.square(
-            dimension: size,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              value: animatedValue,
-              backgroundColor: backgroundColor,
-            ),
-          ),
-        );
-      },
     );
   }
 }

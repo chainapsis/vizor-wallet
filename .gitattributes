@@ -21,3 +21,7 @@ tool/l10n/ui_fonts.manifest.json linguist-generated=true
 tool/l10n/ui_font_characters.json linguist-generated=true
 ios/Runner/NativeStrings.swift linguist-generated=true
 android/app/src/main/kotlin/com/keplr/vizor/NativeStrings.kt linguist-generated=true
+
+# flutter_rust_bridge output; review the Rust API in rust/src/api instead.
+rust/src/frb_generated.rs linguist-generated=true
+lib/src/rust/** linguist-generated=true

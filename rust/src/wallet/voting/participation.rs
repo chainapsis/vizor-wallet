@@ -7,7 +7,10 @@ use tendermint::validator;
 mod evidence;
 use evidence::*;
 use zcash_client_backend::data_api::{Account, WalletRead};
-use zcash_voting::{governance, selection::select_snapshot_note_infos, types::NoteInfo};
+use zcash_voting::{
+    governance, proxy::registry::RegistryProofRequest, selection::select_snapshot_note_infos,
+    types::NoteInfo,
+};
 
 use super::network::{voting_network, wallet_network};
 use crate::wallet::sync::open_wallet_db_for_read;
@@ -25,6 +28,9 @@ fn trust_anchor(network: &str) -> Result<TrustAnchor, String> {
         serde_json::from_str(include_str!("trust/anchors.json")).map_err(|_| INVALID)?;
     anchors.remove(network).ok_or_else(|| INVALID.into())
 }
+// Chain ids are built in, so a chain id change ships in a Vizor release.
+const MAIN_CHAIN_ID: &str = "zvote-1";
+const STAGE_CHAIN_ID: &str = "svote-1";
 // Set only by the local integration harness. Production/testnet never consult
 // this anchor; their compiled trust roots remain authoritative.
 static REGTEST_TRUST: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
@@ -35,18 +41,73 @@ pub fn configure_regtest_trust(chain: String, validator_hash: String) -> Result<
         return Err(INVALID.into());
     }
     let anchor = (chain, validator_hash.to_uppercase());
-    if let Some(existing) = REGTEST_TRUST.get() {
-        return if existing == &anchor {
-            Ok(())
-        } else {
-            Err(INVALID.into())
-        };
+    // `get_or_init` keeps two callers setting the same anchor from racing.
+    if REGTEST_TRUST.get_or_init(|| anchor.clone()) == &anchor {
+        Ok(())
+    } else {
+        Err(INVALID.into())
     }
-    REGTEST_TRUST.set(anchor).map_err(|_| INVALID.to_string())
 }
 
 const MAX_NOTES: usize = 1024;
 const MAX_JSON: usize = 8 * 1024 * 1024;
+
+/// Most registry entries one evidence answer proves: the delegates one
+/// allocation may name (contracts-v1 §11.6).
+const MAX_REGISTRY_ENTRIES: usize = 8;
+
+/// A kind of `vote` store key the reader proves. Any kind may be proven
+/// absent; the kind sets which value a membership proof may claim
+/// (contracts-v1 §11.6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum KeyKind {
+    /// `[1, 0] || round(32) || nf(32)`: a spent governance nullifier, whose
+    /// value is exactly `[1]`.
+    GovernanceNullifier,
+    /// A registry entry, under zcash_voting's value rule for it
+    /// ([`RegistryProofRequest::admits`]).
+    Registry(RegistryProofRequest),
+}
+
+impl KeyKind {
+    /// Whether a membership proof may claim `value`, which is non-empty: an
+    /// empty value claims absence.
+    fn admits(&self, value: &[u8]) -> bool {
+        match self {
+            Self::GovernanceNullifier => value == [1],
+            Self::Registry(request) => request.admits(value),
+        }
+    }
+}
+
+/// A store key the reader proves, with its kind.
+struct ProvenKey {
+    kind: KeyKind,
+    bytes: Vec<u8>,
+}
+
+impl ProvenKey {
+    /// A governance-nullifier key from its hex form.
+    fn governance_nullifier(key: &str) -> Result<Self, String> {
+        let bytes = hex::decode(key).map_err(|_| INVALID)?;
+        if bytes.len() != 66 || bytes[..2] != [1, 0] {
+            return Err(INVALID.into());
+        }
+        Ok(Self {
+            kind: KeyKind::GovernanceNullifier,
+            bytes,
+        })
+    }
+
+    /// The registry entry key of delegate `delegate_index`.
+    fn registry(delegate_index: u32) -> Self {
+        let request = RegistryProofRequest { delegate_index };
+        Self {
+            bytes: request.store_key(),
+            kind: KeyKind::Registry(request),
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Candidates {
@@ -185,8 +246,16 @@ fn bundled_validators(network: &str) -> Result<&'static validator::Set, String> 
     static MAIN: std::sync::OnceLock<Result<validator::Set, String>> = std::sync::OnceLock::new();
     static TEST: std::sync::OnceLock<Result<validator::Set, String>> = std::sync::OnceLock::new();
     let (slot, json, chain) = match network {
-        "main" => (&MAIN, include_str!("trust/main-validators.json"), "zvote-1"),
-        "test" => (&TEST, include_str!("trust/test-validators.json"), "svote-1"),
+        "main" => (
+            &MAIN,
+            include_str!("trust/main-validators.json"),
+            MAIN_CHAIN_ID,
+        ),
+        "test" => (
+            &TEST,
+            include_str!("trust/test-validators.json"),
+            STAGE_CHAIN_ID,
+        ),
         _ => return Err(INVALID.into()),
     };
     slot.get_or_init(|| {
@@ -202,6 +271,31 @@ fn bundled_validators(network: &str) -> Result<&'static validator::Set, String> 
     .map_err(Clone::clone)
 }
 
+/// Sets the regtest anchor every Rust test shares: the stage chain and its
+/// bundled validator set, so registry tests can run on `regtest`.
+#[cfg(test)]
+pub(crate) fn configure_test_regtest_trust() {
+    configure_regtest_trust(
+        STAGE_CHAIN_ID.into(),
+        trust_anchor("test").unwrap().validator_set_hash,
+    )
+    .unwrap();
+}
+
+/// The vote chain id the reader trusts for `network`: built in for mainnet
+/// and testnet, and the local harness's for regtest once configured.
+pub fn vote_chain_id(network: &str) -> Result<String, String> {
+    match network {
+        "main" => Ok(MAIN_CHAIN_ID.to_owned()),
+        "test" => Ok(STAGE_CHAIN_ID.to_owned()),
+        "regtest" => REGTEST_TRUST
+            .get()
+            .map(|(chain, _)| chain.clone())
+            .ok_or_else(|| INVALID.to_owned()),
+        _ => Err(INVALID.into()),
+    }
+}
+
 fn verify_header(
     commit: &CommitResult,
     validators: &ValidatorsResult,
@@ -210,8 +304,8 @@ fn verify_header(
 ) -> Result<(), String> {
     let set = checked_validator_set(validators)?;
     let (chain, trusted) = match network {
-        "main" => ("zvote-1", bundled_validators("main")?),
-        "test" => ("svote-1", bundled_validators("test")?),
+        "main" => (MAIN_CHAIN_ID, bundled_validators("main")?),
+        "test" => (STAGE_CHAIN_ID, bundled_validators("test")?),
         "regtest" => {
             let (chain, pin) = REGTEST_TRUST.get().ok_or(INVALID)?;
             if set.hash().to_string() != *pin {
@@ -224,17 +318,61 @@ fn verify_header(
     verify_header_with_trust(commit, &set, chain, trusted, now)
 }
 
+/// Proves `key` of `kind` from one `abci_query` answer under `app_hash`: the
+/// proven value, or `None` when the answer proves the key absent.
+fn verify_kind_query(
+    q: &QueryResponse,
+    kind: &KeyKind,
+    key: &[u8],
+    app_hash: &[u8],
+    height: u64,
+) -> Result<Option<Vec<u8>>, String> {
+    verify_query_value(q, key, app_hash, height, |value| kind.admits(value))
+}
+
+/// Verifies `evidence` for governance-nullifier `keys`, in order: whether
+/// each nullifier is spent.
 pub fn verify(
     keys: &[String],
     network: &str,
     evidence: &str,
     now: i64,
 ) -> Result<Vec<bool>, String> {
+    let keys = keys
+        .iter()
+        .map(|key| ProvenKey::governance_nullifier(key))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(verify_keys(&keys, network, evidence, now)?
+        .iter()
+        .map(Option::is_some)
+        .collect())
+}
+
+/// Verifies `evidence` for `keys` under `network`'s trust anchor, in order:
+/// each key's proven value, or `None` where the chain proves it absent.
+fn verify_keys(
+    keys: &[ProvenKey],
+    network: &str,
+    evidence: &str,
+    now: i64,
+) -> Result<Vec<Option<Vec<u8>>>, String> {
+    verify_evidence(keys, evidence, |commit, validators| {
+        verify_header(commit, validators, network, now)
+    })
+}
+
+/// [`verify_keys`] with the header check passed in, so tests can bring
+/// their own trust anchor.
+fn verify_evidence(
+    keys: &[ProvenKey],
+    evidence: &str,
+    header_check: impl FnOnce(&CommitResult, &ValidatorsResult) -> Result<(), String>,
+) -> Result<Vec<Option<Vec<u8>>>, String> {
     if evidence.len() > MAX_JSON || keys.len() > MAX_NOTES {
         return Err(INVALID.into());
     }
     let e: Evidence = serde_json::from_str(evidence).map_err(|_| INVALID)?;
-    verify_header(&e.commit.result, &e.validators.result, network, now)?;
+    header_check(&e.commit.result, &e.validators.result)?;
     if keys.len() != e.queries.len() {
         return Err(INVALID.into());
     }
@@ -243,13 +381,56 @@ pub fn verify(
     keys.iter()
         .zip(&e.queries)
         .map(|(key, q)| {
-            let key = hex::decode(key).map_err(|_| INVALID)?;
-            if key.len() != 66 || key[..2] != [1, 0] {
-                return Err(INVALID.into());
-            }
-            verify_query(&q.result.response, &key, h.app_hash.as_bytes(), height)
+            verify_kind_query(
+                &q.result.response,
+                &key.kind,
+                &key.bytes,
+                h.app_hash.as_bytes(),
+                height,
+            )
         })
         .collect()
+}
+
+/// The registry entry keys of delegates `indices`, in order (contracts-v1
+/// §11.6). A check names 1 to [`MAX_REGISTRY_ENTRIES`] distinct indices,
+/// never 0, which the chain never assigns.
+fn registry_keys(indices: &[u32]) -> Result<Vec<ProvenKey>, String> {
+    let distinct = indices
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    if indices.is_empty()
+        || indices.len() > MAX_REGISTRY_ENTRIES
+        || distinct != indices.len()
+        || indices.contains(&0)
+    {
+        return Err(format!(
+            "A registry check names 1 to {MAX_REGISTRY_ENTRIES} distinct nonzero delegate indices"
+        ));
+    }
+    Ok(indices.iter().copied().map(ProvenKey::registry).collect())
+}
+
+/// The `vote` store keys that prove delegate entries `indices`, in order,
+/// under [`registry_keys`]'s rule.
+pub fn registry_entry_keys(indices: &[u32]) -> Result<Vec<Vec<u8>>, String> {
+    Ok(registry_keys(indices)?
+        .into_iter()
+        .map(|key| key.bytes)
+        .collect())
+}
+
+/// Verifies `evidence` for the registry entries of delegates `indices`, in
+/// order: each entry's proven bytes, or `None` where the chain proves it
+/// absent. zcash_voting decodes the entries, the reader only proves them.
+pub fn verify_registry_entries(
+    indices: &[u32],
+    network: &str,
+    evidence: &str,
+    now: i64,
+) -> Result<Vec<Option<Vec<u8>>>, String> {
+    verify_keys(&registry_keys(indices)?, network, evidence, now)
 }
 
 // Call only with candidates freshly read from the wallet DB. Empty evidence is
@@ -751,13 +932,12 @@ mod tests {
     #[test]
     fn regtest_anchor_is_explicit_and_cannot_change_public_network_trust() {
         let (evidence, keys, now) = fixture("test");
-        assert!(verify(&keys, "regtest", &evidence.to_string(), now).is_err());
+        // Other tests may have set the process-wide anchor already.
+        if REGTEST_TRUST.get().is_none() {
+            assert!(verify(&keys, "regtest", &evidence.to_string(), now).is_err());
+        }
         assert!(configure_regtest_trust("local".into(), "invalid".into()).is_err());
-        configure_regtest_trust(
-            "svote-1".into(),
-            trust_anchor("test").unwrap().validator_set_hash,
-        )
-        .unwrap();
+        configure_test_regtest_trust();
         assert_eq!(
             verify(&keys, "regtest", &evidence.to_string(), now).unwrap(),
             [true, false]
@@ -1047,3 +1227,6 @@ mod tests {
         assert_eq!(count, 1);
     }
 }
+
+#[cfg(test)]
+mod registry_tests;

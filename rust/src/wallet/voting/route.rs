@@ -289,9 +289,10 @@ mod tests {
         time::Duration,
     };
 
+    use http::Method;
     use zcash_voting::{
         ChainTransportFailureKind, HelperTransport, HelperTransportError, HyperTransport,
-        RoutePhase,
+        RouteHttp, RoutePhase, RouteRequest,
     };
 
     use super::{classify_tor_error, VizorRoute};
@@ -368,6 +369,49 @@ mod tests {
         assert_eq!(response.body(), b"{}");
         assert_eq!(response.content_type(), Some("application/json"));
         server.join().unwrap();
+    }
+
+    /// The SDK's protocol headers reach the node as given, such as the
+    /// codespace opt-in every vote-chain submission and lookup carries
+    /// (contract §17.5), which the SDK classifies rejections by.
+    #[tokio::test]
+    async fn selected_direct_route_forwards_the_sdk_headers() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let bytes_read = stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                .unwrap();
+            String::from_utf8_lossy(&request[..bytes_read]).to_ascii_lowercase()
+        });
+
+        let url = format!("http://{address}/shielded-vote/v1/tx/AB");
+        let headers = [("x-svote-codespace".to_owned(), "1".to_owned())];
+        let response = VizorRoute::new()
+            .execute(
+                RouteRequest {
+                    method: Method::GET,
+                    url: &url,
+                    headers: &headers,
+                    body: Vec::new(),
+                    timeout: Duration::from_secs(1),
+                    connect_timeout: None,
+                    max_response_bytes: 1024,
+                },
+                &|| {},
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        let request = server.join().unwrap();
+        assert!(
+            request.contains("\r\nx-svote-codespace: 1\r\n"),
+            "{request}"
+        );
     }
 
     #[tokio::test]

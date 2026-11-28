@@ -176,8 +176,13 @@ class _VotingSubmissionConfirmationViewState
     final pollTitle = state.round?.title.isNotEmpty == true
         ? state.round!.title
         : context.l10n.votingTokenHolderTitle;
+    // Delegates that took every bundle's weight complete the ballot once
+    // the delegation is handed off.
+    final allDelegated =
+        roundPlanNothingLeftToVote(state.roundPlan) &&
+        !roundPlanHasProxyWork(state.roundPlan);
     final hasCompletedSubmission =
-        hasCompletedVoteForDisplay(state.roundPlan) &&
+        (hasCompletedVoteForDisplay(state.roundPlan) || allDelegated) &&
         hasConfirmedImmediateShare(state.roundPlan);
     if (hasCompletedSubmission) {
       _lastSubmissionState = state;
@@ -264,7 +269,9 @@ class _VotingSubmissionConfirmationViewState
         confirmed: true,
         title: context.l10n.votingConfirmationConfirmedTitle,
         pollTitle: pollTitle,
-        message: context.l10n.votingConfirmationConfirmedBody,
+        message: allDelegated
+            ? context.l10n.proxyDelegationConfirmed
+            : context.l10n.votingConfirmationConfirmedBody,
         votingPower: _formatVotingPower(
           _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
           privacyModeEnabled: ref.watch(privacyModeProvider),

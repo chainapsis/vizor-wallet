@@ -116,12 +116,14 @@ class MappedVotingHttpClient implements VotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) {
     return _inner.get(
       _mapper.map(uri),
       headers: headers,
       timeout: timeout,
       cancelSignal: cancelSignal,
+      maxBodyBytes: maxBodyBytes,
     );
   }
 
@@ -129,8 +131,16 @@ class MappedVotingHttpClient implements VotingHttpClient {
   Future<VotingHttpResponse> postJson(
     Uri uri,
     Map<String, dynamic> body, {
+    Map<String, String>? headers,
     Duration? timeout,
+    int? maxBodyBytes,
   }) {
-    return _inner.postJson(_mapper.map(uri), body, timeout: timeout);
+    return _inner.postJson(
+      _mapper.map(uri),
+      body,
+      headers: headers,
+      timeout: timeout,
+      maxBodyBytes: maxBodyBytes,
+    );
   }
 }

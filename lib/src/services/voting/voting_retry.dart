@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../../core/network/network_http_client.dart';
 import 'voting_models.dart';
 import 'voting_rust_exception.dart';
 
@@ -83,3 +84,18 @@ bool isRetryableVotingError(Object error) {
   }
   return false;
 }
+
+/// Whether [error] is a request that got no answer at all: refused or
+/// reset connections, Tor failures (the Tor bridge throws its errors as
+/// bare strings), timeouts, TLS failures, direct requests blocked while the
+/// route switches to Tor, and bodies cut off past their size limit (an
+/// [HttpException] direct, a string over Tor). None of these is a chain
+/// verdict, so proxy delegation shows them as an unreachable server, never
+/// as a rejection.
+bool isVotingTransportError(Object error) =>
+    error is String ||
+    error is SocketException ||
+    error is HttpException ||
+    error is TlsException ||
+    error is TimeoutException ||
+    error is DirectNetworkRequestsBlockedException;

@@ -132,6 +132,23 @@ enum StaticVotingConfigSourceProblem {
   checksumFormat,
 }
 
+/// One successful voting config load as proxy delegation reads it: the
+/// dynamic config documents the load fetched, in fetch order, whose unsigned
+/// `extensions.proxy_delegation_v1` names the proxy service URLs.
+@immutable
+class VotingDynamicConfigFetch {
+  /// Creates the record.
+  const VotingDynamicConfigFetch({required this.documents});
+
+  /// Every dynamic config document fetched, in fetch order.
+  final List<Uint8List> documents;
+}
+
+/// Receives each successful load's [VotingDynamicConfigFetch]; the load
+/// waits for it to finish.
+typedef VotingDynamicConfigObserver =
+    Future<void> Function(VotingDynamicConfigFetch fetch);
+
 class StaticVotingConfigSourceMalformed implements Exception {
   final StaticVotingConfigSourceProblem problem;
 
@@ -380,6 +397,7 @@ class VotingConfigLoader {
     ResolveVotingConfigFromAttemptsFn resolveVotingConfigFromAttempts =
         rust_config_api.resolveVotingConfigFromAttempts,
     this.onMirrorFailure,
+    this.onDynamicConfigFetched,
   }) : _sources = _resolveSources(sourceUrl),
        _httpClient = httpClient,
        _timeout = timeout,
@@ -394,6 +412,11 @@ class VotingConfigLoader {
   /// on the canonical origin is invisible in the return value precisely because
   /// the fallback worked. Callers that care about tamper signals watch this.
   final void Function(VotingConfigMirrorFailure failure)? onMirrorFailure;
+
+  /// Proxy delegation's hook, null unless its dormant flag is on: each
+  /// successful load hands it the documents it fetched (contracts section
+  /// 12.1). A failing observer never fails the load.
+  final VotingDynamicConfigObserver? onDynamicConfigFetched;
 
   /// Ordered static trust-anchor mirrors to walk, canonical origin first.
   ///
@@ -443,12 +466,15 @@ class VotingConfigLoader {
     final (source, staticBytes, dynamicUrls) = await _resolveStaticAnchor(
       observer,
     );
+    final fetchObserver = onDynamicConfigFetched;
+    final documents = <Uint8List>[];
     final resolution = await _walkDynamicMirrors(
       source: source,
       staticBytes: staticBytes,
       dynamicUrls: dynamicUrls,
       previous: previous,
       mirrorFailureObserver: observer,
+      onDocument: fetchObserver == null ? null : documents.add,
     );
 
     for (final mirror in resolution.skippedMirrors) {
@@ -468,6 +494,15 @@ class VotingConfigLoader {
         'count=${skipped.length} sample=$sample'
         '${remaining > 0 ? ", plus $remaining more" : ""}',
       );
+    }
+    if (fetchObserver != null) {
+      try {
+        await fetchObserver(
+          VotingDynamicConfigFetch(documents: List.unmodifiable(documents)),
+        );
+      } catch (error) {
+        debugPrint('[zcash] Voting: dynamic config observer threw: $error');
+      }
     }
     return resolution;
   }
@@ -544,6 +579,7 @@ class VotingConfigLoader {
     required rust_config.ResolvedVotingConfig? previous,
     required void Function(VotingConfigMirrorFailure failure)?
     mirrorFailureObserver,
+    void Function(Uint8List bytes)? onDocument,
   }) async {
     final attempts = <rust_config_api.ApiDynamicConfigAttempt>[];
     rust_config_api.VotingConfigResolution? best;
@@ -558,6 +594,7 @@ class VotingConfigLoader {
         attempts.add(
           rust_config_api.ApiDynamicConfigAttempt(url: url, bytes: bytes),
         );
+        onDocument?.call(bytes);
       } catch (error, stackTrace) {
         transportError ??= error;
         transportStackTrace ??= stackTrace;

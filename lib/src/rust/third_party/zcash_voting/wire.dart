@@ -7,8 +7,65 @@ import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'share_policy.dart';
 
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegateAndVoteBatchWire`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `RoundStepOutcomeView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BallotPreflight`, `BallotSubmitResult`, `BoundedU32`, `DelegateAndVoteBatchWire`, `DelegateAttestationSignature`, `DelegateAttestation`, `DelegateEntryView`, `DelegateLookup`, `DelegateModeStatus`, `DelegateRegisterResult`, `DelegateRetireResult`, `DelegateVerifierError`, `DelegateVerifierRefusal`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `ProxyAllocationStatus`, `ProxyAvailability`, `ProxyDelegationProgress`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `RoundStepOutcomeView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `hash`, `try_from`, `try_from`
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DelegateBallotView>>
+abstract class DelegateBallotView implements RustOpaqueInterface {}
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DelegateRound>>
+abstract class DelegateRound implements RustOpaqueInterface {
+  DelegateBallotView get ballot;
+
+  DelegateBallotBlock? get ballotBlock;
+
+  BigInt get revealedShares;
+
+  String get roundId;
+
+  Uint32List? get storedBallot;
+
+  BigInt get voteEndTime;
+
+  set ballot(DelegateBallotView ballot);
+
+  set ballotBlock(DelegateBallotBlock? ballotBlock);
+
+  set revealedShares(BigInt revealedShares);
+
+  set roundId(String roundId);
+
+  set storedBallot(Uint32List? storedBallot);
+
+  set voteEndTime(BigInt voteEndTime);
+}
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ProxyDelegationView>>
+abstract class ProxyDelegationView implements RustOpaqueInterface {
+  DelegateBallotView get ballot;
+
+  BigInt get ballots;
+
+  int get delegateIndex;
+
+  String get handle;
+
+  ProxyDelegateProvider get provider;
+
+  ProxyDelegationStage get stage;
+
+  set ballot(DelegateBallotView ballot);
+
+  set ballots(BigInt ballots);
+
+  set delegateIndex(int delegateIndex);
+
+  set handle(String handle);
+
+  set provider(ProxyDelegateProvider provider);
+
+  set stage(ProxyDelegationStage stage);
+}
 
 /// How a confirmation was established.
 enum ChainConfirmationSourceView { hash, tree }
@@ -25,6 +82,15 @@ enum ChainDiagnosticKindView {
   storageFailure,
   endpointUnsupported,
   routeAnswerReplaced,
+
+  /// See [`crate::ChainSubmissionDiagnosticKind::ProxyBatchPaused`].
+  proxyBatchPaused,
+
+  /// See [`crate::ChainSubmissionDiagnosticKind::ProxyBatchExpired`].
+  proxyBatchExpired,
+
+  /// See [`crate::ChainSubmissionDiagnosticKind::ProxyRegistrationLanded`].
+  proxyRegistrationLanded,
 }
 
 class ChainDiagnosticView {
@@ -167,6 +233,76 @@ class CompletedVoteDisplayView {
           runtimeType == other.runtimeType &&
           choices == other.choices &&
           votedAt == other.votedAt;
+}
+
+/// Why the device cannot sign a round's ballot.
+enum DelegateBallotBlock {
+  /// The device's key has no registry entry.
+  notRegistered,
+
+  /// Coordinators suspended the entry.
+  suspended,
+
+  /// The entry is retired.
+  retired,
+}
+
+/// The pre-proving check's verdict on one chosen delegate, at confirm
+/// (contract §11.11). Only `Ok` lets a commit through.
+enum DelegateCheck {
+  /// The proven entry is active and holds the choice's key, provider and
+  /// handle.
+  ok,
+
+  /// Coordinators suspended the entry.
+  suspended,
+
+  /// The entry is retired.
+  retired,
+
+  /// The chain has no entry with this index.
+  notFound,
+
+  /// The proven entry's key, provider or handle is not the choice's, so it
+  /// is not the delegate the delegator picked.
+  mismatch,
+
+  /// The entry could not be proven. Retry later.
+  cannotVerify,
+}
+
+/// A registry entry's status.
+enum DelegateEntryStatus {
+  /// The delegate can ballot.
+  active,
+
+  /// Coordinators suspended the entry, so it cannot ballot or retire.
+  suspended,
+
+  /// The entry is retired for good, by its own key or by coordinators.
+  retired,
+}
+
+/// A delegate key as people compare it: its `zvdk1…` string and fingerprint.
+class DelegateKeyInfo {
+  /// The key's canonical lower-case bech32m string, `zvdk1…`.
+  final String dk;
+
+  /// The key's fingerprint, grouped as `xxxx-xxxx-xxxx-xxxx`.
+  final String fingerprint;
+
+  const DelegateKeyInfo({required this.dk, required this.fingerprint});
+
+  @override
+  int get hashCode => dk.hashCode ^ fingerprint.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DelegateKeyInfo &&
+          runtimeType == other.runtimeType &&
+          dk == other.dk &&
+          fingerprint == other.fingerprint;
 }
 
 /// Delegation proving and signing stages.
@@ -364,14 +500,25 @@ enum NextStepKind {
   advanceVoteBatch,
   submitShares,
   confirmShare,
+
+  /// Plan and prove a bundle's proxy delegation batch.
+  proxyDelegate,
+
+  /// Submit and confirm a bundle's proved proxy delegation batch.
+  advanceProxyBatch,
 }
 
 class NextStepView {
   final NextStepKind kind;
   final int bundleIndex;
+
+  /// The step's proposal; 0 for a step on a delegation commitment.
   final int proposalId;
   final int choice;
   final int shareIndex;
+
+  /// The delegation commitment's slot, for a share step on a DC only.
+  final int? dcSlot;
 
   const NextStepView({
     required this.kind,
@@ -379,6 +526,7 @@ class NextStepView {
     required this.proposalId,
     required this.choice,
     required this.shareIndex,
+    this.dcSlot,
   });
 
   @override
@@ -387,7 +535,8 @@ class NextStepView {
       bundleIndex.hashCode ^
       proposalId.hashCode ^
       choice.hashCode ^
-      shareIndex.hashCode;
+      shareIndex.hashCode ^
+      dcSlot.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -398,7 +547,8 @@ class NextStepView {
           bundleIndex == other.bundleIndex &&
           proposalId == other.proposalId &&
           choice == other.choice &&
-          shareIndex == other.shareIndex;
+          shareIndex == other.shareIndex &&
+          dcSlot == other.dcSlot;
 }
 
 /// One endpoint's probe result.
@@ -463,6 +613,377 @@ enum PirSnapshotEndpointStatusView {
 
   /// Did not answer within the probe deadline.
   timeoutOrNetworkError,
+}
+
+/// The planner's exact split of a request; nothing is recorded. A commit
+/// takes the preview the delegator confirmed and requires the same split.
+class ProxyAllocationPreview {
+  /// Each choice's quota, in request order.
+  final List<ProxyPreviewDelegation> delegations;
+
+  /// The ballots the delegator keeps.
+  final BigInt keptBallots;
+
+  /// The delegation commitments the plan creates.
+  final int dcCount;
+
+  /// The bundles that carry a DC: one batch each.
+  final int bundleCount;
+
+  /// The batches use the one-share last-moment layout.
+  final bool singleShare;
+
+  const ProxyAllocationPreview({
+    required this.delegations,
+    required this.keptBallots,
+    required this.dcCount,
+    required this.bundleCount,
+    required this.singleShare,
+  });
+
+  @override
+  int get hashCode =>
+      delegations.hashCode ^
+      keptBallots.hashCode ^
+      dcCount.hashCode ^
+      bundleCount.hashCode ^
+      singleShare.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProxyAllocationPreview &&
+          runtimeType == other.runtimeType &&
+          delegations == other.delegations &&
+          keptBallots == other.keptBallots &&
+          dcCount == other.dcCount &&
+          bundleCount == other.bundleCount &&
+          singleShare == other.singleShare;
+}
+
+/// A delegator's request for one round. The delegator votes the weight the
+/// choices leave unnamed with ordinary casts.
+class ProxyAllocationRequest {
+  /// The round, as 64 lowercase hex characters.
+  final String roundId;
+
+  /// 1 to 8 choices totalling at most 10,000 basis points, in the order
+  /// the delegator listed them.
+  final List<ProxyDelegateChoice> choices;
+
+  const ProxyAllocationRequest({required this.roundId, required this.choices});
+
+  @override
+  int get hashCode => roundId.hashCode ^ choices.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProxyAllocationRequest &&
+          runtimeType == other.runtimeType &&
+          roundId == other.roundId &&
+          choices == other.choices;
+}
+
+/// Where one bundle's proxy delegation batch stands; see
+/// [`crate::session::ProxyBatchStage`].
+enum ProxyBatchStageView { planned, proved, dispatched, refused, landed }
+
+/// One bundle's proxy delegation batch in a [`RoundPlanView`].
+class ProxyBatchStatusView {
+  final int bundleIndex;
+  final ProxyBatchStageView stage;
+
+  const ProxyBatchStatusView({required this.bundleIndex, required this.stage});
+
+  @override
+  int get hashCode => bundleIndex.hashCode ^ stage.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProxyBatchStatusView &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          stage == other.stage;
+}
+
+/// What browse shows: the wallet's verified list (contract §11.10).
+class ProxyDelegateBrowse {
+  /// The list's rows the registry cache holds, in list order.
+  final List<ProxyDelegateListing> listed;
+
+  /// The shown list's version.
+  final BigInt? listVersion;
+
+  /// When the shown list was signed, in unix seconds.
+  final BigInt? listIssuedAt;
+
+  /// No verified list is available, so browse is empty.
+  final bool listUnavailable;
+
+  const ProxyDelegateBrowse({
+    required this.listed,
+    this.listVersion,
+    this.listIssuedAt,
+    required this.listUnavailable,
+  });
+
+  @override
+  int get hashCode =>
+      listed.hashCode ^
+      listVersion.hashCode ^
+      listIssuedAt.hashCode ^
+      listUnavailable.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProxyDelegateBrowse &&
+          runtimeType == other.runtimeType &&
+          listed == other.listed &&
+          listVersion == other.listVersion &&
+          listIssuedAt == other.listIssuedAt &&
+          listUnavailable == other.listUnavailable;
+}
+
+/// One delegate the delegator chose and its share of the round's weight.
+///
+/// `provider`, `handle` and `dk` are the listing's the delegator picked. An
+/// entry keeps all three for life, so the pre-proving check requires the
+/// proven entry at `delegate_index` to hold exactly them, and a lying or
+/// stale registry cache cannot redirect the delegation.
+class ProxyDelegateChoice {
+  /// The delegate's registry index, at least 1.
+  final int delegateIndex;
+
+  /// The delegate's share of the round's weight, in basis points.
+  final int percentBps;
+
+  /// The provider of the delegate's account.
+  final ProxyDelegateProvider provider;
+
+  /// The delegate's canonical handle, without `@`.
+  final String handle;
+
+  /// The delegate's key, `zvdk1…`.
+  final String dk;
+
+  const ProxyDelegateChoice({
+    required this.delegateIndex,
+    required this.percentBps,
+    required this.provider,
+    required this.handle,
+    required this.dk,
+  });
+
+  @override
+  int get hashCode =>
+      delegateIndex.hashCode ^
+      percentBps.hashCode ^
+      provider.hashCode ^
+      handle.hashCode ^
+      dk.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProxyDelegateChoice &&
+          runtimeType == other.runtimeType &&
+          delegateIndex == other.delegateIndex &&
+          percentBps == other.percentBps &&
+          provider == other.provider &&
+          handle == other.handle &&
+          dk == other.dk;
+}
+
+/// One delegate as Vizor shows it (contract §15.1), from the registry cache,
+/// or at confirm from the proven entry (§11.11).
+class ProxyDelegateListing {
+  /// The registry index.
+  final int index;
+
+  /// The provider of the entry's account.
+  final ProxyDelegateProvider provider;
+
+  /// The entry's handle, without `@`.
+  final String handle;
+
+  /// The entry's key. A choice of this delegate carries the index,
+  /// provider, handle and key shown here.
+  final DelegateKeyInfo key;
+
+  /// A label: the wallet's list has a row for this index with the entry's
+  /// key, provider and handle, and the entry is active.
+  final bool reviewed;
+
+  /// The name in the wallet list's row for this index, if it has one.
+  final String? displayName;
+
+  /// The wallet list row's statement.
+  final String? statement;
+
+  /// The wallet list row's WebP picture; the identicon shows without one.
+  final Uint8List? picture;
+
+  /// The entry was registered after the round was created. Display only.
+  final bool newThisRound;
+
+  /// Whether the entry is active, suspended or retired.
+  final DelegateEntryStatus status;
+
+  /// A wallet list handle or reserved name the handle looks like, shown
+  /// as "Looks like @member".
+  final String? lookalikeOf;
+
+  const ProxyDelegateListing({
+    required this.index,
+    required this.provider,
+    required this.handle,
+    required this.key,
+    required this.reviewed,
+    this.displayName,
+    this.statement,
+    this.picture,
+    required this.newThisRound,
+    required this.status,
+    this.lookalikeOf,
+  });
+
+  @override
+  int get hashCode =>
+      index.hashCode ^
+      provider.hashCode ^
+      handle.hashCode ^
+      key.hashCode ^
+      reviewed.hashCode ^
+      displayName.hashCode ^
+      statement.hashCode ^
+      picture.hashCode ^
+      newThisRound.hashCode ^
+      status.hashCode ^
+      lookalikeOf.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProxyDelegateListing &&
+          runtimeType == other.runtimeType &&
+          index == other.index &&
+          provider == other.provider &&
+          handle == other.handle &&
+          key == other.key &&
+          reviewed == other.reviewed &&
+          displayName == other.displayName &&
+          statement == other.statement &&
+          picture == other.picture &&
+          newThisRound == other.newThisRound &&
+          status == other.status &&
+          lookalikeOf == other.lookalikeOf;
+}
+
+/// The identity provider of a delegate entry's account.
+enum ProxyDelegateProvider {
+  /// X, wire code 1.
+  x,
+
+  /// GitHub, wire code 2.
+  gitHub,
+}
+
+/// A failed delegator call.
+class ProxyDelegationError implements FrbException {
+  /// What failed.
+  final ProxyDelegationErrorKind kind;
+
+  /// Diagnostic text, never shown to people for a known kind.
+  final String? detail;
+
+  const ProxyDelegationError({required this.kind, this.detail});
+
+  @override
+  int get hashCode => kind.hashCode ^ detail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProxyDelegationError &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          detail == other.detail;
+}
+
+/// The failures the delegator's screens tell apart.
+enum ProxyDelegationErrorKind {
+  /// A chosen delegate's entry could not be proven.
+  cannotVerify,
+
+  /// The round's vote end has passed on the host clock.
+  voteEnded,
+
+  /// The wallet holds fewer ballots than delegates chosen.
+  notEnoughVotingPower,
+
+  /// The plan changed since its preview.
+  planChanged,
+
+  /// A vote may already have spent a bundle's VAN.
+  alreadyVoted,
+
+  /// A bundle's registration failed, so no proxy batch can use it.
+  registrationUnusable,
+
+  /// The plan keeps ballots, but the kept share's answers are not recorded
+  /// for every proposal. Answer them or delegate every ballot.
+  keptShareUnanswered,
+
+  /// Any other failure.
+  other,
+}
+
+/// Where one delegation stands. The DC share rules behind these stages are
+/// in `docs/helper_submission_invariants.md`, "Delegation commitment shares".
+enum ProxyDelegationStage {
+  /// Committed, and its batch is not submitted yet.
+  preparing,
+
+  /// Its batch is submitted and has not landed.
+  submitting,
+
+  /// Its batch landed, and some share is not handed off yet.
+  included,
+
+  /// Every share is handed off to the helpers. It stays here after the vote
+  /// end, whether or not an immediate share 0's reveal was confirmed.
+  handedOff,
+
+  /// The delegation will not count: voting ended before it was handed off.
+  notCounted,
+}
+
+/// One delegate's whole-ballot quota in a preview.
+class ProxyPreviewDelegation {
+  /// The delegate's registry index.
+  final int delegateIndex;
+
+  /// The ballots the delegate receives.
+  final BigInt ballots;
+
+  const ProxyPreviewDelegation({
+    required this.delegateIndex,
+    required this.ballots,
+  });
+
+  @override
+  int get hashCode => delegateIndex.hashCode ^ ballots.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProxyPreviewDelegation &&
+          runtimeType == other.runtimeType &&
+          delegateIndex == other.delegateIndex &&
+          ballots == other.ballots;
 }
 
 /// One share that reached a new helper during recovery.
@@ -596,6 +1117,16 @@ class RoundDriveEventView {
 enum RoundPlanActionKind { idle, delegate, vote, submitShares, done }
 
 class RoundPlanView {
+  /// Every bundle the committed proxy allocation places DCs on, with where
+  /// its batch stands.
+  final List<ProxyBatchStatusView> proxyBatches;
+
+  /// Bundles whose proxy DCs took their whole weight, ascending. They cast
+  /// nothing and owe no ballot.
+  final Uint32List fullyDelegatedBundles;
+
+  /// Every bundle is fully delegated, so no ballot is owed.
+  final bool nothingLeftToVote;
   final String roundId;
   final bool pendingRecovery;
   final bool blockingRecovery;
@@ -669,6 +1200,9 @@ class RoundPlanView {
   final bool allDecided;
 
   const RoundPlanView({
+    required this.proxyBatches,
+    required this.fullyDelegatedBundles,
+    required this.nothingLeftToVote,
     required this.roundId,
     required this.pendingRecovery,
     required this.blockingRecovery,
@@ -701,6 +1235,9 @@ class RoundPlanView {
 
   @override
   int get hashCode =>
+      proxyBatches.hashCode ^
+      fullyDelegatedBundles.hashCode ^
+      nothingLeftToVote.hashCode ^
       roundId.hashCode ^
       pendingRecovery.hashCode ^
       blockingRecovery.hashCode ^
@@ -735,6 +1272,9 @@ class RoundPlanView {
       identical(this, other) ||
       other is RoundPlanView &&
           runtimeType == other.runtimeType &&
+          proxyBatches == other.proxyBatches &&
+          fullyDelegatedBundles == other.fullyDelegatedBundles &&
+          nothingLeftToVote == other.nothingLeftToVote &&
           roundId == other.roundId &&
           pendingRecovery == other.pendingRecovery &&
           blockingRecovery == other.blockingRecovery &&
@@ -1037,6 +1577,13 @@ enum RoundStepProgressKind {
   /// The signed combined delegation-and-cast envelope is durable. New with
   /// atomic casting; hosts must treat unknown kinds as opaque progress.
   delegateAndVoteBatchPersisted,
+
+  /// A bundle's proxy delegation batch is proved and stored, unsigned.
+  proxyBatchProved,
+
+  /// A new attempt of a bundle's proxy delegation batch is signed and
+  /// durable.
+  proxyBatchSigned,
   helperPlansPrepared,
   chainOutcome,
   shareOutcome,
@@ -1223,18 +1770,27 @@ class ShareDeliveryOutcomeView {
 /// Durable identity of one helper share.
 class ShareKeyView {
   final int bundleIndex;
+
+  /// The vote's proposal; 0 for a share of a delegation commitment.
   final int proposalId;
   final int shareIndex;
+
+  /// The delegation commitment's slot, for a DC share only.
+  final int? dcSlot;
 
   const ShareKeyView({
     required this.bundleIndex,
     required this.proposalId,
     required this.shareIndex,
+    this.dcSlot,
   });
 
   @override
   int get hashCode =>
-      bundleIndex.hashCode ^ proposalId.hashCode ^ shareIndex.hashCode;
+      bundleIndex.hashCode ^
+      proposalId.hashCode ^
+      shareIndex.hashCode ^
+      dcSlot.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1243,7 +1799,8 @@ class ShareKeyView {
           runtimeType == other.runtimeType &&
           bundleIndex == other.bundleIndex &&
           proposalId == other.proposalId &&
-          shareIndex == other.shareIndex;
+          shareIndex == other.shareIndex &&
+          dcSlot == other.dcSlot;
 }
 
 /// Discriminator of a [`ShareTrackingEventView`].
@@ -1610,6 +2167,7 @@ enum VotingErrorKindView {
   pirUnavailable,
   delegationTargetMismatch,
   delegationAlreadyBroadcast,
+  delegationSetupFrozen,
 
   /// Any category this host does not know. Serde deserializes unknown
   /// category strings into it, so a newer crate can add kinds without

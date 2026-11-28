@@ -63,6 +63,23 @@ void main() {
     ]);
   });
 
+  test('sorts a round with nothing left to vote with the voted ones', () {
+    final delegated = _round(
+      'delegated',
+      status: 'active',
+      end: '2026-01-15T00:00:00Z',
+      delegated: true,
+    );
+    expect(votingPollOrderingState(delegated), VotingPollOrderingState.voted);
+
+    final sorted = sortVotingRoundsForPollList([
+      delegated,
+      _round('active', status: 'active', end: '2026-03-01T00:00:00Z'),
+    ]);
+
+    expect(sorted.map((round) => round.roundId), ['active', 'delegated']);
+  });
+
   test('keeps backend order when sort keys are tied', () {
     final rounds = [
       _round('first', status: 'active', end: '2026-02-01T00:00:00Z'),
@@ -80,6 +97,7 @@ VotingRoundView _round(
   required String status,
   required String end,
   bool voted = false,
+  bool delegated = false,
   bool inProgress = false,
 }) {
   return VotingRoundView(
@@ -87,6 +105,7 @@ VotingRoundView _round(
     title: id,
     status: status,
     voted: voted,
+    delegated: delegated,
     inProgress: inProgress,
     rawJson: {'vote_end_time': end},
   );

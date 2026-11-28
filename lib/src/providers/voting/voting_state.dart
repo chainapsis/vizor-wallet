@@ -18,6 +18,10 @@ class VotingRoundView {
   final String title;
   final String status;
   final bool voted;
+
+  /// Proxy delegations took the weight of every bundle, so the account has
+  /// nothing left to vote in the round.
+  final bool delegated;
   final bool inProgress;
   final bool recoveryError;
   final Map<String, dynamic> rawJson;
@@ -27,6 +31,7 @@ class VotingRoundView {
     required this.title,
     required this.status,
     this.voted = false,
+    this.delegated = false,
     this.inProgress = false,
     this.recoveryError = false,
     this.rawJson = const {},
@@ -35,6 +40,7 @@ class VotingRoundView {
   factory VotingRoundView.fromSummary(
     VotingRoundSummary summary, {
     bool voted = false,
+    bool delegated = false,
     bool inProgress = false,
     bool recoveryError = false,
   }) {
@@ -43,6 +49,7 @@ class VotingRoundView {
       title: summary.title,
       status: summary.status,
       voted: voted,
+      delegated: delegated,
       inProgress: inProgress,
       recoveryError: recoveryError,
       rawJson: summary.rawJson,
@@ -51,6 +58,7 @@ class VotingRoundView {
 
   VotingRoundView copyWith({
     bool? voted,
+    bool? delegated,
     bool? inProgress,
     bool? recoveryError,
   }) {
@@ -59,6 +67,7 @@ class VotingRoundView {
       title: title,
       status: status,
       voted: voted ?? this.voted,
+      delegated: delegated ?? this.delegated,
       inProgress: inProgress ?? this.inProgress,
       recoveryError: recoveryError ?? this.recoveryError,
       rawJson: rawJson,
